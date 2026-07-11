@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>QUAD FILM 员工端</title>
+  <link rel="icon" href="/quad-film-icon.png" type="image/png" />
+  <link rel="apple-touch-icon" href="/quad-film-icon.png" />
+  <link rel="manifest" href="/mobile.webmanifest" />
+  <link rel="stylesheet" href="/mobile.css" />
+</head>
+<body>
+  <section class="mobile-login" id="login">
+    <div class="login-panel">
+      <div class="login-actions">
+        <button class="ghost" onclick="toggleLanguage()" id="loginLangToggle">English</button>
+      </div>
+      <img src="/quad-film-icon.png" alt="QUAD FILM" />
+      <h1 id="loginTitle">QUAD FILM 员工端</h1>
+      <p id="loginSub">聊天、打卡、请假审批</p>
+      <label><span id="emailLabel">邮箱</span><input id="email" autocomplete="username" /></label>
+      <label><span id="passwordLabel">密码</span><input id="password" type="password" autocomplete="current-password" /></label>
+      <button class="primary" onclick="login()" id="loginButton">登录</button>
+      <p class="hint" id="loginHint">手机浏览器打开后，可添加到主屏幕作为客户端使用。</p>
+    </div>
+  </section>
+
+  <section class="mobile-app hidden" id="app">
+    <header class="app-head">
+      <div>
+        <strong id="userName">员工端</strong>
+        <span id="userRole">QUAD FILM</span>
+      </div>
+      <div class="head-actions">
+        <button class="ghost" onclick="sync()" id="refreshButton">刷新</button>
+        <button class="ghost" onclick="toggleLanguage()" id="appLangToggle">English</button>
+      </div>
+    </header>
+    <main id="view"></main>
+    <nav class="tabs">
+      <button class="active" data-tab="chat" onclick="setTab('chat')"><span id="tabChat">留言</span><span id="messageBadge" class="badge hidden">0</span></button>
+      <button data-tab="clock" onclick="setTab('clock')" id="tabClock">打卡</button>
+      <button data-tab="leave" onclick="setTab('leave')" id="tabLeave">请假</button>
+      <button data-tab="me" onclick="setTab('me')" id="tabMe">我的</button>
+    </nav>
+  </section>
+
+  <script src="/mobile.js"></script>
+</body>
+</html>

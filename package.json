@@ -1,0 +1,15 @@
+{
+  "name": "film-shop-cloud-app",
+  "version": "1.0.0",
+  "private": true,
+  "description": "联网可安装版美国贴膜店管理系统",
+  "dependencies": {
+    "exceljs": "^4.4.0"
+  },
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

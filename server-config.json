@@ -1,0 +1,10 @@
+{
+  "port": 4318,
+  "host": "0.0.0.0",
+  "publicUrl": "",
+  "update": {
+    "channel": "stable",
+    "checkUrl": "",
+    "allowRemoteUpgrade": false
+  }
+}

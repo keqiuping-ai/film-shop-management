@@ -1,0 +1,8 @@
+{
+  "appName": "美国贴膜店管理系统",
+  "version": "1.0.0",
+  "build": "2026.06.26.1",
+  "channel": "stable",
+  "minimumDataVersion": 1,
+  "dataVersion": 1
+}

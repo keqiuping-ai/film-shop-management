@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>美国贴膜店管理系统</title>
+  <link rel="icon" href="/quad-film-icon.png" type="image/png" />
+  <link rel="apple-touch-icon" href="/quad-film-icon.png" />
+  <link rel="manifest" href="/manifest.webmanifest" />
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <section class="login" id="login">
+    <div class="login-card">
+      <div class="lang-switch">
+        <button class="btn" onclick="setLanguage('zh')">中文</button>
+        <button class="btn" onclick="setLanguage('en')">English</button>
+      </div>
+      <img class="mark" src="/quad-film-icon.png" alt="Quad Film" />
+      <h1 data-i18n="appTitle">美国贴膜店管理系统</h1>
+      <p data-i18n="loginSub">联网版 · 多电脑 · iPad · 实时共用</p>
+      <label><span data-i18n="email">邮箱</span><input id="email" value="admin@filmshop.local" autocomplete="username" /></label>
+      <label><span data-i18n="password">密码</span><input id="password" type="password" value="admin123" autocomplete="current-password" /></label>
+      <button class="btn primary" onclick="login()" data-i18n="login">登录</button>
+      <p class="note" data-i18n="firstLoginNote">首次登录后请到“设置”修改默认密码。</p>
+    </div>
+  </section>
+
+  <div class="app hidden" id="app">
+    <aside>
+      <div class="brand">
+        <img class="mark small" src="/quad-film-icon.png" alt="Quad Film" />
+        <div>
+          <h1>美国贴膜店管理系统</h1>
+          <span id="userLine">联网版</span>
+        </div>
+      </div>
+      <nav id="nav"></nav>
+    </aside>
+    <main>
+      <div class="topbar">
+        <div>
+          <h2 id="pageTitle"></h2>
+          <p id="pageSub"></p>
+        </div>
+        <div class="toolbar">
+          <button class="btn message-btn" onclick="openMessages()" title="留言" aria-label="留言">
+            <span class="message-icon">💌</span>
+            <span class="message-badge hidden" id="messageBadge">0</span>
+          </button>
+          <button class="btn" onclick="sync()" data-i18n="refreshSync">刷新同步</button>
+          <button class="btn install-icon-btn" onclick="installPrompt()" title="安装到桌面" aria-label="安装到桌面">▣</button>
+          <button class="btn" onclick="toggleLanguage()" id="langToggle">English</button>
+        </div>
+      </div>
+      <section id="view"></section>
+    </main>
+  </div>
+
+  <div class="modal" id="modal">
+    <div class="dialog">
+      <header>
+        <h3 id="modalTitle">新增</h3>
+        <button class="icon-btn" title="关闭" onclick="closeModal()">×</button>
+      </header>
+      <div class="body" id="modalBody"></div>
+      <footer>
+        <button class="btn" onclick="closeModal()">取消</button>
+        <button class="btn primary" id="modalSave">保存</button>
+      </footer>
+    </div>
+  </div>
+
+  <div class="zoom-modal" id="panelZoom">
+    <div class="zoom-dialog">
+      <header>
+        <h3 id="panelZoomTitle">查看详情</h3>
+        <button class="btn" onclick="closePanelZoom()">返回</button>
+      </header>
+      <div class="zoom-body" id="panelZoomBody"></div>
+    </div>
+  </div>
+
+  <script src="/app.js"></script>
+</body>
+</html>
