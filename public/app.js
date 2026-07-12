@@ -2836,17 +2836,40 @@ function cleanConversationText(text) {
     .trim();
 }
 
-function prospectSpeakerRole(value) {
+const PROSPECT_UI_SHOP_SPEAKERS = [
+  'shop', 'store', 'us', 'we', 'our', 'ours', 'agent', 'business', 'staff', 'employee',
+  'owner', 'admin', 'seller', 'sales', 'me', 'mine',
+  'quad', 'quad film', 'quadfilm', 'quad films', 'qd', 'qd auto', 'qd auto image',
+  'qdautoimage', 'qdautoimage.com', 'quadfilmus', 'quadfilmus.com',
+  '客服', '我们', '店铺', '店里', '商家', '销售', '前台', '店员', '业务员'
+];
+
+const PROSPECT_UI_SYSTEM_SPEAKERS = [
+  'system', 'note', 'notes', 'record', 'log', 'robot', 'bot', 'automation', 'auto',
+  '系统', '记录', '备注', '机器人', '自动'
+];
+
+function prospectSpeakerNameMatches(list, value) {
   const key = String(value || '').trim().toLowerCase();
-  if (['shop','us','we','agent','business','staff','owner','客服','我们','店铺'].includes(key)) return 'shop';
-  if (['system','note','系统','记录'].includes(key)) return 'system';
+  if (!key) return false;
+  return list.some((name) => {
+    const isCjk = /[^\x00-\x7F]/.test(name);
+    const minLength = isCjk ? 2 : 3;
+    return name.length >= minLength && key.includes(name);
+  });
+}
+
+function prospectSpeakerRole(value, fallbackName = '') {
+  const key = String(value || '').trim().toLowerCase();
+  if (PROSPECT_UI_SYSTEM_SPEAKERS.includes(key) || prospectSpeakerNameMatches(PROSPECT_UI_SYSTEM_SPEAKERS, fallbackName)) return 'system';
+  if (PROSPECT_UI_SHOP_SPEAKERS.includes(key) || prospectSpeakerNameMatches(PROSPECT_UI_SHOP_SPEAKERS, fallbackName)) return 'shop';
   return 'customer';
 }
 
 function pushConversationSegment(segments, role, title, text, meta = '') {
   const value = cleanConversationText(text).replace(/^[:|-]+/, '').trim();
   if (!value) return;
-  const normalizedRole = prospectSpeakerRole(role);
+  const normalizedRole = prospectSpeakerRole(role, title || meta);
   const key = `${normalizedRole}|${cleanConversationText(meta)}|${value}`.toLowerCase();
   if (segments.some(item => item.key === key)) return;
   segments.push({ key, role: normalizedRole, title, text: value, meta });
@@ -2855,8 +2878,11 @@ function pushConversationSegment(segments, role, title, text, meta = '') {
 function structuredProspectMessages(item) {
   const rows = Array.isArray(item?.conversationMessages) ? item.conversationMessages : [];
   return rows.map((message, index) => {
-    const role = prospectSpeakerRole(message.speaker || message.role || message.from);
     const speakerName = cleanConversationText(message.speakerName || message.name || message.sender || '');
+    const role = prospectSpeakerRole(
+      message.speaker || message.role || message.type || message.side || message.from || message.senderType,
+      speakerName
+    );
     const title = role === 'shop'
       ? `${lang === 'zh' ? '我们说' : 'Us'}${speakerName ? ` - ${speakerName}` : ''}`
       : role === 'system'

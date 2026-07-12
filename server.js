@@ -1127,21 +1127,50 @@ function parseMaybeJsonArray(value) {
   }
 }
 
-function normalizeProspectSpeaker(value) {
+const PROSPECT_SHOP_SPEAKERS = [
+  'shop', 'store', 'us', 'we', 'our', 'ours', 'agent', 'business', 'staff', 'employee',
+  'owner', 'admin', 'seller', 'sales', 'me', 'mine',
+  'quad', 'quad film', 'quadfilm', 'quad films', 'qd', 'qd auto', 'qd auto image',
+  'qdautoimage', 'qdautoimage.com', 'quadfilmus', 'quadfilmus.com',
+  '客服', '我们', '店铺', '店里', '商家', '销售', '前台', '店员', '业务员'
+];
+
+const PROSPECT_SYSTEM_SPEAKERS = [
+  'system', 'note', 'notes', 'record', 'log', 'robot', 'bot', 'automation', 'auto',
+  '系统', '记录', '备注', '机器人', '自动'
+];
+
+function prospectSpeakerNameMatches(list, value) {
   const key = prospectTextKey(value);
-  if (['shop', 'us', 'we', 'agent', 'business', 'staff', 'owner', '客服', '我们', '店铺'].includes(key)) return 'shop';
-  if (['system', 'note', '系统', '记录'].includes(key)) return 'system';
+  if (!key) return false;
+  return list.some((name) => {
+    const isCjk = /[^\x00-\x7F]/.test(name);
+    const minLength = isCjk ? 2 : 3;
+    return name.length >= minLength && key.includes(name);
+  });
+}
+
+function normalizeProspectSpeaker(value, fallbackName = '') {
+  const key = prospectTextKey(value);
+  if (PROSPECT_SYSTEM_SPEAKERS.includes(key)) return 'system';
+  if (PROSPECT_SHOP_SPEAKERS.includes(key)) return 'shop';
+  if (prospectSpeakerNameMatches(PROSPECT_SYSTEM_SPEAKERS, fallbackName)) return 'system';
+  if (prospectSpeakerNameMatches(PROSPECT_SHOP_SPEAKERS, fallbackName)) return 'shop';
   return 'customer';
 }
 
 function normalizeProspectMessages(value) {
   return parseMaybeJsonArray(value).map((item, index) => {
-    const speaker = normalizeProspectSpeaker(item.speaker || item.role || item.from || item.senderType);
+    const speakerName = String(item.speakerName || item.name || item.sender || '').trim();
+    const speaker = normalizeProspectSpeaker(
+      item.speaker || item.role || item.type || item.side || item.from || item.senderType,
+      speakerName
+    );
     const text = String(item.text || item.message || item.content || item.body || '').trim();
     if (!text) return null;
     return {
       speaker,
-      speakerName: String(item.speakerName || item.name || item.sender || '').trim(),
+      speakerName,
       timestamp: String(item.timestamp || item.time || item.createdAt || '').trim(),
       text,
       order: Number.isFinite(Number(item.order)) ? Number(item.order) : index
@@ -1160,7 +1189,7 @@ function prospectMessagesToText(messages) {
 
 function prospectMessageKey(message) {
   return [
-    normalizeProspectSpeaker(message.speaker),
+    normalizeProspectSpeaker(message.speaker, message.speakerName),
     prospectTextKey(message.speakerName),
     prospectTextKey(message.timestamp),
     prospectTextKey(message.text)
