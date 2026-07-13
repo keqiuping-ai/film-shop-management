@@ -2205,6 +2205,8 @@ async function api(req, res) {
     const messageSid = String(params.MessageSid || '').trim();
     const status = String(params.MessageStatus || params.SmsStatus || '').trim();
     let changedItem = null;
+    let changedCollection = '';
+    let changedMessage = null;
     for (const collection of ['customerConversations', 'prospects']) {
       for (const item of (db[collection] || [])) {
         const message = (item.conversationMessages || []).find(row => row.providerSid === messageSid);
@@ -2213,11 +2215,35 @@ async function api(req, res) {
         message.statusUpdatedAt = new Date().toISOString();
         if (params.ErrorCode) message.errorCode = String(params.ErrorCode);
         changedItem = item;
+        changedCollection = collection;
+        changedMessage = message;
         break;
       }
       if (changedItem) break;
     }
     if (changedItem) {
+      if (['failed', 'undelivered'].includes(status) && changedMessage?.attachment?.kind === 'image' && changedMessage.attachment.url && !changedMessage.fallbackSentAt) {
+        try {
+          const fallbackText = `图片：${changedMessage.attachment.name || '查看图片'} ${changedMessage.attachment.url}`;
+          const fallback = await sendTwilioSms({ to: changedMessage.to || `+1${normalizedPhone(changedItem.phone)}`, body: fallbackText });
+          changedMessage.fallbackSentAt = new Date().toISOString();
+          changedMessage.fallbackProviderSid = String(fallback.sid || '');
+          appendSmsMessage(changedItem, {
+            id: `twilio-${fallback.sid || id()}`,
+            speaker: 'shop', speakerName: '系统自动补发', direction: 'outbound', channel: 'sms',
+            text: fallbackText, timestamp: new Date().toISOString(), provider: 'twilio',
+            providerSid: String(fallback.sid || ''), status: String(fallback.status || 'queued'),
+            from: String(fallback.from || twilioConfig().fromNumber), to: changedMessage.to || `+1${normalizedPhone(changedItem.phone)}`,
+            sourceMessageId: changedMessage.id
+          });
+          audit(db, { id: 'twilio-fallback', name: 'Twilio' }, 'fallback-customer-image-link', {
+            collection: changedCollection, recordId: changedItem.id, recordLabel: changedItem.customer || changedItem.phone,
+            detail: `MMS 图片失败，已自动补发链接，错误码 ${params.ErrorCode || ''}`
+          });
+        } catch (err) {
+          changedMessage.fallbackError = err.message;
+        }
+      }
       writeDb(db);
       notifyDataChanged('customer-sms-status', changedItem.id);
     }
@@ -2564,7 +2590,7 @@ async function api(req, res) {
       return send(res, 400, { error: '附件链接不正确，请重新选择文件' });
     }
     const attachmentType = String(attachment?.type || '');
-    const canSendAsMms = false;
+    const canSendAsMms = /^image\//i.test(attachmentType);
     const attachmentKind = attachmentType.startsWith('video/') ? 'video' : attachmentType.startsWith('image/') ? 'image' : 'file';
     if (attachment?.url && !canSendAsMms) {
       const label = attachmentKind === 'video' ? '视频' : attachmentKind === 'image' ? '图片' : '文件';
