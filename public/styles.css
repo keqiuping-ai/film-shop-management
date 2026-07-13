@@ -786,23 +786,26 @@ body.prospect-workspace-open { overflow: hidden; }
   line-height: 1;
   cursor: pointer;
 }
-.prospect-workspace-body { min-height: 0; display: grid; grid-template-columns: 360px minmax(0, 1fr); }
-.prospect-workspace-sidebar { min-height: 0; overflow-y: auto; padding: 16px 18px 22px; background: #fff; border-right: 1px solid var(--line); }
-.prospect-workspace-sidebar h3 { margin: 0 0 14px; font-size: 17px; }
-.prospect-sidebar-field { display: grid; gap: 5px; margin-bottom: 11px; color: var(--muted); font-size: 12px; font-weight: 700; }
-.prospect-sidebar-field input, .prospect-sidebar-field select, .prospect-sidebar-field textarea { width: 100%; min-height: 38px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: #fff; color: var(--ink); font: inherit; font-size: 14px; font-weight: 500; }
-.prospect-sidebar-field textarea { min-height: 58px; resize: vertical; line-height: 1.35; }
+.prospect-workspace-body { min-height: 0; display: grid; grid-template-columns: 33.333% minmax(0, 1fr); }
+.prospect-workspace-sidebar { min-height: 0; overflow: hidden; padding: 12px 14px 14px; background: #fff; border-right: 1px solid var(--line); display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 7px 10px; align-content: start; }
+.prospect-workspace-sidebar h3 { grid-column: 1 / -1; margin: 0 0 2px; font-size: 16px; }
+.prospect-sidebar-field { display: grid; gap: 3px; margin: 0; color: var(--muted); font-size: 11px; font-weight: 700; }
+.prospect-sidebar-field input, .prospect-sidebar-field select, .prospect-sidebar-field textarea { width: 100%; min-height: 34px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 7px; background: #fff; color: var(--ink); font: inherit; font-size: 13px; font-weight: 500; }
+.prospect-sidebar-field textarea { min-height: 48px; resize: none; line-height: 1.3; }
+.prospect-sidebar-field:has(textarea),
+.prospect-sidebar-pair,
+.prospect-sidebar-save { grid-column: 1 / -1; }
 .prospect-sidebar-pair { display: grid; grid-template-columns: 1fr 112px; gap: 8px; }
-.prospect-sidebar-save { width: 100%; min-height: 42px; margin-top: 3px; }
-.prospect-workspace-conversation { position: relative; min-width: 0; min-height: 0; overflow: hidden; }
+.prospect-sidebar-save { width: 100%; min-height: 38px; margin-top: 1px; }
+.prospect-workspace-conversation { position: relative; min-width: 0; min-height: 0; overflow: hidden; display: grid; grid-template-rows: minmax(0, 1fr) 202px; }
 .prospect-workspace-chat {
-  position: absolute;
-  inset: 0 0 212px;
+  position: relative;
+  min-height: 0;
   overflow-y: auto;
   padding: 24px max(24px, calc((100vw - 1460px) / 2));
-  padding-bottom: 220px;
+  padding-bottom: 24px;
   box-sizing: border-box;
-  scroll-padding-bottom: 220px;
+  scroll-padding-bottom: 24px;
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -825,7 +828,7 @@ body.prospect-workspace-open { overflow: hidden; }
 .prospect-chat-text { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.55; }
 .prospect-chat-message time { display: block; margin-top: 6px; font-size: 11px; opacity: .65; }
 .prospect-chat-empty { margin: auto; color: var(--muted); }
-.prospect-workspace-composer { position: fixed; z-index: 52; left: 360px; right: 0; bottom: 10px; min-height: 0; height: 202px; box-sizing: border-box; padding: 10px max(20px, calc((100vw - 1460px) / 2)) 14px; background: #fff; border-top: 1px solid var(--line); box-shadow: 0 -8px 22px rgba(15, 23, 42, .06); }
+.prospect-workspace-composer { position: relative; z-index: 2; min-width: 0; min-height: 0; height: 202px; box-sizing: border-box; padding: 10px max(20px, calc((100vw - 1460px) / 2)) 14px; background: #fff; border-top: 1px solid var(--line); box-shadow: 0 -8px 22px rgba(15, 23, 42, .06); }
 .prospect-sms-status { margin-bottom: 9px; color: var(--muted); font-size: 13px; }
 .prospect-attachment-tools { min-height: 30px; margin: -3px 0 7px; display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
 .prospect-attachment-tools > button { padding: 5px 9px; border: 1px solid var(--line); border-radius: 7px; background: #f8fafb; color: var(--ink); cursor: pointer; }
@@ -840,13 +843,14 @@ body.prospect-workspace-open { overflow: hidden; }
 @media (max-width: 720px) {
   .prospect-workspace-header { padding: 10px 12px; }
   .prospect-workspace-body { grid-template-columns: 1fr; grid-template-rows: minmax(180px, 42vh) minmax(0, 1fr); }
-  .prospect-workspace-sidebar { border-right: 0; border-bottom: 1px solid var(--line); padding: 12px; }
+  .prospect-workspace-sidebar { border-right: 0; border-bottom: 1px solid var(--line); padding: 12px; overflow-y: auto; display: block; }
+  .prospect-workspace-sidebar h3 { margin-bottom: 10px; }
+  .prospect-sidebar-field { margin-bottom: 8px; }
   .prospect-sidebar-pair { grid-template-columns: 1fr 1fr; }
-  .prospect-workspace-chat { padding: 14px 12px; }
-  .prospect-workspace-chat { padding-bottom: 230px; scroll-padding-bottom: 230px; }
+  .prospect-workspace-chat { padding: 14px 12px; scroll-padding-bottom: 14px; }
   .prospect-chat-message { width: 88%; }
-  .prospect-workspace-chat { bottom: 250px; }
-  .prospect-workspace-composer { left: 0; bottom: 0; height: 250px; padding: 8px 12px 10px; }
+  .prospect-workspace-conversation { grid-template-rows: minmax(0, 1fr) 250px; }
+  .prospect-workspace-composer { height: 250px; padding: 8px 12px 10px; }
   .prospect-compose-row { height: calc(100% - 92px); grid-template-columns: 1fr; grid-template-rows: minmax(70px, 1fr) 42px; }
   .prospect-compose-row textarea { min-height: 80px; }
 }
