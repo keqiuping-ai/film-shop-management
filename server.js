@@ -1523,10 +1523,15 @@ function normalizedPhone(value) {
 function findConversationByPhone(db, phone) {
   const target = normalizedPhone(phone);
   if (!target) return null;
-  for (const collection of ['customerConversations', 'prospects']) {
-    const item = (db[collection] || []).find(row => normalizedPhone(row.phone) === target);
-    if (item) return { collection, item };
+  const regularMatches = (db.customerConversations || []).filter(row => normalizedPhone(row.phone) === target);
+  for (const regular of regularMatches) {
+    if (!regular.promotedProspectId) continue;
+    const promoted = (db.prospects || []).find(row => row.id === regular.promotedProspectId);
+    if (promoted) return { collection: 'prospects', item: promoted };
   }
+  const prospect = (db.prospects || []).find(row => normalizedPhone(row.phone) === target);
+  if (prospect) return { collection: 'prospects', item: prospect };
+  if (regularMatches[0]) return { collection: 'customerConversations', item: regularMatches[0] };
   return null;
 }
 
@@ -1535,6 +1540,89 @@ function appendSmsMessage(item, message) {
   item.updatedAt = new Date().toISOString();
   item.lastSmsAt = message.timestamp;
   item.lastSmsDirection = message.direction;
+}
+
+function mergeConversationMessages(target, source) {
+  const combined = [...(Array.isArray(target.conversationMessages) ? target.conversationMessages : [])];
+  const keys = new Set(combined.map(message => String(message.providerSid || message.id || `${message.timestamp}|${message.direction}|${message.text}`)));
+  for (const message of (Array.isArray(source.conversationMessages) ? source.conversationMessages : [])) {
+    const key = String(message.providerSid || message.id || `${message.timestamp}|${message.direction}|${message.text}`);
+    if (!key || keys.has(key)) continue;
+    keys.add(key);
+    combined.push(message);
+  }
+  combined.sort((a, b) => String(a.timestamp || a.createdAt || '').localeCompare(String(b.timestamp || b.createdAt || '')));
+  target.conversationMessages = combined;
+  const latest = combined[combined.length - 1];
+  if (latest) {
+    target.lastSmsAt = latest.timestamp || latest.createdAt || target.lastSmsAt;
+    target.lastSmsDirection = latest.direction || target.lastSmsDirection;
+  }
+}
+
+function applyPromotedConversationMerge() {
+  const migrationVersion = 'promoted-conversation-merge-2026-07-13-v1';
+  const db = readDb();
+  if (db.promotedConversationMergeVersion === migrationVersion) return;
+  createDatabaseBackup(db, 'manual', { id: 'system', name: 'System' });
+  let merged = 0;
+  for (const source of (db.customerConversations || [])) {
+    if (!source.promotedProspectId) continue;
+    const target = (db.prospects || []).find(row => row.id === source.promotedProspectId);
+    if (!target) continue;
+    const before = (target.conversationMessages || []).length;
+    mergeConversationMessages(target, source);
+    if ((target.conversationMessages || []).length !== before) {
+      target.updatedAt = new Date().toISOString();
+      merged += 1;
+    }
+  }
+  db.promotedConversationMergeVersion = migrationVersion;
+  db.promotedConversationMergeAt = new Date().toISOString();
+  audit(db, { id: 'system', name: 'System' }, 'merge-promoted-conversations', `Merged ${merged} promoted customer conversation records`);
+  writeDb(db);
+  console.log(`Promoted customer conversations merged: ${merged}.`);
+}
+
+async function reconcileRecentTwilioInboundMessages() {
+  if (!twilioConfigured()) return;
+  const config = twilioConfig();
+  const auth = Buffer.from(`${config.accountSid}:${config.authToken}`).toString('base64');
+  const response = await fetch(`${config.apiBaseUrl}/2010-04-01/Accounts/${encodeURIComponent(config.accountSid)}/Messages.json?PageSize=50`, {
+    headers: { Authorization: `Basic ${auth}`, Accept: 'application/json' }
+  });
+  if (!response.ok) throw new Error(`Twilio message reconciliation failed (${response.status})`);
+  const payload = await response.json();
+  const db = readDb();
+  let added = 0;
+  for (const message of (payload.messages || [])) {
+    if (message.direction !== 'inbound' || normalizedPhone(message.to) !== normalizedPhone(config.fromNumber)) continue;
+    const match = findConversationByPhone(db, message.from);
+    if (!match) continue;
+    const duplicate = (match.item.conversationMessages || []).some(row => row.providerSid === message.sid);
+    if (duplicate) continue;
+    const rawTimestamp = message.date_sent || message.date_created || new Date().toISOString();
+    const parsedTimestamp = new Date(rawTimestamp);
+    appendSmsMessage(match.item, {
+      id: `twilio-${message.sid}`,
+      speaker: 'customer', speakerName: match.item.customer || message.from,
+      direction: 'inbound', channel: 'sms', text: String(message.body || '').slice(0, 4000),
+      timestamp: Number.isNaN(parsedTimestamp.getTime()) ? String(rawTimestamp) : parsedTimestamp.toISOString(),
+      provider: 'twilio', providerSid: String(message.sid || ''), status: String(message.status || 'received')
+    });
+    added += 1;
+  }
+  if (!added) return;
+  audit(db, { id: 'twilio-reconcile', name: 'Twilio' }, 'reconcile-customer-sms', `Recovered ${added} recent inbound SMS messages`);
+  writeDb(db);
+  notifyDataChanged('reconcile-customer-sms', String(added));
+  console.log(`Twilio inbound messages reconciled: ${added}.`);
+}
+
+function startTwilioReconciliationWorker() {
+  const run = () => reconcileRecentTwilioInboundMessages().catch(err => console.warn(err.message));
+  setTimeout(run, 10 * 1000);
+  setInterval(run, 5 * 60 * 1000);
 }
 
 async function sendTwilioSms({ to, body, statusCallback }) {
@@ -2884,6 +2972,7 @@ applyJobSalesRepMigration();
 applyJobCommissionPeopleMigration();
 applySalesOrderSalesRepMigration();
 applyCustomPrintedFilmSalesOrderMigration();
+applyPromotedConversationMerge();
 http.createServer((req, res) => {
   if (req.url.startsWith('/api/')) {
     api(req, res).catch(err => send(res, 500, { error: err.message }));
@@ -2897,4 +2986,5 @@ http.createServer((req, res) => {
   console.log('Default login: admin@filmshop.local / admin123');
   startDailyBackupWorker();
   startScheduleReminderWorker();
+  startTwilioReconciliationWorker();
 });

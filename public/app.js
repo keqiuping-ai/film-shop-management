@@ -3024,7 +3024,10 @@ function prospectTable() {
 }
 
 function customerCenterRows() {
-  const regular = (state.customerConversations || []).map(item => ({ ...item, _collection: 'customerConversations', _highIntent: false }));
+  const promotedIds = new Set((state.prospects || []).map(item => item.id));
+  const regular = (state.customerConversations || [])
+    .filter(item => !item.promotedProspectId || !promotedIds.has(item.promotedProspectId))
+    .map(item => ({ ...item, _collection: 'customerConversations', _highIntent: false }));
   const highIntent = (state.prospects || []).map(item => ({ ...item, _collection: 'prospects', _highIntent: true }));
   return [...regular, ...highIntent].sort((a, b) => new Date(prospectActivityTime(b)).getTime() - new Date(prospectActivityTime(a)).getTime());
 }
