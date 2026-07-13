@@ -2873,6 +2873,9 @@ function prospectSpeakerNameMatches(list, value) {
 
 function prospectSpeakerRole(value, fallbackName = '') {
   const key = String(value || '').trim().toLowerCase();
+  if (['customer', 'client', 'buyer', 'inbound', '客户', '顾客'].includes(key)) return 'customer';
+  if (PROSPECT_UI_SHOP_SPEAKERS.includes(key)) return 'shop';
+  if (PROSPECT_UI_SYSTEM_SPEAKERS.includes(key)) return 'system';
   if (PROSPECT_UI_SYSTEM_SPEAKERS.includes(key) || prospectSpeakerNameMatches(PROSPECT_UI_SYSTEM_SPEAKERS, fallbackName)) return 'system';
   if (PROSPECT_UI_SHOP_SPEAKERS.includes(key) || prospectSpeakerNameMatches(PROSPECT_UI_SHOP_SPEAKERS, fallbackName)) return 'shop';
   return 'customer';

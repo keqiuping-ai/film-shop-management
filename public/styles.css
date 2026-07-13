@@ -792,13 +792,15 @@ body.prospect-workspace-open { overflow: hidden; }
   gap: 12px;
 }
 .prospect-chat-message {
-  width: min(72%, 760px);
+  width: min(86%, 1040px);
+  box-sizing: border-box;
   padding: 12px 14px;
   border: 1px solid #dce5eb;
   border-radius: 14px 14px 14px 4px;
   background: #fff;
   box-shadow: 0 5px 18px rgba(15, 23, 42, .05);
 }
+.prospect-chat-message.customer { align-self: flex-start; background: #fff; border-color: #d7e1e8; border-radius: 14px 14px 14px 4px; }
 .prospect-chat-message.shop { align-self: flex-end; color: #fff; background: #176d84; border-color: #176d84; border-radius: 14px 14px 4px 14px; }
 .prospect-chat-message.system { align-self: center; width: auto; max-width: 80%; color: var(--muted); background: #e9eef2; border-radius: 999px; box-shadow: none; }
 .prospect-chat-role { margin-bottom: 5px; font-size: 12px; font-weight: 800; opacity: .8; }
