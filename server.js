@@ -3,6 +3,9 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const zlib = require('zlib');
+const { execFile } = require('child_process');
+const { promisify } = require('util');
+const execFileAsync = promisify(execFile);
 
 const ROOT = __dirname;
 const PUBLIC = path.join(ROOT, 'public');
@@ -1692,6 +1695,41 @@ function safeCustomerMediaExtension(name, contentType) {
   return byType[String(contentType || '').toLowerCase()] || '.bin';
 }
 
+async function optimizeCustomerMmsVideo(data, contentType) {
+  const token = crypto.randomBytes(8).toString('hex');
+  const inputExtension = safeCustomerMediaExtension('upload', contentType);
+  const inputPath = path.join(CUSTOMER_MEDIA_DIR, `${token}-source${inputExtension}`);
+  const outputPath = path.join(CUSTOMER_MEDIA_DIR, `${token}-mms.mp4`);
+  fs.writeFileSync(inputPath, data);
+  try {
+    const { stdout } = await execFileAsync('ffprobe', [
+      '-v', 'error', '-show_entries', 'format=duration', '-of', 'default=noprint_wrappers=1:nokey=1', inputPath
+    ]);
+    const duration = Number(String(stdout).trim());
+    if (!Number.isFinite(duration) || duration <= 0) throw new Error('无法读取视频，请改用 MP4 短视频');
+    if (duration > 15.5) throw new Error('短信短视频最多 15 秒，请先裁剪后再发送');
+    const totalKbps = Math.max(190, Math.floor((540 * 8) / duration));
+    const audioKbps = duration > 10 ? 40 : 48;
+    const videoKbps = Math.max(140, Math.min(520, totalKbps - audioKbps));
+    await execFileAsync('ffmpeg', [
+      '-y', '-i', inputPath,
+      '-vf', 'scale=480:-2:force_original_aspect_ratio=decrease,fps=20',
+      '-c:v', 'libx264', '-profile:v', 'baseline', '-level', '3.0', '-pix_fmt', 'yuv420p',
+      '-b:v', `${videoKbps}k`, '-maxrate', `${videoKbps}k`, '-bufsize', `${videoKbps * 2}k`,
+      '-c:a', 'aac', '-b:a', `${audioKbps}k`, '-ac', '1', '-ar', '32000',
+      '-movflags', '+faststart', outputPath
+    ], { maxBuffer: 1024 * 1024 });
+    const optimized = fs.readFileSync(outputPath);
+    if (!optimized.length || optimized.length > 600 * 1024) {
+      throw new Error('视频压缩后仍超过短信运营商的 600KB 限制，请缩短视频后重试');
+    }
+    return optimized;
+  } finally {
+    try { fs.unlinkSync(inputPath); } catch {}
+    try { fs.unlinkSync(outputPath); } catch {}
+  }
+}
+
 function serveCustomerMedia(req, res) {
   const url = new URL(req.url, `http://${req.headers.host}`);
   const fileName = path.basename(decodeURIComponent(url.pathname.replace('/customer-media/', '')));
@@ -2533,12 +2571,17 @@ async function api(req, res) {
     const match = String(body.dataUrl || '').match(/^data:([^;,]+);base64,(.+)$/s);
     if (!match) return send(res, 400, { error: '附件格式不正确' });
     contentType = String(match[1] || contentType).trim().slice(0, 120);
-    const data = Buffer.from(match[2], 'base64');
+    let data = Buffer.from(match[2], 'base64');
     if (!data.length) return send(res, 400, { error: '附件为空' });
     if (data.length > 5 * 1024 * 1024) return send(res, 400, { error: '附件不能超过 5MB，短信附件太大会发送失败' });
     if (contentType.startsWith('image/') && data.length > 900 * 1024) return send(res, 400, { error: '图片压缩后仍超过 900KB，请换一张图片重试' });
     fs.mkdirSync(CUSTOMER_MEDIA_DIR, { recursive: true });
-    const fileName = `${crypto.randomBytes(6).toString('hex')}${safeCustomerMediaExtension(name, contentType)}`;
+    if (contentType.startsWith('video/')) {
+      data = await optimizeCustomerMmsVideo(data, contentType);
+      contentType = 'video/mp4';
+    }
+    const storedName = contentType === 'video/mp4' ? 'video.mp4' : name;
+    const fileName = `${crypto.randomBytes(6).toString('hex')}${safeCustomerMediaExtension(storedName, contentType)}`;
     fs.writeFileSync(path.join(CUSTOMER_MEDIA_DIR, fileName), data);
     const mediaUrl = `${requestPublicBaseUrl(req)}/customer-media/${fileName}`;
     audit(db, user, 'upload-customer-media', `上传客户附件 ${name}`);
@@ -2590,7 +2633,7 @@ async function api(req, res) {
       return send(res, 400, { error: '附件链接不正确，请重新选择文件' });
     }
     const attachmentType = String(attachment?.type || '');
-    const canSendAsMms = /^image\//i.test(attachmentType);
+    const canSendAsMms = /^(image\/|video\/mp4$)/i.test(attachmentType);
     const attachmentKind = attachmentType.startsWith('video/') ? 'video' : attachmentType.startsWith('image/') ? 'image' : 'file';
     if (attachment?.url && !canSendAsMms) {
       const label = attachmentKind === 'video' ? '视频' : attachmentKind === 'image' ? '图片' : '文件';
@@ -2616,7 +2659,8 @@ async function api(req, res) {
         name: String(attachment.name || '附件').slice(0, 160),
         type: attachmentType.slice(0, 120),
         url: String(attachment.url),
-        kind: attachmentKind
+        kind: attachmentKind,
+        size: Number(attachment.size || 0)
       } : null,
       timestamp: now,
       provider: 'twilio',
