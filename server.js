@@ -1742,14 +1742,34 @@ async function optimizeCustomerMmsVideo(data, contentType) {
     const totalKbps = Math.max(190, Math.floor((540 * 8) / duration));
     const audioKbps = duration > 10 ? 40 : 48;
     const videoKbps = Math.max(140, Math.min(520, totalKbps - audioKbps));
-    await execFileAsync('ffmpeg', [
-      '-y', '-i', inputPath,
-      '-vf', 'scale=480:-2:force_original_aspect_ratio=decrease,fps=20',
-      '-c:v', 'libx264', '-profile:v', 'baseline', '-level', '3.0', '-pix_fmt', 'yuv420p',
+    const commonArgs = [
+      '-y', '-v', 'error', '-i', inputPath,
+      '-map', '0:v:0', '-map_metadata', '-1', '-map_chapters', '-1', '-sn', '-dn',
+      '-vf', 'scale=480:-2:force_original_aspect_ratio=decrease:flags=lanczos,fps=20,format=yuv420p',
+      '-c:v', 'libx264', '-profile:v', 'baseline', '-level', '3.0', '-tag:v', 'avc1',
       '-b:v', `${videoKbps}k`, '-maxrate', `${videoKbps}k`, '-bufsize', `${videoKbps * 2}k`,
-      '-c:a', 'aac', '-b:a', `${audioKbps}k`, '-ac', '1', '-ar', '32000',
-      '-movflags', '+faststart', outputPath
-    ], { maxBuffer: 1024 * 1024 });
+      '-movflags', '+faststart'
+    ];
+    try {
+      await execFileAsync('ffmpeg', [
+        ...commonArgs,
+        '-map', '0:a:0?', '-c:a', 'aac', '-b:a', `${audioKbps}k`, '-ac', '1', '-ar', '32000',
+        outputPath
+      ], { maxBuffer: 4 * 1024 * 1024 });
+    } catch (firstError) {
+      try { fs.unlinkSync(outputPath); } catch {}
+      try {
+        await execFileAsync('ffmpeg', [...commonArgs, '-an', outputPath], { maxBuffer: 4 * 1024 * 1024 });
+      } catch (secondError) {
+        console.error('Video conversion failed', {
+          contentType,
+          bytes: data.length,
+          first: String(firstError?.stderr || firstError?.message || '').slice(-2000),
+          second: String(secondError?.stderr || secondError?.message || '').slice(-2000)
+        });
+        throw new Error('这个视频的编码暂时无法转换。请在手机相册中把视频另存或导出为“兼容性最佳”的 MP4 后重试');
+      }
+    }
     const optimized = fs.readFileSync(outputPath);
     if (!optimized.length || optimized.length > 600 * 1024) {
       throw new Error('视频压缩后仍超过短信运营商的 600KB 限制，请缩短视频后重试');
@@ -2613,7 +2633,11 @@ async function api(req, res) {
     if (contentType.startsWith('image/') && data.length > 900 * 1024) return send(res, 400, { error: '图片压缩后仍超过 900KB，请换一张图片重试' });
     fs.mkdirSync(CUSTOMER_MEDIA_DIR, { recursive: true });
     if (contentType.startsWith('video/')) {
-      data = await optimizeCustomerMmsVideo(data, contentType);
+      try {
+        data = await optimizeCustomerMmsVideo(data, contentType);
+      } catch (err) {
+        return send(res, 400, { error: err.message || '视频压缩失败，请换一个短视频重试' });
+      }
       contentType = 'video/mp4';
     }
     const storedName = contentType === 'video/mp4' ? 'video.mp4' : name;
