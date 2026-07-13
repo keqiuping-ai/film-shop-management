@@ -3066,8 +3066,17 @@ function renderProspectWorkspace() {
   const { collection, item } = activeCustomerWorkspaceItem();
   if (!item) return closeProspectWorkspace();
   const segments = prospectConversationSegments(item);
-  const rep = (state.customerServiceReps || []).find(row => row.id === item.ownerId);
   const workspace = ensureProspectWorkspace();
+  const field = (label, control) => `<label class="prospect-sidebar-field"><span>${label}</span>${control}</label>`;
+  const select = (id, value, options) => `<select id="${id}" ${hasPerm('prospectsEdit') ? '' : 'disabled'}>${options.map(option => {
+    const pair = Array.isArray(option) ? option : [option, option];
+    return `<option value="${escapeHtml(pair[0])}" ${String(pair[0]) === String(value || '') ? 'selected' : ''}>${escapeHtml(pair[1])}</option>`;
+  }).join('')}</select>`;
+  const sources = leadSourceOptions();
+  const services = serviceOptions();
+  const owners = customerServiceOptions();
+  const intents = prospectIntentOptions();
+  const statuses = prospectStatusOptions();
   workspace.innerHTML = `
     <header class="prospect-workspace-header">
       <div class="prospect-workspace-customer">
@@ -3076,38 +3085,79 @@ function renderProspectWorkspace() {
         ${prospectIntentPill(item.intentLevel)} ${prospectStatusPill(item.status)}
       </div>
       <div class="prospect-workspace-actions">
-        ${hasPerm('prospectsEdit') ? `<button class="btn" onclick="openProspect('${item.id}','${collection}')">${lang === 'zh' ? '编辑资料' : 'Edit details'}</button>` : ''}
         ${collection === 'customerConversations' && hasPerm('prospectsEdit') && !item.promotedProspectId ? `<button class="btn primary" onclick="promoteCustomerToProspect()">${lang === 'zh' ? '加入高意向客户' : 'Add to high intent'}</button>` : ''}
         ${collection === 'customerConversations' && item.promotedProspectId ? `<span class="pill good">${lang === 'zh' ? '已转入高意向客户' : 'Promoted to high intent'}</span>` : ''}
         <button class="prospect-workspace-close" onclick="closeProspectWorkspace()" aria-label="${lang === 'zh' ? '关闭聊天工作台' : 'Close chat workspace'}">×</button>
       </div>
     </header>
-    <div class="prospect-workspace-meta">
-      <span><b>${lang === 'zh' ? '来源' : 'Source'}</b>${escapeHtml(item.source || '-')}</span>
-      <span><b>${lang === 'zh' ? '车辆' : 'Vehicle'}</b>${escapeHtml(item.vehicle || '-')}</span>
-      <span><b>${lang === 'zh' ? '需求' : 'Need'}</b>${escapeHtml(shortText(item.need || '-', 80))}</span>
-      <span><b>${lang === 'zh' ? '预约' : 'Appointment'}</b>${escapeHtml(prospectAppointmentValue(item) || '-')}</span>
-      <span><b>${lang === 'zh' ? '跟进人' : 'Owner'}</b>${escapeHtml(rep?.name || item.ownerName || t('unassigned'))}</span>
-    </div>
-    <main class="prospect-workspace-chat">
-      ${segments.length ? segments.map(segment => `<article class="prospect-chat-message ${segment.role}">
-        <div class="prospect-chat-role">${escapeHtml(segment.title)}</div>
-        <div class="prospect-chat-text">${escapeHtml(segment.text)}</div>
-        ${segment.meta ? `<time>${escapeHtml(segment.meta)}</time>` : ''}
-      </article>`).join('') : `<div class="prospect-chat-empty">${lang === 'zh' ? '还没有聊天记录。' : 'No conversation yet.'}</div>`}
-    </main>
-    <footer class="prospect-workspace-composer">
-      <div class="prospect-sms-status">${lang === 'zh' ? '通过 Twilio 发送和接收短信 · 发送号码：+1 725-241-2586' : 'Send and receive SMS through Twilio · Sender: +1 725-241-2586'}</div>
-      <div class="prospect-compose-row">
-        <textarea id="prospectReplyInput" placeholder="${lang === 'zh' ? '输入给该客户的回复内容…' : 'Write a reply…'}"></textarea>
-        <button id="prospectSendSmsButton" class="btn primary" onclick="sendProspectSms()" ${hasPerm('prospectsEdit') ? '' : 'disabled'}>${lang === 'zh' ? '发送短信' : 'Send SMS'}</button>
-      </div>
-    </footer>`;
+    <div class="prospect-workspace-body">
+      <aside class="prospect-workspace-sidebar">
+        <h3>${lang === 'zh' ? '客户资料' : 'Customer details'}</h3>
+        ${field(t('date'), `<input id="workspaceDate" type="date" value="${escapeHtml(item.date || '')}" ${hasPerm('prospectsEdit') ? '' : 'disabled'}>`)}
+        ${field(t('source'), select('workspaceSource', item.source || 'Yelp', sources))}
+        ${field(t('customer'), `<input id="workspaceCustomer" value="${escapeHtml(item.customer || '')}" ${hasPerm('prospectsEdit') ? '' : 'disabled'}>`)}
+        ${field(lang === 'zh' ? '电话' : 'Phone', `<input id="workspacePhone" value="${escapeHtml(item.phone || '')}" ${hasPerm('prospectsEdit') ? '' : 'disabled'}>`)}
+        ${field(t('vehicle'), `<input id="workspaceVehicle" value="${escapeHtml(item.vehicle || '')}" ${hasPerm('prospectsEdit') ? '' : 'disabled'}>`)}
+        ${field(t('vehicleNeed'), `<textarea id="workspaceNeed" ${hasPerm('prospectsEdit') ? '' : 'disabled'}>${escapeHtml(item.need || '')}</textarea>`)}
+        ${field(t('service'), select('workspaceService', item.service || 'tint', services))}
+        <div class="prospect-sidebar-pair">
+          ${field(t('appointmentDate'), `<input id="workspaceAppointmentDate" type="date" value="${escapeHtml(item.appointmentDate || '')}" ${hasPerm('prospectsEdit') ? '' : 'disabled'}>`)}
+          ${field(t('appointmentTime'), `<input id="workspaceAppointmentTime" type="time" value="${escapeHtml(item.appointmentTime || '')}" ${hasPerm('prospectsEdit') ? '' : 'disabled'}>`)}
+        </div>
+        ${field(t('contactOwner'), select('workspaceOwnerId', item.ownerId || '', owners))}
+        ${field(t('intentLevel'), select('workspaceIntentLevel', normalizeProspectIntentValue(item.intentLevel || '高意向'), intents))}
+        ${field(t('prospectStatus'), select('workspaceStatus', item.status || '新意向', statuses))}
+        ${hasPerm('prospectsEdit') ? `<button id="workspaceSaveDetailsButton" class="btn primary prospect-sidebar-save" onclick="saveProspectWorkspaceDetails()">${lang === 'zh' ? '保存客户资料' : 'Save customer details'}</button>` : ''}
+      </aside>
+      <section class="prospect-workspace-conversation">
+        <main class="prospect-workspace-chat">
+          ${segments.length ? segments.map(segment => `<article class="prospect-chat-message ${segment.role}">
+            <div class="prospect-chat-role">${escapeHtml(segment.title)}</div>
+            <div class="prospect-chat-text">${escapeHtml(segment.text)}</div>
+            ${segment.meta ? `<time>${escapeHtml(segment.meta)}</time>` : ''}
+          </article>`).join('') : `<div class="prospect-chat-empty">${lang === 'zh' ? '还没有聊天记录。' : 'No conversation yet.'}</div>`}
+        </main>
+        <footer class="prospect-workspace-composer">
+          <div class="prospect-sms-status">${lang === 'zh' ? '通过 Twilio 发送和接收短信 · 发送号码：+1 725-241-2586' : 'Send and receive SMS through Twilio · Sender: +1 725-241-2586'}</div>
+          <div class="prospect-compose-row">
+            <textarea id="prospectReplyInput" placeholder="${lang === 'zh' ? '输入给该客户的回复内容…' : 'Write a reply…'}"></textarea>
+            <button id="prospectSendSmsButton" class="btn primary" onclick="sendProspectSms()" ${hasPerm('prospectsEdit') ? '' : 'disabled'}>${lang === 'zh' ? '发送短信' : 'Send SMS'}</button>
+          </div>
+        </footer>
+      </section>
+    </div>`;
   workspace.classList.add('open');
   requestAnimationFrame(() => {
     const chat = workspace.querySelector('.prospect-workspace-chat');
     if (chat) chat.scrollTop = chat.scrollHeight;
   });
+}
+
+async function saveProspectWorkspaceDetails() {
+  const { collection, item } = activeCustomerWorkspaceItem();
+  if (!item || !hasPerm('prospectsEdit')) return;
+  const value = id => String(document.getElementById(id)?.value || '').trim();
+  const button = document.getElementById('workspaceSaveDetailsButton');
+  const ownerId = value('workspaceOwnerId');
+  const rep = (state.customerServiceReps || []).find(row => row.id === ownerId);
+  const updated = {
+    ...item,
+    date: value('workspaceDate'), source: value('workspaceSource'), customer: value('workspaceCustomer'),
+    phone: value('workspacePhone'), vehicle: value('workspaceVehicle'), need: value('workspaceNeed'),
+    service: value('workspaceService'), appointmentDate: value('workspaceAppointmentDate'),
+    appointmentTime: value('workspaceAppointmentTime'), ownerId, ownerName: rep?.name || '',
+    intentLevel: value('workspaceIntentLevel'), status: value('workspaceStatus')
+  };
+  if (!updated.customer && !updated.phone) return alert(lang === 'zh' ? '客户姓名或电话至少填写一个。' : 'Please enter at least a customer name or phone.');
+  if (button) { button.disabled = true; button.textContent = lang === 'zh' ? '保存中…' : 'Saving…'; }
+  try {
+    state = await api(`/api/${collection}/${item.id}`, { method: 'PUT', body: JSON.stringify(updated) });
+    broadcastDataChange();
+    render();
+  } catch (err) {
+    alert(err.message);
+    if (button) { button.disabled = false; button.textContent = lang === 'zh' ? '保存客户资料' : 'Save customer details'; }
+  }
 }
 
 async function sendProspectSms() {
