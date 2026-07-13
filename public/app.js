@@ -3581,8 +3581,8 @@ function openQuickAdd() {
   alert(lang === 'zh' ? '你没有新增权限。' : 'You do not have create permission.');
 }
 
-function openJob(id) {
-  const item = state.jobs.find(x => x.id === id) || { date: today(), scheduleDate: '', customer: '', phone: '', source: 'Walk-in', leadRepId: '', receptionRepId: '', vehicle: '', vin: '', salesRep: '', service: 'tint', vehicleClass: '小型轿车', package: '基本款', installerId: '', status: '排期', price: 0, materialCost: 0, deposit: 0, paidAmount: 0, paymentStatus: 'unpaid', paymentMethod: '', notes: '' };
+function openJob(id, preset = {}) {
+  const item = state.jobs.find(x => x.id === id) || { date: today(), scheduleDate: '', customer: '', phone: '', source: 'Walk-in', leadRepId: '', receptionRepId: '', vehicle: '', vin: '', salesRep: '', service: 'tint', vehicleClass: '小型轿车', package: '基本款', installerId: '', status: '排期', price: 0, materialCost: 0, deposit: 0, paidAmount: 0, paymentStatus: 'unpaid', paymentMethod: '', notes: '', ...preset };
   const selectedServices = jobServices(item);
   const selectedInstallers = jobInstallerIds(item);
   const fields = [
@@ -3610,7 +3610,37 @@ function openJob(id) {
     }
     data.service = data.services[0] || 'tint';
     data.installerId = data.installerIds[0] || '';
+    if (item.sourceProspectId) data.sourceProspectId = item.sourceProspectId;
     return saveRecord('jobs', id, data);
+  });
+}
+
+function openJobFromProspect(prospectId) {
+  const prospect = (state.prospects || []).find(row => row.id === prospectId);
+  if (!prospect) return alert(lang === 'zh' ? '找不到这位高意向客户。' : 'High-intent customer not found.');
+  const existing = (state.jobs || []).find(job => job.id === prospect.convertedJobId || job.sourceProspectId === prospect.id);
+  closeModal();
+  if (existing) return openJob(existing.id);
+  const appointment = [
+    prospect.appointmentTime ? `${lang === 'zh' ? '预约时间' : 'Appointment time'}：${prospect.appointmentTime}` : '',
+    prospect.need || '',
+    `${lang === 'zh' ? '由高意向客户自动带入' : 'Created from high-intent customer'}：${prospect.customer || prospect.phone || prospect.id}`
+  ].filter(Boolean).join('\n');
+  return openJob(null, {
+    date: today(),
+    scheduleDate: prospect.appointmentDate || '',
+    customer: prospect.customer || '',
+    phone: prospect.phone || '',
+    source: prospect.source || 'Walk-in',
+    leadRepId: prospect.ownerId || '',
+    receptionRepId: prospect.ownerId || '',
+    vehicle: prospect.vehicle || '',
+    service: prospect.service || 'tint',
+    services: [prospect.service || 'tint'],
+    package: '',
+    status: '排期',
+    notes: appointment,
+    sourceProspectId: prospect.id
   });
 }
 
@@ -3773,6 +3803,18 @@ function openProspect(id, collection = 'prospects') {
     if (!data.customer && !data.phone) return alert(lang === 'zh' ? '客户姓名或电话至少填写一个。' : 'Please enter at least a customer name or phone.');
     return saveRecord(collection, id, data);
   });
+  const jobAction = document.getElementById('modalHeaderAction');
+  const existingJob = collection === 'prospects' && id
+    ? (state.jobs || []).find(job => job.id === item.convertedJobId || job.sourceProspectId === item.id)
+    : null;
+  const canOpenJob = existingJob ? hasPerm('jobsEdit') : hasPerm('jobsCreate');
+  if (jobAction && collection === 'prospects' && id && canOpenJob) {
+    jobAction.hidden = false;
+    jobAction.textContent = existingJob
+      ? (lang === 'zh' ? '编辑施工单' : 'Edit job')
+      : (lang === 'zh' ? '创建施工单' : 'Create job');
+    jobAction.onclick = () => openJobFromProspect(item.id);
+  }
 }
 
 function openLead(id) {
@@ -4294,6 +4336,12 @@ function openModal(title, html, onSave) {
   document.getElementById('modal').classList.remove('message-modal-open');
   document.body.classList.remove('modal-lock');
   document.getElementById('modalTitle').textContent = title;
+  const headerAction = document.getElementById('modalHeaderAction');
+  if (headerAction) {
+    headerAction.hidden = true;
+    headerAction.textContent = '';
+    headerAction.onclick = null;
+  }
   document.getElementById('modalBody').innerHTML = html;
   document.getElementById('modalSave').onclick = onSave;
   document.getElementById('modalSave').textContent = t('save');

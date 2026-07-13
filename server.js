@@ -2909,6 +2909,9 @@ async function api(req, res) {
       item.createdByUserId = user.id;
     }
     if (collection === 'jobs') {
+      if (item.sourceProspectId && db.jobs.some(job => job.sourceProspectId === item.sourceProspectId)) {
+        return send(res, 400, { error: '这位高意向客户已经有施工单，请直接编辑现有施工单' });
+      }
       normalizeJobServices(item);
       item.preparedBy = user.name || '';
       item.preparedByUserId = user.id;
@@ -2946,6 +2949,21 @@ async function api(req, res) {
       if (error) return send(res, 400, { error });
     }
     db[collection].push(item);
+    if (collection === 'jobs' && item.sourceProspectId) {
+      const prospect = (db.prospects || []).find(row => row.id === item.sourceProspectId);
+      if (prospect) {
+        prospect.convertedJobId = item.id;
+        prospect.convertedJobAt = new Date().toISOString();
+        prospect.status = '已转施工单';
+        prospect.updatedAt = new Date().toISOString();
+        const conversation = (db.customerConversations || []).find(row => row.id === prospect.promotedFromConversationId);
+        if (conversation) {
+          conversation.status = '已转施工单';
+          conversation.convertedJobId = item.id;
+          conversation.updatedAt = prospect.updatedAt;
+        }
+      }
+    }
     if (collection === 'movements') applyMovement(db, item);
     if (collection === 'workshopMovements') applyWorkshopMovement(db, item);
     audit(db, user, `create-${collection}`, {

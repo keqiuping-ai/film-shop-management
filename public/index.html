@@ -61,7 +61,10 @@
     <div class="dialog">
       <header>
         <h3 id="modalTitle">新增</h3>
-        <button class="icon-btn" title="关闭" onclick="closeModal()">×</button>
+        <div class="modal-header-actions">
+          <button class="btn" id="modalHeaderAction" type="button" hidden></button>
+          <button class="icon-btn" title="关闭" onclick="closeModal()">×</button>
+        </div>
       </header>
       <div class="body" id="modalBody"></div>
       <footer>

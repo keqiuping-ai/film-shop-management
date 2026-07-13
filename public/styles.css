@@ -896,6 +896,7 @@ body.prospect-workspace-open { overflow: hidden; }
 }
 .dialog footer { border-bottom: 0; border-top: 1px solid var(--line); justify-content: flex-end; }
 .dialog h3 { margin: 0; }
+.modal-header-actions { display: flex; align-items: center; gap: 10px; }
 .dialog .body { padding: 18px; }
 .message-modal-open .dialog {
   width: min(980px, calc(100vw - 36px));
