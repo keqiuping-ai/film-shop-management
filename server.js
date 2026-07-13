@@ -207,6 +207,7 @@ function seedDb() {
     ],
     prospects: [],
     customerConversations: [],
+    replyTemplates: [],
     expenses: [
       { id: id(), date: new Date().toISOString().slice(0, 10), category: '房屋租金', vendor: 'Landlord', amount: 10000, recurring: true, note: '月租金' },
       { id: id(), date: new Date().toISOString().slice(0, 10), category: '水电费', vendor: 'Utilities', amount: 1200, recurring: true, note: '水、电、网、电费预估' }
@@ -242,6 +243,7 @@ function readDb() {
   if (!Array.isArray(db.leads)) db.leads = [];
   if (!Array.isArray(db.prospects)) db.prospects = [];
   if (!Array.isArray(db.customerConversations)) db.customerConversations = [];
+  if (!Array.isArray(db.replyTemplates)) db.replyTemplates = [];
   if (!Array.isArray(db.shipments)) db.shipments = [];
   if (!Array.isArray(db.schedules)) db.schedules = [];
   if (!Array.isArray(db.scheduleReminderLogs)) db.scheduleReminderLogs = [];
@@ -939,6 +941,7 @@ function sanitizeDbForUser(db, user) {
     leads: p.leadsView ? sanitizeLeads(db.leads || [], p) : [],
     prospects: p.prospectsView ? (db.prospects || []) : [],
     customerConversations: p.prospectsView ? (db.customerConversations || []) : [],
+    replyTemplates: p.prospectsView ? (db.replyTemplates || []) : [],
     expenses: p.expensesView || p.fullFinanceView ? (db.expenses || []) : [],
     movements: p.inventoryView ? db.movements : [],
     workshopMovements: p.inventoryView ? (db.workshopMovements || []) : [],
@@ -1992,6 +1995,7 @@ function collectionPermission(collection, method) {
     leads: { GET: 'leadsView', POST: 'leadsEdit', PUT: 'leadsEdit', DELETE: 'leadsEdit' },
     prospects: { GET: 'prospectsView', POST: 'prospectsEdit', PUT: 'prospectsEdit', DELETE: 'prospectsEdit' },
     customerConversations: { GET: 'prospectsView', POST: 'prospectsEdit', PUT: 'prospectsEdit', DELETE: 'prospectsEdit' },
+    replyTemplates: { GET: 'prospectsView', POST: 'prospectsEdit', PUT: 'prospectsEdit', DELETE: 'prospectsEdit' },
     customerServiceReps: { GET: 'leadsView', POST: 'commissionEdit', PUT: 'commissionEdit', DELETE: 'commissionEdit' },
     expenses: { GET: 'expensesView', POST: 'expensesEdit', PUT: 'expensesEdit', DELETE: 'expensesEdit' },
     users: { GET: 'usersManage', POST: 'usersManage', PUT: 'usersManage', DELETE: 'usersManage' }
@@ -2866,7 +2870,7 @@ async function api(req, res) {
   const match = url.pathname.match(/^\/api\/([a-zA-Z]+)(?:\/([^/]+))?$/);
   if (!match) return send(res, 404, { error: 'Not found' });
   const [, collection, recordId] = match;
-  const allowed = ['jobs', 'installers', 'products', 'priceRules', 'salesOrders', 'shipments', 'schedules', 'movements', 'workshopMovements', 'expenses', 'leads', 'prospects', 'customerConversations', 'customerServiceReps', 'users'];
+  const allowed = ['jobs', 'installers', 'products', 'priceRules', 'salesOrders', 'shipments', 'schedules', 'movements', 'workshopMovements', 'expenses', 'leads', 'prospects', 'customerConversations', 'replyTemplates', 'customerServiceReps', 'users'];
   if (!allowed.includes(collection)) return send(res, 404, { error: 'Unknown collection' });
 
   const permission = collectionPermission(collection, req.method);
@@ -2940,6 +2944,21 @@ async function api(req, res) {
       item.createdAt = item.createdAt || now;
       item.importedAt = item.importedAt || now;
       item.updatedAt = now;
+      item.createdBy = user.name || user.email;
+      item.createdByUserId = user.id;
+    }
+    if (collection === 'replyTemplates') {
+      const type = ['text', 'image', 'video'].includes(String(item.type)) ? String(item.type) : '';
+      if (!type) return send(res, 400, { error: '回复素材类型不正确' });
+      item.type = type;
+      item.title = String(item.title || '').trim().slice(0, 80);
+      item.content = String(item.content || '').trim().slice(0, 4000);
+      item.attachment = type === 'text' ? null : item.attachment;
+      if (type === 'text' && !item.content) return send(res, 400, { error: '请填写回复文字' });
+      if (type !== 'text' && !String(item.attachment?.url || '').includes('/customer-media/')) return send(res, 400, { error: '请先上传素材文件' });
+      item.title = item.title || (type === 'text' ? item.content.slice(0, 30) : String(item.attachment?.name || '回复素材'));
+      item.createdAt = new Date().toISOString();
+      item.updatedAt = item.createdAt;
       item.createdBy = user.name || user.email;
       item.createdByUserId = user.id;
     }
@@ -3043,6 +3062,19 @@ async function api(req, res) {
       next.updatedBy = user.name || user.email;
       next.updatedByUserId = user.id;
       next.updatedAt = now;
+    }
+    if (collection === 'replyTemplates') {
+      const type = ['text', 'image', 'video'].includes(String(next.type)) ? String(next.type) : '';
+      if (!type) return send(res, 400, { error: '回复素材类型不正确' });
+      next.type = type;
+      next.title = String(next.title || '').trim().slice(0, 80);
+      next.content = String(next.content || '').trim().slice(0, 4000);
+      next.attachment = type === 'text' ? null : next.attachment;
+      if (type === 'text' && !next.content) return send(res, 400, { error: '请填写回复文字' });
+      if (type !== 'text' && !String(next.attachment?.url || '').includes('/customer-media/')) return send(res, 400, { error: '请先上传素材文件' });
+      next.title = next.title || (type === 'text' ? next.content.slice(0, 30) : String(next.attachment?.name || '回复素材'));
+      next.updatedAt = new Date().toISOString();
+      next.updatedBy = user.name || user.email;
     }
     const autoPromoted = collection === 'customerConversations' ? promoteEligibleCustomerConversation(db, next, user) : null;
     const before = db[collection][idx];

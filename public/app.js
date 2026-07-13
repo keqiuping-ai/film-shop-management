@@ -51,6 +51,8 @@ let activeMessageUserId = '';
 let activeProspectWorkspaceId = '';
 let prospectWorkspaceSyncTimer = null;
 let prospectPendingAttachment = null;
+let replyTemplatePendingAttachment = null;
+let replyTemplateLibraryType = 'text';
 let preserveProspectWorkspaceRender = false;
 let prospectReplyRevision = 0;
 const prospectWorkspaceDrafts = new Map();
@@ -103,6 +105,8 @@ const dict = {
     prospectsSub: 'Mat、Yelp等平台邀约客户和预约到店时间',
     customerCenter: '客户交流中心',
     customerCenterSub: '集中查看所有客户聊天，达到到店意向后加入高意向客户',
+    replyLibrary: '云端回复素材库',
+    replyLibrarySub: '统一上传和维护客服常用文字、图片和短视频',
     leads: '客资提成',
     leadsSub: '互联网客资、到店率、成交率和客服提成',
     orders: '零售批发',
@@ -340,6 +344,8 @@ const dict = {
     prospectsSub: 'Mat, Yelp, and other appointment-ready customer leads',
     customerCenter: 'Customer Communication Center',
     customerCenterSub: 'Manage all customer conversations and promote qualified customers to high intent',
+    replyLibrary: 'Cloud Reply Library',
+    replyLibrarySub: 'Manage shared reply text, images, and short videos',
     leads: 'Lead Commissions',
     leadsSub: 'Internet leads, arrival rate, close rate, and staff commissions',
     orders: 'Retail / Wholesale',
@@ -558,6 +564,7 @@ const pages = [
   ['workshopInventory', 'workshopInventory', 'workshopInventorySub'],
   ['inventoryAlerts', 'inventoryAlerts', 'inventoryAlertsSub'],
   ['customerCenter', 'customerCenter', 'customerCenterSub'],
+  ['replyLibrary', 'replyLibrary', 'replyLibrarySub'],
   ['prospects', 'prospects', 'prospectsSub'],
   ['leads', 'leads', 'leadsSub'],
   ['orders', 'orders', 'ordersSub'],
@@ -579,6 +586,7 @@ const pagePermissions = {
   workshopInventory: 'inventoryView',
   inventoryAlerts: 'inventoryView',
   customerCenter: 'prospectsView',
+  replyLibrary: 'prospectsView',
   prospects: 'prospectsView',
   leads: 'leadsView',
   orders: 'ordersView',
@@ -599,6 +607,7 @@ const writePermissions = {
   inventory: 'inventoryEdit',
   workshopInventory: 'inventoryEdit',
   customerCenter: 'prospectsEdit',
+  replyLibrary: 'prospectsEdit',
   prospects: 'prospectsEdit',
   leads: 'leadsEdit',
   orders: 'ordersEdit',
@@ -1526,7 +1535,7 @@ function updateVoiceButton(recording) {
 }
 
 function navIcon(id) {
-  return { modules:'▦', dashboard:'⌂', jobs:'▣', installers:'◉', pricing:'$', inventory:'▤', workshopInventory:'▥', inventoryAlerts:'!', customerCenter:'💬', prospects:'★', leads:'☎', orders:'⇄', shipments:'✈', schedules:'◫', expenses:'◇', reports:'◌', audit:'◷', users:'◎', settings:'⚙' }[id] || '□';
+  return { modules:'▦', dashboard:'⌂', jobs:'▣', installers:'◉', pricing:'$', inventory:'▤', workshopInventory:'▥', inventoryAlerts:'!', customerCenter:'💬', replyLibrary:'☁', prospects:'★', leads:'☎', orders:'⇄', shipments:'✈', schedules:'◫', expenses:'◇', reports:'◌', audit:'◷', users:'◎', settings:'⚙' }[id] || '□';
 }
 
 function moduleGrid(availablePages) {
@@ -2200,6 +2209,9 @@ const views = {
   },
   customerCenter() {
     return panel(t('customerCenter'), hasPerm('prospectsEdit') ? `<button class="btn primary" onclick="openProspect(null,'customerConversations')">${lang === 'zh' ? '新增客户交流' : 'New conversation'}</button>` : '', customerCenterTable() + `<p class="note">${lang === 'zh' ? '这里集中查看所有客户交流。已进入高意向客户表的客户会显示“高意向”标记；普通客户达到到店意向后可加入高意向客户。' : 'All customer conversations appear here. Qualified customers can be promoted to the high-intent list.'}</p>`);
+  },
+  replyLibrary() {
+    return panel(t('replyLibrary'), hasPerm('prospectsEdit') ? `<button class="btn primary" onclick="openReplyTemplateEditor('text')">${lang === 'zh' ? '新增回复素材' : 'New reply'}</button>` : '', replyLibraryPageHtml());
   },
   prospects() {
     return panel(t('prospects'), hasPerm('prospectsEdit') ? `<button class="btn primary" onclick="openProspect()">${t('addNew')}</button>` : '', prospectTable() + `<p class="note">${lang === 'zh' ? '这里记录 Mat、Yelp、Meta、Google 等平台上已经有明确意向、已经邀约或已经预约到店的客户。聊天上下文可以直接粘贴客户沟通内容，方便店长和接待人员提前跟进。' : 'Use this area for customers from Mat, Yelp, Meta, Google, and other channels who show clear intent, are invited, or have appointments. Paste conversation context so managers and reception staff can follow up.'}</p>`);
@@ -3227,6 +3239,10 @@ function renderProspectWorkspace() {
             <button type="button" onclick="document.getElementById('prospectVideoInput').click()">🎬 ${lang === 'zh' ? '视频' : 'Video'}</button>
             <button type="button" onclick="document.getElementById('prospectFileInput').click()">📎 ${lang === 'zh' ? '文件' : 'File'}</button>
             <button type="button" onclick="insertProspectAddress()">📍 ${lang === 'zh' ? '地址' : 'Address'}</button>
+            <span class="prospect-tool-divider"></span>
+            <button class="reply-reference-button" type="button" onclick="openReplyReferenceLibrary('text')">💬 ${lang === 'zh' ? '回复文字' : 'Reply text'}</button>
+            <button class="reply-reference-button" type="button" onclick="openReplyReferenceLibrary('image')">🖼 ${lang === 'zh' ? '回复图片' : 'Reply image'}</button>
+            <button class="reply-reference-button" type="button" onclick="openReplyReferenceLibrary('video')">▶ ${lang === 'zh' ? '回复视频' : 'Reply video'}</button>
             <span id="prospectAttachmentPreview">${prospectPendingAttachment ? `${escapeHtml(prospectPendingAttachment.name)} <button type="button" onclick="clearProspectAttachment()">×</button>` : ''}</span>
             <input class="hidden" id="prospectImageInput" type="file" accept="image/*" onchange="uploadProspectAttachment(this.files[0]); this.value=''">
             <input class="hidden" id="prospectVideoInput" type="file" accept="video/*" onchange="uploadProspectAttachment(this.files[0]); this.value=''">
@@ -3368,6 +3384,171 @@ function insertProspectAddress() {
   const mapUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address.trim())}`;
   input.value = [input.value.trim(), `📍 ${address.trim()}\n${mapUrl}`].filter(Boolean).join('\n');
   input.focus();
+}
+
+function replyTypeLabel(type) {
+  const labels = lang === 'zh'
+    ? { text: '文字回复', image: '图片回复', video: '视频回复' }
+    : { text: 'Text reply', image: 'Image reply', video: 'Video reply' };
+  return labels[type] || labels.text;
+}
+
+function replyTemplateCards(type, selectable = false) {
+  const rows = [...(state.replyTemplates || [])]
+    .filter(item => item.type === type)
+    .sort((a, b) => String(b.updatedAt || b.createdAt || '').localeCompare(String(a.updatedAt || a.createdAt || '')));
+  if (!rows.length) return `<div class="reply-library-empty">${lang === 'zh' ? '这个分类还没有素材，请点击“新增素材”上传。' : 'No items yet. Use “New item” to add one.'}</div>`;
+  return `<div class="reply-library-grid">${rows.map(item => {
+    const action = selectable ? `useReplyTemplate('${escapeHtml(item.id)}')` : `openReplyTemplateEditor('${escapeHtml(type)}','${escapeHtml(item.id)}')`;
+    const preview = type === 'text'
+      ? `<p>${escapeHtml(item.content || '')}</p>`
+      : type === 'image'
+        ? `<img src="${escapeHtml(item.attachment?.url || '')}" alt="${escapeHtml(item.title || '')}">`
+        : `<div class="reply-template-video"><span>▶</span><small>${lang === 'zh' ? '短视频素材' : 'Video reply'}</small></div>`;
+    return `<article class="reply-library-card" onclick="${action}">
+      <div class="reply-library-card-preview">${preview}</div>
+      <div class="reply-library-card-info"><strong>${escapeHtml(item.title || replyTypeLabel(type))}</strong><small>${escapeHtml(item.createdBy || '')}</small></div>
+      <div class="reply-library-card-actions">
+        <button class="btn primary" type="button" onclick="event.stopPropagation();${action}">${selectable ? (lang === 'zh' ? '选用' : 'Use') : (lang === 'zh' ? '编辑' : 'Edit')}</button>
+        ${hasPerm('prospectsEdit') ? `<button class="btn danger" type="button" onclick="event.stopPropagation();deleteReplyTemplate('${escapeHtml(item.id)}','${escapeHtml(type)}',${selectable})">${lang === 'zh' ? '删除' : 'Delete'}</button>` : ''}
+      </div>
+    </article>`;
+  }).join('')}</div>`;
+}
+
+function replyLibraryTabs(activeType, handler) {
+  return `<div class="reply-library-tabs">
+    ${['text', 'image', 'video'].map(type => `<button class="btn ${activeType === type ? 'primary' : ''}" type="button" onclick="${handler}('${type}')">${type === 'text' ? '💬' : type === 'image' ? '🖼' : '▶'} ${replyTypeLabel(type)}</button>`).join('')}
+  </div>`;
+}
+
+function replyLibraryPageHtml(type = replyTemplateLibraryType) {
+  replyTemplateLibraryType = ['text', 'image', 'video'].includes(type) ? type : 'text';
+  return `<div class="reply-library-page">
+    ${replyLibraryTabs(replyTemplateLibraryType, 'showReplyLibraryPageType')}
+    <div class="reply-library-help">${lang === 'zh' ? '素材保存在 Railway 云端，店内所有已授权电脑会同步看到。点击素材可编辑。' : 'Items are stored in Railway and shared across authorized devices.'}</div>
+    ${replyTemplateCards(replyTemplateLibraryType, false)}
+  </div>`;
+}
+
+function showReplyLibraryPageType(type) {
+  replyTemplateLibraryType = type;
+  render();
+}
+
+function openReplyReferenceLibrary(type = 'text') {
+  replyTemplateLibraryType = ['text', 'image', 'video'].includes(type) ? type : 'text';
+  openModal(lang === 'zh' ? '选择云端回复素材' : 'Choose cloud reply', `
+    <div class="reply-library-picker">
+      ${replyLibraryTabs(replyTemplateLibraryType, 'openReplyReferenceLibrary')}
+      <p class="reply-library-help">${lang === 'zh' ? '点击“选用”后只会放入下面的待发送区，确认无误后再点发送短信。' : 'Choosing an item stages it in the composer. It will not send automatically.'}</p>
+      ${replyTemplateCards(replyTemplateLibraryType, true)}
+    </div>`, closeModal);
+  document.getElementById('modal').classList.add('reply-library-open');
+  const save = document.getElementById('modalSave');
+  if (save) save.textContent = lang === 'zh' ? '关闭' : 'Close';
+  const action = document.getElementById('modalHeaderAction');
+  if (action && hasPerm('prospectsEdit')) {
+    action.hidden = false;
+    action.textContent = lang === 'zh' ? '＋ 新增素材' : '+ New item';
+    action.onclick = () => openReplyTemplateEditor(replyTemplateLibraryType, '', true);
+  }
+}
+
+function useReplyTemplate(id) {
+  const item = (state.replyTemplates || []).find(row => row.id === id);
+  if (!item) return;
+  const draft = String(document.getElementById('prospectReplyInput')?.value || '');
+  if (item.type === 'text') {
+    closeModal();
+    const input = document.getElementById('prospectReplyInput');
+    if (input) {
+      input.value = [draft.trim(), item.content].filter(Boolean).join(draft.trim() ? '\n' : '');
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      input.focus();
+    }
+    return;
+  }
+  prospectPendingAttachment = item.attachment ? { ...item.attachment } : null;
+  closeModal();
+  renderProspectWorkspace();
+  const input = document.getElementById('prospectReplyInput');
+  if (input) {
+    input.value = draft;
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    input.focus();
+  }
+}
+
+function replyTemplatePreviewHtml(type, attachment) {
+  if (!attachment?.url) return `<span>${lang === 'zh' ? '尚未上传文件' : 'No file uploaded'}</span>`;
+  if (type === 'image') return `<img src="${escapeHtml(attachment.url)}" alt="${escapeHtml(attachment.name || '')}">`;
+  return `<div class="reply-template-video"><span>▶</span><strong>${escapeHtml(attachment.name || (lang === 'zh' ? '短视频' : 'Video'))}</strong></div>`;
+}
+
+function openReplyTemplateEditor(type = 'text', id = '', returnToPicker = false) {
+  type = ['text', 'image', 'video'].includes(type) ? type : 'text';
+  const item = (state.replyTemplates || []).find(row => row.id === id);
+  replyTemplatePendingAttachment = item?.attachment ? { ...item.attachment } : null;
+  openModal(item ? (lang === 'zh' ? '编辑云端回复素材' : 'Edit cloud reply') : (lang === 'zh' ? '新增云端回复素材' : 'New cloud reply'), `
+    <div class="reply-template-editor" data-return-picker="${returnToPicker ? '1' : '0'}">
+      <label><span>${lang === 'zh' ? '素材类型' : 'Type'}</span><select id="replyTemplateType" ${item ? 'disabled' : ''} onchange="openReplyTemplateEditor(this.value,'',${returnToPicker})">
+        ${['text','image','video'].map(value => `<option value="${value}" ${value === type ? 'selected' : ''}>${replyTypeLabel(value)}</option>`).join('')}
+      </select></label>
+      <label><span>${lang === 'zh' ? '标题（方便查找）' : 'Title'}</span><input id="replyTemplateTitle" value="${escapeHtml(item?.title || '')}" placeholder="${lang === 'zh' ? '例如：询问车型、到店地址、窗膜效果图' : 'Example: Ask vehicle, shop address'}"></label>
+      ${type === 'text' ? `<label class="reply-template-content"><span>${lang === 'zh' ? '回复文字' : 'Reply text'}</span><textarea id="replyTemplateContent" placeholder="${lang === 'zh' ? '输入以后可以一键选用的完整回复内容…' : 'Enter reusable reply text…'}">${escapeHtml(item?.content || '')}</textarea></label>` : `
+        <label class="reply-template-content"><span>${lang === 'zh' ? '附带说明文字（可不填）' : 'Optional caption'}</span><textarea id="replyTemplateContent" placeholder="${lang === 'zh' ? '可选：选择素材时同时带入的说明' : 'Optional caption'}">${escapeHtml(item?.content || '')}</textarea></label>
+        <div class="reply-template-upload">
+          <button class="btn primary" type="button" onclick="document.getElementById('replyTemplateFile').click()">${type === 'image' ? '🖼 ' + (lang === 'zh' ? '上传图片' : 'Upload image') : '▶ ' + (lang === 'zh' ? '上传短视频' : 'Upload video')}</button>
+          <input class="hidden" id="replyTemplateFile" type="file" accept="${type === 'image' ? 'image/*' : 'video/*'}" onchange="uploadReplyTemplateMedia(this.files[0]);this.value=''">
+          <div id="replyTemplateUploadStatus" class="reply-template-preview">${replyTemplatePreviewHtml(type, replyTemplatePendingAttachment)}</div>
+        </div>`}
+    </div>`, () => saveReplyTemplate(id, type, returnToPicker));
+  document.getElementById('modal').classList.add('reply-library-open');
+}
+
+async function uploadReplyTemplateMedia(file) {
+  if (!file) return;
+  file = await optimizeProspectImage(file);
+  if (file.size > 5 * 1024 * 1024) return alert(lang === 'zh' ? '素材不能超过 5MB。' : 'File must be 5MB or smaller.');
+  const status = document.getElementById('replyTemplateUploadStatus');
+  if (status) status.textContent = lang === 'zh' ? '正在上传并处理…' : 'Uploading…';
+  try {
+    const uploaded = await api('/api/customer-media/upload', { method: 'POST', body: JSON.stringify({ name: file.name, type: file.type || 'application/octet-stream', dataUrl: await fileAsDataUrl(file) }) });
+    replyTemplatePendingAttachment = { name: uploaded.name, type: uploaded.type, size: uploaded.size, url: uploaded.url, kind: uploaded.type?.startsWith('image/') ? 'image' : 'video' };
+    if (status) status.innerHTML = replyTemplatePreviewHtml(replyTemplatePendingAttachment.kind, replyTemplatePendingAttachment);
+  } catch (err) {
+    replyTemplatePendingAttachment = null;
+    if (status) status.textContent = lang === 'zh' ? '上传失败' : 'Upload failed';
+    alert(err.message);
+  }
+}
+
+async function saveReplyTemplate(id, type, returnToPicker = false) {
+  const title = String(document.getElementById('replyTemplateTitle')?.value || '').trim();
+  const content = String(document.getElementById('replyTemplateContent')?.value || '').trim();
+  if (type === 'text' && !content) return alert(lang === 'zh' ? '请填写回复文字。' : 'Enter reply text.');
+  if (type !== 'text' && !replyTemplatePendingAttachment?.url) return alert(lang === 'zh' ? '请先上传素材文件。' : 'Upload a file first.');
+  try {
+    state = await api(`/api/replyTemplates${id ? `/${encodeURIComponent(id)}` : ''}`, {
+      method: id ? 'PUT' : 'POST',
+      body: JSON.stringify({ type, title, content, attachment: type === 'text' ? null : replyTemplatePendingAttachment })
+    });
+    broadcastDataChange();
+    replyTemplatePendingAttachment = null;
+    if (returnToPicker) openReplyReferenceLibrary(type);
+    else { closeModal(); replyTemplateLibraryType = type; render(); }
+  } catch (err) { alert(err.message); }
+}
+
+async function deleteReplyTemplate(id, type, returnToPicker = false) {
+  if (!confirm(lang === 'zh' ? '确定删除这个云端回复素材吗？' : 'Delete this cloud reply item?')) return;
+  try {
+    state = await api(`/api/replyTemplates/${encodeURIComponent(id)}`, { method: 'DELETE' });
+    broadcastDataChange();
+    if (returnToPicker) openReplyReferenceLibrary(type);
+    else { closeModal(); replyTemplateLibraryType = type; render(); }
+  } catch (err) { alert(err.message); }
 }
 
 async function saveProspectWorkspaceDetails() {
@@ -4361,7 +4542,9 @@ function roleDefaultPermissions(role) {
 
 function openModal(title, html, onSave) {
   document.getElementById('modal').classList.remove('message-modal-open');
-  document.body.classList.remove('modal-lock');
+  document.body.classList.add('modal-lock');
+  const workspace = document.getElementById('prospectWorkspace');
+  if (workspace) workspace.style.pointerEvents = 'none';
   document.getElementById('modalTitle').textContent = title;
   const headerAction = document.getElementById('modalHeaderAction');
   if (headerAction) {
@@ -4379,7 +4562,10 @@ function openModal(title, html, onSave) {
 function closeModal() {
   if (messageRecorder && messageRecorder.state === 'recording') messageRecorder.stop();
   document.getElementById('modal').classList.remove('open', 'message-modal-open');
+  document.getElementById('modal').classList.remove('reply-library-open');
   document.body.classList.remove('modal-lock');
+  const workspace = document.getElementById('prospectWorkspace');
+  if (workspace) workspace.style.pointerEvents = '';
 }
 function readForm(ids) {
   return Object.fromEntries(ids.map(id => {
