@@ -52,6 +52,7 @@ let activeProspectWorkspaceId = '';
 let prospectWorkspaceSyncTimer = null;
 let prospectPendingAttachment = null;
 let preserveProspectWorkspaceRender = false;
+let prospectReplyRevision = 0;
 const prospectWorkspaceDrafts = new Map();
 let messageRecorder = null;
 let messageAudioChunks = [];
@@ -727,6 +728,7 @@ async function sync(options = {}) {
   const replyInput = document.getElementById('prospectReplyInput');
   const replyDraft = replyInput?.value || '';
   const replyHadFocus = document.activeElement === replyInput;
+  const replyRevisionBefore = prospectReplyRevision;
   const sidebarWasActive = Boolean(document.activeElement?.closest?.('.prospect-workspace-sidebar'));
   captureProspectWorkspaceDraft();
   const workspaceBefore = activeProspectWorkspaceId ? JSON.stringify(activeCustomerWorkspaceItem().item || {}) : '';
@@ -745,8 +747,8 @@ async function sync(options = {}) {
     renderAuth();
     render();
     const refreshedReplyInput = document.getElementById('prospectReplyInput');
-    if (refreshedReplyInput && replyDraft) refreshedReplyInput.value = replyDraft;
-    if (refreshedReplyInput && replyHadFocus) refreshedReplyInput.focus();
+    if (refreshedReplyInput && replyDraft && replyRevisionBefore === prospectReplyRevision) refreshedReplyInput.value = replyDraft;
+    if (refreshedReplyInput && replyHadFocus && replyRevisionBefore === prospectReplyRevision) refreshedReplyInput.focus();
     startAutoSync();
     startRealtimeSync();
     updateSyncStatus();
@@ -3418,9 +3420,12 @@ async function sendProspectSms() {
       method: 'POST',
       body: JSON.stringify({ collection, id: item.id, text, attachment: prospectPendingAttachment })
     });
+    prospectReplyRevision += 1;
+    if (input) input.value = '';
     prospectPendingAttachment = null;
     state = result.data;
     broadcastDataChange();
+    preserveProspectWorkspaceRender = false;
     render();
   } catch (err) {
     alert(err.message);
