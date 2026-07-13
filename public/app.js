@@ -2976,13 +2976,17 @@ function prospectAddedTime(item) {
   return item.createdAt || item.importedAt || item.date || '';
 }
 
+function prospectCompactTime(value) {
+  return formatAppDateTime(value).replace(/^\d{4}-/, '');
+}
+
 function prospectTimeCell(item) {
-  const added = formatAppDateTime(prospectAddedTime(item));
+  const added = prospectCompactTime(prospectAddedTime(item));
   const updatedSource = item.updatedAt || item.importedAt || '';
-  const updated = updatedSource && updatedSource !== prospectAddedTime(item) ? formatAppDateTime(updatedSource) : '';
+  const updated = updatedSource && updatedSource !== prospectAddedTime(item) ? prospectCompactTime(updatedSource) : '';
   if (!added && !updated) return '';
-  if (!updated || updated === added) return escapeHtml(added);
-  return `${escapeHtml(added)}<br><span class="note">${lang === 'zh' ? '更新 ' : 'Updated '}${escapeHtml(updated)}</span>`;
+  if (!updated || updated === added) return `<span class="prospect-time-line">${escapeHtml(added)}</span>`;
+  return `<span class="prospect-time-line">${lang === 'zh' ? '加入' : 'Added'} ${escapeHtml(added)}</span><span class="note prospect-time-line">${lang === 'zh' ? '更新' : 'Updated'} ${escapeHtml(updated)}</span>`;
 }
 
 function prospectTable() {

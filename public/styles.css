@@ -700,6 +700,10 @@ tr:hover td { background: #fbfcfd; }
 .prospect-time {
   white-space: nowrap;
 }
+.prospect-time-line {
+  display: block;
+  white-space: nowrap;
+}
 .prospect-table th:last-child,
 .prospect-table td:last-child {
   position: sticky;
