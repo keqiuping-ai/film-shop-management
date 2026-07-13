@@ -649,6 +649,82 @@ tr:hover td { background: #fbfcfd; }
   cursor: pointer;
 }
 
+/* High-intent customer list: keep many records visible without hiding actions. */
+.prospect-table-wrap {
+  overflow-x: auto;
+}
+.prospect-table {
+  min-width: 1120px;
+  table-layout: fixed;
+  font-size: 12px;
+}
+.prospect-table th,
+.prospect-table td {
+  padding: 6px 6px;
+  line-height: 1.3;
+  vertical-align: middle;
+}
+.prospect-table th:nth-child(1) { width: 72px; }
+.prospect-table th:nth-child(2) { width: 88px; }
+.prospect-table th:nth-child(3) { width: 82px; }
+.prospect-table th:nth-child(4) { width: 112px; }
+.prospect-table th:nth-child(5) { width: 150px; }
+.prospect-table th:nth-child(6) { width: 92px; }
+.prospect-table th:nth-child(7) { width: 82px; }
+.prospect-table th:nth-child(8) { width: 62px; }
+.prospect-table th:nth-child(9) { width: 74px; }
+.prospect-table th:nth-child(10) { width: 174px; }
+.prospect-table th:nth-child(11) { width: 174px; }
+.prospect-table th:nth-child(12) { width: 42px; }
+.prospect-table .note {
+  font-size: 11px;
+  line-height: 1.3;
+}
+.prospect-table .pill {
+  min-height: 20px;
+  padding: 0 7px;
+  font-size: 11px;
+}
+.prospect-clamp {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.prospect-clamp-2 {
+  display: -webkit-box;
+  white-space: normal;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+.prospect-nowrap,
+.prospect-time {
+  white-space: nowrap;
+}
+.prospect-table th:last-child,
+.prospect-table td:last-child {
+  position: sticky;
+  right: 0;
+  z-index: 2;
+  padding: 4px;
+  background: #fff;
+  box-shadow: -5px 0 8px rgba(15, 23, 42, .04);
+}
+.prospect-table th:last-child {
+  z-index: 3;
+  background: #fbfcfd;
+}
+.prospect-table td:last-child .mini-actions {
+  gap: 3px;
+  justify-content: center;
+}
+.prospect-table td:last-child .icon-btn {
+  width: 25px;
+  height: 25px;
+  padding: 0;
+  border-radius: 5px;
+  font-size: 13px;
+}
+
 .modal {
   position: fixed;
   inset: 0;
