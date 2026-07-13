@@ -52,6 +52,7 @@ let activeProspectWorkspaceId = '';
 let prospectWorkspaceSyncTimer = null;
 let prospectPendingAttachment = null;
 let preserveProspectWorkspaceRender = false;
+const prospectWorkspaceDrafts = new Map();
 let messageRecorder = null;
 let messageAudioChunks = [];
 let knownUnreadMessageIds = null;
@@ -726,6 +727,8 @@ async function sync(options = {}) {
   const replyInput = document.getElementById('prospectReplyInput');
   const replyDraft = replyInput?.value || '';
   const replyHadFocus = document.activeElement === replyInput;
+  const sidebarWasActive = Boolean(document.activeElement?.closest?.('.prospect-workspace-sidebar'));
+  captureProspectWorkspaceDraft();
   const workspaceBefore = activeProspectWorkspaceId ? JSON.stringify(activeCustomerWorkspaceItem().item || {}) : '';
   try {
     syncInFlight = true;
@@ -735,7 +738,7 @@ async function sync(options = {}) {
     user = body.user;
     state = body.data;
     const workspaceAfter = activeProspectWorkspaceId ? JSON.stringify(activeCustomerWorkspaceItem().item || {}) : '';
-    preserveProspectWorkspaceRender = Boolean(activeProspectWorkspaceId && workspaceBefore === workspaceAfter);
+    preserveProspectWorkspaceRender = Boolean(activeProspectWorkspaceId && (workspaceBefore === workspaceAfter || sidebarWasActive));
     notifyNewUnreadMessages(previousUnreadIds);
     localStorage.setItem('filmShopCloud.lastEmail', user.email || '');
     lastSyncAt = new Date();
@@ -3083,7 +3086,33 @@ function openProspectWorkspace(collection, id) {
   startProspectWorkspaceSync();
 }
 
+const prospectWorkspaceFieldIds = [
+  'workspaceDate', 'workspaceSource', 'workspaceCustomer', 'workspacePhone', 'workspaceVehicle',
+  'workspaceNeed', 'workspaceService', 'workspaceAppointmentDate', 'workspaceAppointmentTime',
+  'workspaceOwnerId', 'workspaceIntentLevel', 'workspaceStatus'
+];
+
+function captureProspectWorkspaceDraft(markDirty = false) {
+  if (!activeProspectWorkspaceId) return;
+  const fields = prospectWorkspaceFieldIds.map(id => document.getElementById(id));
+  if (!fields.some(Boolean)) return;
+  const existing = prospectWorkspaceDrafts.get(activeProspectWorkspaceId) || { values: {}, dirty: false };
+  fields.forEach(field => { if (field) existing.values[field.id] = field.value; });
+  if (markDirty) existing.dirty = true;
+  prospectWorkspaceDrafts.set(activeProspectWorkspaceId, existing);
+}
+
+function restoreProspectWorkspaceDraft() {
+  const draft = prospectWorkspaceDrafts.get(activeProspectWorkspaceId);
+  if (!draft?.dirty) return;
+  prospectWorkspaceFieldIds.forEach(id => {
+    const field = document.getElementById(id);
+    if (field && Object.hasOwn(draft.values, id)) field.value = draft.values[id];
+  });
+}
+
 function closeProspectWorkspace() {
+  prospectWorkspaceDrafts.delete(activeProspectWorkspaceId);
   activeProspectWorkspaceId = '';
   stopProspectWorkspaceSync();
   document.body.classList.remove('prospect-workspace-open');
@@ -3189,6 +3218,12 @@ function renderProspectWorkspace() {
     </div>`;
   workspace.dataset.conversationKey = conversationKey;
   workspace.classList.add('open');
+  restoreProspectWorkspaceDraft();
+  workspace.querySelectorAll('.prospect-workspace-sidebar input, .prospect-workspace-sidebar textarea, .prospect-workspace-sidebar select')
+    .forEach(control => {
+      control.addEventListener('input', () => captureProspectWorkspaceDraft(true));
+      control.addEventListener('change', () => captureProspectWorkspaceDraft(true));
+    });
   const conversation = workspace.querySelector('.prospect-workspace-conversation');
   const chat = workspace.querySelector('.prospect-workspace-chat');
   if (conversation && chat) {
@@ -3319,6 +3354,7 @@ async function saveProspectWorkspaceDetails() {
   if (button) { button.disabled = true; button.textContent = lang === 'zh' ? '保存中…' : 'Saving…'; }
   try {
     state = await api(`/api/${collection}/${item.id}`, { method: 'PUT', body: JSON.stringify(updated) });
+    prospectWorkspaceDrafts.delete(activeProspectWorkspaceId);
     broadcastDataChange();
     render();
   } catch (err) {
