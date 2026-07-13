@@ -1614,14 +1614,33 @@ async function reconcileRecentTwilioInboundMessages() {
     if (message.direction !== 'inbound' || normalizedPhone(message.to) !== normalizedPhone(config.fromNumber)) continue;
     const match = findConversationByPhone(db, message.from);
     if (!match) continue;
-    const duplicate = (match.item.conversationMessages || []).some(row => row.providerSid === message.sid);
-    if (duplicate) continue;
+    const existingMessage = (match.item.conversationMessages || []).find(row => row.providerSid === message.sid);
+    if (existingMessage) {
+      if (Number(message.num_media || 0) > 0 && !existingMessage.attachment?.url) {
+        const recoveredAttachment = await reconcileTwilioMessageAttachment(message.sid).catch(err => {
+          console.warn(err.message);
+          return null;
+        });
+        if (recoveredAttachment) {
+          existingMessage.attachment = recoveredAttachment;
+          existingMessage.text = existingMessage.text || '客户发来的附件';
+          match.item.updatedAt = new Date().toISOString();
+          added += 1;
+        }
+      }
+      continue;
+    }
     const rawTimestamp = message.date_sent || message.date_created || new Date().toISOString();
     const parsedTimestamp = new Date(rawTimestamp);
+    const attachment = Number(message.num_media || 0) > 0 ? await reconcileTwilioMessageAttachment(message.sid).catch(err => {
+      console.warn(err.message);
+      return null;
+    }) : null;
     appendSmsMessage(match.item, {
       id: `twilio-${message.sid}`,
       speaker: 'customer', speakerName: match.item.customer || message.from,
       direction: 'inbound', channel: 'sms', text: String(message.body || '').slice(0, 4000),
+      attachment,
       timestamp: Number.isNaN(parsedTimestamp.getTime()) ? String(rawTimestamp) : parsedTimestamp.toISOString(),
       provider: 'twilio', providerSid: String(message.sid || ''), status: String(message.status || 'received')
     });
@@ -1689,6 +1708,41 @@ function serveCustomerMedia(req, res) {
     });
     res.end(data);
   });
+}
+
+async function saveTwilioInboundMedia(mediaUrl, contentType, publicBaseUrl) {
+  if (!mediaUrl || !publicBaseUrl) return null;
+  const config = twilioConfig();
+  const response = await fetch(mediaUrl, {
+    headers: { Authorization: `Basic ${Buffer.from(`${config.accountSid}:${config.authToken}`).toString('base64')}` }
+  });
+  if (!response.ok) throw new Error(`Twilio 入站附件下载失败 (${response.status})`);
+  const data = Buffer.from(await response.arrayBuffer());
+  if (!data.length || data.length > 5 * 1024 * 1024) throw new Error('Twilio 入站附件为空或超过 5MB');
+  const type = String(contentType || response.headers.get('content-type') || 'application/octet-stream').split(';')[0].trim();
+  fs.mkdirSync(CUSTOMER_MEDIA_DIR, { recursive: true });
+  const fileName = `${crypto.randomBytes(6).toString('hex')}${safeCustomerMediaExtension('', type)}`;
+  fs.writeFileSync(path.join(CUSTOMER_MEDIA_DIR, fileName), data);
+  return {
+    name: `客户发来的${type.startsWith('video/') ? '视频' : type.startsWith('image/') ? '图片' : '附件'}`,
+    type,
+    size: data.length,
+    url: `${publicBaseUrl}/customer-media/${fileName}`,
+    kind: type.startsWith('video/') ? 'video' : type.startsWith('image/') ? 'image' : 'file'
+  };
+}
+
+async function reconcileTwilioMessageAttachment(messageSid) {
+  const config = twilioConfig();
+  if (!messageSid || !config.webhookBaseUrl) return null;
+  const auth = `Basic ${Buffer.from(`${config.accountSid}:${config.authToken}`).toString('base64')}`;
+  const listResponse = await fetch(`${config.apiBaseUrl}/2010-04-01/Accounts/${encodeURIComponent(config.accountSid)}/Messages/${encodeURIComponent(messageSid)}/Media.json`, { headers: { Authorization: auth } });
+  if (!listResponse.ok) return null;
+  const payload = await listResponse.json();
+  const media = (payload.media_list || [])[0];
+  if (!media?.sid) return null;
+  const mediaUrl = `${config.apiBaseUrl}/2010-04-01/Accounts/${encodeURIComponent(config.accountSid)}/Messages/${encodeURIComponent(messageSid)}/Media/${encodeURIComponent(media.sid)}`;
+  return saveTwilioInboundMedia(mediaUrl, media.content_type, config.webhookBaseUrl);
 }
 
 function currentUser(req, db) {
@@ -2086,8 +2140,9 @@ async function api(req, res) {
     if (!validateTwilioSignature(req, params)) return send(res, 403, { error: 'Twilio signature verification failed' });
     const from = String(params.From || '').trim();
     const body = String(params.Body || '').trim();
+    const mediaCount = Number(params.NumMedia || 0);
     const messageSid = String(params.MessageSid || params.SmsMessageSid || '').trim();
-    if (from && body) {
+    if (from && (body || mediaCount > 0)) {
       let match = findConversationByPhone(db, from);
       if (!match) {
         const now = new Date().toISOString();
@@ -2109,6 +2164,14 @@ async function api(req, res) {
         db.customerConversations.unshift(item);
         match = { collection: 'customerConversations', item };
       }
+      const attachment = mediaCount > 0 ? await saveTwilioInboundMedia(
+        String(params.MediaUrl0 || ''),
+        String(params.MediaContentType0 || ''),
+        requestPublicBaseUrl(req)
+      ).catch(err => {
+        console.warn(err.message);
+        return null;
+      }) : null;
       const duplicate = (match.item.conversationMessages || []).some(message => message.providerSid === messageSid && messageSid);
       if (!duplicate) appendSmsMessage(match.item, {
         id: `twilio-${messageSid || id()}`,
@@ -2116,7 +2179,8 @@ async function api(req, res) {
         speakerName: match.item.customer || from,
         direction: 'inbound',
         channel: 'sms',
-        text: body.slice(0, 4000),
+        text: (body || (mediaCount > 0 && !attachment ? '收到附件，但附件下载失败' : '')).slice(0, 4000),
+        attachment,
         timestamp: String(params.DateSent || new Date().toISOString()),
         provider: 'twilio',
         providerSid: messageSid,
@@ -2126,7 +2190,7 @@ async function api(req, res) {
         collection: match.collection,
         recordId: match.item.id,
         recordLabel: match.item.customer || from,
-        detail: `收到 ${from} 的短信`
+        detail: `收到 ${from} 的${attachment ? '图片/附件' : '短信'}`
       });
       writeDb(db);
       notifyDataChanged('receive-customer-sms', match.item.id);
@@ -2456,6 +2520,33 @@ async function api(req, res) {
     return send(res, 200, { ok: true, name, type: contentType, size: data.length, url: mediaUrl });
   }
 
+  if (req.method === 'DELETE' && url.pathname.startsWith('/api/customer-messages/')) {
+    if (!canAccess(user, 'prospectsEdit')) return send(res, 403, { error: '没有删除客户消息的权限' });
+    const parts = url.pathname.split('/').slice(3).map(decodeURIComponent);
+    const [collection, recordId, messageId] = parts;
+    if (!['customerConversations', 'prospects'].includes(collection)) return send(res, 400, { error: '客户类型不正确' });
+    const item = (db[collection] || []).find(row => row.id === recordId);
+    if (!item) return send(res, 404, { error: '找不到客户记录' });
+    const message = (item.conversationMessages || []).find(row => String(row.id) === String(messageId));
+    if (!message) return send(res, 404, { error: '找不到这条消息' });
+    item.conversationMessages = (item.conversationMessages || []).filter(row => String(row.id) !== String(messageId));
+    item.updatedAt = new Date().toISOString();
+    const attachmentUrl = String(message.attachment?.url || '');
+    if (attachmentUrl.includes('/customer-media/')) {
+      const fileName = path.basename(new URL(attachmentUrl).pathname);
+      const stillUsed = [...(db.customerConversations || []), ...(db.prospects || [])].some(record =>
+        (record.conversationMessages || []).some(row => String(row.attachment?.url || '').endsWith(`/customer-media/${fileName}`))
+      );
+      if (!stillUsed && /^[a-f0-9]{12,32}\.[a-z0-9]{1,8}$/i.test(fileName)) {
+        try { fs.unlinkSync(path.join(CUSTOMER_MEDIA_DIR, fileName)); } catch {}
+      }
+    }
+    audit(db, user, 'delete-customer-message', { collection, recordId: item.id, recordLabel: item.customer || item.phone, detail: `删除客户消息 ${messageId}` });
+    writeDb(db);
+    notifyDataChanged('delete-customer-message', item.id);
+    return send(res, 200, sanitizeDbForUser(db, user));
+  }
+
   if (req.method === 'POST' && url.pathname === '/api/twilio/send') {
     if (!canAccess(user, 'prospectsEdit')) return send(res, 403, { error: '没有发送客户短信的权限' });
     const body = await readBody(req);
@@ -2473,8 +2564,12 @@ async function api(req, res) {
       return send(res, 400, { error: '附件链接不正确，请重新选择文件' });
     }
     const attachmentType = String(attachment?.type || '');
-    const canSendAsMms = /^(image|video)\//i.test(attachmentType);
-    if (attachment?.url && !canSendAsMms) text = [text, `文件：${attachment.name || '查看附件'} ${attachment.url}`].filter(Boolean).join('\n');
+    const canSendAsMms = false;
+    const attachmentKind = attachmentType.startsWith('video/') ? 'video' : attachmentType.startsWith('image/') ? 'image' : 'file';
+    if (attachment?.url && !canSendAsMms) {
+      const label = attachmentKind === 'video' ? '视频' : attachmentKind === 'image' ? '图片' : '文件';
+      text = [text, `${label}：${attachment.name || '查看附件'} ${attachment.url}`].filter(Boolean).join('\n');
+    }
     if (text.length > 1600) return send(res, 400, { error: '短信内容不能超过 1600 个字符' });
     const to = `+1${phoneDigits}`;
     const sent = await sendTwilioSms({
@@ -2495,7 +2590,7 @@ async function api(req, res) {
         name: String(attachment.name || '附件').slice(0, 160),
         type: attachmentType.slice(0, 120),
         url: String(attachment.url),
-        kind: canSendAsMms ? (attachmentType.startsWith('video/') ? 'video' : 'image') : 'file'
+        kind: attachmentKind
       } : null,
       timestamp: now,
       provider: 'twilio',

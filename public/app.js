@@ -51,6 +51,7 @@ let activeMessageUserId = '';
 let activeProspectWorkspaceId = '';
 let prospectWorkspaceSyncTimer = null;
 let prospectPendingAttachment = null;
+let preserveProspectWorkspaceRender = false;
 let messageRecorder = null;
 let messageAudioChunks = [];
 let knownUnreadMessageIds = null;
@@ -725,6 +726,7 @@ async function sync(options = {}) {
   const replyInput = document.getElementById('prospectReplyInput');
   const replyDraft = replyInput?.value || '';
   const replyHadFocus = document.activeElement === replyInput;
+  const workspaceBefore = activeProspectWorkspaceId ? JSON.stringify(activeCustomerWorkspaceItem().item || {}) : '';
   try {
     syncInFlight = true;
     updateSyncStatus(lang === 'zh' ? '同步中...' : 'Syncing...');
@@ -732,6 +734,8 @@ async function sync(options = {}) {
     const previousUnreadIds = knownUnreadMessageIds;
     user = body.user;
     state = body.data;
+    const workspaceAfter = activeProspectWorkspaceId ? JSON.stringify(activeCustomerWorkspaceItem().item || {}) : '';
+    preserveProspectWorkspaceRender = Boolean(activeProspectWorkspaceId && workspaceBefore === workspaceAfter);
     notifyNewUnreadMessages(previousUnreadIds);
     localStorage.setItem('filmShopCloud.lastEmail', user.email || '');
     lastSyncAt = new Date();
@@ -1195,7 +1199,8 @@ function render() {
   applyStaticTranslations();
   updateMessageBadge();
   enhanceExpandablePanels();
-  if (activeProspectWorkspaceId) renderProspectWorkspace();
+  if (activeProspectWorkspaceId && !preserveProspectWorkspaceRender) renderProspectWorkspace();
+  preserveProspectWorkspaceRender = false;
 }
 
 function messageUsers() {
@@ -2889,13 +2894,13 @@ function prospectSpeakerRole(value, fallbackName = '') {
   return 'customer';
 }
 
-function pushConversationSegment(segments, role, title, text, meta = '', attachment = null) {
+function pushConversationSegment(segments, role, title, text, meta = '', attachment = null, messageId = '', status = '') {
   const value = cleanConversationText(text).replace(/^[:|-]+/, '').trim();
   if (!value && !attachment?.url) return;
   const normalizedRole = prospectSpeakerRole(role, title || meta);
   const key = `${normalizedRole}|${cleanConversationText(meta)}|${value}`.toLowerCase();
   if (segments.some(item => item.key === key)) return;
-  segments.push({ key, role: normalizedRole, title, text: value, meta, attachment });
+  segments.push({ key, role: normalizedRole, title, text: value, meta, attachment, messageId, status });
 }
 
 function structuredProspectMessages(item) {
@@ -2916,6 +2921,8 @@ function structuredProspectMessages(item) {
       title,
       text: cleanConversationText(message.text || message.message || message.content || ''),
       attachment: message.attachment || null,
+      messageId: String(message.id || ''),
+      status: String(message.status || ''),
       meta: [formatAppDateTime(message.timestamp || message.time || message.createdAt || '') || cleanConversationText(message.timestamp || ''), message.channel === 'sms' && message.status ? `SMS · ${message.status}` : ''].filter(Boolean).join(' · '),
       order: Number.isFinite(Number(message.order)) ? Number(message.order) : index
     };
@@ -2932,7 +2939,7 @@ function prospectConversationSegments(input) {
       const segments = [];
       structured
         .sort((a, b) => a.order - b.order)
-        .forEach(message => pushConversationSegment(segments, message.role, message.title, message.text, message.meta, message.attachment));
+        .forEach(message => pushConversationSegment(segments, message.role, message.title, message.text, message.meta, message.attachment, message.messageId, message.status));
       return segments;
     }
   }
@@ -3145,7 +3152,8 @@ function renderProspectWorkspace() {
       </aside>
       <section class="prospect-workspace-conversation">
         <main class="prospect-workspace-chat">
-          ${segments.length ? segments.map(segment => `<article class="prospect-chat-message ${segment.role}">
+          ${segments.length ? segments.map(segment => `<article class="prospect-chat-message ${segment.role} ${segment.messageId && segment.role === 'shop' ? 'has-delete' : ''}">
+            ${segment.messageId && segment.role === 'shop' ? `<button class="prospect-message-delete" type="button" onclick="deleteProspectMessage('${escapeHtml(segment.messageId)}')" title="${lang === 'zh' ? '删除这条记录' : 'Delete this message'}">×</button>` : ''}
             <div class="prospect-chat-role">${escapeHtml(segment.title)}</div>
             ${segment.text ? `<div class="prospect-chat-text">${escapeHtml(segment.text)}</div>` : ''}
             ${prospectAttachmentHtml(segment.attachment)}
@@ -3186,9 +3194,22 @@ function prospectAttachmentHtml(attachment) {
     return `<a href="${url}" target="_blank" rel="noopener"><img class="prospect-chat-media" src="${url}" alt="${name}"></a>`;
   }
   if (attachment.kind === 'video' || String(attachment.type || '').startsWith('video/')) {
-    return `<video class="prospect-chat-media" src="${url}" controls preload="metadata"></video>`;
+    return `<video class="prospect-chat-media" src="${url}" controls preload="none"></video>`;
   }
   return `<a class="prospect-chat-file" href="${url}" target="_blank" rel="noopener">📎 ${name}</a>`;
+}
+
+async function deleteProspectMessage(messageId) {
+  const { collection, item } = activeCustomerWorkspaceItem();
+  if (!item || !messageId) return;
+  if (!confirm(lang === 'zh' ? '确定删除这条失败的消息和附件吗？' : 'Delete this failed message and its attachment?')) return;
+  try {
+    state = await api(`/api/customer-messages/${encodeURIComponent(collection)}/${encodeURIComponent(item.id)}/${encodeURIComponent(messageId)}`, { method: 'DELETE' });
+    broadcastDataChange();
+    render();
+  } catch (err) {
+    alert(err.message);
+  }
 }
 
 function fileAsDataUrl(file) {

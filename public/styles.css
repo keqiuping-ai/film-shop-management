@@ -827,6 +827,9 @@ body.prospect-workspace-open { overflow: hidden; }
 .prospect-chat-role { margin-bottom: 5px; font-size: 12px; font-weight: 800; opacity: .8; }
 .prospect-chat-text { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.55; }
 .prospect-chat-message time { display: block; margin-top: 6px; font-size: 11px; opacity: .65; }
+.prospect-chat-message.has-delete { padding-right: 42px; }
+.prospect-message-delete { position: absolute; top: 8px; right: 9px; width: 25px; height: 25px; padding: 0; border: 1px solid rgba(255,255,255,.55); border-radius: 50%; background: rgba(0,0,0,.18); color: #fff; font-size: 18px; line-height: 21px; cursor: pointer; }
+.prospect-message-delete:hover { background: #b42318; }
 .prospect-chat-empty { margin: auto; color: var(--muted); }
 .prospect-workspace-composer { position: relative; z-index: 2; align-self: start; transform: translateY(-26px); min-width: 0; min-height: 0; height: 230px; box-sizing: border-box; padding: 10px max(20px, calc((100vw - 1460px) / 2)) 12px; background: #fff; border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 8px 24px rgba(15, 23, 42, .08); display: grid; grid-template-rows: auto auto minmax(0, 1fr); gap: 7px; }
 .prospect-sms-status { margin: 0; color: var(--muted); font-size: 13px; }
