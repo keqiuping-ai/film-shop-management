@@ -188,6 +188,7 @@ function seedDb() {
       { id: id(), date: new Date().toISOString().slice(0, 10), source: 'Yelp', customer: 'Internet Lead', phone: '(702) 000-0001', service: 'tint', repId: '', status: '已邀约', quote: 399, soldAmount: 0, note: '互联网客资示例' }
     ],
     prospects: [],
+    customerConversations: [],
     expenses: [
       { id: id(), date: new Date().toISOString().slice(0, 10), category: '房屋租金', vendor: 'Landlord', amount: 10000, recurring: true, note: '月租金' },
       { id: id(), date: new Date().toISOString().slice(0, 10), category: '水电费', vendor: 'Utilities', amount: 1200, recurring: true, note: '水、电、网、电费预估' }
@@ -222,6 +223,7 @@ function readDb() {
   if (!Array.isArray(db.customerServiceReps)) db.customerServiceReps = [];
   if (!Array.isArray(db.leads)) db.leads = [];
   if (!Array.isArray(db.prospects)) db.prospects = [];
+  if (!Array.isArray(db.customerConversations)) db.customerConversations = [];
   if (!Array.isArray(db.shipments)) db.shipments = [];
   if (!Array.isArray(db.schedules)) db.schedules = [];
   if (!Array.isArray(db.scheduleReminderLogs)) db.scheduleReminderLogs = [];
@@ -918,6 +920,7 @@ function sanitizeDbForUser(db, user) {
     customerServiceReps: p.leadsView ? sanitizeCustomerServiceReps(db.customerServiceReps || [], p) : [],
     leads: p.leadsView ? sanitizeLeads(db.leads || [], p) : [],
     prospects: p.prospectsView ? (db.prospects || []) : [],
+    customerConversations: p.prospectsView ? (db.customerConversations || []) : [],
     expenses: p.expensesView || p.fullFinanceView ? (db.expenses || []) : [],
     movements: p.inventoryView ? db.movements : [],
     workshopMovements: p.inventoryView ? (db.workshopMovements || []) : [],
@@ -1460,6 +1463,100 @@ function readBody(req) {
   });
 }
 
+function readRawBody(req, limit = 1_000_000) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    let size = 0;
+    req.on('data', chunk => {
+      size += chunk.length;
+      if (size > limit) return reject(new Error('Body too large'));
+      chunks.push(chunk);
+    });
+    req.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
+    req.on('error', reject);
+  });
+}
+
+function twilioConfig() {
+  return {
+    accountSid: String(process.env.TWILIO_ACCOUNT_SID || '').trim(),
+    authToken: String(process.env.TWILIO_AUTH_TOKEN || '').trim(),
+    messagingServiceSid: String(process.env.TWILIO_MESSAGING_SERVICE_SID || '').trim(),
+    fromNumber: String(process.env.TWILIO_FROM_NUMBER || '+17252412586').trim(),
+    webhookBaseUrl: String(process.env.TWILIO_WEBHOOK_BASE_URL || '').trim().replace(/\/$/, ''),
+    apiBaseUrl: String(process.env.TWILIO_API_BASE_URL || 'https://api.twilio.com').trim().replace(/\/$/, '')
+  };
+}
+
+function twilioConfigured() {
+  const config = twilioConfig();
+  return Boolean(config.accountSid && config.authToken && (config.messagingServiceSid || config.fromNumber));
+}
+
+function requestPublicBaseUrl(req) {
+  const configured = twilioConfig().webhookBaseUrl;
+  return configured || `${String(req.headers['x-forwarded-proto'] || 'https').split(',')[0]}://${req.headers.host}`;
+}
+
+function requestPublicUrl(req) {
+  return `${requestPublicBaseUrl(req)}${new URL(req.url, 'http://local').pathname}`;
+}
+
+function validateTwilioSignature(req, params) {
+  const { authToken } = twilioConfig();
+  const signature = String(req.headers['x-twilio-signature'] || '');
+  if (!authToken || !signature) return false;
+  let payload = requestPublicUrl(req);
+  Object.keys(params).sort().forEach(key => {
+    const values = Array.isArray(params[key]) ? [...params[key]].sort() : [params[key]];
+    values.forEach(value => { payload += `${key}${value}`; });
+  });
+  const expected = crypto.createHmac('sha1', authToken).update(payload).digest('base64');
+  return secureEqualString(signature, expected);
+}
+
+function normalizedPhone(value) {
+  const digits = String(value || '').replace(/\D/g, '');
+  return digits.length > 10 ? digits.slice(-10) : digits;
+}
+
+function findConversationByPhone(db, phone) {
+  const target = normalizedPhone(phone);
+  if (!target) return null;
+  for (const collection of ['customerConversations', 'prospects']) {
+    const item = (db[collection] || []).find(row => normalizedPhone(row.phone) === target);
+    if (item) return { collection, item };
+  }
+  return null;
+}
+
+function appendSmsMessage(item, message) {
+  item.conversationMessages = [...(Array.isArray(item.conversationMessages) ? item.conversationMessages : []), message];
+  item.updatedAt = new Date().toISOString();
+  item.lastSmsAt = message.timestamp;
+  item.lastSmsDirection = message.direction;
+}
+
+async function sendTwilioSms({ to, body, statusCallback }) {
+  const config = twilioConfig();
+  if (!twilioConfigured()) throw new Error('Twilio 尚未配置，请先设置 Railway 环境变量');
+  const form = new URLSearchParams({ To: to, Body: body });
+  if (config.messagingServiceSid) form.set('MessagingServiceSid', config.messagingServiceSid);
+  else form.set('From', config.fromNumber);
+  if (statusCallback) form.set('StatusCallback', statusCallback);
+  const response = await fetch(`${config.apiBaseUrl}/2010-04-01/Accounts/${encodeURIComponent(config.accountSid)}/Messages.json`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Basic ${Buffer.from(`${config.accountSid}:${config.authToken}`).toString('base64')}`,
+      'Content-Type': 'application/x-www-form-urlencoded'
+    },
+    body: form.toString()
+  });
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(result.message || `Twilio 发送失败 (${response.status})`);
+  return result;
+}
+
 function currentUser(req, db) {
   const token = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '');
   return currentUserFromToken(token, db);
@@ -1641,6 +1738,7 @@ function collectionPermission(collection, method) {
     schedules: { GET: 'schedulesView', POST: 'schedulesEdit', PUT: 'schedulesEdit', DELETE: 'schedulesEdit' },
     leads: { GET: 'leadsView', POST: 'leadsEdit', PUT: 'leadsEdit', DELETE: 'leadsEdit' },
     prospects: { GET: 'prospectsView', POST: 'prospectsEdit', PUT: 'prospectsEdit', DELETE: 'prospectsEdit' },
+    customerConversations: { GET: 'prospectsView', POST: 'prospectsEdit', PUT: 'prospectsEdit', DELETE: 'prospectsEdit' },
     customerServiceReps: { GET: 'leadsView', POST: 'commissionEdit', PUT: 'commissionEdit', DELETE: 'commissionEdit' },
     expenses: { GET: 'expensesView', POST: 'expensesEdit', PUT: 'expensesEdit', DELETE: 'expensesEdit' },
     users: { GET: 'usersManage', POST: 'usersManage', PUT: 'usersManage', DELETE: 'usersManage' }
@@ -1846,6 +1944,86 @@ async function api(req, res) {
       publicUrl: config.publicUrl || null,
       time: new Date().toISOString()
     });
+  }
+
+  if (req.method === 'POST' && url.pathname === '/api/twilio/inbound') {
+    const raw = await readRawBody(req);
+    const params = Object.fromEntries(new URLSearchParams(raw));
+    if (!validateTwilioSignature(req, params)) return send(res, 403, { error: 'Twilio signature verification failed' });
+    const from = String(params.From || '').trim();
+    const body = String(params.Body || '').trim();
+    const messageSid = String(params.MessageSid || params.SmsMessageSid || '').trim();
+    if (from && body) {
+      let match = findConversationByPhone(db, from);
+      if (!match) {
+        const now = new Date().toISOString();
+        const item = {
+          id: id(),
+          date: dateInTimezone(db.settings?.timezone),
+          source: 'Twilio SMS',
+          customer: `短信客户 ${from}`,
+          phone: from,
+          status: '新意向',
+          intentLevel: '普通',
+          createdAt: now,
+          importedAt: now,
+          updatedAt: now,
+          createdBy: 'Twilio 入站短信',
+          createdByUserId: 'twilio-webhook',
+          conversationMessages: []
+        };
+        db.customerConversations.unshift(item);
+        match = { collection: 'customerConversations', item };
+      }
+      const duplicate = (match.item.conversationMessages || []).some(message => message.providerSid === messageSid && messageSid);
+      if (!duplicate) appendSmsMessage(match.item, {
+        id: `twilio-${messageSid || id()}`,
+        speaker: 'customer',
+        speakerName: match.item.customer || from,
+        direction: 'inbound',
+        channel: 'sms',
+        text: body.slice(0, 4000),
+        timestamp: String(params.DateSent || new Date().toISOString()),
+        provider: 'twilio',
+        providerSid: messageSid,
+        status: String(params.SmsStatus || 'received')
+      });
+      audit(db, { id: 'twilio-webhook', name: 'Twilio' }, 'receive-customer-sms', {
+        collection: match.collection,
+        recordId: match.item.id,
+        recordLabel: match.item.customer || from,
+        detail: `收到 ${from} 的短信`
+      });
+      writeDb(db);
+      notifyDataChanged('receive-customer-sms', match.item.id);
+    }
+    return send(res, 200, '<?xml version="1.0" encoding="UTF-8"?><Response></Response>', 'text/xml; charset=utf-8');
+  }
+
+  if (req.method === 'POST' && url.pathname === '/api/twilio/status') {
+    const raw = await readRawBody(req);
+    const params = Object.fromEntries(new URLSearchParams(raw));
+    if (!validateTwilioSignature(req, params)) return send(res, 403, { error: 'Twilio signature verification failed' });
+    const messageSid = String(params.MessageSid || '').trim();
+    const status = String(params.MessageStatus || params.SmsStatus || '').trim();
+    let changedItem = null;
+    for (const collection of ['customerConversations', 'prospects']) {
+      for (const item of (db[collection] || [])) {
+        const message = (item.conversationMessages || []).find(row => row.providerSid === messageSid);
+        if (!message) continue;
+        message.status = status || message.status;
+        message.statusUpdatedAt = new Date().toISOString();
+        if (params.ErrorCode) message.errorCode = String(params.ErrorCode);
+        changedItem = item;
+        break;
+      }
+      if (changedItem) break;
+    }
+    if (changedItem) {
+      writeDb(db);
+      notifyDataChanged('customer-sms-status', changedItem.id);
+    }
+    return send(res, 200, '<?xml version="1.0" encoding="UTF-8"?><Response></Response>', 'text/xml; charset=utf-8');
   }
 
   if (req.method === 'POST' && url.pathname === '/api/logout') {
@@ -2112,6 +2290,68 @@ async function api(req, res) {
     return send(res, 200, result);
   }
 
+  if (req.method === 'GET' && url.pathname === '/api/twilio/config') {
+    if (!canAccess(user, 'prospectsView')) return send(res, 403, { error: '没有查看客户交流的权限' });
+    const config = twilioConfig();
+    return send(res, 200, {
+      configured: twilioConfigured(),
+      fromNumber: config.fromNumber,
+      messagingServiceConfigured: Boolean(config.messagingServiceSid),
+      inboundWebhookUrl: `${requestPublicBaseUrl(req)}/api/twilio/inbound`
+    });
+  }
+
+  if (req.method === 'POST' && url.pathname === '/api/twilio/send') {
+    if (!canAccess(user, 'prospectsEdit')) return send(res, 403, { error: '没有发送客户短信的权限' });
+    const body = await readBody(req);
+    const collection = String(body.collection || '').trim();
+    const recordId = String(body.id || '').trim();
+    const text = String(body.text || '').trim();
+    if (!['customerConversations', 'prospects'].includes(collection)) return send(res, 400, { error: '客户类型不正确' });
+    const item = (db[collection] || []).find(row => row.id === recordId);
+    if (!item) return send(res, 404, { error: '找不到客户记录' });
+    const phoneDigits = normalizedPhone(item.phone);
+    if (phoneDigits.length !== 10) return send(res, 400, { error: '客户电话格式不正确，请先填写美国 10 位手机号码' });
+    if (!text) return send(res, 400, { error: '短信内容不能为空' });
+    if (text.length > 1600) return send(res, 400, { error: '短信内容不能超过 1600 个字符' });
+    const to = `+1${phoneDigits}`;
+    const sent = await sendTwilioSms({
+      to,
+      body: text,
+      statusCallback: `${requestPublicBaseUrl(req)}/api/twilio/status`
+    });
+    const now = new Date().toISOString();
+    appendSmsMessage(item, {
+      id: `twilio-${sent.sid || id()}`,
+      speaker: 'shop',
+      speakerName: user.name || user.email,
+      direction: 'outbound',
+      channel: 'sms',
+      text,
+      timestamp: now,
+      provider: 'twilio',
+      providerSid: String(sent.sid || ''),
+      status: String(sent.status || 'queued'),
+      from: String(sent.from || twilioConfig().fromNumber),
+      to
+    });
+    audit(db, user, 'send-customer-sms', {
+      collection,
+      recordId: item.id,
+      recordLabel: item.customer || item.phone,
+      detail: `通过 Twilio 向 ${to} 发送短信，状态 ${sent.status || 'queued'}`
+    });
+    writeDb(db);
+    notifyDataChanged('send-customer-sms', item.id);
+    return send(res, 200, {
+      ok: true,
+      sid: String(sent.sid || ''),
+      status: String(sent.status || 'queued'),
+      to,
+      data: sanitizeDbForUser(db, user)
+    });
+  }
+
   if (url.pathname === '/api/backups') {
     if (!canAccess(user, 'settingsEdit')) return send(res, 403, { error: '没有备份管理权限' });
     if (req.method === 'GET') return send(res, 200, { backups: listBackups().slice(0, 80) });
@@ -2265,7 +2505,7 @@ async function api(req, res) {
   const match = url.pathname.match(/^\/api\/([a-zA-Z]+)(?:\/([^/]+))?$/);
   if (!match) return send(res, 404, { error: 'Not found' });
   const [, collection, recordId] = match;
-  const allowed = ['jobs', 'installers', 'products', 'priceRules', 'salesOrders', 'shipments', 'schedules', 'movements', 'workshopMovements', 'expenses', 'leads', 'prospects', 'customerServiceReps', 'users'];
+  const allowed = ['jobs', 'installers', 'products', 'priceRules', 'salesOrders', 'shipments', 'schedules', 'movements', 'workshopMovements', 'expenses', 'leads', 'prospects', 'customerConversations', 'customerServiceReps', 'users'];
   if (!allowed.includes(collection)) return send(res, 404, { error: 'Unknown collection' });
 
   const permission = collectionPermission(collection, req.method);
@@ -2331,7 +2571,7 @@ async function api(req, res) {
       item.preparedByUserId = user.id;
       item.createdAt = new Date().toISOString();
     }
-    if (collection === 'prospects') {
+    if (collection === 'prospects' || collection === 'customerConversations') {
       const now = new Date().toISOString();
       item.createdAt = item.createdAt || now;
       item.importedAt = item.importedAt || now;
@@ -2412,7 +2652,7 @@ async function api(req, res) {
       next.updatedBy = user.name || '';
       next.updatedAt = new Date().toISOString();
     }
-    if (collection === 'prospects') {
+    if (collection === 'prospects' || collection === 'customerConversations') {
       const now = new Date().toISOString();
       next.createdAt = db[collection][idx].createdAt || next.createdAt || now;
       next.importedAt = db[collection][idx].importedAt || next.importedAt || next.createdAt;

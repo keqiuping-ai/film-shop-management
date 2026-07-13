@@ -48,6 +48,7 @@ let syncInFlight = false;
 let eventSource = null;
 let realtimeConnected = false;
 let activeMessageUserId = '';
+let activeProspectWorkspaceId = '';
 let messageRecorder = null;
 let messageAudioChunks = [];
 let knownUnreadMessageIds = null;
@@ -95,6 +96,8 @@ const dict = {
     inventoryAlertsSub: '低于最低数量的货物和补货建议',
     prospects: '高意向客户',
     prospectsSub: 'Mat、Yelp等平台邀约客户和预约到店时间',
+    customerCenter: '客户交流中心',
+    customerCenterSub: '集中查看所有客户聊天，达到到店意向后加入高意向客户',
     leads: '客资提成',
     leadsSub: '互联网客资、到店率、成交率和客服提成',
     orders: '零售批发',
@@ -330,6 +333,8 @@ const dict = {
     inventoryAlertsSub: 'Items below minimum stock and reorder suggestions',
     prospects: 'High-Intent Customers',
     prospectsSub: 'Mat, Yelp, and other appointment-ready customer leads',
+    customerCenter: 'Customer Communication Center',
+    customerCenterSub: 'Manage all customer conversations and promote qualified customers to high intent',
     leads: 'Lead Commissions',
     leadsSub: 'Internet leads, arrival rate, close rate, and staff commissions',
     orders: 'Retail / Wholesale',
@@ -547,6 +552,7 @@ const pages = [
   ['inventory', 'inventory', 'inventorySub'],
   ['workshopInventory', 'workshopInventory', 'workshopInventorySub'],
   ['inventoryAlerts', 'inventoryAlerts', 'inventoryAlertsSub'],
+  ['customerCenter', 'customerCenter', 'customerCenterSub'],
   ['prospects', 'prospects', 'prospectsSub'],
   ['leads', 'leads', 'leadsSub'],
   ['orders', 'orders', 'ordersSub'],
@@ -567,6 +573,7 @@ const pagePermissions = {
   inventory: 'inventoryView',
   workshopInventory: 'inventoryView',
   inventoryAlerts: 'inventoryView',
+  customerCenter: 'prospectsView',
   prospects: 'prospectsView',
   leads: 'leadsView',
   orders: 'ordersView',
@@ -586,6 +593,7 @@ const writePermissions = {
   pricing: 'pricingEdit',
   inventory: 'inventoryEdit',
   workshopInventory: 'inventoryEdit',
+  customerCenter: 'prospectsEdit',
   prospects: 'prospectsEdit',
   leads: 'leadsEdit',
   orders: 'ordersEdit',
@@ -1179,6 +1187,7 @@ function render() {
   applyStaticTranslations();
   updateMessageBadge();
   enhanceExpandablePanels();
+  if (activeProspectWorkspaceId) renderProspectWorkspace();
 }
 
 function messageUsers() {
@@ -1498,7 +1507,7 @@ function updateVoiceButton(recording) {
 }
 
 function navIcon(id) {
-  return { modules:'▦', dashboard:'⌂', jobs:'▣', installers:'◉', pricing:'$', inventory:'▤', workshopInventory:'▥', inventoryAlerts:'!', prospects:'★', leads:'☎', orders:'⇄', shipments:'✈', schedules:'◫', expenses:'◇', reports:'◌', audit:'◷', users:'◎', settings:'⚙' }[id] || '□';
+  return { modules:'▦', dashboard:'⌂', jobs:'▣', installers:'◉', pricing:'$', inventory:'▤', workshopInventory:'▥', inventoryAlerts:'!', customerCenter:'💬', prospects:'★', leads:'☎', orders:'⇄', shipments:'✈', schedules:'◫', expenses:'◇', reports:'◌', audit:'◷', users:'◎', settings:'⚙' }[id] || '□';
 }
 
 function moduleGrid(availablePages) {
@@ -2170,6 +2179,9 @@ const views = {
     const alertRows = stockAlertProducts();
     return panel(t('inventoryAlerts'), hasPerm('inventoryEdit') ? `<button class="btn" onclick="setPage('inventory')">${t('processInventory')}</button>` : '', inventorySearchBox(alertRows) + `<div id="inventorySearchResults">${inventoryAlertTable(true, null, true)}</div>` + `<p class="note">${lang === 'zh' ? '在库存商品里设置“预警库存/最低数量”。当当前库存小于或等于这个数量时，这里会自动生成补货报警。' : 'Set the reorder level on each SKU. When current stock is less than or equal to that number, the item appears here for replenishment.'}</p>`);
   },
+  customerCenter() {
+    return panel(t('customerCenter'), hasPerm('prospectsEdit') ? `<button class="btn primary" onclick="openProspect(null,'customerConversations')">${lang === 'zh' ? '新增客户交流' : 'New conversation'}</button>` : '', customerCenterTable() + `<p class="note">${lang === 'zh' ? '这里集中查看所有客户交流。已进入高意向客户表的客户会显示“高意向”标记；普通客户达到到店意向后可加入高意向客户。' : 'All customer conversations appear here. Qualified customers can be promoted to the high-intent list.'}</p>`);
+  },
   prospects() {
     return panel(t('prospects'), hasPerm('prospectsEdit') ? `<button class="btn primary" onclick="openProspect()">${t('addNew')}</button>` : '', prospectTable() + `<p class="note">${lang === 'zh' ? '这里记录 Mat、Yelp、Meta、Google 等平台上已经有明确意向、已经邀约或已经预约到店的客户。聊天上下文可以直接粘贴客户沟通内容，方便店长和接待人员提前跟进。' : 'Use this area for customers from Mat, Yelp, Meta, Google, and other channels who show clear intent, are invited, or have appointments. Paste conversation context so managers and reception staff can follow up.'}</p>`);
   },
@@ -2825,7 +2837,7 @@ function customerServiceRepTable() {
 }
 
 function prospectAppointmentValue(item) {
-  return `${item.appointmentDate || item.date || ''} ${item.appointmentTime || ''}`.trim();
+  return `${item.appointmentDate || ''} ${item.appointmentTime || ''}`.trim();
 }
 
 function cleanConversationText(text) {
@@ -2892,7 +2904,7 @@ function structuredProspectMessages(item) {
       role,
       title,
       text: cleanConversationText(message.text || message.message || message.content || ''),
-      meta: formatAppDateTime(message.timestamp || message.time || message.createdAt || '') || cleanConversationText(message.timestamp || ''),
+      meta: [formatAppDateTime(message.timestamp || message.time || message.createdAt || '') || cleanConversationText(message.timestamp || ''), message.channel === 'sms' && message.status ? `SMS · ${message.status}` : ''].filter(Boolean).join(' · '),
       order: Number.isFinite(Number(message.order)) ? Number(message.order) : index
     };
   }).filter(message => message.text);
@@ -2901,8 +2913,10 @@ function structuredProspectMessages(item) {
 function prospectConversationSegments(input) {
   const item = typeof input === 'object' && input ? input : null;
   if (item) {
-    const structured = structuredProspectMessages(item);
+    let structured = structuredProspectMessages(item);
     if (structured.length) {
+      const hasMaterializedLegacy = (item.conversationMessages || []).some(message => message.source === 'legacy-conversation');
+      if (item.chatContext && !hasMaterializedLegacy) structured = [...prospectConversationSegments(item.chatContext), ...structured];
       const segments = [];
       structured
         .sort((a, b) => a.order - b.order)
@@ -3004,6 +3018,143 @@ function prospectTable() {
   }).join('')}
   ${rows.length ? '' : `<tr><td colspan="12" class="note">${lang === 'zh' ? '还没有高意向客户。' : 'No high-intent customers yet.'}</td></tr>`}
   </tbody></table></div>`;
+}
+
+function customerCenterRows() {
+  const regular = (state.customerConversations || []).map(item => ({ ...item, _collection: 'customerConversations', _highIntent: false }));
+  const highIntent = (state.prospects || []).map(item => ({ ...item, _collection: 'prospects', _highIntent: true }));
+  return [...regular, ...highIntent].sort((a, b) => new Date(prospectActivityTime(b)).getTime() - new Date(prospectActivityTime(a)).getTime());
+}
+
+function customerCenterTable() {
+  const rows = customerCenterRows();
+  return `<div class="table-wrap customer-center-table"><table><thead><tr><th>${t('customer')}</th><th>${t('source')}</th><th>${t('vehicleNeed')}</th><th>${t('prospectStatus')}</th><th>${t('chatContext')}</th><th>${lang === 'zh' ? '分类' : 'Category'}</th></tr></thead><tbody>
+    ${rows.map(item => `<tr class="click-row" onclick="openProspectWorkspace('${item._collection}','${item.id}')"><td><strong>${escapeHtml(item.customer || (lang === 'zh' ? '未命名客户' : 'Unnamed'))}</strong><br><span class="note">${escapeHtml(item.phone || '')}</span></td><td>${escapeHtml(item.source || '')}</td><td>${escapeHtml(item.vehicle || '')}<br><span class="note">${escapeHtml(shortText(item.need || '', 55))}</span></td><td>${prospectStatusPill(item.status)}</td><td>${escapeHtml(shortText(prospectConversationSummary(item), 90))}</td><td>${item._highIntent ? `<span class="pill good">${lang === 'zh' ? '高意向' : 'High intent'}</span>` : item.promotedProspectId ? `<span class="pill good">${lang === 'zh' ? '已转高意向' : 'Promoted'}</span>` : `<span class="pill">${lang === 'zh' ? '交流中' : 'Active'}</span>`}</td></tr>`).join('')}
+    ${rows.length ? '' : `<tr><td colspan="6" class="note">${lang === 'zh' ? '还没有客户交流记录。' : 'No customer conversations yet.'}</td></tr>`}
+  </tbody></table></div>`;
+}
+
+function ensureProspectWorkspace() {
+  let workspace = document.getElementById('prospectWorkspace');
+  if (workspace) return workspace;
+  workspace = document.createElement('section');
+  workspace.id = 'prospectWorkspace';
+  workspace.className = 'prospect-workspace';
+  document.body.appendChild(workspace);
+  return workspace;
+}
+
+function activeCustomerWorkspaceItem() {
+  const [collection, id] = String(activeProspectWorkspaceId || '').split(':');
+  return { collection, item: (state[collection] || []).find(row => row.id === id) };
+}
+
+function openProspectWorkspace(collection, id) {
+  activeProspectWorkspaceId = `${collection}:${id}`;
+  document.body.classList.add('prospect-workspace-open');
+  renderProspectWorkspace();
+}
+
+function closeProspectWorkspace() {
+  activeProspectWorkspaceId = '';
+  document.body.classList.remove('prospect-workspace-open');
+  const workspace = document.getElementById('prospectWorkspace');
+  if (workspace) workspace.classList.remove('open');
+}
+
+function renderProspectWorkspace() {
+  const { collection, item } = activeCustomerWorkspaceItem();
+  if (!item) return closeProspectWorkspace();
+  const segments = prospectConversationSegments(item);
+  const rep = (state.customerServiceReps || []).find(row => row.id === item.ownerId);
+  const workspace = ensureProspectWorkspace();
+  workspace.innerHTML = `
+    <header class="prospect-workspace-header">
+      <div class="prospect-workspace-customer">
+        <strong>${escapeHtml(item.customer || (lang === 'zh' ? '未命名客户' : 'Unnamed customer'))}</strong>
+        <span>${escapeHtml(item.phone || (lang === 'zh' ? '未填写电话' : 'No phone'))}</span>
+        ${prospectIntentPill(item.intentLevel)} ${prospectStatusPill(item.status)}
+      </div>
+      <div class="prospect-workspace-actions">
+        ${hasPerm('prospectsEdit') ? `<button class="btn" onclick="openProspect('${item.id}','${collection}')">${lang === 'zh' ? '编辑资料' : 'Edit details'}</button>` : ''}
+        ${collection === 'customerConversations' && hasPerm('prospectsEdit') && !item.promotedProspectId ? `<button class="btn primary" onclick="promoteCustomerToProspect()">${lang === 'zh' ? '加入高意向客户' : 'Add to high intent'}</button>` : ''}
+        ${collection === 'customerConversations' && item.promotedProspectId ? `<span class="pill good">${lang === 'zh' ? '已转入高意向客户' : 'Promoted to high intent'}</span>` : ''}
+        <button class="prospect-workspace-close" onclick="closeProspectWorkspace()" aria-label="${lang === 'zh' ? '关闭聊天工作台' : 'Close chat workspace'}">×</button>
+      </div>
+    </header>
+    <div class="prospect-workspace-meta">
+      <span><b>${lang === 'zh' ? '来源' : 'Source'}</b>${escapeHtml(item.source || '-')}</span>
+      <span><b>${lang === 'zh' ? '车辆' : 'Vehicle'}</b>${escapeHtml(item.vehicle || '-')}</span>
+      <span><b>${lang === 'zh' ? '需求' : 'Need'}</b>${escapeHtml(shortText(item.need || '-', 80))}</span>
+      <span><b>${lang === 'zh' ? '预约' : 'Appointment'}</b>${escapeHtml(prospectAppointmentValue(item) || '-')}</span>
+      <span><b>${lang === 'zh' ? '跟进人' : 'Owner'}</b>${escapeHtml(rep?.name || item.ownerName || t('unassigned'))}</span>
+    </div>
+    <main class="prospect-workspace-chat">
+      ${segments.length ? segments.map(segment => `<article class="prospect-chat-message ${segment.role}">
+        <div class="prospect-chat-role">${escapeHtml(segment.title)}</div>
+        <div class="prospect-chat-text">${escapeHtml(segment.text)}</div>
+        ${segment.meta ? `<time>${escapeHtml(segment.meta)}</time>` : ''}
+      </article>`).join('') : `<div class="prospect-chat-empty">${lang === 'zh' ? '还没有聊天记录。' : 'No conversation yet.'}</div>`}
+    </main>
+    <footer class="prospect-workspace-composer">
+      <div class="prospect-sms-status">${lang === 'zh' ? '通过 Twilio 发送和接收短信 · 发送号码：+1 725-241-2586' : 'Send and receive SMS through Twilio · Sender: +1 725-241-2586'}</div>
+      <div class="prospect-compose-row">
+        <textarea id="prospectReplyInput" placeholder="${lang === 'zh' ? '输入给该客户的回复内容…' : 'Write a reply…'}"></textarea>
+        <button id="prospectSendSmsButton" class="btn primary" onclick="sendProspectSms()" ${hasPerm('prospectsEdit') ? '' : 'disabled'}>${lang === 'zh' ? '发送短信' : 'Send SMS'}</button>
+      </div>
+    </footer>`;
+  workspace.classList.add('open');
+  requestAnimationFrame(() => {
+    const chat = workspace.querySelector('.prospect-workspace-chat');
+    if (chat) chat.scrollTop = chat.scrollHeight;
+  });
+}
+
+async function sendProspectSms() {
+  const { collection, item } = activeCustomerWorkspaceItem();
+  const input = document.getElementById('prospectReplyInput');
+  const button = document.getElementById('prospectSendSmsButton');
+  const text = String(input?.value || '').trim();
+  if (!item || !text) return;
+  if (button) {
+    button.disabled = true;
+    button.textContent = lang === 'zh' ? '发送中…' : 'Sending…';
+  }
+  try {
+    const result = await api('/api/twilio/send', {
+      method: 'POST',
+      body: JSON.stringify({ collection, id: item.id, text })
+    });
+    state = result.data;
+    broadcastDataChange();
+    render();
+  } catch (err) {
+    alert(err.message);
+    if (button) {
+      button.disabled = false;
+      button.textContent = lang === 'zh' ? '发送短信' : 'Send SMS';
+    }
+  }
+}
+
+async function promoteCustomerToProspect() {
+  const { collection, item } = activeCustomerWorkspaceItem();
+  if (collection !== 'customerConversations' || !item || item.promotedProspectId) return;
+  try {
+    const copy = { ...item, id: undefined, promotedFromConversationId: item.id, intentLevel: item.intentLevel || '高意向', status: item.status || '新意向' };
+    delete copy.id;
+    state = await api('/api/prospects', { method: 'POST', body: JSON.stringify(copy) });
+    const promoted = (state.prospects || []).find(row => row.promotedFromConversationId === item.id);
+    if (!promoted) throw new Error(lang === 'zh' ? '高意向客户已创建，但无法确认新记录。请刷新后检查。' : 'The high-intent customer was created, but the new record could not be confirmed. Please refresh and check.');
+    state = await api(`/api/customerConversations/${item.id}`, {
+      method: 'PUT',
+      body: JSON.stringify({ ...item, promotedProspectId: promoted.id, promotedAt: new Date().toISOString() })
+    });
+    broadcastDataChange();
+    closeProspectWorkspace();
+    current = 'prospects';
+    render();
+  } catch (err) { alert(err.message); }
 }
 
 function leadTable() {
@@ -3167,6 +3318,7 @@ function openQuickAdd() {
   if (current === 'pricing' && hasPerm('pricingEdit')) return openPriceRule();
   if (current === 'inventory' && hasPerm('inventoryEdit')) return openProduct();
   if (current === 'workshopInventory' && hasPerm('inventoryEdit')) return openWorkshopMovement('transfer');
+  if (current === 'customerCenter' && hasPerm('prospectsEdit')) return openProspect(null, 'customerConversations');
   if (current === 'prospects' && hasPerm('prospectsEdit')) return openProspect();
   if (current === 'leads' && hasPerm('leadsEdit')) return openLead();
   if (current === 'orders' && hasPerm('ordersEdit')) return openSalesOrder();
@@ -3315,8 +3467,8 @@ function openWorkshopMovement(type = 'transfer') {
   setupWorkshopStockGuard();
 }
 
-function openProspect(id) {
-  const item = (state.prospects || []).find(x => x.id === id) || {
+function openProspect(id, collection = 'prospects') {
+  const item = (state[collection] || []).find(x => x.id === id) || {
     date: today(),
     source: 'Yelp',
     customer: '',
@@ -3357,7 +3509,8 @@ function openProspect(id) {
     ['note',t('note'),'textarea',item.note || '', null, 'wide']
   ];
   const conversationPanel = `<div class="wide prospect-dialog-section">${prospectConversationPreview(item)}</div>`;
-  openModal(id ? (lang === 'zh' ? '编辑高意向客户' : 'Edit High-Intent Customer') : (lang === 'zh' ? '新增高意向客户' : 'New High-Intent Customer'), formHtml(mainFields) + conversationPanel + formHtml(detailFields), () => {
+  const recordLabel = collection === 'customerConversations' ? (lang === 'zh' ? '客户交流' : 'Customer Conversation') : (lang === 'zh' ? '高意向客户' : 'High-Intent Customer');
+  openModal(id ? `${lang === 'zh' ? '编辑' : 'Edit'} ${recordLabel}` : `${lang === 'zh' ? '新增' : 'New'} ${recordLabel}`, formHtml(mainFields) + conversationPanel + formHtml(detailFields), () => {
     const data = readForm(['date','source','customer','phone','vehicle','need','service','appointmentDate','appointmentTime','ownerId','intentLevel','status','intentReason','chatContext','chatTranslation','note']);
     const rep = (state.customerServiceReps || []).find(x => x.id === data.ownerId);
     data.ownerName = rep ? rep.name : '';
@@ -3366,7 +3519,7 @@ function openProspect(id) {
       if (item[key]) data[key] = item[key];
     });
     if (!data.customer && !data.phone) return alert(lang === 'zh' ? '客户姓名或电话至少填写一个。' : 'Please enter at least a customer name or phone.');
-    return saveRecord('prospects', id, data);
+    return saveRecord(collection, id, data);
   });
 }
 

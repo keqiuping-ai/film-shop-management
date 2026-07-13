@@ -147,6 +147,7 @@ nav { display: grid; gap: 7px; }
 .module-tile[data-module="workshopInventory"] { --module-accent: #2563eb; --module-accent-2: #7c3aed; --module-border: #b7c4f6; --module-soft: rgba(37,99,235,.12); --module-shadow: rgba(37,99,235,.24); }
 .module-tile[data-module="inventoryAlerts"] { --module-accent: #dc2626; --module-accent-2: #fb7185; --module-border: #f4a3aa; --module-soft: rgba(220,38,38,.12); --module-shadow: rgba(220,38,38,.22); }
 .module-tile[data-module="prospects"] { --module-accent: #db2777; --module-accent-2: #f97316; --module-border: #f7b0cd; --module-soft: rgba(219,39,119,.12); --module-shadow: rgba(219,39,119,.23); }
+.module-tile[data-module="customerCenter"] { --module-accent: #0f7c91; --module-accent-2: #14b8a6; --module-border: #8ed7de; --module-soft: rgba(15,124,145,.12); --module-shadow: rgba(15,124,145,.23); }
 .module-tile[data-module="leads"] { --module-accent: #0891b2; --module-accent-2: #06b6d4; --module-border: #8bd7e5; --module-soft: rgba(8,145,178,.12); --module-shadow: rgba(8,145,178,.24); }
 .module-tile[data-module="orders"] { --module-accent: #ea580c; --module-accent-2: #facc15; --module-border: #f5bb78; --module-soft: rgba(234,88,12,.13); --module-shadow: rgba(234,88,12,.23); }
 .module-tile[data-module="shipments"] { --module-accent: #4f46e5; --module-accent-2: #38bdf8; --module-border: #a9b6f7; --module-soft: rgba(79,70,229,.12); --module-shadow: rgba(79,70,229,.24); }
@@ -727,6 +728,91 @@ tr:hover td { background: #fbfcfd; }
   padding: 0;
   border-radius: 5px;
   font-size: 13px;
+}
+.prospect-row:hover td { background: #f3f9fb; }
+.customer-center-table table { min-width: 1040px; }
+.customer-center-table tr.click-row:hover td { background: #eef8fa; }
+.prospect-workspace {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: none;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  background: #f4f7f9;
+  color: var(--ink);
+}
+.prospect-workspace.open { display: grid; }
+body.prospect-workspace-open { overflow: hidden; }
+.prospect-workspace-header {
+  min-height: 68px;
+  padding: 12px 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  background: #fff;
+  border-bottom: 1px solid var(--line);
+}
+.prospect-workspace-customer { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.prospect-workspace-customer strong { font-size: 22px; }
+.prospect-workspace-customer > span { color: var(--muted); }
+.prospect-workspace-actions { display: flex; align-items: center; gap: 10px; }
+.prospect-workspace-close {
+  width: 40px;
+  height: 40px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: #fff;
+  font-size: 27px;
+  line-height: 1;
+  cursor: pointer;
+}
+.prospect-workspace-meta {
+  padding: 9px 20px;
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  overflow-x: auto;
+  background: #fff;
+  border-bottom: 1px solid var(--line);
+  white-space: nowrap;
+  font-size: 13px;
+}
+.prospect-workspace-meta span { display: flex; gap: 6px; }
+.prospect-workspace-meta b { color: var(--muted); }
+.prospect-workspace-chat {
+  overflow-y: auto;
+  padding: 24px max(24px, calc((100vw - 1100px) / 2));
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.prospect-chat-message {
+  width: min(72%, 760px);
+  padding: 12px 14px;
+  border: 1px solid #dce5eb;
+  border-radius: 14px 14px 14px 4px;
+  background: #fff;
+  box-shadow: 0 5px 18px rgba(15, 23, 42, .05);
+}
+.prospect-chat-message.shop { align-self: flex-end; color: #fff; background: #176d84; border-color: #176d84; border-radius: 14px 14px 4px 14px; }
+.prospect-chat-message.system { align-self: center; width: auto; max-width: 80%; color: var(--muted); background: #e9eef2; border-radius: 999px; box-shadow: none; }
+.prospect-chat-role { margin-bottom: 5px; font-size: 12px; font-weight: 800; opacity: .8; }
+.prospect-chat-text { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.55; }
+.prospect-chat-message time { display: block; margin-top: 6px; font-size: 11px; opacity: .65; }
+.prospect-chat-empty { margin: auto; color: var(--muted); }
+.prospect-workspace-composer { padding: 10px max(20px, calc((100vw - 1100px) / 2)) 14px; background: #fff; border-top: 1px solid var(--line); }
+.prospect-sms-status { margin-bottom: 7px; color: var(--muted); font-size: 12px; }
+.prospect-compose-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: end; }
+.prospect-compose-row textarea { min-height: 64px; max-height: 150px; }
+.prospect-compose-row .btn { min-height: 44px; }
+@media (max-width: 720px) {
+  .prospect-workspace-header { padding: 10px 12px; }
+  .prospect-workspace-meta { padding: 8px 12px; }
+  .prospect-workspace-chat { padding: 14px 12px; }
+  .prospect-chat-message { width: 88%; }
+  .prospect-workspace-composer { padding: 9px 12px 12px; }
+  .prospect-compose-row { grid-template-columns: 1fr; }
 }
 
 .modal {
