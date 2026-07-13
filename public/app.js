@@ -1202,6 +1202,7 @@ function render() {
   applyStaticTranslations();
   updateMessageBadge();
   enhanceExpandablePanels();
+  enhanceEditableTableRows(document.getElementById('view'));
   if (activeProspectWorkspaceId && !preserveProspectWorkspaceRender) renderProspectWorkspace();
   preserveProspectWorkspaceRender = false;
 }
@@ -2428,6 +2429,26 @@ function enhanceExpandablePanels() {
   });
 }
 
+function enhanceEditableTableRows(root = document) {
+  if (!root) return;
+  root.querySelectorAll('table tbody tr').forEach(row => {
+    if (row.classList.contains('click-row') || row.classList.contains('editable-row')) return;
+    const editButton = [...row.querySelectorAll('button.icon-btn')].find(button => button.textContent.trim() === '✎');
+    if (!editButton) return;
+    row.classList.add('editable-row');
+    row.tabIndex = 0;
+    row.addEventListener('click', event => {
+      if (event.target.closest('button, a, input, select, textarea, label, [role="button"]')) return;
+      editButton.click();
+    });
+    row.addEventListener('keydown', event => {
+      if (event.key !== 'Enter' || event.target !== row) return;
+      event.preventDefault();
+      editButton.click();
+    });
+  });
+}
+
 function openPanelZoom(panelEl) {
   const title = panelEl.querySelector(':scope > .panel-head h3')?.textContent || (lang === 'zh' ? '查看详情' : 'Details');
   const clone = panelEl.cloneNode(true);
@@ -2436,6 +2457,7 @@ function openPanelZoom(panelEl) {
   const body = document.getElementById('panelZoomBody');
   body.innerHTML = '';
   body.appendChild(clone);
+  enhanceEditableTableRows(clone);
   document.getElementById('panelZoom').classList.add('open');
 }
 

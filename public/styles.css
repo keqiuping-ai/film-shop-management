@@ -610,6 +610,9 @@ th {
 }
 tr:hover td { background: #fbfcfd; }
 .click-row { cursor: pointer; }
+.editable-row { cursor: pointer; }
+.editable-row:hover td { background: #eef8fa; }
+.editable-row:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; }
 .total-row td {
   background: #fbfcfd;
   font-weight: 800;
