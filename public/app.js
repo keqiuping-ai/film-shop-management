@@ -49,6 +49,7 @@ let eventSource = null;
 let realtimeConnected = false;
 let activeMessageUserId = '';
 let activeProspectWorkspaceId = '';
+let prospectWorkspaceSyncTimer = null;
 let messageRecorder = null;
 let messageAudioChunks = [];
 let knownUnreadMessageIds = null;
@@ -720,6 +721,9 @@ async function logout() {
 
 async function sync(options = {}) {
   if (syncInFlight) return;
+  const replyInput = document.getElementById('prospectReplyInput');
+  const replyDraft = replyInput?.value || '';
+  const replyHadFocus = document.activeElement === replyInput;
   try {
     syncInFlight = true;
     updateSyncStatus(lang === 'zh' ? '同步中...' : 'Syncing...');
@@ -732,6 +736,9 @@ async function sync(options = {}) {
     lastSyncAt = new Date();
     renderAuth();
     render();
+    const refreshedReplyInput = document.getElementById('prospectReplyInput');
+    if (refreshedReplyInput && replyDraft) refreshedReplyInput.value = replyDraft;
+    if (refreshedReplyInput && replyHadFocus) refreshedReplyInput.focus();
     startAutoSync();
     startRealtimeSync();
     updateSyncStatus();
@@ -3064,13 +3071,27 @@ function openProspectWorkspace(collection, id) {
   activeProspectWorkspaceId = `${collection}:${id}`;
   document.body.classList.add('prospect-workspace-open');
   renderProspectWorkspace();
+  startProspectWorkspaceSync();
 }
 
 function closeProspectWorkspace() {
   activeProspectWorkspaceId = '';
+  stopProspectWorkspaceSync();
   document.body.classList.remove('prospect-workspace-open');
   const workspace = document.getElementById('prospectWorkspace');
   if (workspace) workspace.classList.remove('open');
+}
+
+function startProspectWorkspaceSync() {
+  if (prospectWorkspaceSyncTimer || !token) return;
+  prospectWorkspaceSyncTimer = setInterval(() => {
+    if (activeProspectWorkspaceId && !document.hidden) sync({ silent: true });
+  }, 5000);
+}
+
+function stopProspectWorkspaceSync() {
+  if (prospectWorkspaceSyncTimer) clearInterval(prospectWorkspaceSyncTimer);
+  prospectWorkspaceSyncTimer = null;
 }
 
 function renderProspectWorkspace() {
