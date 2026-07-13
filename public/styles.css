@@ -846,6 +846,9 @@ body.prospect-workspace-open { overflow: hidden; }
 .prospect-compose-row textarea { width: 100%; min-height: 0; max-height: none; box-sizing: border-box; padding: 13px 14px; font-size: 16px; resize: none; }
 .prospect-compose-row .btn { min-width: 118px; min-height: 52px; font-size: 16px; }
 .prospect-chat-media { display: block; max-width: min(420px, 100%); max-height: 300px; margin-top: 8px; border-radius: 12px; object-fit: contain; background: rgba(0,0,0,.08); }
+.prospect-chat-video-placeholder { display: flex; width: min(420px, 100%); min-height: 150px; margin-top: 8px; padding: 20px; flex-direction: column; align-items: center; justify-content: center; gap: 10px; border: 0; border-radius: 12px; background: #173c47; color: #fff; cursor: pointer; }
+.prospect-chat-video-placeholder span { display: grid; width: 54px; height: 54px; place-items: center; padding-left: 4px; border-radius: 50%; background: rgba(255,255,255,.16); font-size: 24px; }
+.prospect-chat-video-placeholder strong { font-size: 15px; }
 .prospect-chat-file { display: inline-flex; margin-top: 8px; padding: 8px 11px; border-radius: 9px; background: rgba(255,255,255,.22); color: inherit; font-weight: 700; text-decoration: none; }
 @media (max-width: 720px) {
   .prospect-workspace-header { padding: 10px 12px; }

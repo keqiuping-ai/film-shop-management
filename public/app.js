@@ -3248,9 +3248,21 @@ function prospectAttachmentHtml(attachment) {
     return `<a href="${url}" target="_blank" rel="noopener"><img class="prospect-chat-media" src="${url}" alt="${name}"></a>`;
   }
   if (attachment.kind === 'video' || String(attachment.type || '').startsWith('video/')) {
-    return `<video class="prospect-chat-media" src="${url}" controls preload="none"></video>`;
+    return `<button class="prospect-chat-video-placeholder" type="button" onclick="playProspectVideo(this, '${encodeURIComponent(attachment.url)}')" aria-label="${lang === 'zh' ? '点击播放视频' : 'Play video'}"><span>▶</span><strong>${lang === 'zh' ? '点击播放视频' : 'Play video'}</strong></button>`;
   }
   return `<a class="prospect-chat-file" href="${url}" target="_blank" rel="noopener">📎 ${name}</a>`;
+}
+
+function playProspectVideo(button, encodedUrl) {
+  if (!button) return;
+  const video = document.createElement('video');
+  video.className = 'prospect-chat-media';
+  video.controls = true;
+  video.preload = 'metadata';
+  video.autoplay = true;
+  video.src = decodeURIComponent(encodedUrl);
+  button.replaceWith(video);
+  video.play().catch(() => {});
 }
 
 async function deleteProspectMessage(messageId) {
