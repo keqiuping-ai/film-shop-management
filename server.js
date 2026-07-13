@@ -1560,6 +1560,33 @@ function appendSmsMessage(item, message) {
   item.lastSmsDirection = message.direction;
 }
 
+function promoteEligibleCustomerConversation(db, item, user) {
+  if (!item || item.promotedProspectId || !['已邀约', '已预约'].includes(String(item.status || ''))) return null;
+  const existing = (db.prospects || []).find(row => row.promotedFromConversationId === item.id);
+  if (existing) {
+    item.promotedProspectId = existing.id;
+    item.promotedAt = item.promotedAt || existing.createdAt || new Date().toISOString();
+    return existing;
+  }
+  const now = new Date().toISOString();
+  const promoted = {
+    ...item,
+    id: id(),
+    promotedFromConversationId: item.id,
+    createdAt: now,
+    importedAt: item.importedAt || item.createdAt || now,
+    updatedAt: now,
+    createdBy: user.name || user.email,
+    createdByUserId: user.id
+  };
+  delete promoted.promotedProspectId;
+  delete promoted.promotedAt;
+  db.prospects.push(promoted);
+  item.promotedProspectId = promoted.id;
+  item.promotedAt = now;
+  return promoted;
+}
+
 function mergeConversationMessages(target, source) {
   const combined = [...(Array.isArray(target.conversationMessages) ? target.conversationMessages : [])];
   const keys = new Set(combined.map(message => String(message.providerSid || message.id || `${message.timestamp}|${message.direction}|${message.text}`)));
@@ -2913,6 +2940,7 @@ async function api(req, res) {
       item.createdBy = user.name || user.email;
       item.createdByUserId = user.id;
     }
+    const autoPromoted = collection === 'customerConversations' ? promoteEligibleCustomerConversation(db, item, user) : null;
     if (collection === 'schedules') {
       const error = prepareScheduleItem(db, item);
       if (error) return send(res, 400, { error });
@@ -2926,6 +2954,10 @@ async function api(req, res) {
       recordLabel: recordLabel(item),
       after: item,
       detail: `新增 ${collection} ${recordLabel(item) || item.id}`
+    });
+    if (autoPromoted) audit(db, user, 'auto-promote-customer-conversation', {
+      collection: 'prospects', recordId: autoPromoted.id, recordLabel: recordLabel(autoPromoted),
+      detail: `客户状态为 ${item.status}，自动转入高意向客户`
     });
     writeDb(db);
     notifyDataChanged(`create-${collection}`, item.id);
@@ -2994,6 +3026,7 @@ async function api(req, res) {
       next.updatedByUserId = user.id;
       next.updatedAt = now;
     }
+    const autoPromoted = collection === 'customerConversations' ? promoteEligibleCustomerConversation(db, next, user) : null;
     const before = db[collection][idx];
     const changedFields = diffRecords(before, next);
     db[collection][idx] = next;
@@ -3005,6 +3038,10 @@ async function api(req, res) {
       before,
       after: next,
       detail: `修改 ${collection} ${recordLabel(next) || recordId}：${changedFields.map(change => change.field).join(', ') || '无字段变化'}`
+    });
+    if (autoPromoted && !before.promotedProspectId) audit(db, user, 'auto-promote-customer-conversation', {
+      collection: 'prospects', recordId: autoPromoted.id, recordLabel: recordLabel(autoPromoted),
+      detail: `客户状态为 ${next.status}，自动转入高意向客户`
     });
     writeDb(db);
     notifyDataChanged(`update-${collection}`, recordId);

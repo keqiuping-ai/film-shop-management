@@ -3163,7 +3163,6 @@ function renderProspectWorkspace() {
         ${prospectIntentPill(item.intentLevel)} ${prospectStatusPill(item.status)}
       </div>
       <div class="prospect-workspace-actions">
-        ${collection === 'customerConversations' && hasPerm('prospectsEdit') && !item.promotedProspectId ? `<button class="btn primary" onclick="promoteCustomerToProspect()">${lang === 'zh' ? '加入高意向客户' : 'Add to high intent'}</button>` : ''}
         ${collection === 'customerConversations' && item.promotedProspectId ? `<span class="pill good">${lang === 'zh' ? '已转入高意向客户' : 'Promoted to high intent'}</span>` : ''}
         <button class="prospect-workspace-close" onclick="closeProspectWorkspace()" aria-label="${lang === 'zh' ? '关闭聊天工作台' : 'Close chat workspace'}">×</button>
       </div>
@@ -3368,6 +3367,13 @@ async function saveProspectWorkspaceDetails() {
     state = await api(`/api/${collection}/${item.id}`, { method: 'PUT', body: JSON.stringify(updated) });
     prospectWorkspaceDrafts.delete(activeProspectWorkspaceId);
     broadcastDataChange();
+    const savedConversation = collection === 'customerConversations'
+      ? (state.customerConversations || []).find(row => row.id === item.id)
+      : null;
+    if (savedConversation?.promotedProspectId) {
+      closeProspectWorkspace();
+      current = 'prospects';
+    }
     render();
   } catch (err) {
     alert(err.message);
@@ -3401,26 +3407,6 @@ async function sendProspectSms() {
       button.textContent = lang === 'zh' ? '发送短信' : 'Send SMS';
     }
   }
-}
-
-async function promoteCustomerToProspect() {
-  const { collection, item } = activeCustomerWorkspaceItem();
-  if (collection !== 'customerConversations' || !item || item.promotedProspectId) return;
-  try {
-    const copy = { ...item, id: undefined, promotedFromConversationId: item.id, intentLevel: item.intentLevel || '高意向', status: item.status || '新意向' };
-    delete copy.id;
-    state = await api('/api/prospects', { method: 'POST', body: JSON.stringify(copy) });
-    const promoted = (state.prospects || []).find(row => row.promotedFromConversationId === item.id);
-    if (!promoted) throw new Error(lang === 'zh' ? '高意向客户已创建，但无法确认新记录。请刷新后检查。' : 'The high-intent customer was created, but the new record could not be confirmed. Please refresh and check.');
-    state = await api(`/api/customerConversations/${item.id}`, {
-      method: 'PUT',
-      body: JSON.stringify({ ...item, promotedProspectId: promoted.id, promotedAt: new Date().toISOString() })
-    });
-    broadcastDataChange();
-    closeProspectWorkspace();
-    current = 'prospects';
-    render();
-  } catch (err) { alert(err.message); }
 }
 
 function leadTable() {
