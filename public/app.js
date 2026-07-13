@@ -3031,9 +3031,14 @@ function customerCenterRows() {
 
 function customerCenterTable() {
   const rows = customerCenterRows();
-  return `<div class="table-wrap customer-center-table"><table><thead><tr><th>${t('customer')}</th><th>${t('source')}</th><th>${t('vehicleNeed')}</th><th>${t('prospectStatus')}</th><th>${t('chatContext')}</th><th>${lang === 'zh' ? '分类' : 'Category'}</th></tr></thead><tbody>
-    ${rows.map(item => `<tr class="click-row" onclick="openProspectWorkspace('${item._collection}','${item.id}')"><td><strong>${escapeHtml(item.customer || (lang === 'zh' ? '未命名客户' : 'Unnamed'))}</strong><br><span class="note">${escapeHtml(item.phone || '')}</span></td><td>${escapeHtml(item.source || '')}</td><td>${escapeHtml(item.vehicle || '')}<br><span class="note">${escapeHtml(shortText(item.need || '', 55))}</span></td><td>${prospectStatusPill(item.status)}</td><td>${escapeHtml(shortText(prospectConversationSummary(item), 90))}</td><td>${item._highIntent ? `<span class="pill good">${lang === 'zh' ? '高意向' : 'High intent'}</span>` : item.promotedProspectId ? `<span class="pill good">${lang === 'zh' ? '已转高意向' : 'Promoted'}</span>` : `<span class="pill">${lang === 'zh' ? '交流中' : 'Active'}</span>`}</td></tr>`).join('')}
-    ${rows.length ? '' : `<tr><td colspan="6" class="note">${lang === 'zh' ? '还没有客户交流记录。' : 'No customer conversations yet.'}</td></tr>`}
+  const addedLabel = lang === 'zh' ? '加入/更新' : 'Added / Updated';
+  return `<div class="table-wrap customer-center-table"><table><thead><tr><th>${t('date')}</th><th>${addedLabel}</th><th>${t('source')}</th><th>${t('customer')}</th><th>${t('vehicleNeed')}</th><th>${t('appointmentAt')}</th><th>${t('contactOwner')}</th><th>${t('intentLevel')}</th><th>${t('prospectStatus')}</th></tr></thead><tbody>
+    ${rows.map(item => {
+      const rep = (state.customerServiceReps || []).find(row => row.id === item.ownerId);
+      const appointment = item.appointmentDate || item.appointmentTime ? `${escapeHtml(item.appointmentDate || '')}<br><span class="note">${escapeHtml(item.appointmentTime || '')}</span>` : '';
+      return `<tr class="click-row" onclick="openProspectWorkspace('${item._collection}','${item.id}')"><td class="prospect-nowrap">${escapeHtml(item.date || '')}</td><td class="prospect-time">${prospectTimeCell(item)}</td><td><div class="prospect-clamp prospect-clamp-2">${escapeHtml(item.source || '')}</div></td><td><div class="prospect-clamp">${escapeHtml(item.customer || (lang === 'zh' ? '未命名客户' : 'Unnamed'))}</div><span class="note prospect-nowrap">${escapeHtml(item.phone || '')}</span></td><td><div class="prospect-clamp">${escapeHtml(item.vehicle || '')}</div><div class="note prospect-clamp prospect-clamp-2">${escapeHtml(item.need || '')}</div></td><td class="prospect-time">${appointment}</td><td><div class="prospect-clamp prospect-clamp-2">${rep ? escapeHtml(rep.name) : escapeHtml(item.ownerName || '') || t('unassigned')}</div></td><td>${prospectIntentPill(item.intentLevel)}</td><td>${prospectStatusPill(item.status)}</td></tr>`;
+    }).join('')}
+    ${rows.length ? '' : `<tr><td colspan="9" class="note">${lang === 'zh' ? '还没有客户交流记录。' : 'No customer conversations yet.'}</td></tr>`}
   </tbody></table></div>`;
 }
 
