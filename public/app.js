@@ -3200,8 +3200,34 @@ function fileAsDataUrl(file) {
   });
 }
 
+async function optimizeProspectImage(file) {
+  if (!file || !String(file.type || '').startsWith('image/') || file.type === 'image/gif') return file;
+  try {
+    const bitmap = await createImageBitmap(file);
+    const maxSide = 1280;
+    const scale = Math.min(1, maxSide / Math.max(bitmap.width, bitmap.height));
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+    canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+    canvas.getContext('2d').drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+    bitmap.close?.();
+    let quality = .82;
+    let blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', quality));
+    while (blob && blob.size > 700 * 1024 && quality > .42) {
+      quality -= .1;
+      blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', quality));
+    }
+    if (!blob) return file;
+    const baseName = String(file.name || '图片').replace(/\.[^.]+$/, '').slice(0, 40);
+    return new File([blob], `${baseName}.jpg`, { type: 'image/jpeg', lastModified: Date.now() });
+  } catch {
+    return file;
+  }
+}
+
 async function uploadProspectAttachment(file) {
   if (!file) return;
+  file = await optimizeProspectImage(file);
   if (file.size > 5 * 1024 * 1024) return alert(lang === 'zh' ? '附件不能超过 5MB。' : 'Attachments must be 5MB or smaller.');
   const preview = document.getElementById('prospectAttachmentPreview');
   if (preview) preview.textContent = lang === 'zh' ? '正在上传…' : 'Uploading…';

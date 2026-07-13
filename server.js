@@ -1676,7 +1676,7 @@ function safeCustomerMediaExtension(name, contentType) {
 function serveCustomerMedia(req, res) {
   const url = new URL(req.url, `http://${req.headers.host}`);
   const fileName = path.basename(decodeURIComponent(url.pathname.replace('/customer-media/', '')));
-  if (!/^[a-f0-9]{32}\.[a-z0-9]{1,8}$/i.test(fileName)) return send(res, 404, 'Not found', 'text/plain; charset=utf-8');
+  if (!/^[a-f0-9]{12,32}\.[a-z0-9]{1,8}$/i.test(fileName)) return send(res, 404, 'Not found', 'text/plain; charset=utf-8');
   const filePath = path.join(CUSTOMER_MEDIA_DIR, fileName);
   fs.readFile(filePath, (err, data) => {
     if (err) return send(res, 404, 'Not found', 'text/plain; charset=utf-8');
@@ -1684,7 +1684,7 @@ function serveCustomerMedia(req, res) {
       'Content-Type': mime[path.extname(fileName).toLowerCase()] || 'application/octet-stream',
       'Content-Length': data.length,
       'Cache-Control': 'public, max-age=31536000, immutable',
-      'Content-Disposition': 'inline',
+      'Content-Disposition': `inline; filename="${fileName}"`,
       'X-Content-Type-Options': 'nosniff'
     });
     res.end(data);
@@ -2446,8 +2446,9 @@ async function api(req, res) {
     const data = Buffer.from(match[2], 'base64');
     if (!data.length) return send(res, 400, { error: '附件为空' });
     if (data.length > 5 * 1024 * 1024) return send(res, 400, { error: '附件不能超过 5MB，短信附件太大会发送失败' });
+    if (contentType.startsWith('image/') && data.length > 900 * 1024) return send(res, 400, { error: '图片压缩后仍超过 900KB，请换一张图片重试' });
     fs.mkdirSync(CUSTOMER_MEDIA_DIR, { recursive: true });
-    const fileName = `${crypto.randomBytes(16).toString('hex')}${safeCustomerMediaExtension(name, contentType)}`;
+    const fileName = `${crypto.randomBytes(6).toString('hex')}${safeCustomerMediaExtension(name, contentType)}`;
     fs.writeFileSync(path.join(CUSTOMER_MEDIA_DIR, fileName), data);
     const mediaUrl = `${requestPublicBaseUrl(req)}/customer-media/${fileName}`;
     audit(db, user, 'upload-customer-media', `上传客户附件 ${name}`);

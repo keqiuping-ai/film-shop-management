@@ -787,7 +787,7 @@ body.prospect-workspace-open { overflow: hidden; }
   cursor: pointer;
 }
 .prospect-workspace-body { min-height: 0; display: grid; grid-template-columns: 33.333% minmax(0, 1fr); }
-.prospect-workspace-sidebar { min-height: 0; overflow: hidden; padding: 12px 14px 14px; background: #fff; border-right: 1px solid var(--line); display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 7px 10px; align-content: start; }
+.prospect-workspace-sidebar { min-height: 0; overflow: hidden; padding: 18px 14px 24px; background: #fff; border-right: 1px solid var(--line); display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px 10px; align-content: start; }
 .prospect-workspace-sidebar h3 { grid-column: 1 / -1; margin: 0 0 2px; font-size: 16px; }
 .prospect-sidebar-field { display: grid; gap: 3px; margin: 0; color: var(--muted); font-size: 11px; font-weight: 700; }
 .prospect-sidebar-field input, .prospect-sidebar-field select, .prospect-sidebar-field textarea { width: 100%; min-height: 34px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 7px; background: #fff; color: var(--ink); font: inherit; font-size: 13px; font-weight: 500; }
@@ -796,8 +796,8 @@ body.prospect-workspace-open { overflow: hidden; }
 .prospect-sidebar-pair,
 .prospect-sidebar-save { grid-column: 1 / -1; }
 .prospect-sidebar-pair { display: grid; grid-template-columns: 1fr 112px; gap: 8px; }
-.prospect-sidebar-save { width: 100%; min-height: 38px; margin-top: 1px; }
-.prospect-workspace-conversation { position: relative; min-width: 0; min-height: 0; overflow: hidden; display: grid; grid-template-rows: minmax(0, 1fr) 258px; padding-bottom: 16px; box-sizing: border-box; }
+.prospect-sidebar-save { width: 100%; min-height: 42px; margin-top: clamp(54px, 9vh, 110px); }
+.prospect-workspace-conversation { position: relative; min-width: 0; min-height: 0; overflow: hidden; display: grid; grid-template-rows: minmax(0, 1fr) 280px; padding-bottom: 20px; box-sizing: border-box; }
 .prospect-workspace-chat {
   position: relative;
   min-height: 0;
@@ -828,7 +828,7 @@ body.prospect-workspace-open { overflow: hidden; }
 .prospect-chat-text { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.55; }
 .prospect-chat-message time { display: block; margin-top: 6px; font-size: 11px; opacity: .65; }
 .prospect-chat-empty { margin: auto; color: var(--muted); }
-.prospect-workspace-composer { position: relative; z-index: 2; min-width: 0; min-height: 0; height: 258px; box-sizing: border-box; padding: 12px max(20px, calc((100vw - 1460px) / 2)) 14px; background: #fff; border-top: 1px solid var(--line); box-shadow: 0 -8px 22px rgba(15, 23, 42, .06); display: grid; grid-template-rows: auto auto minmax(0, 1fr); gap: 8px; }
+.prospect-workspace-composer { position: relative; z-index: 2; align-self: start; transform: translateY(-26px); min-width: 0; min-height: 0; height: 230px; box-sizing: border-box; padding: 10px max(20px, calc((100vw - 1460px) / 2)) 12px; background: #fff; border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 8px 24px rgba(15, 23, 42, .08); display: grid; grid-template-rows: auto auto minmax(0, 1fr); gap: 7px; }
 .prospect-sms-status { margin: 0; color: var(--muted); font-size: 13px; }
 .prospect-attachment-tools { min-height: 30px; margin: 0; display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
 .prospect-attachment-tools > button { padding: 5px 9px; border: 1px solid var(--line); border-radius: 7px; background: #f8fafb; color: var(--ink); cursor: pointer; }
@@ -849,8 +849,8 @@ body.prospect-workspace-open { overflow: hidden; }
   .prospect-sidebar-pair { grid-template-columns: 1fr 1fr; }
   .prospect-workspace-chat { padding: 14px 12px; scroll-padding-bottom: 14px; }
   .prospect-chat-message { width: 88%; }
-  .prospect-workspace-conversation { grid-template-rows: minmax(0, 1fr) 270px; padding-bottom: 0; }
-  .prospect-workspace-composer { height: 270px; padding: 8px 12px 10px; }
+  .prospect-workspace-conversation { grid-template-rows: minmax(0, 1fr) 270px; padding-bottom: 10px; }
+  .prospect-workspace-composer { height: 250px; padding: 8px 12px 10px; border-radius: 10px; transform: none; }
   .prospect-compose-row { grid-template-columns: 1fr; grid-template-rows: minmax(70px, 1fr) 42px; }
   .prospect-compose-row textarea { min-height: 80px; }
 }
