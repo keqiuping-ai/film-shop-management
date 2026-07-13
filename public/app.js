@@ -50,6 +50,7 @@ let realtimeConnected = false;
 let activeMessageUserId = '';
 let activeProspectWorkspaceId = '';
 let prospectWorkspaceSyncTimer = null;
+let prospectPendingAttachment = null;
 let messageRecorder = null;
 let messageAudioChunks = [];
 let knownUnreadMessageIds = null;
@@ -2888,13 +2889,13 @@ function prospectSpeakerRole(value, fallbackName = '') {
   return 'customer';
 }
 
-function pushConversationSegment(segments, role, title, text, meta = '') {
+function pushConversationSegment(segments, role, title, text, meta = '', attachment = null) {
   const value = cleanConversationText(text).replace(/^[:|-]+/, '').trim();
-  if (!value) return;
+  if (!value && !attachment?.url) return;
   const normalizedRole = prospectSpeakerRole(role, title || meta);
   const key = `${normalizedRole}|${cleanConversationText(meta)}|${value}`.toLowerCase();
   if (segments.some(item => item.key === key)) return;
-  segments.push({ key, role: normalizedRole, title, text: value, meta });
+  segments.push({ key, role: normalizedRole, title, text: value, meta, attachment });
 }
 
 function structuredProspectMessages(item) {
@@ -2914,10 +2915,11 @@ function structuredProspectMessages(item) {
       role,
       title,
       text: cleanConversationText(message.text || message.message || message.content || ''),
+      attachment: message.attachment || null,
       meta: [formatAppDateTime(message.timestamp || message.time || message.createdAt || '') || cleanConversationText(message.timestamp || ''), message.channel === 'sms' && message.status ? `SMS · ${message.status}` : ''].filter(Boolean).join(' · '),
       order: Number.isFinite(Number(message.order)) ? Number(message.order) : index
     };
-  }).filter(message => message.text);
+  }).filter(message => message.text || message.attachment?.url);
 }
 
 function prospectConversationSegments(input) {
@@ -2930,7 +2932,7 @@ function prospectConversationSegments(input) {
       const segments = [];
       structured
         .sort((a, b) => a.order - b.order)
-        .forEach(message => pushConversationSegment(segments, message.role, message.title, message.text, message.meta));
+        .forEach(message => pushConversationSegment(segments, message.role, message.title, message.text, message.meta, message.attachment));
       return segments;
     }
   }
@@ -3145,12 +3147,23 @@ function renderProspectWorkspace() {
         <main class="prospect-workspace-chat">
           ${segments.length ? segments.map(segment => `<article class="prospect-chat-message ${segment.role}">
             <div class="prospect-chat-role">${escapeHtml(segment.title)}</div>
-            <div class="prospect-chat-text">${escapeHtml(segment.text)}</div>
+            ${segment.text ? `<div class="prospect-chat-text">${escapeHtml(segment.text)}</div>` : ''}
+            ${prospectAttachmentHtml(segment.attachment)}
             ${segment.meta ? `<time>${escapeHtml(segment.meta)}</time>` : ''}
           </article>`).join('') : `<div class="prospect-chat-empty">${lang === 'zh' ? '还没有聊天记录。' : 'No conversation yet.'}</div>`}
         </main>
         <footer class="prospect-workspace-composer">
           <div class="prospect-sms-status">${lang === 'zh' ? '通过 Twilio 发送和接收短信 · 发送号码：+1 725-241-2586' : 'Send and receive SMS through Twilio · Sender: +1 725-241-2586'}</div>
+          <div class="prospect-attachment-tools">
+            <button type="button" onclick="document.getElementById('prospectImageInput').click()">🖼️ ${lang === 'zh' ? '图片' : 'Image'}</button>
+            <button type="button" onclick="document.getElementById('prospectVideoInput').click()">🎬 ${lang === 'zh' ? '视频' : 'Video'}</button>
+            <button type="button" onclick="document.getElementById('prospectFileInput').click()">📎 ${lang === 'zh' ? '文件' : 'File'}</button>
+            <button type="button" onclick="insertProspectAddress()">📍 ${lang === 'zh' ? '地址' : 'Address'}</button>
+            <span id="prospectAttachmentPreview">${prospectPendingAttachment ? `${escapeHtml(prospectPendingAttachment.name)} <button type="button" onclick="clearProspectAttachment()">×</button>` : ''}</span>
+            <input class="hidden" id="prospectImageInput" type="file" accept="image/*" onchange="uploadProspectAttachment(this.files[0]); this.value=''">
+            <input class="hidden" id="prospectVideoInput" type="file" accept="video/*" onchange="uploadProspectAttachment(this.files[0]); this.value=''">
+            <input class="hidden" id="prospectFileInput" type="file" onchange="uploadProspectAttachment(this.files[0]); this.value=''">
+          </div>
           <div class="prospect-compose-row">
             <textarea id="prospectReplyInput" placeholder="${lang === 'zh' ? '输入给该客户的回复内容…' : 'Write a reply…'}"></textarea>
             <button id="prospectSendSmsButton" class="btn primary" onclick="sendProspectSms()" ${hasPerm('prospectsEdit') ? '' : 'disabled'}>${lang === 'zh' ? '发送短信' : 'Send SMS'}</button>
@@ -3163,6 +3176,62 @@ function renderProspectWorkspace() {
     const chat = workspace.querySelector('.prospect-workspace-chat');
     if (chat) chat.scrollTop = chat.scrollHeight;
   });
+}
+
+function prospectAttachmentHtml(attachment) {
+  if (!attachment?.url) return '';
+  const url = escapeHtml(attachment.url);
+  const name = escapeHtml(attachment.name || '附件');
+  if (attachment.kind === 'image' || String(attachment.type || '').startsWith('image/')) {
+    return `<a href="${url}" target="_blank" rel="noopener"><img class="prospect-chat-media" src="${url}" alt="${name}"></a>`;
+  }
+  if (attachment.kind === 'video' || String(attachment.type || '').startsWith('video/')) {
+    return `<video class="prospect-chat-media" src="${url}" controls preload="metadata"></video>`;
+  }
+  return `<a class="prospect-chat-file" href="${url}" target="_blank" rel="noopener">📎 ${name}</a>`;
+}
+
+function fileAsDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(new Error(lang === 'zh' ? '读取附件失败' : 'Could not read the attachment'));
+    reader.readAsDataURL(file);
+  });
+}
+
+async function uploadProspectAttachment(file) {
+  if (!file) return;
+  if (file.size > 5 * 1024 * 1024) return alert(lang === 'zh' ? '附件不能超过 5MB。' : 'Attachments must be 5MB or smaller.');
+  const preview = document.getElementById('prospectAttachmentPreview');
+  if (preview) preview.textContent = lang === 'zh' ? '正在上传…' : 'Uploading…';
+  try {
+    const uploaded = await api('/api/customer-media/upload', {
+      method: 'POST',
+      body: JSON.stringify({ name: file.name, type: file.type || 'application/octet-stream', dataUrl: await fileAsDataUrl(file) })
+    });
+    prospectPendingAttachment = { name: uploaded.name, type: uploaded.type, size: uploaded.size, url: uploaded.url };
+    renderProspectWorkspace();
+  } catch (err) {
+    prospectPendingAttachment = null;
+    alert(err.message);
+    renderProspectWorkspace();
+  }
+}
+
+function clearProspectAttachment() {
+  prospectPendingAttachment = null;
+  renderProspectWorkspace();
+}
+
+function insertProspectAddress() {
+  const address = prompt(lang === 'zh' ? '输入要发给客户的地址：' : 'Enter the address to send:', '3359 W Oquendo Rd, Las Vegas, NV');
+  if (!address?.trim()) return;
+  const input = document.getElementById('prospectReplyInput');
+  if (!input) return;
+  const mapUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address.trim())}`;
+  input.value = [input.value.trim(), `📍 ${address.trim()}\n${mapUrl}`].filter(Boolean).join('\n');
+  input.focus();
 }
 
 async function saveProspectWorkspaceDetails() {
@@ -3197,7 +3266,7 @@ async function sendProspectSms() {
   const input = document.getElementById('prospectReplyInput');
   const button = document.getElementById('prospectSendSmsButton');
   const text = String(input?.value || '').trim();
-  if (!item || !text) return;
+  if (!item || (!text && !prospectPendingAttachment)) return;
   if (button) {
     button.disabled = true;
     button.textContent = lang === 'zh' ? '发送中…' : 'Sending…';
@@ -3205,8 +3274,9 @@ async function sendProspectSms() {
   try {
     const result = await api('/api/twilio/send', {
       method: 'POST',
-      body: JSON.stringify({ collection, id: item.id, text })
+      body: JSON.stringify({ collection, id: item.id, text, attachment: prospectPendingAttachment })
     });
+    prospectPendingAttachment = null;
     state = result.data;
     broadcastDataChange();
     render();

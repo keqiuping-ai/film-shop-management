@@ -9,6 +9,7 @@ const PUBLIC = path.join(ROOT, 'public');
 const DATA_DIR = process.env.DATA_DIR || path.join(ROOT, 'data');
 const DB_FILE = path.join(DATA_DIR, 'db.json');
 const BACKUP_DIR = path.join(DATA_DIR, 'backups');
+const CUSTOMER_MEDIA_DIR = path.join(DATA_DIR, 'customer-media');
 const SESSION_SECRET_FILE = path.join(DATA_DIR, 'session-secret');
 const CONFIG_FILE = path.join(ROOT, 'server-config.json');
 const VERSION_FILE = path.join(ROOT, 'version.json');
@@ -25,6 +26,20 @@ const mime = {
   '.json': 'application/json; charset=utf-8',
   '.svg': 'image/svg+xml; charset=utf-8',
   '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.gif': 'image/gif',
+  '.webp': 'image/webp',
+  '.heic': 'image/heic',
+  '.mp4': 'video/mp4',
+  '.mov': 'video/quicktime',
+  '.webm': 'video/webm',
+  '.pdf': 'application/pdf',
+  '.txt': 'text/plain; charset=utf-8',
+  '.doc': 'application/msword',
+  '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  '.xls': 'application/vnd.ms-excel',
+  '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   '.icns': 'image/icns',
   '.webmanifest': 'application/manifest+json; charset=utf-8'
 };
@@ -1625,10 +1640,11 @@ function startTwilioReconciliationWorker() {
   setInterval(run, 5 * 60 * 1000);
 }
 
-async function sendTwilioSms({ to, body, statusCallback }) {
+async function sendTwilioSms({ to, body, mediaUrl, statusCallback }) {
   const config = twilioConfig();
   if (!twilioConfigured()) throw new Error('Twilio 尚未配置，请先设置 Railway 环境变量');
   const form = new URLSearchParams({ To: to, Body: body });
+  if (mediaUrl) form.append('MediaUrl', mediaUrl);
   if (config.messagingServiceSid) form.set('MessagingServiceSid', config.messagingServiceSid);
   else form.set('From', config.fromNumber);
   if (statusCallback) form.set('StatusCallback', statusCallback);
@@ -1643,6 +1659,36 @@ async function sendTwilioSms({ to, body, statusCallback }) {
   const result = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(result.message || `Twilio 发送失败 (${response.status})`);
   return result;
+}
+
+function safeCustomerMediaExtension(name, contentType) {
+  const fromName = path.extname(String(name || '')).toLowerCase();
+  const allowed = new Set(['.jpg', '.jpeg', '.png', '.gif', '.webp', '.heic', '.mp4', '.mov', '.webm', '.pdf', '.txt', '.doc', '.docx', '.xls', '.xlsx', '.zip']);
+  if (allowed.has(fromName)) return fromName;
+  const byType = {
+    'image/jpeg': '.jpg', 'image/png': '.png', 'image/gif': '.gif', 'image/webp': '.webp',
+    'video/mp4': '.mp4', 'video/quicktime': '.mov', 'video/webm': '.webm',
+    'application/pdf': '.pdf', 'text/plain': '.txt'
+  };
+  return byType[String(contentType || '').toLowerCase()] || '.bin';
+}
+
+function serveCustomerMedia(req, res) {
+  const url = new URL(req.url, `http://${req.headers.host}`);
+  const fileName = path.basename(decodeURIComponent(url.pathname.replace('/customer-media/', '')));
+  if (!/^[a-f0-9]{32}\.[a-z0-9]{1,8}$/i.test(fileName)) return send(res, 404, 'Not found', 'text/plain; charset=utf-8');
+  const filePath = path.join(CUSTOMER_MEDIA_DIR, fileName);
+  fs.readFile(filePath, (err, data) => {
+    if (err) return send(res, 404, 'Not found', 'text/plain; charset=utf-8');
+    res.writeHead(200, {
+      'Content-Type': mime[path.extname(fileName).toLowerCase()] || 'application/octet-stream',
+      'Content-Length': data.length,
+      'Cache-Control': 'public, max-age=31536000, immutable',
+      'Content-Disposition': 'inline',
+      'X-Content-Type-Options': 'nosniff'
+    });
+    res.end(data);
+  });
 }
 
 function currentUser(req, db) {
@@ -2389,23 +2435,51 @@ async function api(req, res) {
     });
   }
 
+  if (req.method === 'POST' && url.pathname === '/api/customer-media/upload') {
+    if (!canAccess(user, 'prospectsEdit')) return send(res, 403, { error: '没有发送客户附件的权限' });
+    const body = await readBody(req);
+    const name = String(body.name || '附件').trim().slice(0, 160);
+    let contentType = String(body.type || 'application/octet-stream').trim().slice(0, 120);
+    const match = String(body.dataUrl || '').match(/^data:([^;,]+);base64,(.+)$/s);
+    if (!match) return send(res, 400, { error: '附件格式不正确' });
+    contentType = String(match[1] || contentType).trim().slice(0, 120);
+    const data = Buffer.from(match[2], 'base64');
+    if (!data.length) return send(res, 400, { error: '附件为空' });
+    if (data.length > 5 * 1024 * 1024) return send(res, 400, { error: '附件不能超过 5MB，短信附件太大会发送失败' });
+    fs.mkdirSync(CUSTOMER_MEDIA_DIR, { recursive: true });
+    const fileName = `${crypto.randomBytes(16).toString('hex')}${safeCustomerMediaExtension(name, contentType)}`;
+    fs.writeFileSync(path.join(CUSTOMER_MEDIA_DIR, fileName), data);
+    const mediaUrl = `${requestPublicBaseUrl(req)}/customer-media/${fileName}`;
+    audit(db, user, 'upload-customer-media', `上传客户附件 ${name}`);
+    writeDb(db);
+    return send(res, 200, { ok: true, name, type: contentType, size: data.length, url: mediaUrl });
+  }
+
   if (req.method === 'POST' && url.pathname === '/api/twilio/send') {
     if (!canAccess(user, 'prospectsEdit')) return send(res, 403, { error: '没有发送客户短信的权限' });
     const body = await readBody(req);
     const collection = String(body.collection || '').trim();
     const recordId = String(body.id || '').trim();
-    const text = String(body.text || '').trim();
+    let text = String(body.text || '').trim();
+    const attachment = body.attachment && typeof body.attachment === 'object' ? body.attachment : null;
     if (!['customerConversations', 'prospects'].includes(collection)) return send(res, 400, { error: '客户类型不正确' });
     const item = (db[collection] || []).find(row => row.id === recordId);
     if (!item) return send(res, 404, { error: '找不到客户记录' });
     const phoneDigits = normalizedPhone(item.phone);
     if (phoneDigits.length !== 10) return send(res, 400, { error: '客户电话格式不正确，请先填写美国 10 位手机号码' });
-    if (!text) return send(res, 400, { error: '短信内容不能为空' });
+    if (!text && !attachment?.url) return send(res, 400, { error: '短信内容或附件不能为空' });
+    if (attachment?.url && !String(attachment.url).startsWith(`${requestPublicBaseUrl(req)}/customer-media/`)) {
+      return send(res, 400, { error: '附件链接不正确，请重新选择文件' });
+    }
+    const attachmentType = String(attachment?.type || '');
+    const canSendAsMms = /^(image|video)\//i.test(attachmentType);
+    if (attachment?.url && !canSendAsMms) text = [text, `文件：${attachment.name || '查看附件'} ${attachment.url}`].filter(Boolean).join('\n');
     if (text.length > 1600) return send(res, 400, { error: '短信内容不能超过 1600 个字符' });
     const to = `+1${phoneDigits}`;
     const sent = await sendTwilioSms({
       to,
       body: text,
+      mediaUrl: canSendAsMms ? String(attachment.url || '') : '',
       statusCallback: `${requestPublicBaseUrl(req)}/api/twilio/status`
     });
     const now = new Date().toISOString();
@@ -2416,6 +2490,12 @@ async function api(req, res) {
       direction: 'outbound',
       channel: 'sms',
       text,
+      attachment: attachment?.url ? {
+        name: String(attachment.name || '附件').slice(0, 160),
+        type: attachmentType.slice(0, 120),
+        url: String(attachment.url),
+        kind: canSendAsMms ? (attachmentType.startsWith('video/') ? 'video' : 'image') : 'file'
+      } : null,
       timestamp: now,
       provider: 'twilio',
       providerSid: String(sent.sid || ''),
@@ -2974,7 +3054,9 @@ applySalesOrderSalesRepMigration();
 applyCustomPrintedFilmSalesOrderMigration();
 applyPromotedConversationMerge();
 http.createServer((req, res) => {
-  if (req.url.startsWith('/api/')) {
+  if (req.url.startsWith('/customer-media/')) {
+    serveCustomerMedia(req, res);
+  } else if (req.url.startsWith('/api/')) {
     api(req, res).catch(err => send(res, 500, { error: err.message }));
   } else {
     staticFile(req, res);
