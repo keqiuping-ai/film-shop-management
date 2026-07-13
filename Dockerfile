@@ -11,7 +11,6 @@ COPY version.json ./
 COPY public ./public
 COPY updates ./updates
 COPY migrations ./migrations
-COPY imports ./imports
 
 ENV NODE_ENV=production
 ENV PORT=4318
