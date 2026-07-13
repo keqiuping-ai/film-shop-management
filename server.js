@@ -1786,16 +1786,47 @@ function serveCustomerMedia(req, res) {
   const fileName = path.basename(decodeURIComponent(url.pathname.replace('/customer-media/', '')));
   if (!/^[a-f0-9]{12,32}\.[a-z0-9]{1,8}$/i.test(fileName)) return send(res, 404, 'Not found', 'text/plain; charset=utf-8');
   const filePath = path.join(CUSTOMER_MEDIA_DIR, fileName);
-  fs.readFile(filePath, (err, data) => {
+  fs.stat(filePath, (err, stat) => {
     if (err) return send(res, 404, 'Not found', 'text/plain; charset=utf-8');
-    res.writeHead(200, {
+    const size = stat.size;
+    const headers = {
       'Content-Type': mime[path.extname(fileName).toLowerCase()] || 'application/octet-stream',
-      'Content-Length': data.length,
       'Cache-Control': 'public, max-age=31536000, immutable',
       'Content-Disposition': `inline; filename="${fileName}"`,
-      'X-Content-Type-Options': 'nosniff'
+      'X-Content-Type-Options': 'nosniff',
+      'Accept-Ranges': 'bytes'
+    };
+    const match = String(req.headers.range || '').match(/^bytes=(\d*)-(\d*)$/i);
+    if (!match) {
+      res.writeHead(200, { ...headers, 'Content-Length': size });
+      if (req.method === 'HEAD') return res.end();
+      return fs.createReadStream(filePath).pipe(res);
+    }
+    let start;
+    let end;
+    if (match[1] === '') {
+      const suffixLength = Number(match[2]);
+      if (!Number.isFinite(suffixLength) || suffixLength <= 0) {
+        res.writeHead(416, { ...headers, 'Content-Range': `bytes */${size}` });
+        return res.end();
+      }
+      start = Math.max(0, size - suffixLength);
+      end = size - 1;
+    } else {
+      start = Number(match[1]);
+      end = match[2] === '' ? size - 1 : Math.min(Number(match[2]), size - 1);
+    }
+    if (!Number.isInteger(start) || !Number.isInteger(end) || start < 0 || start >= size || end < start) {
+      res.writeHead(416, { ...headers, 'Content-Range': `bytes */${size}` });
+      return res.end();
+    }
+    res.writeHead(206, {
+      ...headers,
+      'Content-Length': end - start + 1,
+      'Content-Range': `bytes ${start}-${end}/${size}`
     });
-    res.end(data);
+    if (req.method === 'HEAD') return res.end();
+    fs.createReadStream(filePath, { start, end }).pipe(res);
   });
 }
 
