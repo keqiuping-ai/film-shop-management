@@ -3108,6 +3108,14 @@ function renderProspectWorkspace() {
   if (!item) return closeProspectWorkspace();
   const segments = prospectConversationSegments(item);
   const workspace = ensureProspectWorkspace();
+  const conversationKey = `${collection}:${item.id}`;
+  const previousChat = workspace.querySelector('.prospect-workspace-chat');
+  const sameConversation = workspace.dataset.conversationKey === conversationKey;
+  const previousScrollTop = sameConversation && previousChat ? previousChat.scrollTop : 0;
+  const previousDistanceFromBottom = sameConversation && previousChat
+    ? previousChat.scrollHeight - previousChat.clientHeight - previousChat.scrollTop
+    : 0;
+  const shouldFollowLatest = !sameConversation || previousDistanceFromBottom < 80;
   const field = (label, control) => `<label class="prospect-sidebar-field"><span>${label}</span>${control}</label>`;
   const select = (id, value, options) => `<select id="${id}" ${hasPerm('prospectsEdit') ? '' : 'disabled'}>${options.map(option => {
     const pair = Array.isArray(option) ? option : [option, option];
@@ -3179,10 +3187,21 @@ function renderProspectWorkspace() {
         </footer>
       </section>
     </div>`;
+  workspace.dataset.conversationKey = conversationKey;
   workspace.classList.add('open');
+  const conversation = workspace.querySelector('.prospect-workspace-conversation');
+  const chat = workspace.querySelector('.prospect-workspace-chat');
+  if (conversation && chat) {
+    conversation.addEventListener('wheel', event => {
+      if (event.target.closest('.prospect-workspace-composer, input, textarea, select, button, a, video')) return;
+      if (chat.scrollHeight <= chat.clientHeight) return;
+      chat.scrollTop += event.deltaY;
+      event.preventDefault();
+    }, { passive: false });
+  }
   requestAnimationFrame(() => {
-    const chat = workspace.querySelector('.prospect-workspace-chat');
-    if (chat) chat.scrollTop = chat.scrollHeight;
+    if (!chat) return;
+    chat.scrollTop = shouldFollowLatest ? chat.scrollHeight : previousScrollTop;
   });
 }
 
