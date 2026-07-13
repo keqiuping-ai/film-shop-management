@@ -3406,7 +3406,7 @@ function replyTemplateCards(type, selectable = false) {
       ? `<p>${escapeHtml(item.content || '')}</p>`
       : type === 'image'
         ? `<img src="${escapeHtml(item.attachment?.url || '')}" alt="${escapeHtml(item.title || '')}">`
-        : `<div class="reply-template-video"><span>▶</span><small>${lang === 'zh' ? '短视频素材' : 'Video reply'}</small></div>`;
+        : `<button class="reply-template-video reply-template-video-preview" type="button" onclick="event.stopPropagation();previewReplyTemplateVideo('${escapeHtml(item.id)}')" title="${lang === 'zh' ? '点击预览视频' : 'Preview video'}"><span>▶</span><small>${lang === 'zh' ? '点击预览视频' : 'Preview video'}</small></button>`;
     return `<article class="reply-library-card" onclick="${action}">
       <div class="reply-library-card-preview">${preview}</div>
       <div class="reply-library-card-info"><strong>${escapeHtml(item.title || replyTypeLabel(type))}</strong><small>${escapeHtml(item.createdBy || '')}</small></div>
@@ -3480,6 +3480,30 @@ function useReplyTemplate(id) {
     input.dispatchEvent(new Event('input', { bubbles: true }));
     input.focus();
   }
+}
+
+function previewReplyTemplateVideo(id) {
+  const item = (state.replyTemplates || []).find(row => row.id === id && row.type === 'video');
+  if (!item?.attachment?.url) return alert(lang === 'zh' ? '找不到这个视频文件。' : 'Video file not found.');
+  document.getElementById('replyVideoPreviewOverlay')?.remove();
+  const overlay = document.createElement('div');
+  overlay.id = 'replyVideoPreviewOverlay';
+  overlay.className = 'reply-video-preview-overlay';
+  overlay.innerHTML = `<div class="reply-video-preview-dialog" role="dialog" aria-modal="true" aria-label="${lang === 'zh' ? '视频预览' : 'Video preview'}">
+    <header><div><strong>${escapeHtml(item.title || (lang === 'zh' ? '视频预览' : 'Video preview'))}</strong><small>${lang === 'zh' ? '仅供预览，不会发送给客户' : 'Preview only — nothing will be sent'}</small></div><button class="icon-btn" type="button" onclick="closeReplyTemplateVideoPreview()">×</button></header>
+    <video src="${escapeHtml(item.attachment.url)}" controls autoplay playsinline preload="metadata"></video>
+    <footer><button class="btn primary" type="button" onclick="closeReplyTemplateVideoPreview()">${lang === 'zh' ? '看完了，返回选择' : 'Done — return'}</button></footer>
+  </div>`;
+  overlay.addEventListener('click', event => { if (event.target === overlay) closeReplyTemplateVideoPreview(); });
+  document.body.appendChild(overlay);
+  overlay.querySelector('video')?.play().catch(() => {});
+}
+
+function closeReplyTemplateVideoPreview() {
+  const overlay = document.getElementById('replyVideoPreviewOverlay');
+  const video = overlay?.querySelector('video');
+  if (video) { video.pause(); video.removeAttribute('src'); video.load(); }
+  overlay?.remove();
 }
 
 function replyTemplatePreviewHtml(type, attachment) {
@@ -4564,6 +4588,7 @@ function openModal(title, html, onSave) {
   document.getElementById('modal').classList.add('open');
 }
 function closeModal() {
+  closeReplyTemplateVideoPreview();
   if (messageRecorder && messageRecorder.state === 'recording') messageRecorder.stop();
   document.getElementById('modal').classList.remove('open', 'message-modal-open');
   document.getElementById('modal').classList.remove('reply-library-open');
