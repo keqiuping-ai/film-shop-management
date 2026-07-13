@@ -1745,7 +1745,7 @@ async function optimizeCustomerMmsVideo(data, contentType) {
     const commonArgs = [
       '-y', '-v', 'error', '-i', inputPath,
       '-map', '0:v:0', '-map_metadata', '-1', '-map_chapters', '-1', '-sn', '-dn',
-      '-vf', 'scale=480:-2:force_original_aspect_ratio=decrease:flags=lanczos,fps=20,format=yuv420p',
+      '-vf', 'scale=480:-2:force_original_aspect_ratio=decrease:flags=lanczos,pad=ceil(iw/2)*2:ceil(ih/2)*2,fps=20,format=yuv420p',
       '-c:v', 'libx264', '-profile:v', 'baseline', '-level', '3.0', '-tag:v', 'avc1',
       '-b:v', `${videoKbps}k`, '-maxrate', `${videoKbps}k`, '-bufsize', `${videoKbps * 2}k`,
       '-movflags', '+faststart'
