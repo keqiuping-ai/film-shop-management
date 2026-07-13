@@ -18,6 +18,7 @@ const CONFIG_FILE = path.join(ROOT, 'server-config.json');
 const VERSION_FILE = path.join(ROOT, 'version.json');
 const MAX_MESSAGE_ATTACHMENT_BYTES = 8 * 1024 * 1024;
 const MAX_AVATAR_DATA_URL_BYTES = 2 * 1024 * 1024;
+const MAX_CUSTOMER_VIDEO_SOURCE_BYTES = 50 * 1024 * 1024;
 const CUSTOM_PRINTED_FILM_SKU = 'CUSTOM-PRINTED-FILM';
 const sessions = new Map();
 const eventClients = new Set();
@@ -1475,7 +1476,7 @@ function readBody(req) {
     let data = '';
     req.on('data', chunk => {
       data += chunk;
-      if (data.length > 16_000_000) reject(new Error('Body too large'));
+      if (data.length > 72_000_000) reject(new Error('Body too large'));
     });
     req.on('end', () => {
       if (!data) return resolve({});
@@ -2604,7 +2605,11 @@ async function api(req, res) {
     contentType = String(match[1] || contentType).trim().slice(0, 120);
     let data = Buffer.from(match[2], 'base64');
     if (!data.length) return send(res, 400, { error: '附件为空' });
-    if (data.length > 5 * 1024 * 1024) return send(res, 400, { error: '附件不能超过 5MB，短信附件太大会发送失败' });
+    if (contentType.startsWith('video/')) {
+      if (data.length > MAX_CUSTOMER_VIDEO_SOURCE_BYTES) return send(res, 400, { error: '原始视频不能超过 50MB，请先缩短视频后重试' });
+    } else if (data.length > 5 * 1024 * 1024) {
+      return send(res, 400, { error: '非视频附件不能超过 5MB' });
+    }
     if (contentType.startsWith('image/') && data.length > 900 * 1024) return send(res, 400, { error: '图片压缩后仍超过 900KB，请换一张图片重试' });
     fs.mkdirSync(CUSTOMER_MEDIA_DIR, { recursive: true });
     if (contentType.startsWith('video/')) {

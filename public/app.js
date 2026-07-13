@@ -3354,9 +3354,11 @@ async function optimizeProspectImage(file) {
 async function uploadProspectAttachment(file) {
   if (!file) return;
   file = await optimizeProspectImage(file);
-  if (file.size > 5 * 1024 * 1024) return alert(lang === 'zh' ? '附件不能超过 5MB。' : 'Attachments must be 5MB or smaller.');
+  const isVideo = String(file.type || '').startsWith('video/');
+  const maxBytes = isVideo ? 50 * 1024 * 1024 : 5 * 1024 * 1024;
+  if (file.size > maxBytes) return alert(isVideo ? (lang === 'zh' ? '原始视频不能超过 50MB，请先缩短视频。' : 'Source video must be 50MB or smaller.') : (lang === 'zh' ? '附件不能超过 5MB。' : 'Attachments must be 5MB or smaller.'));
   const preview = document.getElementById('prospectAttachmentPreview');
-  if (preview) preview.textContent = lang === 'zh' ? '正在上传…' : 'Uploading…';
+  if (preview) preview.textContent = isVideo && file.size > 5 * 1024 * 1024 ? (lang === 'zh' ? '正在上传并自动压缩视频…' : 'Uploading and compressing video…') : (lang === 'zh' ? '正在上传…' : 'Uploading…');
   try {
     const uploaded = await api('/api/customer-media/upload', {
       method: 'POST',
@@ -3510,9 +3512,11 @@ function openReplyTemplateEditor(type = 'text', id = '', returnToPicker = false)
 async function uploadReplyTemplateMedia(file) {
   if (!file) return;
   file = await optimizeProspectImage(file);
-  if (file.size > 5 * 1024 * 1024) return alert(lang === 'zh' ? '素材不能超过 5MB。' : 'File must be 5MB or smaller.');
+  const isVideo = String(file.type || '').startsWith('video/');
+  const maxBytes = isVideo ? 50 * 1024 * 1024 : 5 * 1024 * 1024;
+  if (file.size > maxBytes) return alert(isVideo ? (lang === 'zh' ? '原始视频不能超过 50MB，请先缩短视频。' : 'Source video must be 50MB or smaller.') : (lang === 'zh' ? '素材不能超过 5MB。' : 'File must be 5MB or smaller.'));
   const status = document.getElementById('replyTemplateUploadStatus');
-  if (status) status.textContent = lang === 'zh' ? '正在上传并处理…' : 'Uploading…';
+  if (status) status.textContent = isVideo && file.size > 5 * 1024 * 1024 ? (lang === 'zh' ? '视频超过 5MB，正在上传并自动压缩…' : 'Video exceeds 5MB. Uploading and compressing…') : (lang === 'zh' ? '正在上传并处理…' : 'Uploading…');
   try {
     const uploaded = await api('/api/customer-media/upload', { method: 'POST', body: JSON.stringify({ name: file.name, type: file.type || 'application/octet-stream', dataUrl: await fileAsDataUrl(file) }) });
     replyTemplatePendingAttachment = { name: uploaded.name, type: uploaded.type, size: uploaded.size, url: uploaded.url, kind: uploaded.type?.startsWith('image/') ? 'image' : 'video' };
