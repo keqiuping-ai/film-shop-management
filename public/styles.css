@@ -878,12 +878,15 @@ body.modal-lock .prospect-workspace { pointer-events: none; }
 .reply-template-video-preview:hover { background: #0f5262; transform: scale(1.01); }
 .reply-template-video-preview:focus-visible { outline: 3px solid #7dd3e6; outline-offset: -3px; }
 .reply-video-preview-overlay { position: fixed; inset: 0; z-index: 120; display: grid; place-items: center; padding: 22px; box-sizing: border-box; background: rgba(8,18,25,.72); backdrop-filter: blur(3px); }
-.reply-video-preview-dialog { width: min(900px, calc(100vw - 44px)); max-height: calc(100vh - 44px); display: grid; grid-template-rows: auto minmax(0, 1fr) auto; overflow: hidden; border-radius: 18px; background: #fff; box-shadow: 0 24px 80px rgba(0,0,0,.35); }
+.reply-video-preview-dialog { width: min(900px, calc(100vw - 44px), calc(177.78vh - 337.78px)); max-height: calc(100vh - 44px); display: grid; grid-template-rows: auto minmax(0, 1fr) auto; overflow: hidden; border-radius: 18px; background: #fff; box-shadow: 0 24px 80px rgba(0,0,0,.35); }
 .reply-video-preview-dialog header { display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: 14px 18px; border-bottom: 1px solid var(--line); }
 .reply-video-preview-dialog header > div { min-width: 0; display: grid; gap: 3px; }
 .reply-video-preview-dialog header strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 18px; }
 .reply-video-preview-dialog header small { color: var(--muted); }
-.reply-video-preview-dialog video { display: block; width: 100%; max-height: calc(100vh - 190px); background: #101820; object-fit: contain; }
+.reply-video-preview-stage { position: relative; width: 100%; aspect-ratio: 16 / 9; overflow: hidden; background: #101820; }
+.reply-video-preview-dialog video { display: block; width: 100%; height: 100%; background: #101820; object-fit: contain; }
+.reply-video-preview-status { position: absolute; inset: 0; display: grid; place-items: center; padding: 28px; box-sizing: border-box; background: #101820; color: #fff; text-align: center; line-height: 1.6; font-weight: 700; }
+.reply-video-preview-status[hidden] { display: none; }
 .reply-video-preview-dialog footer { display: flex; justify-content: flex-end; padding: 12px 18px; border-top: 1px solid var(--line); }
 .reply-template-editor { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
 .reply-template-editor label { display: grid; gap: 7px; color: var(--muted); font-weight: 700; }
@@ -898,8 +901,7 @@ body.modal-lock .prospect-workspace { pointer-events: none; }
 .modal.reply-library-open .dialog .body { overflow: auto; }
 @media (max-width: 720px) {
   .reply-video-preview-overlay { padding: 10px; }
-  .reply-video-preview-dialog { width: calc(100vw - 20px); max-height: calc(100vh - 20px); }
-  .reply-video-preview-dialog video { max-height: calc(100vh - 170px); }
+  .reply-video-preview-dialog { width: min(calc(100vw - 20px), calc(177.78vh - 302.23px)); max-height: calc(100vh - 20px); }
   .prospect-workspace-header { padding: 10px 12px; }
   .prospect-workspace-body { grid-template-columns: 1fr; grid-template-rows: minmax(180px, 42vh) minmax(0, 1fr); }
   .prospect-workspace-sidebar { border-right: 0; border-bottom: 1px solid var(--line); padding: 12px; overflow-y: auto; display: block; }

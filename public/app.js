@@ -3491,12 +3491,28 @@ function previewReplyTemplateVideo(id) {
   overlay.className = 'reply-video-preview-overlay';
   overlay.innerHTML = `<div class="reply-video-preview-dialog" role="dialog" aria-modal="true" aria-label="${lang === 'zh' ? '视频预览' : 'Video preview'}">
     <header><div><strong>${escapeHtml(item.title || (lang === 'zh' ? '视频预览' : 'Video preview'))}</strong><small>${lang === 'zh' ? '仅供预览，不会发送给客户' : 'Preview only — nothing will be sent'}</small></div><button class="icon-btn" type="button" onclick="closeReplyTemplateVideoPreview()">×</button></header>
-    <video src="${escapeHtml(item.attachment.url)}" controls autoplay playsinline preload="metadata"></video>
+    <div class="reply-video-preview-stage">
+      <video src="${escapeHtml(item.attachment.url)}" controls playsinline preload="metadata" onloadedmetadata="handleReplyTemplateVideoLoaded(this)" onerror="handleReplyTemplateVideoError(this)"></video>
+      <div class="reply-video-preview-status" hidden></div>
+    </div>
     <footer><button class="btn primary" type="button" onclick="closeReplyTemplateVideoPreview()">${lang === 'zh' ? '看完了，返回选择' : 'Done — return'}</button></footer>
   </div>`;
   overlay.addEventListener('click', event => { if (event.target === overlay) closeReplyTemplateVideoPreview(); });
   document.body.appendChild(overlay);
-  overlay.querySelector('video')?.play().catch(() => {});
+}
+
+function handleReplyTemplateVideoLoaded(video) {
+  const status = video.closest('.reply-video-preview-stage')?.querySelector('.reply-video-preview-status');
+  if (status) status.hidden = true;
+}
+
+function handleReplyTemplateVideoError(video) {
+  const status = video.closest('.reply-video-preview-stage')?.querySelector('.reply-video-preview-status');
+  if (!status) return;
+  status.textContent = lang === 'zh'
+    ? '这个云端视频文件已丢失或无法读取，请删除该素材后重新上传视频。'
+    : 'This cloud video is missing or unreadable. Delete the item and upload the video again.';
+  status.hidden = false;
 }
 
 function closeReplyTemplateVideoPreview() {
