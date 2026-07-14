@@ -1184,14 +1184,59 @@ function normalizeProspectSpeaker(value, fallbackName = '') {
   return 'customer';
 }
 
+const WINDOWS_1252_BYTES = new Map([
+  [0x20ac, 0x80], [0x201a, 0x82], [0x0192, 0x83], [0x201e, 0x84], [0x2026, 0x85],
+  [0x2020, 0x86], [0x2021, 0x87], [0x02c6, 0x88], [0x2030, 0x89], [0x0160, 0x8a],
+  [0x2039, 0x8b], [0x0152, 0x8c], [0x017d, 0x8e], [0x2018, 0x91], [0x2019, 0x92],
+  [0x201c, 0x93], [0x201d, 0x94], [0x2022, 0x95], [0x2013, 0x96], [0x2014, 0x97],
+  [0x02dc, 0x98], [0x2122, 0x99], [0x0161, 0x9a], [0x203a, 0x9b], [0x0153, 0x9c],
+  [0x017e, 0x9e], [0x0178, 0x9f]
+]);
+
+function mojibakeScore(value) {
+  return (String(value || '').match(/[ÃÂâð�]|[\u0080-\u009f]/g) || []).length;
+}
+
+function repairUtf8Mojibake(value) {
+  const original = String(value ?? '');
+  if (/\r?\n/.test(original)) return original.split(/\r?\n/).map(repairUtf8Mojibake).join('\n');
+  if (!mojibakeScore(original)) return original;
+  const bytes = [];
+  for (const char of original) {
+    const code = char.codePointAt(0);
+    if (code <= 0xff) bytes.push(code);
+    else if (WINDOWS_1252_BYTES.has(code)) bytes.push(WINDOWS_1252_BYTES.get(code));
+    else return original.replace(/â€\s*/g, '— ');
+  }
+  try {
+    const repaired = new TextDecoder('utf-8', { fatal: true }).decode(Uint8Array.from(bytes));
+    return mojibakeScore(repaired) < mojibakeScore(original) ? repaired : original.replace(/â€\s*/g, '— ');
+  } catch {
+    return original.replace(/â€\s*/g, '— ');
+  }
+}
+
+function cleanImportedText(value) {
+  return repairUtf8Mojibake(value).replace(/\u0000/g, '').trim();
+}
+
+function cleanImportedConversationText(value) {
+  return cleanImportedText(value)
+    .split(/\r?\n/)
+    .filter(line => !/^[Ççåé±\s]{1,8}$/.test(line.trim()))
+    .join('\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
 function normalizeProspectMessages(value) {
   return parseMaybeJsonArray(value).map((item, index) => {
-    const speakerName = String(item.speakerName || item.name || item.sender || '').trim();
+    const speakerName = cleanImportedText(item.speakerName || item.name || item.sender || '');
     const speaker = normalizeProspectSpeaker(
       item.speaker || item.role || item.type || item.side || item.from || item.senderType,
       speakerName
     );
-    const text = String(item.text || item.message || item.content || item.body || '').trim();
+    const text = cleanImportedConversationText(item.text || item.message || item.content || item.body || '');
     if (!text) return null;
     return {
       speaker,
@@ -1280,11 +1325,11 @@ function appendUniqueText(existing, value, separator = '\n') {
 }
 
 function normalizeProspectInput(input, fallback = {}) {
-  const source = String(input.platform || input.source || fallback.source || '').trim();
+  const source = cleanImportedText(input.platform || input.source || fallback.source || '');
   const conversationMessages = normalizeProspectMessages(input.conversationMessages || input.messages || input.chatMessages || fallback.conversationMessages || []);
-  const rawConversation = String(input.rawConversation || input.chatContext || input.conversation || fallback.chatContext || prospectMessagesToText(conversationMessages)).trim();
+  const rawConversation = cleanImportedConversationText(input.rawConversation || input.chatContext || input.conversation || fallback.chatContext || prospectMessagesToText(conversationMessages));
   const noteParts = [
-    String(input.note || fallback.note || '').trim(),
+    cleanImportedConversationText(input.note || fallback.note || ''),
     input.importSource ? `导入来源: ${String(input.importSource).trim()}` : '',
     input.sourceDevice ? `采集电脑: ${String(input.sourceDevice).trim()}` : '',
     input.profileUrl ? `客户链接: ${String(input.profileUrl).trim()}` : ''
@@ -1292,10 +1337,10 @@ function normalizeProspectInput(input, fallback = {}) {
   const base = {
     date: String(input.date || fallback.date || dateInTimezone('America/Los_Angeles')).slice(0, 10),
     source,
-    customer: String(input.customer || input.customerName || fallback.customer || '').trim(),
+    customer: cleanImportedText(input.customer || input.customerName || fallback.customer || ''),
     phone: String(input.phone || fallback.phone || '').trim(),
-    vehicle: String(input.vehicle || fallback.vehicle || '').trim(),
-    need: String(input.need || input.customerNeed || input.interest || fallback.need || '').trim(),
+    vehicle: cleanImportedText(input.vehicle || fallback.vehicle || ''),
+    need: cleanImportedConversationText(input.need || input.customerNeed || input.interest || fallback.need || ''),
     service: String(input.service || fallback.service || 'tint').trim(),
     appointmentDate: String(input.appointmentDate || fallback.appointmentDate || '').slice(0, 10),
     appointmentTime: String(input.appointmentTime || fallback.appointmentTime || '').slice(0, 8),
@@ -1303,7 +1348,7 @@ function normalizeProspectInput(input, fallback = {}) {
     ownerName: String(input.ownerName || input.contactOwner || fallback.ownerName || '').trim(),
     status: String(input.status || fallback.status || '').trim(),
     chatContext: rawConversation,
-    chatTranslation: String(input.chatTranslation || input.translation || fallback.chatTranslation || '').trim(),
+    chatTranslation: cleanImportedConversationText(input.chatTranslation || input.translation || fallback.chatTranslation || ''),
     note: noteParts.join('\n'),
     importSource: String(input.importSource || fallback.importSource || 'codex').trim(),
     sourceDevice: String(input.sourceDevice || fallback.sourceDevice || '').trim(),
@@ -1681,6 +1726,48 @@ function applyCustomerConversationPromotionEligibilityMigration() {
   console.log(`Customer conversation promotion eligibility fixed: ${restored}.`);
 }
 
+function applyImportedCustomerEncodingMigration() {
+  const migrationVersion = 'imported-customer-encoding-2026-07-14-v1';
+  const db = readDb();
+  if (db.importedCustomerEncodingVersion === migrationVersion) return;
+  createDatabaseBackup(db, 'manual', { id: 'system', name: 'System' });
+  let repaired = 0;
+  for (const collection of ['customerConversations', 'prospects']) {
+    for (const item of (db[collection] || [])) {
+      let changed = false;
+      for (const field of ['customer', 'vehicle', 'need', 'chatContext', 'chatTranslation', 'note', 'intentReason']) {
+        const before = String(item[field] || '');
+        const after = ['need', 'chatContext', 'chatTranslation', 'note', 'intentReason'].includes(field)
+          ? cleanImportedConversationText(before)
+          : cleanImportedText(before);
+        if (after !== before) { item[field] = after; changed = true; }
+      }
+      if (/meta/i.test(String(item.sourceDevice || '')) && String(item.source || '') === 'Yelp') {
+        item.source = 'Meta / Facebook';
+        changed = true;
+      }
+      if (Array.isArray(item.conversationMessages)) {
+        item.conversationMessages = item.conversationMessages.map(message => {
+          const next = { ...message };
+          next.text = cleanImportedConversationText(next.text || '');
+          next.speakerName = cleanImportedText(next.speakerName || '');
+          if (next.text !== message.text || next.speakerName !== String(message.speakerName || '')) changed = true;
+          return next;
+        }).filter(message => message.text);
+      }
+      if (changed) { item.updatedAt = new Date().toISOString(); repaired += 1; }
+    }
+  }
+  db.importedCustomerEncodingVersion = migrationVersion;
+  db.importedCustomerEncodingAt = new Date().toISOString();
+  audit(db, { id: 'system', name: 'System' }, 'repair-imported-customer-encoding', {
+    collection: 'customerConversations',
+    detail: `修复 ${repaired} 条自动导入客资的错误编码字符`
+  });
+  writeDb(db);
+  console.log(`Imported customer encoding repaired: ${repaired}.`);
+}
+
 async function reconcileRecentTwilioInboundMessages() {
   if (!twilioConfigured()) return;
   const config = twilioConfig();
@@ -1980,6 +2067,11 @@ function customerConversationImportUser(req) {
     String(req.headers.authorization || '').replace(/^Bearer\s+/i, '')
   ).trim();
   if (!configuredTokens.some(token => secureEqualString(providedToken, token))) return null;
+  const importPlatform = secureEqualString(providedToken, process.env.CUSTOMER_CONVERSATION_IMPORT_TOKEN_META)
+    ? 'Meta / Facebook'
+    : secureEqualString(providedToken, process.env.CUSTOMER_CONVERSATION_IMPORT_TOKEN_YELP)
+      ? 'Yelp'
+      : '';
   return {
     id: 'customer-conversation-import-token',
     name: '客户交流中心自动导入',
@@ -1987,6 +2079,7 @@ function customerConversationImportUser(req) {
     role: 'importer',
     active: true,
     importOnly: true,
+    importPlatform,
     permissions: { prospectsView: true, prospectsEdit: true }
   };
 }
@@ -2986,7 +3079,12 @@ async function api(req, res) {
 
   if (req.method === 'POST' && url.pathname === '/api/import/customer-conversations') {
     if (!canAccess(user, 'prospectsEdit')) return send(res, 403, { error: '没有导入客户交流中心权限' });
-    const body = await readBody(req);
+    let body = await readBody(req);
+    if (user.importPlatform) {
+      if (Array.isArray(body)) body = body.map(item => ({ ...item, source: user.importPlatform }));
+      else if (Array.isArray(body?.items)) body = { ...body, source: user.importPlatform, items: body.items.map(item => ({ ...item, source: user.importPlatform })) };
+      else if (body && typeof body === 'object') body = { ...body, source: user.importPlatform };
+    }
     const result = importCustomerConversations(db, user, body);
     if (!result.imported && !result.updated && !result.skipped) {
       return send(res, 400, { error: '没有收到可导入的客户交流数据' });
@@ -3472,6 +3570,7 @@ applySalesOrderSalesRepMigration();
 applyCustomPrintedFilmSalesOrderMigration();
 applyPromotedConversationMerge();
 applyCustomerConversationPromotionEligibilityMigration();
+applyImportedCustomerEncodingMigration();
 http.createServer((req, res) => {
   if (req.url.startsWith('/customer-media/')) {
     serveCustomerMedia(req, res);
