@@ -1359,7 +1359,9 @@ function prospectImportRows(body) {
   return [];
 }
 
-function importProspects(db, user, body) {
+function importCustomerRecords(db, user, body, collection = 'prospects') {
+  const customerCenter = collection === 'customerConversations';
+  const collectionLabel = customerCenter ? '客户交流' : '高意向客户';
   const rows = prospectImportRows(body).slice(0, 200);
   const fallback = {
     source: body?.source,
@@ -1376,7 +1378,7 @@ function importProspects(db, user, body) {
     skippedItems: [],
     items: []
   };
-  db.prospects = Array.isArray(db.prospects) ? db.prospects : [];
+  db[collection] = Array.isArray(db[collection]) ? db[collection] : [];
   rows.forEach((row, index) => {
     const candidate = normalizeProspectInput(row, fallback);
     const hasUsefulIdentity = candidate.customer || candidate.phone || candidate.externalId || candidate.chatContext || candidate.conversationMessages?.length;
@@ -1388,7 +1390,7 @@ function importProspects(db, user, body) {
       });
       return;
     }
-    const duplicate = findProspectDuplicate(db.prospects, candidate);
+    const duplicate = findProspectDuplicate(db[collection], candidate);
     if (duplicate) {
       const before = { ...duplicate };
       const next = mergeProspect(duplicate, {
@@ -1396,19 +1398,19 @@ function importProspects(db, user, body) {
         updatedBy: user.name || user.email,
         updatedByUserId: user.id
       });
-      const idx = db.prospects.findIndex(item => item.id === duplicate.id);
-      db.prospects[idx] = next;
+      const idx = db[collection].findIndex(item => item.id === duplicate.id);
+      db[collection][idx] = next;
       result.updated += 1;
       result.duplicateCount += 1;
       result.items.push({ id: next.id, status: 'updated', customer: next.customer, source: next.source });
-      audit(db, user, 'import-update-prospect', {
-        collection: 'prospects',
+      audit(db, user, customerCenter ? 'import-update-customer-conversation' : 'import-update-prospect', {
+        collection,
         recordId: next.id,
         recordLabel: recordLabel(next),
         changedFields: diffRecords(before, next),
         before,
         after: next,
-        detail: `自动导入更新高意向客户 ${recordLabel(next) || next.id}`
+        detail: `自动导入更新${collectionLabel} ${recordLabel(next) || next.id}`
       });
       return;
     }
@@ -1423,18 +1425,26 @@ function importProspects(db, user, body) {
       createdBy: user.name || user.email,
       createdByUserId: user.id
     };
-    db.prospects.push(item);
+    db[collection].push(item);
     result.imported += 1;
     result.items.push({ id: item.id, status: 'new', customer: item.customer, source: item.source });
-    audit(db, user, 'import-create-prospect', {
-      collection: 'prospects',
+    audit(db, user, customerCenter ? 'import-create-customer-conversation' : 'import-create-prospect', {
+      collection,
       recordId: item.id,
       recordLabel: recordLabel(item),
       after: item,
-      detail: `自动导入新增高意向客户 ${recordLabel(item) || item.id}`
+      detail: `自动导入新增${collectionLabel} ${recordLabel(item) || item.id}`
     });
   });
   return result;
+}
+
+function importProspects(db, user, body) {
+  return importCustomerRecords(db, user, body, 'prospects');
+}
+
+function importCustomerConversations(db, user, body) {
+  return importCustomerRecords(db, user, body, 'customerConversations');
 }
 
 function sanitizeSalesOrder(order, p) {
@@ -1910,6 +1920,39 @@ function prospectImportUser(req) {
   };
 }
 
+function customerConversationImportTokens() {
+  return [
+    process.env.CUSTOMER_CONVERSATION_IMPORT_TOKEN,
+    process.env.CUSTOMER_CONVERSATION_IMPORT_TOKEN_YELP,
+    process.env.CUSTOMER_CONVERSATION_IMPORT_TOKEN_META,
+    process.env.CUSTOMER_CONVERSATION_IMPORT_TOKENS
+  ]
+    .filter(Boolean)
+    .join('\n')
+    .split(/[\n,;]+/)
+    .map(value => String(value || '').trim())
+    .filter(Boolean);
+}
+
+function customerConversationImportUser(req) {
+  const configuredTokens = customerConversationImportTokens();
+  if (!configuredTokens.length) return null;
+  const providedToken = String(
+    req.headers['x-import-token'] ||
+    String(req.headers.authorization || '').replace(/^Bearer\s+/i, '')
+  ).trim();
+  if (!configuredTokens.some(token => secureEqualString(providedToken, token))) return null;
+  return {
+    id: 'customer-conversation-import-token',
+    name: '客户交流中心自动导入',
+    email: 'customer-import@system.local',
+    role: 'importer',
+    active: true,
+    importOnly: true,
+    permissions: { prospectsView: true, prospectsEdit: true }
+  };
+}
+
 function openEventStream(req, res, user) {
   res.writeHead(200, {
     'Content-Type': 'text/event-stream; charset=utf-8',
@@ -2380,6 +2423,9 @@ async function api(req, res) {
   let user = currentUser(req, db);
   if (!user && req.method === 'POST' && url.pathname === '/api/import/prospects') {
     user = prospectImportUser(req);
+  }
+  if (!user && req.method === 'POST' && url.pathname === '/api/import/customer-conversations') {
+    user = customerConversationImportUser(req);
   }
   if (!user && req.method === 'GET' && url.pathname === '/api/events') {
     const eventUser = currentUserFromToken(url.searchParams.get('token'), db);
@@ -2898,6 +2944,23 @@ async function api(req, res) {
       ...result,
       data: sanitizeDbForUser(db, user)
     });
+  }
+
+  if (req.method === 'POST' && url.pathname === '/api/import/customer-conversations') {
+    if (!canAccess(user, 'prospectsEdit')) return send(res, 403, { error: '没有导入客户交流中心权限' });
+    const body = await readBody(req);
+    const result = importCustomerConversations(db, user, body);
+    if (!result.imported && !result.updated && !result.skipped) {
+      return send(res, 400, { error: '没有收到可导入的客户交流数据' });
+    }
+    writeDb(db);
+    notifyDataChanged('import-customer-conversations', {
+      imported: result.imported,
+      updated: result.updated,
+      skipped: result.skipped,
+      duplicateCount: result.duplicateCount
+    });
+    return send(res, 200, result);
   }
 
   if (req.method === 'POST' && url.pathname === '/api/shipments/import') {
