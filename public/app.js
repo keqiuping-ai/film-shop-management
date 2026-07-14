@@ -112,9 +112,9 @@ const dict = {
     inventoryAlerts: '库存报警',
     inventoryAlertsSub: '低于最低数量的货物和补货建议',
     prospects: '高意向客户',
-    prospectsSub: 'Mat、Yelp等平台邀约客户和预约到店时间',
+    prospectsSub: '已预约或已到店客户及其到店时间',
     customerCenter: '客户交流中心',
-    customerCenterSub: '集中查看所有客户聊天，达到到店意向后加入高意向客户',
+    customerCenterSub: '集中查看所有客户聊天，已预约或已到店后加入高意向客户',
     replyLibrary: '云端回复素材库',
     replyLibrarySub: '统一上传和维护客服常用文字、图片和短视频',
     leads: '客资提成',
@@ -2218,13 +2218,13 @@ const views = {
     return panel(t('inventoryAlerts'), hasPerm('inventoryEdit') ? `<button class="btn" onclick="setPage('inventory')">${t('processInventory')}</button>` : '', inventorySearchBox(alertRows) + `<div id="inventorySearchResults">${inventoryAlertTable(true, null, true)}</div>` + `<p class="note">${lang === 'zh' ? '在库存商品里设置“预警库存/最低数量”。当当前库存小于或等于这个数量时，这里会自动生成补货报警。' : 'Set the reorder level on each SKU. When current stock is less than or equal to that number, the item appears here for replenishment.'}</p>`);
   },
   customerCenter() {
-    return panel(t('customerCenter'), hasPerm('prospectsEdit') ? `<button class="btn primary" onclick="openProspect(null,'customerConversations')">${lang === 'zh' ? '新增客户交流' : 'New conversation'}</button>` : '', customerCenterTable() + `<p class="note">${lang === 'zh' ? '这里集中查看所有客户交流。已进入高意向客户表的客户会显示“高意向”标记；普通客户达到到店意向后可加入高意向客户。' : 'All customer conversations appear here. Qualified customers can be promoted to the high-intent list.'}</p>`);
+    return panel(t('customerCenter'), hasPerm('prospectsEdit') ? `<button class="btn primary" onclick="openProspect(null,'customerConversations')">${lang === 'zh' ? '新增客户交流' : 'New conversation'}</button>` : '', customerCenterTable() + `<p class="note">${lang === 'zh' ? '这里集中查看所有客户交流。只有跟进状态为“已预约”或“已到店”时，客户才会自动转入高意向客户。' : 'All customer conversations appear here. Customers are promoted only after an appointment is set or they arrive.'}</p>`);
   },
   replyLibrary() {
     return panel(t('replyLibrary'), hasPerm('prospectsEdit') ? `<button class="btn primary" onclick="openReplyTemplateEditor('text')">${lang === 'zh' ? '新增回复素材' : 'New reply'}</button>` : '', replyLibraryPageHtml());
   },
   prospects() {
-    return panel(t('prospects'), hasPerm('prospectsEdit') ? `<button class="btn primary" onclick="openProspect()">${t('addNew')}</button>` : '', prospectTable() + `<p class="note">${lang === 'zh' ? '这里记录 Mat、Yelp、Meta、Google 等平台上已经有明确意向、已经邀约或已经预约到店的客户。聊天上下文可以直接粘贴客户沟通内容，方便店长和接待人员提前跟进。' : 'Use this area for customers from Mat, Yelp, Meta, Google, and other channels who show clear intent, are invited, or have appointments. Paste conversation context so managers and reception staff can follow up.'}</p>`);
+    return panel(t('prospects'), hasPerm('prospectsEdit') ? `<button class="btn primary" onclick="openProspect()">${t('addNew')}</button>` : '', prospectTable() + `<p class="note">${lang === 'zh' ? '这里记录 Mat、Yelp、Meta、Google 等平台上已经预约或已经到店的客户。聊天上下文会随客户一起带入，方便店长和接待人员跟进。' : 'Use this area for customers from Mat, Yelp, Meta, Google, and other channels who have appointments or have arrived.'}</p>`);
   },
   leads() {
     const actions = hasPerm('leadsEdit') ? `<button class="btn primary" onclick="openLead()">${t('addNew')}</button>` : '';

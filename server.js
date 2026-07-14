@@ -1574,8 +1574,12 @@ function appendSmsMessage(item, message) {
   item.lastSmsDirection = message.direction;
 }
 
+function isCustomerConversationPromotionEligible(item) {
+  return ['已预约', '已到店'].includes(String(item?.status || ''));
+}
+
 function promoteEligibleCustomerConversation(db, item, user) {
-  if (!item || item.promotedProspectId || !['已邀约', '已预约'].includes(String(item.status || ''))) return null;
+  if (!item || item.promotedProspectId || !isCustomerConversationPromotionEligible(item)) return null;
   const existing = (db.prospects || []).find(row => row.promotedFromConversationId === item.id);
   if (existing) {
     item.promotedProspectId = existing.id;
@@ -1641,6 +1645,40 @@ function applyPromotedConversationMerge() {
   audit(db, { id: 'system', name: 'System' }, 'merge-promoted-conversations', `Merged ${merged} promoted customer conversation records`);
   writeDb(db);
   console.log(`Promoted customer conversations merged: ${merged}.`);
+}
+
+function applyCustomerConversationPromotionEligibilityMigration() {
+  const migrationVersion = 'customer-conversation-promotion-eligibility-2026-07-14-v1';
+  const db = readDb();
+  if (db.customerConversationPromotionEligibilityVersion === migrationVersion) return;
+  createDatabaseBackup(db, 'manual', { id: 'system', name: 'System' });
+  let restored = 0;
+  for (const source of (db.customerConversations || [])) {
+    if (!source.promotedProspectId || isCustomerConversationPromotionEligible(source)) continue;
+    const targetIndex = (db.prospects || []).findIndex(row => row.id === source.promotedProspectId && row.promotedFromConversationId === source.id);
+    if (targetIndex < 0) {
+      delete source.promotedProspectId;
+      delete source.promotedAt;
+      continue;
+    }
+    const target = db.prospects[targetIndex];
+    // A customer already converted into a work order must remain traceable.
+    if (target.convertedJobId || source.convertedJobId) continue;
+    mergeConversationMessages(source, target);
+    source.updatedAt = new Date().toISOString();
+    delete source.promotedProspectId;
+    delete source.promotedAt;
+    db.prospects.splice(targetIndex, 1);
+    restored += 1;
+  }
+  db.customerConversationPromotionEligibilityVersion = migrationVersion;
+  db.customerConversationPromotionEligibilityAt = new Date().toISOString();
+  audit(db, { id: 'system', name: 'System' }, 'fix-customer-conversation-promotion-eligibility', {
+    collection: 'customerConversations',
+    detail: `恢复 ${restored} 位尚未预约或到店的客户到客户交流中心`
+  });
+  writeDb(db);
+  console.log(`Customer conversation promotion eligibility fixed: ${restored}.`);
 }
 
 async function reconcileRecentTwilioInboundMessages() {
@@ -3433,6 +3471,7 @@ applyJobCommissionPeopleMigration();
 applySalesOrderSalesRepMigration();
 applyCustomPrintedFilmSalesOrderMigration();
 applyPromotedConversationMerge();
+applyCustomerConversationPromotionEligibilityMigration();
 http.createServer((req, res) => {
   if (req.url.startsWith('/customer-media/')) {
     serveCustomerMedia(req, res);
