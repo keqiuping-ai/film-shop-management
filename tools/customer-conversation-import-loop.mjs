@@ -2,10 +2,12 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 
 const BASE_URL = process.env.FILM_SHOP_URL || 'https://film-shop-management-production.up.railway.app';
 const OUTBOX_FILE = process.env.CUSTOMER_IMPORT_OUTBOX_FILE || path.resolve('imports/customer-conversation-outbox.json');
 const KEYCHAIN_SERVICE = process.env.QUAD_IMPORT_KEYCHAIN_SERVICE || 'QUAD_CUSTOMER_IMPORT_TOKEN';
+const WINDOWS_CREDENTIAL_FILE = process.env.QUAD_IMPORT_CREDENTIAL_FILE || path.join(process.env.APPDATA || os.homedir(), 'QUAD', 'customer-import-token.dat');
 const DEVICE_NAME = process.env.SOURCE_DEVICE || os.hostname() || 'quad-import-computer';
 const INTERVAL_MS = Math.max(10_000, Number(process.env.IMPORT_INTERVAL_MS || 30_000));
 const RUN_ONCE = process.argv.includes('--once');
@@ -23,10 +25,21 @@ function readJsonFile(filePath) {
 }
 
 function readImportToken() {
-  // Environment input is retained for isolated tests/managed runners. On Macs,
-  // store the real token in Keychain so it never appears in source or outbox.
+  // Environment input is retained for isolated tests/managed runners. Real
+  // Macs use Keychain; Windows uses a current-user DPAPI encrypted file.
   if (process.env.CUSTOMER_CONVERSATION_IMPORT_TOKEN) {
     return process.env.CUSTOMER_CONVERSATION_IMPORT_TOKEN.trim();
+  }
+  if (process.platform === 'win32') {
+    const reader = path.join(path.dirname(fileURLToPath(import.meta.url)), 'windows-read-quad-import-token.ps1');
+    try {
+      return execFileSync('powershell.exe', [
+        '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass',
+        '-File', reader, '-CredentialFile', WINDOWS_CREDENTIAL_FILE
+      ], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], windowsHide: true }).trim();
+    } catch {
+      throw new Error(`Windows 加密凭据不可用：${WINDOWS_CREDENTIAL_FILE}，请先由店主运行安装脚本`);
+    }
   }
   try {
     return execFileSync('/usr/bin/security', [
