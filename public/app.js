@@ -3141,7 +3141,7 @@ function openProspectWorkspace(collection, id) {
 const prospectWorkspaceFieldIds = [
   'workspaceDate', 'workspaceSource', 'workspaceCustomer', 'workspacePhone', 'workspaceVehicle',
   'workspaceNeed', 'workspaceService', 'workspaceAppointmentDate', 'workspaceAppointmentTime',
-  'workspaceOwnerId', 'workspaceIntentLevel', 'workspaceStatus'
+  'workspaceOwnerId', 'workspaceIntentLevel', 'workspaceStatus', 'workspaceCallNote'
 ];
 
 function captureProspectWorkspaceDraft(markDirty = false) {
@@ -3236,6 +3236,7 @@ function renderProspectWorkspace() {
         ${field(t('contactOwner'), select('workspaceOwnerId', item.ownerId || '', owners))}
         ${field(t('intentLevel'), select('workspaceIntentLevel', normalizeProspectIntentValue(item.intentLevel || '高意向'), intents))}
         ${field(t('prospectStatus'), select('workspaceStatus', item.status || '新意向', statuses))}
+        <label class="prospect-sidebar-field prospect-call-note"><span>${lang === 'zh' ? '电话沟通备注' : 'Call notes'}</span><textarea id="workspaceCallNote" placeholder="${lang === 'zh' ? '例如：已电话沟通、客户关注价格、周五方便到店……' : 'Example: Called customer, discussed price, available Friday…'}" ${hasPerm('prospectsEdit') ? '' : 'disabled'}>${escapeHtml(item.callNote || '')}</textarea></label>
         ${hasPerm('prospectsEdit') ? `<button id="workspaceSaveDetailsButton" class="btn primary prospect-sidebar-save" onclick="saveProspectWorkspaceDetails()">${lang === 'zh' ? '保存客户资料' : 'Save customer details'}</button>` : ''}
       </aside>
       <section class="prospect-workspace-conversation">
@@ -3661,7 +3662,8 @@ async function saveProspectWorkspaceDetails() {
     phone: value('workspacePhone'), vehicle: value('workspaceVehicle'), need: value('workspaceNeed'),
     service: value('workspaceService'), appointmentDate: value('workspaceAppointmentDate'),
     appointmentTime: value('workspaceAppointmentTime'), ownerId, ownerName: rep?.name || '',
-    intentLevel: value('workspaceIntentLevel'), status: value('workspaceStatus')
+    intentLevel: value('workspaceIntentLevel'), status: value('workspaceStatus'),
+    callNote: value('workspaceCallNote')
   };
   if (!updated.customer && !updated.phone) return alert(lang === 'zh' ? '客户姓名或电话至少填写一个。' : 'Please enter at least a customer name or phone.');
   if (button) { button.disabled = true; button.textContent = lang === 'zh' ? '保存中…' : 'Saving…'; }
