@@ -2385,18 +2385,21 @@ function userAvatarHtml(person, size = 'small') {
 
 function profileAvatarEditor(person, hiddenId, previewId, uploadHandler, clearHandler) {
   const label = lang === 'zh' ? '员工头像/工作照' : 'Employee Avatar / Work Photo';
-  const upload = lang === 'zh' ? '上传头像' : 'Upload Photo';
+  const upload = lang === 'zh' ? '选择照片或拍照' : 'Choose or Take Photo';
   const clear = lang === 'zh' ? '清除头像' : 'Clear Photo';
+  const fileId = `${hiddenId}File`;
   const note = lang === 'zh'
-    ? '建议上传正脸清晰工作照，保存后会同步到云端，所有电脑和 iPad 都能看到。'
+    ? '可以直接点击圆形头像或“选择照片或拍照”。选好后请点击页面上方或下方的“保存”。'
     : 'Use a clear work photo. After saving, it syncs to the cloud for all computers and iPads.';
   return `<div class="wide employee-avatar-field">
     <span>${label}</span>
     <div class="employee-avatar-editor">
-      <div id="${previewId}" class="avatar-preview-wrap">${userAvatarHtml(person, 'large')}</div>
+      <input class="avatar-file-input" id="${fileId}" type="file" accept="image/*" onchange="${uploadHandler}" />
+      <label for="${fileId}" id="${previewId}" class="avatar-preview-wrap avatar-preview-click" title="${upload}">${userAvatarHtml(person, 'large')}<span class="avatar-camera-badge">📷</span></label>
       <input id="${hiddenId}" type="hidden" value="${escapeHtml(person?.avatarDataUrl || '')}" />
-      <label class="btn avatar-upload-btn">${upload}<input type="file" accept="image/png,image/jpeg,image/webp" onchange="${uploadHandler}" /></label>
+      <label for="${fileId}" class="btn avatar-upload-btn">${upload}</label>
       <button type="button" class="btn" onclick="${clearHandler}">${clear}</button>
+      <span id="${hiddenId}Status" class="avatar-upload-status">${lang === 'zh' ? '点击头像即可选择照片' : 'Click the avatar to choose a photo'}</span>
     </div>
     <p class="note">${note}</p>
   </div>`;
@@ -2422,22 +2425,27 @@ function clearAvatar(hiddenId, previewId) {
   const hidden = document.getElementById(hiddenId);
   const preview = document.getElementById(previewId);
   if (hidden) hidden.value = '';
-  if (preview) preview.innerHTML = userAvatarHtml({}, 'large');
+  if (preview) preview.innerHTML = `${userAvatarHtml({}, 'large')}<span class="avatar-camera-badge">📷</span>`;
+  const status = document.getElementById(`${hiddenId}Status`);
+  if (status) status.textContent = lang === 'zh' ? '头像已清除，点击“保存”完成' : 'Photo cleared. Click Save to finish.';
 }
 
 function handleAvatarUpload(event, hiddenId, previewId) {
   const file = event.target.files && event.target.files[0];
   if (!file) return;
-  if (!/^image\/(png|jpe?g|webp)$/i.test(file.type)) {
-    alert(lang === 'zh' ? '请上传 JPG、PNG 或 WebP 图片。' : 'Please upload a JPG, PNG, or WebP image.');
+  const status = document.getElementById(`${hiddenId}Status`);
+  const looksLikeImage = String(file.type || '').startsWith('image/') || /\.(jpe?g|png|webp|heic|heif)$/i.test(file.name || '');
+  if (!looksLikeImage) {
+    alert(lang === 'zh' ? '请选择照片文件。' : 'Please choose an image file.');
     event.target.value = '';
     return;
   }
-  if (file.size > 8 * 1024 * 1024) {
-    alert(lang === 'zh' ? '原图太大，请上传 8MB 以内的照片。' : 'The original photo is too large. Please upload an image under 8MB.');
+  if (file.size > 25 * 1024 * 1024) {
+    alert(lang === 'zh' ? '原图太大，请上传 25MB 以内的照片。' : 'The original photo is too large. Please upload an image under 25MB.');
     event.target.value = '';
     return;
   }
+  if (status) status.textContent = lang === 'zh' ? '正在处理照片…' : 'Processing photo…';
   const reader = new FileReader();
   reader.onload = () => compressAvatarDataUrl(String(reader.result || ''), 512, 0.82)
     .then(dataUrl => {
@@ -2448,9 +2456,13 @@ function handleAvatarUpload(event, hiddenId, previewId) {
       const hidden = document.getElementById(hiddenId);
       const preview = document.getElementById(previewId);
       if (hidden) hidden.value = dataUrl;
-      if (preview) preview.innerHTML = userAvatarHtml({ avatarDataUrl: dataUrl }, 'large');
+      if (preview) preview.innerHTML = `${userAvatarHtml({ avatarDataUrl: dataUrl }, 'large')}<span class="avatar-camera-badge">📷</span>`;
+      if (status) status.textContent = lang === 'zh' ? '照片已选好，请点击“保存”' : 'Photo ready. Click Save.';
     })
-    .catch(() => alert(lang === 'zh' ? '头像读取失败，请换一张照片。' : 'Could not read the photo. Please choose another image.'));
+    .catch(() => {
+      if (status) status.textContent = lang === 'zh' ? '照片读取失败，请重新选择' : 'Could not read photo. Please choose another.';
+      alert(lang === 'zh' ? '这张照片暂时无法读取，请在相册里另存为 JPG 后再试。' : 'Could not read this photo. Please save it as JPG and try again.');
+    });
   reader.readAsDataURL(file);
 }
 
@@ -4421,6 +4433,12 @@ function openUser(id, presetRole = 'frontdesk') {
     if (data.password && data.password.length < 8) return alert(lang === 'zh' ? '密码至少 8 位。' : 'Password must be at least 8 characters.');
     saveRecord('users', id, data);
   });
+  const headerSave = document.getElementById('modalHeaderAction');
+  if (headerSave) {
+    headerSave.hidden = false;
+    headerSave.textContent = lang === 'zh' ? '保存' : 'Save';
+    headerSave.onclick = () => document.getElementById('modalSave')?.click();
+  }
   prepareEmployeeAccountForm(Boolean(id), item);
   const roleSelect = document.getElementById('employeeAccountRole');
   if (roleSelect) roleSelect.addEventListener('change', () => applyRolePermissions(roleSelect.value));

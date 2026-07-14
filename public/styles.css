@@ -352,13 +352,20 @@ textarea { min-height: 78px; resize: vertical; }
   background: #fbfcfd;
 }
 .avatar-preview-wrap {
+  position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;
 }
-.avatar-upload-btn input {
+.avatar-file-input {
   display: none;
 }
+.avatar-preview-click { cursor: pointer; border-radius: 50%; }
+.avatar-preview-click:hover .employee-avatar,
+.avatar-preview-click:focus-within .employee-avatar { border-color: var(--accent); box-shadow: 0 0 0 4px rgba(16, 126, 148, .12); }
+.avatar-camera-badge { position: absolute; right: -3px; bottom: 2px; width: 28px; height: 28px; display: grid; place-items: center; border-radius: 50%; background: var(--accent); color: #fff; border: 3px solid #fff; font-size: 13px; }
+.avatar-upload-btn { min-height: 44px; display: inline-flex; align-items: center; cursor: pointer; }
+.avatar-upload-status { flex: 1 1 100%; color: var(--accent); font-size: 12px; font-weight: 700; }
 .prospect-dialog-section {
   margin: 4px 0 14px;
 }
@@ -957,6 +964,7 @@ body.modal-lock .prospect-workspace { pointer-events: none; }
 .dialog footer { border-bottom: 0; border-top: 1px solid var(--line); justify-content: flex-end; }
 .dialog h3 { margin: 0; }
 .modal-header-actions { display: flex; align-items: center; gap: 10px; }
+.modal-header-actions [hidden] { display: none !important; }
 .dialog .body { padding: 18px; }
 .message-modal-open .dialog {
   width: min(980px, calc(100vw - 36px));
