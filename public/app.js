@@ -43,7 +43,9 @@ let auditDate = today();
 let deferredInstall = null;
 let lang = localStorage.getItem('filmShopCloud.lang') || 'zh';
 let syncTimer = null;
+let dataRevisionTimer = null;
 let lastSyncAt = null;
+let lastDataRevision = '';
 let syncInFlight = false;
 let eventSource = null;
 let realtimeConnected = false;
@@ -64,6 +66,7 @@ let messageAudioChunks = [];
 let knownUnreadMessageIds = null;
 let messageAudioContext = null;
 const AUTO_SYNC_MS = 5 * 60 * 1000;
+const DATA_REVISION_POLL_MS = 15 * 1000;
 const MAX_MESSAGE_ATTACHMENT_BYTES = 8 * 1024 * 1024;
 const replyTemplateCategories = [
   { id: 'uncategorized', zh: '未分类', en: 'Uncategorized' },
@@ -758,6 +761,7 @@ async function sync(options = {}) {
     const previousUnreadIds = knownUnreadMessageIds;
     user = body.user;
     state = body.data;
+    lastDataRevision = String(body.revision || lastDataRevision || '');
     // The bootstrap request can take long enough for the operator to keep typing.
     // Capture the live value immediately before rendering so an older snapshot
     // from the beginning of the request can never overwrite newer keystrokes.
@@ -802,13 +806,32 @@ function renderAuth() {
 }
 
 function startAutoSync() {
-  if (syncTimer || !token) return;
-  syncTimer = setInterval(() => sync({ silent: true }), AUTO_SYNC_MS);
+  if (!token) return;
+  if (!syncTimer) syncTimer = setInterval(() => sync({ silent: true }), AUTO_SYNC_MS);
+  if (!dataRevisionTimer) dataRevisionTimer = setInterval(checkServerDataRevision, DATA_REVISION_POLL_MS);
 }
 
 function stopAutoSync() {
   if (syncTimer) clearInterval(syncTimer);
   syncTimer = null;
+  if (dataRevisionTimer) clearInterval(dataRevisionTimer);
+  dataRevisionTimer = null;
+}
+
+async function checkServerDataRevision() {
+  if (!token || syncInFlight) return;
+  try {
+    const body = await api('/api/sync-status');
+    const revision = String(body.revision || '');
+    if (!revision) return;
+    if (lastDataRevision && revision !== lastDataRevision) {
+      await sync({ silent: true });
+      return;
+    }
+    lastDataRevision = revision;
+  } catch {
+    // The full periodic sync and EventSource reconnect remain available.
+  }
 }
 
 function startRealtimeSync() {
@@ -821,7 +844,9 @@ function startRealtimeSync() {
   eventSource.addEventListener('data-changed', event => {
     try {
       const payload = JSON.parse(event.data || '{}');
-      if (payload.action === 'import-prospects' && Number(payload.detail?.imported || 0) > 0 && current !== 'prospects') {
+      const newCustomerImport = ['import-prospects', 'import-customer-conversations'].includes(payload.action)
+        && Number(payload.detail?.imported || 0) > 0;
+      if (newCustomerImport && !['prospects', 'customerCenter'].includes(current)) {
         playMessageSound();
       }
     } catch {}
@@ -847,7 +872,7 @@ function updateSyncStatus(message) {
     return;
   }
   if (!lastSyncAt) {
-    el.textContent = realtimeConnected ? t('realtimeSync') : `${t('autoSync')}: 5 min`;
+    el.textContent = realtimeConnected ? t('realtimeSync') : `${t('autoSync')}: 15 sec`;
     return;
   }
   el.textContent = `${realtimeConnected ? t('realtimeSync') : t('lastSync')}: ${lastSyncAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;

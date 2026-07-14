@@ -263,6 +263,15 @@ function writeDb(db) {
   fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2));
 }
 
+function databaseRevision() {
+  try {
+    const stat = fs.statSync(DB_FILE);
+    return `${stat.mtimeMs}:${stat.size}`;
+  } catch {
+    return '';
+  }
+}
+
 function backupFileName(kind, dateValue = new Date().toISOString().slice(0, 10)) {
   const stamp = new Date().toISOString().replace(/[:.]/g, '-');
   return kind === 'daily' ? `daily-${dateValue}.json` : `manual-${stamp}.json`;
@@ -2612,7 +2621,11 @@ async function api(req, res) {
   }
 
   if (req.method === 'GET' && url.pathname === '/api/bootstrap') {
-    return send(res, 200, { user: safeUser(user), data: sanitizeDbForUser(db, user) }, undefined, req);
+    return send(res, 200, { user: safeUser(user), data: sanitizeDbForUser(db, user), revision: databaseRevision() }, undefined, req);
+  }
+
+  if (req.method === 'GET' && url.pathname === '/api/sync-status') {
+    return send(res, 200, { revision: databaseRevision(), at: new Date().toISOString() }, undefined, req);
   }
 
   if (req.method === 'GET' && url.pathname === '/api/mobile/bootstrap') {
