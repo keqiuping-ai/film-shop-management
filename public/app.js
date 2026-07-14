@@ -57,6 +57,7 @@ let replyTemplateCategoryFilter = 'all';
 let preserveProspectWorkspaceRender = false;
 let prospectReplyRevision = 0;
 let customerCenterSearch = '';
+let prospectSearch = '';
 const prospectWorkspaceDrafts = new Map();
 let messageRecorder = null;
 let messageAudioChunks = [];
@@ -909,6 +910,20 @@ function setCustomerCenterSearch(value) {
   if (results && current === 'customerCenter') {
     results.innerHTML = customerCenterTable(searchedCustomerCenterRows());
     if (count) count.textContent = customerCenterSearchCountText();
+    return;
+  }
+  render();
+}
+
+function setProspectSearch(value) {
+  prospectSearch = value || '';
+  const input = document.getElementById('prospectSearchInput');
+  if (input && input.value !== prospectSearch) input.value = prospectSearch;
+  const results = document.getElementById('prospectSearchResults');
+  const count = document.getElementById('prospectSearchCount');
+  if (results && current === 'prospects') {
+    results.innerHTML = prospectTable(searchedProspectRows());
+    if (count) count.textContent = prospectSearchCountText();
     return;
   }
   render();
@@ -2244,7 +2259,7 @@ const views = {
     return panel(t('replyLibrary'), hasPerm('prospectsEdit') ? `<button class="btn primary" onclick="openReplyTemplateEditor('text')">${lang === 'zh' ? '新增回复素材' : 'New reply'}</button>` : '', replyLibraryPageHtml());
   },
   prospects() {
-    return panel(t('prospects'), hasPerm('prospectsEdit') ? `<button class="btn primary" onclick="openProspect()">${t('addNew')}</button>` : '', prospectTable() + `<p class="note">${lang === 'zh' ? '这里记录 Mat、Yelp、Meta、Google 等平台上已经预约或已经到店的客户。聊天上下文会随客户一起带入，方便店长和接待人员跟进。' : 'Use this area for customers from Mat, Yelp, Meta, Google, and other channels who have appointments or have arrived.'}</p>`);
+    return panel(t('prospects'), hasPerm('prospectsEdit') ? `<button class="btn primary" onclick="openProspect()">${t('addNew')}</button>` : '', prospectSearchBox() + `<div id="prospectSearchResults">${prospectTable(searchedProspectRows())}</div>` + `<p class="note">${lang === 'zh' ? '这里记录 Mat、Yelp、Meta、Google 等平台上已经预约或已经到店的客户。聊天上下文会随客户一起带入，方便店长和接待人员跟进。' : 'Use this area for customers from Mat, Yelp, Meta, Google, and other channels who have appointments or have arrived.'}</p>`);
   },
   leads() {
     const actions = hasPerm('leadsEdit') ? `<button class="btn primary" onclick="openLead()">${t('addNew')}</button>` : '';
@@ -3097,12 +3112,45 @@ function prospectTimeCell(item) {
   return `<span class="prospect-time-line">${lang === 'zh' ? '加入' : 'Added'} ${escapeHtml(added)}</span><span class="note prospect-time-line">${lang === 'zh' ? '更新' : 'Updated'} ${escapeHtml(updated)}</span>`;
 }
 
-function prospectTable() {
-  const rows = [...(state.prospects || [])].sort((a, b) => {
+function sortedProspectRows() {
+  return [...(state.prospects || [])].sort((a, b) => {
     const activityDiff = new Date(prospectActivityTime(b)).getTime() - new Date(prospectActivityTime(a)).getTime();
     if (Number.isFinite(activityDiff) && activityDiff) return activityDiff;
     return String(b.date || '').localeCompare(String(a.date || ''));
   });
+}
+
+function prospectSearchText(item) {
+  const rep = (state.customerServiceReps || []).find(row => row.id === item.ownerId);
+  return [
+    item.date, item.source, item.customer, item.phone, item.vehicle, item.need,
+    item.appointmentDate, item.appointmentTime, rep?.name, item.ownerName,
+    item.intentLevel, item.status, item.callNote, item.note,
+    prospectConversationSummary(item)
+  ].map(normalizeCustomerLookupText).join('|');
+}
+
+function searchedProspectRows() {
+  const rows = sortedProspectRows();
+  const query = normalizeCustomerLookupText(prospectSearch);
+  return query ? rows.filter(item => prospectSearchText(item).includes(query)) : rows;
+}
+
+function prospectSearchCountText() {
+  const total = (state.prospects || []).length;
+  const matched = searchedProspectRows().length;
+  return lang === 'zh' ? `找到 ${matched} / ${total} 位客户` : `Found ${matched} / ${total} customers`;
+}
+
+function prospectSearchBox() {
+  return `<div class="search-row prospect-search" role="search" aria-label="${lang === 'zh' ? '搜索高意向客户' : 'Search high-intent customers'}">
+    <input id="prospectSearchInput" value="${escapeHtml(prospectSearch)}" placeholder="${lang === 'zh' ? '搜索客户姓名、电话、车型、需求、平台、跟进人员…' : 'Search name, phone, vehicle, request, platform, or owner…'}" oninput="setProspectSearch(this.value)" autocomplete="off" />
+    <button class="btn" onclick="setProspectSearch('')">${t('clearSearch')}</button>
+    <span id="prospectSearchCount" class="note">${prospectSearchCountText()}</span>
+  </div>`;
+}
+
+function prospectTable(rows = searchedProspectRows()) {
   const addedLabel = lang === 'zh' ? '加入/更新' : 'Added / Updated';
   return `<div class="table-wrap prospect-table-wrap"><table class="prospect-table"><thead><tr><th>${t('date')}</th><th>${addedLabel}</th><th>${t('source')}</th><th>${t('customer')}</th><th>${t('vehicleNeed')}</th><th>${t('appointmentAt')}</th><th>${t('contactOwner')}</th><th>${t('intentLevel')}</th><th>${t('prospectStatus')}</th><th>${t('chatContext')}</th><th>${t('note')}</th><th></th></tr></thead><tbody>
   ${rows.map(item => {
@@ -3130,12 +3178,16 @@ function customerCenterSearchText(item) {
     item.appointmentDate, item.appointmentTime, rep?.name, item.ownerName,
     item.intentLevel, item.status, item.callNote, item.note,
     prospectConversationSummary(item)
-  ].map(normalizeSearchText).join('|');
+  ].map(normalizeCustomerLookupText).join('|');
+}
+
+function normalizeCustomerLookupText(value) {
+  return normalizeSearchText(value).replace(/[^\p{L}\p{N}]/gu, '');
 }
 
 function searchedCustomerCenterRows() {
   const rows = customerCenterRows();
-  const query = normalizeSearchText(customerCenterSearch);
+  const query = normalizeCustomerLookupText(customerCenterSearch);
   return query ? rows.filter(item => customerCenterSearchText(item).includes(query)) : rows;
 }
 
