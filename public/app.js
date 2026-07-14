@@ -745,9 +745,7 @@ async function logout() {
 async function sync(options = {}) {
   if (syncInFlight) return;
   const replyInput = document.getElementById('prospectReplyInput');
-  const replyDraft = replyInput?.value || '';
-  const replyHadFocus = document.activeElement === replyInput;
-  const replyRevisionBefore = prospectReplyRevision;
+  const replyDraftAtStart = replyInput?.value || '';
   const sidebarWasActive = Boolean(document.activeElement?.closest?.('.prospect-workspace-sidebar'));
   captureProspectWorkspaceDraft();
   const workspaceBefore = activeProspectWorkspaceId ? JSON.stringify(activeCustomerWorkspaceItem().item || {}) : '';
@@ -758,6 +756,13 @@ async function sync(options = {}) {
     const previousUnreadIds = knownUnreadMessageIds;
     user = body.user;
     state = body.data;
+    // The bootstrap request can take long enough for the operator to keep typing.
+    // Capture the live value immediately before rendering so an older snapshot
+    // from the beginning of the request can never overwrite newer keystrokes.
+    const liveReplyInput = document.getElementById('prospectReplyInput');
+    const liveReplyDraft = liveReplyInput?.value ?? replyDraftAtStart;
+    const liveReplyHadFocus = document.activeElement === liveReplyInput;
+    const liveReplyRevision = prospectReplyRevision;
     const workspaceAfter = activeProspectWorkspaceId ? JSON.stringify(activeCustomerWorkspaceItem().item || {}) : '';
     preserveProspectWorkspaceRender = Boolean(activeProspectWorkspaceId && (workspaceBefore === workspaceAfter || sidebarWasActive));
     notifyNewUnreadMessages(previousUnreadIds);
@@ -766,8 +771,8 @@ async function sync(options = {}) {
     renderAuth();
     render();
     const refreshedReplyInput = document.getElementById('prospectReplyInput');
-    if (refreshedReplyInput && replyDraft && replyRevisionBefore === prospectReplyRevision) refreshedReplyInput.value = replyDraft;
-    if (refreshedReplyInput && replyHadFocus && replyRevisionBefore === prospectReplyRevision) refreshedReplyInput.focus();
+    if (refreshedReplyInput && liveReplyRevision === prospectReplyRevision) refreshedReplyInput.value = liveReplyDraft;
+    if (refreshedReplyInput && liveReplyHadFocus && liveReplyRevision === prospectReplyRevision) refreshedReplyInput.focus();
     startAutoSync();
     startRealtimeSync();
     updateSyncStatus();
@@ -3172,6 +3177,11 @@ function closeProspectWorkspace() {
   if (workspace) workspace.classList.remove('open');
 }
 
+function cancelProspectWorkspaceChanges() {
+  prospectWorkspaceDrafts.delete(activeProspectWorkspaceId);
+  renderProspectWorkspace();
+}
+
 function startProspectWorkspaceSync() {
   if (prospectWorkspaceSyncTimer || !token) return;
   prospectWorkspaceSyncTimer = setInterval(() => {
@@ -3237,7 +3247,7 @@ function renderProspectWorkspace() {
         ${field(t('intentLevel'), select('workspaceIntentLevel', normalizeProspectIntentValue(item.intentLevel || '高意向'), intents))}
         ${field(t('prospectStatus'), select('workspaceStatus', item.status || '新意向', statuses))}
         <label class="prospect-sidebar-field prospect-call-note"><span>${lang === 'zh' ? '电话沟通备注' : 'Call notes'}</span><textarea id="workspaceCallNote" placeholder="${lang === 'zh' ? '例如：已电话沟通、客户关注价格、周五方便到店……' : 'Example: Called customer, discussed price, available Friday…'}" ${hasPerm('prospectsEdit') ? '' : 'disabled'}>${escapeHtml(item.callNote || '')}</textarea></label>
-        ${hasPerm('prospectsEdit') ? `<button id="workspaceSaveDetailsButton" class="btn primary prospect-sidebar-save" onclick="saveProspectWorkspaceDetails()">${lang === 'zh' ? '保存客户资料' : 'Save customer details'}</button>` : ''}
+        ${hasPerm('prospectsEdit') ? `<div class="prospect-sidebar-actions"><button type="button" class="btn" onclick="cancelProspectWorkspaceChanges()">${lang === 'zh' ? '取消修改' : 'Cancel'}</button><button id="workspaceSaveDetailsButton" class="btn primary prospect-sidebar-save" onclick="saveProspectWorkspaceDetails()">${lang === 'zh' ? '保存客户资料' : 'Save customer details'}</button></div>` : ''}
       </aside>
       <section class="prospect-workspace-conversation">
         <main class="prospect-workspace-chat">
@@ -3266,7 +3276,7 @@ function renderProspectWorkspace() {
             <input class="hidden" id="prospectFileInput" type="file" onchange="uploadProspectAttachment(this.files[0]); this.value=''">
           </div>
           <div class="prospect-compose-row">
-            <textarea id="prospectReplyInput" placeholder="${lang === 'zh' ? '输入给该客户的回复内容…' : 'Write a reply…'}"></textarea>
+            <textarea id="prospectReplyInput" oninput="prospectReplyRevision += 1" placeholder="${lang === 'zh' ? '输入给该客户的回复内容…' : 'Write a reply…'}"></textarea>
             <button id="prospectSendSmsButton" class="btn primary" onclick="sendProspectSms()" ${hasPerm('prospectsEdit') ? '' : 'disabled'}>${lang === 'zh' ? '发送短信' : 'Send SMS'}</button>
           </div>
         </footer>
