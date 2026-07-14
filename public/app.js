@@ -53,6 +53,7 @@ let prospectWorkspaceSyncTimer = null;
 let prospectPendingAttachment = null;
 let replyTemplatePendingAttachment = null;
 let replyTemplateLibraryType = 'text';
+let replyTemplateCategoryFilter = 'all';
 let preserveProspectWorkspaceRender = false;
 let prospectReplyRevision = 0;
 const prospectWorkspaceDrafts = new Map();
@@ -62,6 +63,15 @@ let knownUnreadMessageIds = null;
 let messageAudioContext = null;
 const AUTO_SYNC_MS = 5 * 60 * 1000;
 const MAX_MESSAGE_ATTACHMENT_BYTES = 8 * 1024 * 1024;
+const replyTemplateCategories = [
+  { id: 'uncategorized', zh: '未分类', en: 'Uncategorized' },
+  { id: 'auto-window-film', zh: '汽车窗膜', en: 'Auto Window Tint' },
+  { id: 'color-wrap', zh: '改色膜', en: 'Color Wrap' },
+  { id: 'ppf', zh: 'PPF', en: 'PPF' },
+  { id: 'architectural-film', zh: '建筑安全隔热膜', en: 'Architectural Film' },
+  { id: 'shop-display', zh: '店面展示', en: 'Shop Display' },
+  { id: 'brand-display', zh: '品牌展示', en: 'Brand Display' }
+];
 const vehicleClassOptions = () => [
   '小型轿车',
   '四门跑车',
@@ -3395,9 +3405,34 @@ function replyTypeLabel(type) {
   return labels[type] || labels.text;
 }
 
-function replyTemplateCards(type, selectable = false) {
+function normalizeReplyTemplateCategory(category) {
+  const value = String(category || '').trim();
+  return replyTemplateCategories.some(item => item.id === value) ? value : 'uncategorized';
+}
+
+function replyTemplateCategoryLabel(category) {
+  const item = replyTemplateCategories.find(row => row.id === category) || replyTemplateCategories.find(row => row.id === 'uncategorized');
+  return item ? item[lang === 'zh' ? 'zh' : 'en'] : '';
+}
+
+function replyTemplateCategoryOptions(selected) {
+  const currentCategory = normalizeReplyTemplateCategory(selected);
+  return replyTemplateCategories.map(item => `<option value="${item.id}" ${item.id === currentCategory ? 'selected' : ''}>${lang === 'zh' ? item.zh : item.en}</option>`).join('');
+}
+
+function replyTemplateCategoryFilters(activeCategory, handler) {
+  const currentCategory = activeCategory === 'all' ? 'all' : normalizeReplyTemplateCategory(activeCategory);
+  const allLabel = lang === 'zh' ? '全部分类' : 'All categories';
+  return `<div class="reply-category-tabs">
+    <button class="btn ${currentCategory === 'all' ? 'primary' : ''}" type="button" onclick="${handler}('${replyTemplateLibraryType}','all')">${allLabel}</button>
+    ${replyTemplateCategories.map(item => `<button class="btn ${currentCategory === item.id ? 'primary' : ''}" type="button" onclick="${handler}('${replyTemplateLibraryType}','${item.id}')">${lang === 'zh' ? item.zh : item.en}</button>`).join('')}
+  </div>`;
+}
+
+function replyTemplateCards(type, selectable = false, category = replyTemplateCategoryFilter) {
   const rows = [...(state.replyTemplates || [])]
     .filter(item => item.type === type)
+    .filter(item => category === 'all' || normalizeReplyTemplateCategory(item.category) === category)
     .sort((a, b) => String(b.updatedAt || b.createdAt || '').localeCompare(String(a.updatedAt || a.createdAt || '')));
   if (!rows.length) return `<div class="reply-library-empty">${lang === 'zh' ? '这个分类还没有素材，请点击“新增素材”上传。' : 'No items yet. Use “New item” to add one.'}</div>`;
   return `<div class="reply-library-grid">${rows.map(item => {
@@ -3410,6 +3445,7 @@ function replyTemplateCards(type, selectable = false) {
     return `<article class="reply-library-card" onclick="${action}">
       <div class="reply-library-card-preview">${preview}</div>
       <div class="reply-library-card-info"><strong>${escapeHtml(item.title || replyTypeLabel(type))}</strong><small>${escapeHtml(item.createdBy || '')}</small></div>
+      <div class="reply-library-card-meta"><span>${escapeHtml(replyTemplateCategoryLabel(normalizeReplyTemplateCategory(item.category)))}</span></div>
       <div class="reply-library-card-actions">
         <button class="btn primary" type="button" onclick="event.stopPropagation();${action}">${selectable ? (lang === 'zh' ? '选用' : 'Use') : (lang === 'zh' ? '编辑' : 'Edit')}</button>
         ${hasPerm('prospectsEdit') ? `<button class="btn danger" type="button" onclick="event.stopPropagation();deleteReplyTemplate('${escapeHtml(item.id)}','${escapeHtml(type)}',${selectable})">${lang === 'zh' ? '删除' : 'Delete'}</button>` : ''}
@@ -3426,25 +3462,30 @@ function replyLibraryTabs(activeType, handler) {
 
 function replyLibraryPageHtml(type = replyTemplateLibraryType) {
   replyTemplateLibraryType = ['text', 'image', 'video'].includes(type) ? type : 'text';
+  replyTemplateCategoryFilter = replyTemplateCategoryFilter === 'all' ? 'all' : normalizeReplyTemplateCategory(replyTemplateCategoryFilter);
   return `<div class="reply-library-page">
     ${replyLibraryTabs(replyTemplateLibraryType, 'showReplyLibraryPageType')}
+    ${replyTemplateCategoryFilters(replyTemplateCategoryFilter, 'showReplyLibraryPageType')}
     <div class="reply-library-help">${lang === 'zh' ? '素材保存在 Railway 云端，店内所有已授权电脑会同步看到。点击素材可编辑。' : 'Items are stored in Railway and shared across authorized devices.'}</div>
-    ${replyTemplateCards(replyTemplateLibraryType, false)}
+    ${replyTemplateCards(replyTemplateLibraryType, false, replyTemplateCategoryFilter)}
   </div>`;
 }
 
-function showReplyLibraryPageType(type) {
+function showReplyLibraryPageType(type, category = replyTemplateCategoryFilter) {
   replyTemplateLibraryType = type;
+  replyTemplateCategoryFilter = category === 'all' ? 'all' : normalizeReplyTemplateCategory(category);
   render();
 }
 
-function openReplyReferenceLibrary(type = 'text') {
+function openReplyReferenceLibrary(type = 'text', category = replyTemplateCategoryFilter) {
   replyTemplateLibraryType = ['text', 'image', 'video'].includes(type) ? type : 'text';
+  replyTemplateCategoryFilter = category === 'all' ? 'all' : normalizeReplyTemplateCategory(category);
   openModal(lang === 'zh' ? '选择云端回复素材' : 'Choose cloud reply', `
     <div class="reply-library-picker">
       ${replyLibraryTabs(replyTemplateLibraryType, 'openReplyReferenceLibrary')}
+      ${replyTemplateCategoryFilters(replyTemplateCategoryFilter, 'openReplyReferenceLibrary')}
       <p class="reply-library-help">${lang === 'zh' ? '点击“选用”后只会放入下面的待发送区，确认无误后再点发送短信。' : 'Choosing an item stages it in the composer. It will not send automatically.'}</p>
-      ${replyTemplateCards(replyTemplateLibraryType, true)}
+      ${replyTemplateCards(replyTemplateLibraryType, true, replyTemplateCategoryFilter)}
     </div>`, closeModal);
   document.getElementById('modal').classList.add('reply-library-open');
   const save = document.getElementById('modalSave');
@@ -3531,11 +3572,15 @@ function replyTemplatePreviewHtml(type, attachment) {
 function openReplyTemplateEditor(type = 'text', id = '', returnToPicker = false) {
   type = ['text', 'image', 'video'].includes(type) ? type : 'text';
   const item = (state.replyTemplates || []).find(row => row.id === id);
+  const category = normalizeReplyTemplateCategory(item?.category || (replyTemplateCategoryFilter === 'all' ? 'auto-window-film' : replyTemplateCategoryFilter));
   replyTemplatePendingAttachment = item?.attachment ? { ...item.attachment } : null;
   openModal(item ? (lang === 'zh' ? '编辑云端回复素材' : 'Edit cloud reply') : (lang === 'zh' ? '新增云端回复素材' : 'New cloud reply'), `
     <div class="reply-template-editor" data-return-picker="${returnToPicker ? '1' : '0'}">
       <label><span>${lang === 'zh' ? '素材类型' : 'Type'}</span><select id="replyTemplateType" ${item ? 'disabled' : ''} onchange="openReplyTemplateEditor(this.value,'',${returnToPicker})">
         ${['text','image','video'].map(value => `<option value="${value}" ${value === type ? 'selected' : ''}>${replyTypeLabel(value)}</option>`).join('')}
+      </select></label>
+      <label><span>${lang === 'zh' ? '业务分类' : 'Business category'}</span><select id="replyTemplateCategory">
+        ${replyTemplateCategoryOptions(category)}
       </select></label>
       <label><span>${lang === 'zh' ? '标题（方便查找）' : 'Title'}</span><input id="replyTemplateTitle" value="${escapeHtml(item?.title || '')}" placeholder="${lang === 'zh' ? '例如：询问车型、到店地址、窗膜效果图' : 'Example: Ask vehicle, shop address'}"></label>
       ${type === 'text' ? `<label class="reply-template-content"><span>${lang === 'zh' ? '回复文字' : 'Reply text'}</span><textarea id="replyTemplateContent" placeholder="${lang === 'zh' ? '输入以后可以一键选用的完整回复内容…' : 'Enter reusable reply text…'}">${escapeHtml(item?.content || '')}</textarea></label>` : `
@@ -3570,16 +3615,18 @@ async function uploadReplyTemplateMedia(file) {
 
 async function saveReplyTemplate(id, type, returnToPicker = false) {
   const title = String(document.getElementById('replyTemplateTitle')?.value || '').trim();
+  const category = normalizeReplyTemplateCategory(document.getElementById('replyTemplateCategory')?.value || '');
   const content = String(document.getElementById('replyTemplateContent')?.value || '').trim();
   if (type === 'text' && !content) return alert(lang === 'zh' ? '请填写回复文字。' : 'Enter reply text.');
   if (type !== 'text' && !replyTemplatePendingAttachment?.url) return alert(lang === 'zh' ? '请先上传素材文件。' : 'Upload a file first.');
   try {
     state = await api(`/api/replyTemplates${id ? `/${encodeURIComponent(id)}` : ''}`, {
       method: id ? 'PUT' : 'POST',
-      body: JSON.stringify({ type, title, content, attachment: type === 'text' ? null : replyTemplatePendingAttachment })
+      body: JSON.stringify({ type, category, title, content, attachment: type === 'text' ? null : replyTemplatePendingAttachment })
     });
     broadcastDataChange();
     replyTemplatePendingAttachment = null;
+    replyTemplateCategoryFilter = category;
     if (returnToPicker) openReplyReferenceLibrary(type);
     else { closeModal(); replyTemplateLibraryType = type; render(); }
   } catch (err) { alert(err.message); }

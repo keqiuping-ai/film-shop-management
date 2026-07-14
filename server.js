@@ -3009,8 +3009,10 @@ async function api(req, res) {
     }
     if (collection === 'replyTemplates') {
       const type = ['text', 'image', 'video'].includes(String(item.type)) ? String(item.type) : '';
+      const allowedCategories = new Set(['uncategorized', 'auto-window-film', 'color-wrap', 'ppf', 'architectural-film', 'shop-display', 'brand-display']);
       if (!type) return send(res, 400, { error: '回复素材类型不正确' });
       item.type = type;
+      item.category = allowedCategories.has(String(item.category || '')) ? String(item.category) : 'uncategorized';
       item.title = String(item.title || '').trim().slice(0, 80);
       item.content = String(item.content || '').trim().slice(0, 4000);
       item.attachment = type === 'text' ? null : item.attachment;
@@ -3125,8 +3127,10 @@ async function api(req, res) {
     }
     if (collection === 'replyTemplates') {
       const type = ['text', 'image', 'video'].includes(String(next.type)) ? String(next.type) : '';
+      const allowedCategories = new Set(['uncategorized', 'auto-window-film', 'color-wrap', 'ppf', 'architectural-film', 'shop-display', 'brand-display']);
       if (!type) return send(res, 400, { error: '回复素材类型不正确' });
       next.type = type;
+      next.category = allowedCategories.has(String(next.category || '')) ? String(next.category) : 'uncategorized';
       next.title = String(next.title || '').trim().slice(0, 80);
       next.content = String(next.content || '').trim().slice(0, 4000);
       next.attachment = type === 'text' ? null : next.attachment;
