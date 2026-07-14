@@ -167,7 +167,9 @@ function seedDb() {
       officeAddress: '3359 W Oquendo Rd, Las Vegas, NV 89118',
       officeLat: 36.0824712,
       officeLng: -115.1850945,
-      clockRadiusMeters: 150
+      clockRadiusMeters: 150,
+      callForwardEnabled: false,
+      callForwardNumber: ''
     },
     users: [
       { id: id(), name: '老板账号', email: 'admin@filmshop.local', role: 'owner', passwordHash: hashPassword('admin123'), active: true }
@@ -239,6 +241,8 @@ function readDb() {
   if (!Number.isFinite(Number(db.settings.officeLat))) db.settings.officeLat = 36.0824712;
   if (!Number.isFinite(Number(db.settings.officeLng))) db.settings.officeLng = -115.1850945;
   if (!Number.isFinite(Number(db.settings.clockRadiusMeters))) db.settings.clockRadiusMeters = 150;
+  if (typeof db.settings.callForwardEnabled !== 'boolean') db.settings.callForwardEnabled = false;
+  if (typeof db.settings.callForwardNumber !== 'string') db.settings.callForwardNumber = '';
   if (!Array.isArray(db.expenses)) db.expenses = [];
   if (!Array.isArray(db.customerServiceReps)) db.customerServiceReps = [];
   if (!Array.isArray(db.leads)) db.leads = [];
@@ -1597,6 +1601,22 @@ function normalizedPhone(value) {
   return digits.length > 10 ? digits.slice(-10) : digits;
 }
 
+function normalizeForwardingPhone(value) {
+  let digits = String(value || '').replace(/\D/g, '');
+  if (digits.length === 10) digits = `1${digits}`;
+  if (digits.length < 8 || digits.length > 15) return '';
+  return `+${digits}`;
+}
+
+function escapeXml(value) {
+  return String(value || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
+}
+
 function findConversationByPhone(db, phone) {
   const target = normalizedPhone(phone);
   if (!target) return null;
@@ -2429,6 +2449,28 @@ async function api(req, res) {
     });
   }
 
+  if (req.method === 'POST' && url.pathname === '/api/twilio/voice') {
+    const raw = await readRawBody(req);
+    const params = Object.fromEntries(new URLSearchParams(raw));
+    if (!validateTwilioSignature(req, params)) return send(res, 403, { error: 'Twilio signature verification failed' });
+    const forwardNumber = normalizeForwardingPhone(db.settings?.callForwardNumber);
+    const fromNumber = normalizeForwardingPhone(twilioConfig().fromNumber);
+    const enabled = Boolean(db.settings?.callForwardEnabled && forwardNumber && forwardNumber !== fromNumber);
+    const caller = String(params.From || '').trim();
+    audit(db, { id: 'twilio-voice', name: 'Twilio Voice' }, 'receive-customer-call', {
+      collection: 'settings',
+      recordId: 'call-forwarding',
+      recordLabel: caller || '未知来电',
+      detail: enabled ? `来电 ${caller || '未知号码'} 已转接` : `来电 ${caller || '未知号码'}，电话转接未启用`
+    });
+    writeDb(db);
+    if (!enabled) {
+      return send(res, 200, '<?xml version="1.0" encoding="UTF-8"?><Response><Say language="en-US">Thank you for calling QUAD Film. Phone forwarding is currently unavailable. Please send us a text message.</Say></Response>', 'text/xml; charset=utf-8');
+    }
+    const twiml = `<?xml version="1.0" encoding="UTF-8"?><Response><Dial timeout="25" answerOnBridge="true"><Number>${escapeXml(forwardNumber)}</Number></Dial><Say language="en-US">The person you are calling is unavailable. Please send us a text message.</Say></Response>`;
+    return send(res, 200, twiml, 'text/xml; charset=utf-8');
+  }
+
   if (req.method === 'POST' && url.pathname === '/api/twilio/inbound') {
     const raw = await readRawBody(req);
     const params = Object.fromEntries(new URLSearchParams(raw));
@@ -2782,6 +2824,15 @@ async function api(req, res) {
   if (req.method === 'PUT' && url.pathname === '/api/settings') {
     if (!canAccess(user, 'settingsEdit')) return send(res, 403, { error: '没有修改系统设置权限' });
     const body = await readBody(req);
+    if (Object.prototype.hasOwnProperty.call(body, 'callForwardNumber') || Object.prototype.hasOwnProperty.call(body, 'callForwardEnabled')) {
+      const forwardNumber = normalizeForwardingPhone(body.callForwardNumber);
+      if (body.callForwardEnabled && !forwardNumber) return send(res, 400, { error: '请输入有效的电话转接号码' });
+      if (body.callForwardEnabled && forwardNumber === normalizeForwardingPhone(twilioConfig().fromNumber)) {
+        return send(res, 400, { error: '转接号码不能填写 QUAD 的 Twilio 发送号码，否则会循环呼叫' });
+      }
+      body.callForwardEnabled = Boolean(body.callForwardEnabled);
+      body.callForwardNumber = forwardNumber;
+    }
     const before = { ...db.settings };
     db.settings = { ...db.settings, ...body };
     audit(db, user, 'update-settings', {
@@ -2819,7 +2870,10 @@ async function api(req, res) {
       configured: twilioConfigured(),
       fromNumber: config.fromNumber,
       messagingServiceConfigured: Boolean(config.messagingServiceSid),
-      inboundWebhookUrl: `${requestPublicBaseUrl(req)}/api/twilio/inbound`
+      inboundWebhookUrl: `${requestPublicBaseUrl(req)}/api/twilio/inbound`,
+      voiceWebhookUrl: `${requestPublicBaseUrl(req)}/api/twilio/voice`,
+      callForwardEnabled: Boolean(db.settings?.callForwardEnabled),
+      callForwardNumber: String(db.settings?.callForwardNumber || '')
     });
   }
 

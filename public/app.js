@@ -2312,6 +2312,12 @@ const views = {
         <label>${t('shopName')}<input id="shopName" value="${escapeHtml(state.settings.shopName)}" /></label>
         <label>${t('taxRate')}<input id="taxRate" type="number" value="${state.settings.taxRate}" /></label>
         <label>${t('monthlyCost')}<input id="monthlyFixedCost" type="number" value="${state.settings.monthlyFixedCost}" /></label>
+        <div class="wide" style="border:1px solid var(--border);border-radius:14px;padding:16px;background:var(--soft)">
+          <h3 style="margin:0 0 10px">${lang === 'zh' ? '客户来电转接' : 'Customer Call Forwarding'}</h3>
+          <label class="check-row" style="margin-bottom:10px"><input id="callForwardEnabled" type="checkbox" ${state.settings.callForwardEnabled ? 'checked' : ''} /><span>${lang === 'zh' ? '启用电话转接' : 'Enable call forwarding'}</span></label>
+          <label>${lang === 'zh' ? '转接到的电话号码' : 'Forward calls to'}<input id="callForwardNumber" type="tel" value="${escapeHtml(state.settings.callForwardNumber || '')}" placeholder="例如 +1 702-354-8143" /></label>
+          <p class="note" style="margin:8px 0 0">${lang === 'zh' ? '客户拨打 QUAD Twilio 号码 +1 725-241-2586 时，会转接到这里填写的号码。您可以随时更换或关闭。电话转接会产生 Twilio 通话费用。' : 'Calls to the QUAD Twilio number +1 725-241-2586 will be forwarded here. You can change or disable it at any time. Twilio voice charges apply.'}</p>
+        </div>
         <label>${t('oldPassword')}<input id="oldPassword" type="password" /></label>
         <label>${t('newPassword')}<input id="newPassword" type="password" /></label>
         <div class="wide">
@@ -4366,7 +4372,9 @@ async function saveSettings() {
     ...state.settings,
     shopName: document.getElementById('shopName').value,
     taxRate: Number(document.getElementById('taxRate').value || 0),
-    monthlyFixedCost: Number(document.getElementById('monthlyFixedCost').value || 0)
+    monthlyFixedCost: Number(document.getElementById('monthlyFixedCost').value || 0),
+    callForwardEnabled: Boolean(document.getElementById('callForwardEnabled')?.checked),
+    callForwardNumber: String(document.getElementById('callForwardNumber')?.value || '').trim()
   };
   try {
     state = await api('/api/settings', { method: 'PUT', body: JSON.stringify(next) });
