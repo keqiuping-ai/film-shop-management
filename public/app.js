@@ -56,6 +56,7 @@ let replyTemplateLibraryType = 'text';
 let replyTemplateCategoryFilter = 'all';
 let preserveProspectWorkspaceRender = false;
 let prospectReplyRevision = 0;
+let customerCenterSearch = '';
 const prospectWorkspaceDrafts = new Map();
 let messageRecorder = null;
 let messageAudioChunks = [];
@@ -897,6 +898,20 @@ function setJobSearch(value) {
   const input = document.getElementById('jobSearchInput');
   if (input && input.value !== jobSearch) input.value = jobSearch;
   refreshJobPreview();
+}
+
+function setCustomerCenterSearch(value) {
+  customerCenterSearch = value || '';
+  const input = document.getElementById('customerCenterSearchInput');
+  if (input && input.value !== customerCenterSearch) input.value = customerCenterSearch;
+  const results = document.getElementById('customerCenterSearchResults');
+  const count = document.getElementById('customerCenterSearchCount');
+  if (results && current === 'customerCenter') {
+    results.innerHTML = customerCenterTable(searchedCustomerCenterRows());
+    if (count) count.textContent = customerCenterSearchCountText();
+    return;
+  }
+  render();
 }
 
 function setJobDatePreset(value) {
@@ -2223,7 +2238,7 @@ const views = {
     return panel(t('inventoryAlerts'), hasPerm('inventoryEdit') ? `<button class="btn" onclick="setPage('inventory')">${t('processInventory')}</button>` : '', inventorySearchBox(alertRows) + `<div id="inventorySearchResults">${inventoryAlertTable(true, null, true)}</div>` + `<p class="note">${lang === 'zh' ? '在库存商品里设置“预警库存/最低数量”。当当前库存小于或等于这个数量时，这里会自动生成补货报警。' : 'Set the reorder level on each SKU. When current stock is less than or equal to that number, the item appears here for replenishment.'}</p>`);
   },
   customerCenter() {
-    return panel(t('customerCenter'), hasPerm('prospectsEdit') ? `<button class="btn primary" onclick="openProspect(null,'customerConversations')">${lang === 'zh' ? '新增客户交流' : 'New conversation'}</button>` : '', customerCenterTable() + `<p class="note">${lang === 'zh' ? '这里集中查看所有客户交流。只有跟进状态为“已预约”或“已到店”时，客户才会自动转入高意向客户。' : 'All customer conversations appear here. Customers are promoted only after an appointment is set or they arrive.'}</p>`);
+    return panel(t('customerCenter'), hasPerm('prospectsEdit') ? `<button class="btn primary" onclick="openProspect(null,'customerConversations')">${lang === 'zh' ? '新增客户交流' : 'New conversation'}</button>` : '', customerCenterSearchBox() + `<div id="customerCenterSearchResults">${customerCenterTable(searchedCustomerCenterRows())}</div>` + `<p class="note">${lang === 'zh' ? '这里集中查看所有客户交流。只有跟进状态为“已预约”或“已到店”时，客户才会自动转入高意向客户。' : 'All customer conversations appear here. Customers are promoted only after an appointment is set or they arrive.'}</p>`);
   },
   replyLibrary() {
     return panel(t('replyLibrary'), hasPerm('prospectsEdit') ? `<button class="btn primary" onclick="openReplyTemplateEditor('text')">${lang === 'zh' ? '新增回复素材' : 'New reply'}</button>` : '', replyLibraryPageHtml());
@@ -3108,8 +3123,37 @@ function customerCenterRows() {
   return [...regular, ...highIntent].sort((a, b) => new Date(prospectActivityTime(b)).getTime() - new Date(prospectActivityTime(a)).getTime());
 }
 
-function customerCenterTable() {
+function customerCenterSearchText(item) {
+  const rep = (state.customerServiceReps || []).find(row => row.id === item.ownerId);
+  return [
+    item.date, item.source, item.customer, item.phone, item.vehicle, item.need,
+    item.appointmentDate, item.appointmentTime, rep?.name, item.ownerName,
+    item.intentLevel, item.status, item.callNote, item.note,
+    prospectConversationSummary(item)
+  ].map(normalizeSearchText).join('|');
+}
+
+function searchedCustomerCenterRows() {
   const rows = customerCenterRows();
+  const query = normalizeSearchText(customerCenterSearch);
+  return query ? rows.filter(item => customerCenterSearchText(item).includes(query)) : rows;
+}
+
+function customerCenterSearchCountText() {
+  const total = customerCenterRows().length;
+  const matched = searchedCustomerCenterRows().length;
+  return lang === 'zh' ? `找到 ${matched} / ${total} 位客户` : `Found ${matched} / ${total} customers`;
+}
+
+function customerCenterSearchBox() {
+  return `<div class="search-row customer-center-search" role="search" aria-label="${lang === 'zh' ? '搜索客户' : 'Search customers'}">
+    <input id="customerCenterSearchInput" value="${escapeHtml(customerCenterSearch)}" placeholder="${lang === 'zh' ? '搜索客户姓名、电话、车型、需求、平台、跟进人员…' : 'Search name, phone, vehicle, request, platform, or owner…'}" oninput="setCustomerCenterSearch(this.value)" autocomplete="off" />
+    <button class="btn" onclick="setCustomerCenterSearch('')">${t('clearSearch')}</button>
+    <span id="customerCenterSearchCount" class="note">${customerCenterSearchCountText()}</span>
+  </div>`;
+}
+
+function customerCenterTable(rows = searchedCustomerCenterRows()) {
   const addedLabel = lang === 'zh' ? '加入/更新' : 'Added / Updated';
   return `<div class="table-wrap customer-center-table"><table><thead><tr><th>${t('date')}</th><th>${addedLabel}</th><th>${t('source')}</th><th>${t('customer')}</th><th>${t('vehicleNeed')}</th><th>${t('appointmentAt')}</th><th>${t('contactOwner')}</th><th>${t('intentLevel')}</th><th>${t('prospectStatus')}</th></tr></thead><tbody>
     ${rows.map(item => {
