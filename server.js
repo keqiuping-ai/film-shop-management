@@ -1041,19 +1041,22 @@ function mobileSnapshot(db, user) {
 function sanitizeMessageAttachment(input) {
   if (!input || typeof input !== 'object') return null;
   const kind = String(input.kind || '').trim();
-  const allowedKinds = new Set(['image', 'file', 'audio']);
+  const allowedKinds = new Set(['image', 'video', 'file', 'audio']);
   if (!allowedKinds.has(kind)) return { error: '附件类型不正确' };
   const name = String(input.name || (kind === 'audio' ? 'voice-message.webm' : 'attachment')).trim().slice(0, 160);
   const type = String(input.type || 'application/octet-stream').trim().slice(0, 120);
   const dataUrl = String(input.dataUrl || '').trim();
+  const url = String(input.url || '').trim();
   const size = Number(input.size || 0);
-  if (!dataUrl.startsWith('data:')) return { error: '附件内容格式不正确' };
+  const storedMediaUrl = url.startsWith('/customer-media/') || /^https?:\/\/[^/]+\/customer-media\/[a-z0-9._-]+$/i.test(url);
+  if (!dataUrl.startsWith('data:') && !storedMediaUrl) return { error: '附件内容格式不正确' };
   if (!Number.isFinite(size) || size <= 0) return { error: '附件大小不正确' };
-  if (size > MAX_MESSAGE_ATTACHMENT_BYTES) return { error: '附件不能超过 8MB' };
-  if (dataUrl.length > 12_000_000) return { error: '附件内容太大' };
+  if (size > (kind === 'video' ? MAX_CUSTOMER_VIDEO_SOURCE_BYTES : MAX_MESSAGE_ATTACHMENT_BYTES)) return { error: kind === 'video' ? '视频不能超过 50MB' : '附件不能超过 8MB' };
+  if (dataUrl && dataUrl.length > 12_000_000) return { error: '附件内容太大' };
   if (kind === 'image' && !type.startsWith('image/')) return { error: '请选择图片文件' };
+  if (kind === 'video' && !type.startsWith('video/')) return { error: '请选择视频文件' };
   if (kind === 'audio' && !type.startsWith('audio/')) return { error: '语音文件格式不正确' };
-  return { kind, name, type, size, dataUrl };
+  return { kind, name, type, size, ...(dataUrl ? { dataUrl } : {}), ...(url ? { url } : {}) };
 }
 
 function sanitizeCustomerServiceReps(reps, p) {
@@ -2894,8 +2897,8 @@ async function api(req, res) {
     });
   }
 
-  if (req.method === 'POST' && url.pathname === '/api/customer-media/upload') {
-    if (!canAccess(user, 'prospectsEdit')) return send(res, 403, { error: '没有发送客户附件的权限' });
+  if (req.method === 'POST' && ['/api/customer-media/upload', '/api/message-media/upload'].includes(url.pathname)) {
+    if (url.pathname === '/api/customer-media/upload' && !canAccess(user, 'prospectsEdit')) return send(res, 403, { error: '没有发送客户附件的权限' });
     const body = await readBody(req);
     const name = String(body.name || '附件').trim().slice(0, 160);
     let contentType = String(body.type || 'application/octet-stream').trim().slice(0, 120);

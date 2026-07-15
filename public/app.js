@@ -1415,14 +1415,14 @@ function messageModalHtml(users) {
   return `<div class="message-layout">
     <div class="message-people">
       <button class="message-person message-group-person ${activeMessageUserId === GROUP_CHAT_ID ? 'active' : ''}" onclick="selectMessageUser('${GROUP_CHAT_ID}')">
-        <span>${lang === 'zh' ? '👥 全体员工群聊' : '👥 All Staff Group'}</span>
+        <span class="message-person-identity"><span class="message-group-avatar">群</span><span>${lang === 'zh' ? '全体员工群聊' : 'All Staff Group'}</span></span>
         ${groupUnread ? `<strong>${groupUnread > 99 ? '99+' : groupUnread}</strong>` : ''}
       </button>
       ${users.length ? `<div class="message-people-label">${lang === 'zh' ? '私聊' : 'Direct messages'}</div>` : ''}
       ${users.map(item => {
         const unread = unreadCountFromUser(item.id);
         return `<button class="message-person ${item.id === activeMessageUserId ? 'active' : ''}" onclick="selectMessageUser('${item.id}')">
-          <span>${escapeHtml(item.name || item.email)}</span>
+          <span class="message-person-identity">${userAvatarHtml(item, 'small')}<span>${escapeHtml(item.name || item.email)}</span></span>
           ${unread ? `<strong>${unread > 99 ? '99+' : unread}</strong>` : ''}
         </button>`;
       }).join('')}
@@ -1435,9 +1435,11 @@ function messageModalHtml(users) {
       <div class="message-compose">
         <div class="message-tools">
           <button class="btn" onclick="document.getElementById('messageImageInput').click()">${lang === 'zh' ? '图片' : 'Image'}</button>
+          <button class="btn" onclick="document.getElementById('messageVideoInput').click()">${lang === 'zh' ? '视频' : 'Video'}</button>
           <button class="btn" onclick="document.getElementById('messageFileInput').click()">${lang === 'zh' ? '文件' : 'File'}</button>
           <button class="btn" id="messageVoiceBtn" onclick="toggleVoiceMessage()">${lang === 'zh' ? '语音' : 'Voice'}</button>
           <input class="hidden" id="messageImageInput" type="file" accept="image/*" onchange="sendMessageFile(this.files[0], 'image'); this.value='';" />
+          <input class="hidden" id="messageVideoInput" type="file" accept="video/*" onchange="sendMessageFile(this.files[0], 'video'); this.value='';" />
           <input class="hidden" id="messageFileInput" type="file" onchange="sendMessageFile(this.files[0], 'file'); this.value='';" />
         </div>
         <textarea id="messageText" placeholder="${lang === 'zh' ? '输入留言内容...' : 'Type a message...'}"></textarea>
@@ -1460,34 +1462,43 @@ function conversationMessages(otherUserId) {
 
 function messageBubbleHtml(message) {
   const mine = message.fromUserId === user?.id;
+  const sender = (state.users || []).find(item => item.id === message.fromUserId) || { name: message.fromName || '' };
   const time = message.createdAt ? new Date(message.createdAt).toLocaleString([], { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) : '';
   const attachmentOnly = !String(message.text || '').trim() && message.attachment;
   const readStatus = mine
     ? ` · <span class="message-read-status ${(message.scope === 'group' ? (message.readByUserIds || []).length > 1 : message.readAt) ? 'read' : 'unread'}">${(message.scope === 'group' ? (message.readByUserIds || []).length > 1 : message.readAt) ? (lang === 'zh' ? '已读' : 'Read') : (lang === 'zh' ? '未读' : 'Unread')}</span>`
     : '';
-  return `<div class="message-bubble ${mine ? 'mine' : 'theirs'} ${attachmentOnly ? 'attachment-only' : ''}">
-    <button class="message-delete" type="button" title="${lang === 'zh' ? '删除/撤销' : 'Delete'}" onclick="deleteMessage('${message.id}')">×</button>
-    ${message.text ? `<div class="message-text">${escapeHtml(message.text || '')}</div>` : ''}
-    ${messageAttachmentHtml(message.attachment)}
-    <small>${escapeHtml(mine ? (lang === 'zh' ? '我' : 'Me') : (message.fromName || ''))} · ${escapeHtml(time)}${readStatus}</small>
+  return `<div class="message-row ${mine ? 'mine' : 'theirs'}">
+    <div class="message-row-avatar">${userAvatarHtml(sender, 'small')}</div>
+    <div class="message-bubble ${mine ? 'mine' : 'theirs'} ${attachmentOnly ? 'attachment-only' : ''}">
+      <button class="message-delete" type="button" title="${lang === 'zh' ? '删除/撤销' : 'Delete'}" onclick="deleteMessage('${message.id}')">×</button>
+      <div class="message-sender-name">${escapeHtml(mine ? (user?.name || (lang === 'zh' ? '我' : 'Me')) : (message.fromName || ''))}</div>
+      ${message.text ? `<div class="message-text">${escapeHtml(message.text || '')}</div>` : ''}
+      ${messageAttachmentHtml(message.attachment)}
+      <small>${escapeHtml(time)}${readStatus}</small>
+    </div>
   </div>`;
 }
 
 function messageAttachmentHtml(attachment) {
-  if (!attachment?.dataUrl) return '';
+  const source = attachment?.url || attachment?.dataUrl || '';
+  if (!source) return '';
   const name = escapeHtml(attachment.name || 'attachment');
   if (attachment.kind === 'image') {
-    return `<img class="message-image" src="${attachment.dataUrl}" alt="${name}" title="${lang === 'zh' ? '双击查看大图' : 'Double-click to view'}" ondblclick="openImagePreview(this.src, this.alt)" />`;
+    return `<img class="message-image" src="${escapeHtml(source)}" alt="${name}" title="${lang === 'zh' ? '双击查看大图' : 'Double-click to view'}" ondblclick="openImagePreview(this.src, this.alt)" />`;
+  }
+  if (attachment.kind === 'video') {
+    return `<video class="message-video" src="${escapeHtml(source)}" controls playsinline preload="metadata"></video>`;
   }
   if (attachment.kind === 'audio') {
     const audioId = `audio-${Math.random().toString(36).slice(2)}`;
     return `<div class="message-audio-player">
       <button class="message-audio-play" onclick="toggleMessageAudio('${audioId}', this)" type="button">▶</button>
       <span>${lang === 'zh' ? '语音留言' : 'Voice message'}</span>
-      <audio id="${audioId}" preload="metadata" src="${attachment.dataUrl}" onended="resetMessageAudioButton(this)"></audio>
+      <audio id="${audioId}" preload="metadata" src="${escapeHtml(source)}" onended="resetMessageAudioButton(this)"></audio>
     </div>`;
   }
-  return `<a class="message-file" href="${attachment.dataUrl}" download="${name}">📎 ${name}</a>`;
+  return `<a class="message-file" href="${escapeHtml(source)}" target="_blank" rel="noopener" download="${name}">📎 ${name}</a>`;
 }
 
 function toggleMessageAudio(audioId, button) {
@@ -1585,22 +1596,32 @@ async function sendMessageFile(file, kind) {
     }
     file = await optimizeProspectImage(file);
   }
-  if (file.size > MAX_MESSAGE_ATTACHMENT_BYTES) {
-    alert(lang === 'zh'
-      ? (kind === 'image' ? '照片自动压缩后仍超过 8MB，请换一张照片。' : '附件不能超过 8MB。')
-      : (kind === 'image' ? 'The compressed image is still over 8MB. Please choose another image.' : 'Attachment must be 8MB or smaller.'));
+  if (kind === 'video' && !String(file.type || '').startsWith('video/')) {
+    alert(lang === 'zh' ? '请选择视频文件。' : 'Please choose a video file.');
     return;
   }
-  const dataUrl = await readFileAsDataUrl(file);
-  await postInternalMessage({
-    attachment: {
+  const maxBytes = kind === 'video' ? 50 * 1024 * 1024 : kind === 'image' ? MAX_MESSAGE_ATTACHMENT_BYTES : 5 * 1024 * 1024;
+  if (file.size > maxBytes) {
+    alert(lang === 'zh'
+      ? (kind === 'image' ? '照片自动压缩后仍超过 8MB，请换一张照片。' : kind === 'video' ? '原始视频不能超过 50MB。' : '附件不能超过 5MB。')
+      : (kind === 'image' ? 'The compressed image is still over 8MB. Please choose another image.' : kind === 'video' ? 'The source video must be 50MB or smaller.' : 'Attachment must be 5MB or smaller.'));
+    return;
+  }
+  try {
+    const uploaded = await api('/api/message-media/upload', {
+      method: 'POST',
+      body: JSON.stringify({ name: file.name, type: file.type || 'application/octet-stream', dataUrl: await readFileAsDataUrl(file) })
+    });
+    await postInternalMessage({ attachment: {
       kind,
-      name: file.name || (kind === 'image' ? 'image' : 'file'),
-      type: file.type || 'application/octet-stream',
-      size: file.size,
-      dataUrl
-    }
-  });
+      name: uploaded.name || file.name || (kind === 'image' ? 'image' : 'file'),
+      type: uploaded.type || file.type || 'application/octet-stream',
+      size: uploaded.size || file.size,
+      url: uploaded.url
+    } });
+  } catch (err) {
+    alert(err.message || (lang === 'zh' ? '附件发送失败。' : 'Could not send attachment.'));
+  }
 }
 
 async function toggleVoiceMessage() {
