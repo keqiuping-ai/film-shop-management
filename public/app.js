@@ -63,6 +63,7 @@ let prospectSearch = '';
 const prospectWorkspaceDrafts = new Map();
 let messageRecorder = null;
 let messageAudioChunks = [];
+let internalMessageComposing = false;
 let knownUnreadMessageIds = null;
 let messageAudioContext = null;
 const AUTO_SYNC_MS = 5 * 60 * 1000;
@@ -787,7 +788,7 @@ async function sync(options = {}) {
     lastSyncAt = new Date();
     renderAuth();
     render();
-    if (internalMessageModalOpen) {
+    if (internalMessageModalOpen && !internalMessageInputActive()) {
       renderMessageModal();
       const refreshedInternalInput = document.getElementById('messageText');
       if (refreshedInternalInput) refreshedInternalInput.value = liveInternalMessageDraft;
@@ -1390,6 +1391,11 @@ function openMessages(selectedUserId = '') {
   if (activeMessageUserId) markMessagesRead(activeMessageUserId);
 }
 
+function internalMessageInputActive() {
+  const input = document.getElementById('messageText');
+  return internalMessageComposing || Boolean(input && document.activeElement === input);
+}
+
 function renderMessageModal(title = (lang === 'zh' ? '站内留言' : 'Messages')) {
   const users = messageUsers();
   if (!activeMessageUserId) activeMessageUserId = GROUP_CHAT_ID;
@@ -1445,7 +1451,10 @@ function messageModalHtml(users) {
           <input class="hidden" id="messageVideoInput" type="file" accept="video/*" onchange="sendMessageFile(this.files[0], 'video'); this.value='';" />
           <input class="hidden" id="messageFileInput" type="file" onchange="sendMessageFile(this.files[0], 'file'); this.value='';" />
         </div>
-        <textarea id="messageText" placeholder="${lang === 'zh' ? '输入留言内容...' : 'Type a message...'}"></textarea>
+        <textarea id="messageText" lang="zh-CN" autocomplete="off" autocorrect="on" spellcheck="true"
+          oncompositionstart="internalMessageComposing=true"
+          oncompositionend="internalMessageComposing=false"
+          placeholder="${lang === 'zh' ? '输入留言内容...' : 'Type a message...'}"></textarea>
         <button class="btn primary" onclick="sendInternalMessage()">${lang === 'zh' ? '发送' : 'Send'}</button>
       </div>
     </div>
@@ -1556,7 +1565,7 @@ async function markMessagesRead(fromUserId) {
       body: JSON.stringify(fromUserId === GROUP_CHAT_ID ? { groupId: 'all-staff' } : { fromUserId })
     });
     updateMessageBadge();
-    if (document.getElementById('modal')?.classList.contains('open')) renderMessageModal();
+    if (document.getElementById('modal')?.classList.contains('open') && !internalMessageInputActive()) renderMessageModal();
   } catch (err) {
     console.warn(err);
   }
@@ -1598,7 +1607,7 @@ async function postInternalMessage({ text = '', attachment = null, restoreTextOn
         : { toUserId: recipientId, text: String(text || '').trim(), attachment })
     });
     broadcastDataChange();
-    renderMessageModal();
+    if (!internalMessageInputActive()) renderMessageModal();
     updateMessageBadge();
   } catch (err) {
     state.messages = (state.messages || []).filter(message => message.id !== pendingId);
