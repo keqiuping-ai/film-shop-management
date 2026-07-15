@@ -68,6 +68,7 @@ let messageAudioContext = null;
 const AUTO_SYNC_MS = 5 * 60 * 1000;
 const DATA_REVISION_POLL_MS = 15 * 1000;
 const MAX_MESSAGE_ATTACHMENT_BYTES = 8 * 1024 * 1024;
+const GROUP_CHAT_ID = '__all_staff__';
 const replyTemplateCategories = [
   { id: 'uncategorized', zh: '未分类', en: 'Uncategorized' },
   { id: 'auto-window-film', zh: '汽车窗膜', en: 'Auto Window Tint' },
@@ -751,6 +752,13 @@ async function sync(options = {}) {
   if (syncInFlight) return;
   const replyInput = document.getElementById('prospectReplyInput');
   const replyDraftAtStart = replyInput?.value || '';
+  const internalMessageInput = document.getElementById('messageText');
+  const internalMessageDraft = internalMessageInput?.value || '';
+  const internalMessageHadFocus = document.activeElement === internalMessageInput;
+  const internalMessageModalOpen = Boolean(document.getElementById('modal')?.classList.contains('message-modal-open'));
+  const internalThread = document.getElementById('messageThread');
+  const internalThreadScrollTop = internalThread?.scrollTop || 0;
+  const internalThreadNearBottom = internalThread ? internalThread.scrollHeight - internalThread.scrollTop - internalThread.clientHeight < 80 : true;
   const sidebarWasActive = Boolean(document.activeElement?.closest?.('.prospect-workspace-sidebar'));
   captureProspectWorkspaceDraft();
   const workspaceBefore = activeProspectWorkspaceId ? JSON.stringify(activeCustomerWorkspaceItem().item || {}) : '';
@@ -776,6 +784,18 @@ async function sync(options = {}) {
     lastSyncAt = new Date();
     renderAuth();
     render();
+    if (internalMessageModalOpen) {
+      renderMessageModal();
+      const refreshedInternalInput = document.getElementById('messageText');
+      if (refreshedInternalInput) refreshedInternalInput.value = internalMessageDraft;
+      if (refreshedInternalInput && internalMessageHadFocus) refreshedInternalInput.focus();
+      setTimeout(() => {
+        const refreshedThread = document.getElementById('messageThread');
+        if (!refreshedThread) return;
+        refreshedThread.scrollTop = internalThreadNearBottom ? refreshedThread.scrollHeight : internalThreadScrollTop;
+      }, 0);
+      markMessagesRead(activeMessageUserId);
+    }
     const refreshedReplyInput = document.getElementById('prospectReplyInput');
     if (refreshedReplyInput && liveReplyRevision === prospectReplyRevision) refreshedReplyInput.value = liveReplyDraft;
     if (refreshedReplyInput && liveReplyHadFocus && liveReplyRevision === prospectReplyRevision) refreshedReplyInput.focus();
@@ -1293,7 +1313,11 @@ function messageUsers() {
 }
 
 function unreadMessages() {
-  return (state.messages || []).filter(message => message.toUserId === user?.id && !message.readAt);
+  return (state.messages || []).filter(message => {
+    if (message.fromUserId === user?.id) return false;
+    if (message.scope === 'group') return !(message.readByUserIds || []).includes(user?.id);
+    return message.toUserId === user?.id && !message.readAt;
+  });
 }
 
 function unreadMessageIds() {
@@ -1342,7 +1366,8 @@ function playMessageSound() {
 }
 
 function unreadCountFromUser(userId) {
-  return unreadMessages().filter(message => message.fromUserId === userId).length;
+  if (userId === GROUP_CHAT_ID) return unreadMessages().filter(message => message.scope === 'group').length;
+  return unreadMessages().filter(message => message.scope !== 'group' && message.fromUserId === userId).length;
 }
 
 function updateMessageBadge() {
@@ -1355,7 +1380,8 @@ function updateMessageBadge() {
 
 function openMessages(selectedUserId = '') {
   const users = messageUsers();
-  activeMessageUserId = selectedUserId || activeMessageUserId || unreadMessages()[0]?.fromUserId || users[0]?.id || '';
+  const firstUnread = unreadMessages()[0];
+  activeMessageUserId = selectedUserId || activeMessageUserId || (firstUnread?.scope === 'group' ? GROUP_CHAT_ID : firstUnread?.fromUserId) || GROUP_CHAT_ID;
   const title = lang === 'zh' ? '站内留言' : 'Messages';
   renderMessageModal(title);
   if (activeMessageUserId) markMessagesRead(activeMessageUserId);
@@ -1363,7 +1389,7 @@ function openMessages(selectedUserId = '') {
 
 function renderMessageModal(title = (lang === 'zh' ? '站内留言' : 'Messages')) {
   const users = messageUsers();
-  if (!activeMessageUserId && users[0]) activeMessageUserId = users[0].id;
+  if (!activeMessageUserId) activeMessageUserId = GROUP_CHAT_ID;
   document.getElementById('modalTitle').textContent = title;
   document.getElementById('modalBody').innerHTML = messageModalHtml(users);
   document.getElementById('modalSave').textContent = lang === 'zh' ? '关闭' : 'Close';
@@ -1377,12 +1403,22 @@ function renderMessageModal(title = (lang === 'zh' ? '站内留言' : 'Messages'
 }
 
 function messageModalHtml(users) {
-  if (!users.length) return `<p class="note">${lang === 'zh' ? '还没有可留言的员工账号。' : 'No staff accounts available.'}</p>`;
   const thread = conversationMessages(activeMessageUserId);
-  const activeUser = users.find(item => item.id === activeMessageUserId) || users[0];
-  activeMessageUserId = activeUser.id;
+  const isGroup = activeMessageUserId === GROUP_CHAT_ID;
+  const activeUser = isGroup ? null : (users.find(item => item.id === activeMessageUserId) || users[0]);
+  if (!isGroup && activeUser) activeMessageUserId = activeUser.id;
+  if (!isGroup && !activeUser) activeMessageUserId = GROUP_CHAT_ID;
+  const activeName = activeMessageUserId === GROUP_CHAT_ID
+    ? (lang === 'zh' ? '全体员工群聊' : 'All Staff Group')
+    : (activeUser?.name || activeUser?.email || '');
+  const groupUnread = unreadCountFromUser(GROUP_CHAT_ID);
   return `<div class="message-layout">
     <div class="message-people">
+      <button class="message-person message-group-person ${activeMessageUserId === GROUP_CHAT_ID ? 'active' : ''}" onclick="selectMessageUser('${GROUP_CHAT_ID}')">
+        <span>${lang === 'zh' ? '👥 全体员工群聊' : '👥 All Staff Group'}</span>
+        ${groupUnread ? `<strong>${groupUnread > 99 ? '99+' : groupUnread}</strong>` : ''}
+      </button>
+      ${users.length ? `<div class="message-people-label">${lang === 'zh' ? '私聊' : 'Direct messages'}</div>` : ''}
       ${users.map(item => {
         const unread = unreadCountFromUser(item.id);
         return `<button class="message-person ${item.id === activeMessageUserId ? 'active' : ''}" onclick="selectMessageUser('${item.id}')">
@@ -1392,7 +1428,7 @@ function messageModalHtml(users) {
       }).join('')}
     </div>
     <div class="message-chat">
-      <div class="message-chat-head">${escapeHtml(activeUser.name || activeUser.email)}</div>
+      <div class="message-chat-head">${escapeHtml(activeName)}</div>
       <div class="message-thread" id="messageThread">
         ${thread.length ? thread.map(messageBubbleHtml).join('') : `<div class="note">${lang === 'zh' ? '还没有留言。' : 'No messages yet.'}</div>`}
       </div>
@@ -1412,6 +1448,10 @@ function messageModalHtml(users) {
 }
 
 function conversationMessages(otherUserId) {
+  if (otherUserId === GROUP_CHAT_ID) {
+    return (state.messages || []).filter(message => message.scope === 'group')
+      .sort((a, b) => String(a.createdAt || '').localeCompare(String(b.createdAt || '')));
+  }
   return (state.messages || []).filter(message =>
     (message.fromUserId === user?.id && message.toUserId === otherUserId) ||
     (message.fromUserId === otherUserId && message.toUserId === user?.id)
@@ -1423,7 +1463,7 @@ function messageBubbleHtml(message) {
   const time = message.createdAt ? new Date(message.createdAt).toLocaleString([], { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) : '';
   const attachmentOnly = !String(message.text || '').trim() && message.attachment;
   const readStatus = mine
-    ? ` · <span class="message-read-status ${message.readAt ? 'read' : 'unread'}">${message.readAt ? (lang === 'zh' ? '已读' : 'Read') : (lang === 'zh' ? '未读' : 'Unread')}</span>`
+    ? ` · <span class="message-read-status ${(message.scope === 'group' ? (message.readByUserIds || []).length > 1 : message.readAt) ? 'read' : 'unread'}">${(message.scope === 'group' ? (message.readByUserIds || []).length > 1 : message.readAt) ? (lang === 'zh' ? '已读' : 'Read') : (lang === 'zh' ? '未读' : 'Unread')}</span>`
     : '';
   return `<div class="message-bubble ${mine ? 'mine' : 'theirs'} ${attachmentOnly ? 'attachment-only' : ''}">
     <button class="message-delete" type="button" title="${lang === 'zh' ? '删除/撤销' : 'Delete'}" onclick="deleteMessage('${message.id}')">×</button>
@@ -1499,7 +1539,7 @@ async function markMessagesRead(fromUserId) {
   try {
     state = await api('/api/messages/read', {
       method: 'PUT',
-      body: JSON.stringify({ fromUserId })
+      body: JSON.stringify(fromUserId === GROUP_CHAT_ID ? { groupId: 'all-staff' } : { fromUserId })
     });
     updateMessageBadge();
     if (document.getElementById('modal')?.classList.contains('open')) renderMessageModal();
@@ -1520,7 +1560,9 @@ async function postInternalMessage({ text = '', attachment = null }) {
   try {
     state = await api('/api/messages', {
       method: 'POST',
-      body: JSON.stringify({ toUserId: activeMessageUserId, text: String(text || '').trim(), attachment })
+      body: JSON.stringify(activeMessageUserId === GROUP_CHAT_ID
+        ? { groupId: 'all-staff', text: String(text || '').trim(), attachment }
+        : { toUserId: activeMessageUserId, text: String(text || '').trim(), attachment })
     });
     broadcastDataChange();
     renderMessageModal();
@@ -1532,12 +1574,21 @@ async function postInternalMessage({ text = '', attachment = null }) {
 
 async function sendMessageFile(file, kind) {
   if (!file || !activeMessageUserId) return;
-  if (file.size > MAX_MESSAGE_ATTACHMENT_BYTES) {
-    alert(lang === 'zh' ? '附件不能超过 8MB。' : 'Attachment must be 8MB or smaller.');
-    return;
-  }
   if (kind === 'image' && !String(file.type || '').startsWith('image/')) {
     alert(lang === 'zh' ? '请选择图片文件。' : 'Please choose an image file.');
+    return;
+  }
+  if (kind === 'image') {
+    if (file.size > 25 * 1024 * 1024) {
+      alert(lang === 'zh' ? '原图不能超过 25MB。' : 'The original image must be 25MB or smaller.');
+      return;
+    }
+    file = await optimizeProspectImage(file);
+  }
+  if (file.size > MAX_MESSAGE_ATTACHMENT_BYTES) {
+    alert(lang === 'zh'
+      ? (kind === 'image' ? '照片自动压缩后仍超过 8MB，请换一张照片。' : '附件不能超过 8MB。')
+      : (kind === 'image' ? 'The compressed image is still over 8MB. Please choose another image.' : 'Attachment must be 8MB or smaller.'));
     return;
   }
   const dataUrl = await readFileAsDataUrl(file);

@@ -967,14 +967,18 @@ function sanitizeDbForUser(db, user) {
 function messagesForUser(db, user) {
   const userId = user?.id || '';
   return (db.messages || [])
-    .filter(message => message.fromUserId === userId || message.toUserId === userId)
+    .filter(message => message.scope === 'group' || message.fromUserId === userId || message.toUserId === userId)
     .sort((a, b) => String(a.createdAt || '').localeCompare(String(b.createdAt || '')))
     .slice(-500);
 }
 
 function unreadMessageCount(db, user) {
   const userId = user?.id || '';
-  return (db.messages || []).filter(message => message.toUserId === userId && !message.readAt).length;
+  return (db.messages || []).filter(message => {
+    if (message.fromUserId === userId) return false;
+    if (message.scope === 'group') return !(message.readByUserIds || []).includes(userId);
+    return message.toUserId === userId && !message.readAt;
+  }).length;
 }
 
 function mapUrlForLatLng(lat, lng) {
@@ -3055,24 +3059,29 @@ async function api(req, res) {
     if (req.method === 'POST') {
       const body = await readBody(req);
       const toUserId = String(body.toUserId || '').trim();
+      const groupId = String(body.groupId || '').trim();
+      const isGroup = groupId === 'all-staff';
       const text = String(body.text || '').trim();
       const attachment = sanitizeMessageAttachment(body.attachment);
       if (attachment?.error) return send(res, 400, { error: attachment.error });
-      const recipient = db.users.find(item => item.id === toUserId && item.active !== false);
-      if (!recipient) return send(res, 400, { error: '收件人不存在或未启用' });
-      if (recipient.id === user.id) return send(res, 400, { error: '不能给自己留言' });
+      const recipient = isGroup ? null : db.users.find(item => item.id === toUserId && item.active !== false);
+      if (!isGroup && !recipient) return send(res, 400, { error: '收件人不存在或未启用' });
+      if (!isGroup && recipient.id === user.id) return send(res, 400, { error: '不能给自己留言' });
       if (!text && !attachment) return send(res, 400, { error: '留言内容不能为空' });
       if (text.length > 2000) return send(res, 400, { error: '留言内容不能超过 2000 个字' });
       const message = {
         id: id(),
+        scope: isGroup ? 'group' : 'direct',
+        groupId: isGroup ? 'all-staff' : '',
         fromUserId: user.id,
         fromName: user.name || user.email,
-        toUserId: recipient.id,
-        toName: recipient.name || recipient.email,
+        toUserId: isGroup ? '' : recipient.id,
+        toName: isGroup ? '全体员工' : (recipient.name || recipient.email),
         text,
         attachment,
         createdAt: new Date().toISOString(),
-        readAt: ''
+        readAt: '',
+        readByUserIds: isGroup ? [user.id] : []
       };
       db.messages.push(message);
       db.messages = db.messages.slice(-5000);
@@ -3091,8 +3100,17 @@ async function api(req, res) {
   if (req.method === 'PUT' && url.pathname === '/api/messages/read') {
     const body = await readBody(req);
     const fromUserId = String(body.fromUserId || '').trim();
+    const groupId = String(body.groupId || '').trim();
     let changed = 0;
     (db.messages || []).forEach(message => {
+      if (groupId === 'all-staff') {
+        if (message.scope !== 'group' || message.fromUserId === user.id) return;
+        message.readByUserIds = Array.isArray(message.readByUserIds) ? message.readByUserIds : [];
+        if (message.readByUserIds.includes(user.id)) return;
+        message.readByUserIds.push(user.id);
+        changed += 1;
+        return;
+      }
       if (message.toUserId !== user.id || message.readAt) return;
       if (fromUserId && message.fromUserId !== fromUserId) return;
       message.readAt = new Date().toISOString();
@@ -3109,7 +3127,9 @@ async function api(req, res) {
     const messageId = path.basename(decodeURIComponent(url.pathname.replace('/api/messages/', '')));
     const message = (db.messages || []).find(item => item.id === messageId);
     if (!message) return send(res, 404, { error: '留言不存在' });
-    const involved = message.fromUserId === user.id || message.toUserId === user.id;
+    const involved = message.scope === 'group'
+      ? message.fromUserId === user.id || user.role === 'owner'
+      : message.fromUserId === user.id || message.toUserId === user.id;
     if (!involved) return send(res, 403, { error: '不能删除不属于你的留言' });
     db.messages = (db.messages || []).filter(item => item.id !== messageId);
     audit(db, user, 'delete-message', {
