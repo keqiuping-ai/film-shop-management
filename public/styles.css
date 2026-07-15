@@ -214,16 +214,38 @@ main { padding: 24px; min-width: 0; }
 .topbar h2 { margin: 0; font-size: 24px; }
 .topbar p { margin: 5px 0 0; color: var(--muted); font-size: 13px; }
 .toolbar { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+.home-quick-action {
+  min-width: 138px;
+  min-height: 58px;
+  padding: 7px 18px;
+  border: 1px solid #b8d8df;
+  border-radius: 12px;
+  background: linear-gradient(180deg, #ffffff 0%, #f3fbfc 100%);
+  color: #0c6777;
+  font-size: 14px;
+  font-weight: 800;
+  box-shadow: 0 10px 24px rgba(15, 118, 136, .15);
+  transition: transform .15s ease, box-shadow .15s ease, border-color .15s ease;
+}
+.home-quick-action:hover {
+  transform: translateY(-2px);
+  border-color: #73bcc9;
+  box-shadow: 0 14px 28px rgba(15, 118, 136, .22);
+}
+.home-quick-icon {
+  font-size: 25px;
+  line-height: 1;
+}
+.notes-quick-action {
+  background: linear-gradient(180deg, #ffffff 0%, #f7f2ff 100%);
+  border-color: #d9c9f3;
+  color: #7044a5;
+}
 .message-btn {
   position: relative;
-  width: 54px;
-  min-height: 46px;
-  padding: 0;
-  border-color: #bfd7df;
-  background: #ffffff;
 }
 .message-icon {
-  font-size: 26px;
+  font-size: 27px;
   line-height: 1;
 }
 .message-badge {
@@ -1411,6 +1433,7 @@ body.modal-lock .prospect-workspace { pointer-events: none; }
   .check-list { grid-template-columns: 1fr; }
   .topbar { align-items: flex-start; flex-direction: column; }
   .toolbar { justify-content: flex-start; }
+  .home-quick-action { min-width: 132px; }
   .message-modal-open .dialog { width: calc(100vw - 8px); height: calc(100vh - 8px); max-height: calc(100vh - 8px); }
   .message-layout { grid-template-columns: 1fr; grid-template-rows: auto minmax(0, 1fr); min-height: 0; }
   .message-people { max-height: 180px; }

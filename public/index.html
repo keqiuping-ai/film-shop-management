@@ -44,11 +44,15 @@
           <p id="pageSub"></p>
         </div>
         <div class="toolbar">
-          <button class="btn message-btn" onclick="openMessages()" title="留言" aria-label="留言">
-            <span class="message-icon">💌</span>
+          <button class="btn home-quick-action notes-quick-action" onclick="setPage('personalNotes')" title="我的记事本">
+            <span class="home-quick-icon">📝</span>
+            <span data-i18n="personalNotes">我的记事本</span>
+          </button>
+          <button class="btn home-quick-action message-btn" onclick="openMessages()" title="我的信息" aria-label="我的信息">
+            <span class="home-quick-icon message-icon">💌</span>
+            <span data-i18n="myMessages">我的信息</span>
             <span class="message-badge hidden" id="messageBadge">0</span>
           </button>
-          <button class="btn" onclick="sync()" data-i18n="refreshSync">刷新同步</button>
           <button class="btn install-icon-btn" onclick="installPrompt()" title="安装到桌面" aria-label="安装到桌面">▣</button>
           <button class="btn" onclick="toggleLanguage()" id="langToggle">English</button>
         </div>

@@ -102,6 +102,7 @@ const dict = {
     login: '登录',
     firstLoginNote: '首次登录后请到“设置”修改默认密码。',
     refreshSync: '刷新同步',
+    myMessages: '我的信息',
     autoSync: '自动同步',
     realtimeSync: '实时同步',
     lastSync: '上次同步',
@@ -343,6 +344,7 @@ const dict = {
     login: 'Log In',
     firstLoginNote: 'After first login, change the default password in Settings.',
     refreshSync: 'Sync',
+    myMessages: 'My Messages',
     autoSync: 'Auto Sync',
     realtimeSync: 'Realtime Sync',
     lastSync: 'Last Sync',
@@ -1318,7 +1320,9 @@ function render() {
     pageTitle.textContent = t(page[1]);
   }
   document.getElementById('pageSub').textContent = t(page[2]);
-  document.getElementById('view').innerHTML = current === 'modules' ? moduleGrid(availablePages) : views[current]();
+  document.getElementById('view').innerHTML = current === 'modules'
+    ? moduleGrid(availablePages.filter(([id]) => id !== 'personalNotes'))
+    : views[current]();
   const quickAdd = document.querySelector('.toolbar .btn.primary');
   if (quickAdd) quickAdd.style.display = current !== 'modules' && writePermissions[current] && hasPerm(writePermissions[current]) ? '' : 'none';
   applyStaticTranslations();
