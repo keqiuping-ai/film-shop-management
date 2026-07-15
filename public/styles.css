@@ -1099,6 +1099,12 @@ body.modal-lock .prospect-workspace { pointer-events: none; }
   font-size: 14px;
 }
 .message-person-identity { min-width: 0; display: flex; align-items: center; gap: 9px; }
+.message-avatar-with-badge { position: relative; display: inline-flex; flex: 0 0 auto; }
+.message-at-badge {
+  position: absolute; top: -5px; right: -6px; min-width: 17px; height: 17px; padding: 0 3px;
+  border: 2px solid #fff; border-radius: 999px; background: #dc2626; color: #fff;
+  font: 800 10px/13px system-ui, sans-serif; text-align: center; box-shadow: 0 1px 4px rgba(127,29,29,.3);
+}
 .message-person-identity > span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .message-group-avatar { width: 32px; height: 32px; flex: 0 0 32px; display: grid; place-items: center; border-radius: 8px; background: #0f6f86; color: #fff; font-size: 13px; font-weight: 800; }
 .message-person.active { background: white; font-weight: 700; }
@@ -1128,6 +1134,7 @@ body.modal-lock .prospect-workspace { pointer-events: none; }
   align-items: center;
   justify-content: center;
 }
+.message-person strong.message-mention-me { min-width: 34px; padding: 0 7px; font-weight: 800; }
 .message-chat {
   border: 1px solid var(--line);
   border-radius: 8px;

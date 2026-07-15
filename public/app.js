@@ -841,7 +841,7 @@ function renderAuth() {
   applyStaticTranslations();
   if (loggedIn) {
     const userLine = document.getElementById('userLine');
-    userLine.innerHTML = `${userAvatarHtml(user, 'small')}<span class="my-profile-entry-text"><span>${escapeHtml(user.name)} · ${escapeHtml(roleNames[user.role] || user.role)}</span><span class="my-profile-entry-hint">${lang === 'zh' ? '点击更换我的头像' : 'Change my avatar'}</span></span>`;
+    userLine.innerHTML = `<span class="message-avatar-with-badge">${userAvatarHtml(user, 'small')}${currentUserHasUnreadMention() ? '<i class="message-at-badge">@</i>' : ''}</span><span class="my-profile-entry-text"><span>${escapeHtml(user.name)} · ${escapeHtml(roleNames[user.role] || user.role)}</span><span class="my-profile-entry-hint">${lang === 'zh' ? '点击更换我的头像' : 'Change my avatar'}</span></span>`;
     userLine.title = lang === 'zh' ? '修改我的头像' : 'Change my avatar';
   }
 }
@@ -1391,11 +1391,33 @@ function unreadCountFromUser(userId) {
   return unreadMessages().filter(message => message.scope !== 'group' && message.fromUserId === userId).length;
 }
 
+function messageMentionsUser(message, targetUser) {
+  const text = String(message?.text || '');
+  const name = String(targetUser?.name || '').trim();
+  if (!text || !name) return false;
+  const aliases = [name, name.split(/\s+/)[0]].filter((item, index, all) => item && all.indexOf(item) === index);
+  return aliases.some(alias => text.toLocaleLowerCase().includes(`@${alias.toLocaleLowerCase()}`));
+}
+
+function unreadMentionForUser(targetUser) {
+  return (state.messages || []).some(message =>
+    message.scope === 'group' &&
+    message.fromUserId !== targetUser?.id &&
+    !(message.readByUserIds || []).includes(targetUser?.id) &&
+    messageMentionsUser(message, targetUser)
+  );
+}
+
+function currentUserHasUnreadMention() {
+  return Boolean(user?.id && unreadMentionForUser(user));
+}
+
 function updateMessageBadge() {
   const badge = document.getElementById('messageBadge');
   if (!badge) return;
   const count = unreadMessages().length;
-  badge.textContent = count > 99 ? '99+' : String(count);
+  badge.textContent = currentUserHasUnreadMention() ? '@' : (count > 99 ? '99+' : String(count));
+  badge.classList.toggle('mention', currentUserHasUnreadMention());
   badge.classList.toggle('hidden', count <= 0);
 }
 
@@ -1438,17 +1460,19 @@ function messageModalHtml(users) {
     ? (lang === 'zh' ? '全体员工群聊' : 'All Staff Group')
     : (activeUser?.name || activeUser?.email || '');
   const groupUnread = unreadCountFromUser(GROUP_CHAT_ID);
+  const mentionedMe = currentUserHasUnreadMention();
   return `<div class="message-layout">
     <div class="message-people">
       <button class="message-person message-group-person ${activeMessageUserId === GROUP_CHAT_ID ? 'active' : ''}" onclick="selectMessageUser('${GROUP_CHAT_ID}')">
         <span class="message-person-identity"><span class="message-group-avatar">群</span><span>${lang === 'zh' ? '全体员工群聊' : 'All Staff Group'}</span></span>
-        ${groupUnread ? `<strong>${groupUnread > 99 ? '99+' : groupUnread}</strong>` : ''}
+        ${mentionedMe ? `<strong class="message-mention-me">${lang === 'zh' ? '@我' : '@me'}</strong>` : (groupUnread ? `<strong>${groupUnread > 99 ? '99+' : groupUnread}</strong>` : '')}
       </button>
       ${users.length ? `<div class="message-people-label">${lang === 'zh' ? '私聊' : 'Direct messages'}</div>` : ''}
       ${users.map(item => {
         const unread = unreadCountFromUser(item.id);
+        const mentioned = unreadMentionForUser(item);
         return `<button class="message-person ${item.id === activeMessageUserId ? 'active' : ''}" onclick="selectMessageUser('${item.id}')">
-          <span class="message-person-identity">${userAvatarHtml(item, 'small')}<span>${escapeHtml(item.name || item.email)}</span></span>
+          <span class="message-person-identity"><span class="message-avatar-with-badge">${userAvatarHtml(item, 'small')}${mentioned ? '<i class="message-at-badge">@</i>' : ''}</span><span>${escapeHtml(item.name || item.email)}</span></span>
           ${unread ? `<strong>${unread > 99 ? '99+' : unread}</strong>` : ''}
         </button>`;
       }).join('')}

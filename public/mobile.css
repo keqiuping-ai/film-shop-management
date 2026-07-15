@@ -258,6 +258,13 @@ button {
   font-weight: 900;
   font-style: normal;
 }
+.mobile-avatar-badge-wrap { position: relative; display: inline-flex !important; }
+.mobile-at-badge {
+  position: absolute; top: -5px; right: -8px; min-width: 17px; height: 17px; padding: 0 3px;
+  border: 2px solid #fff; border-radius: 999px; background: #dc2626; color: #fff;
+  font: 800 9px/13px system-ui, sans-serif; text-align: center; box-shadow: 0 1px 4px rgba(127,29,29,.3);
+}
+.people .person.active .mobile-at-badge { border-color: var(--brand); }
 .group-avatar { background: var(--brand); color: white; }
 .thread {
   min-height: 0;

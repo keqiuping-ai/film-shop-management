@@ -478,7 +478,9 @@ function renderAuth() {
   document.getElementById('userRole').textContent = user.role || t('employee');
   const badge = document.getElementById('messageBadge');
   const unread = Number(state.unread || 0);
-  badge.textContent = unread > 99 ? '99+' : String(unread);
+  const mentionedMe = mobileUnreadMentionForUser(user);
+  badge.textContent = mentionedMe ? '@' : (unread > 99 ? '99+' : String(unread));
+  badge.classList.toggle('mention', mentionedMe);
   badge.classList.toggle('hidden', unread <= 0);
 }
 
@@ -542,6 +544,21 @@ function unreadFrom(userId) {
   return (state.messages || []).filter(message => message.fromUserId === userId && message.toUserId === user?.id && !message.readAt).length;
 }
 
+function mobileMessageMentionsUser(message, targetUser) {
+  const text = String(message?.text || '');
+  const name = String(targetUser?.name || '').trim();
+  if (!text || !name) return false;
+  const aliases = [name, name.split(/\s+/)[0]].filter((item, index, all) => item && all.indexOf(item) === index);
+  return aliases.some(alias => text.toLocaleLowerCase().includes(`@${alias.toLocaleLowerCase()}`));
+}
+
+function mobileUnreadMentionForUser(targetUser) {
+  return (state.messages || []).some(message =>
+    message.scope === 'group' && message.fromUserId !== targetUser?.id &&
+    !(message.readByUserIds || []).includes(targetUser?.id) && mobileMessageMentionsUser(message, targetUser)
+  );
+}
+
 function unreadChatUsers() {
   return [{ id: GROUP_CHAT_ID }, ...staffUsers()].filter(item => unreadFrom(item.id) > 0);
 }
@@ -574,7 +591,10 @@ function chatHtml() {
   const thread = conversation(activeUserId);
   return `<div class="chat-layout">
     <div class="people">
-      ${users.map(item => `<button class="person ${item.id === activeUserId ? 'active' : ''}" onclick="selectChatUser('${item.id}')">${avatarHtml(item)}<span>${escapeHtml(item.name || item.email)}${unreadFrom(item.id) ? `<b>${unreadFrom(item.id)}</b>` : ''}</span></button>`).join('')}
+      ${users.map(item => {
+        const mentioned = item.id === GROUP_CHAT_ID ? mobileUnreadMentionForUser(user) : mobileUnreadMentionForUser(item);
+        return `<button class="person ${item.id === activeUserId ? 'active' : ''}" onclick="selectChatUser('${item.id}')"><span class="mobile-avatar-badge-wrap">${avatarHtml(item)}${mentioned ? `<i class="mobile-at-badge">${item.id === GROUP_CHAT_ID ? '@我' : '@'}</i>` : ''}</span><span>${escapeHtml(item.name || item.email)}${!mentioned && unreadFrom(item.id) ? `<b>${unreadFrom(item.id)}</b>` : ''}</span></button>`;
+      }).join('')}
     </div>
     <div class="thread" id="thread">
       ${thread.length ? thread.map(messageHtml).join('') : `<p class="hint">${t('noMessages')}</p>`}
