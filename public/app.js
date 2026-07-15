@@ -117,10 +117,10 @@ const dict = {
     workshopInventorySub: '从大仓领料到贴膜间，按米登记施工消耗',
     inventoryAlerts: '库存报警',
     inventoryAlertsSub: '低于最低数量的货物和补货建议',
-    prospects: '高意向客户',
+    prospects: '预约到店客户',
     prospectsSub: '已预约或已到店客户及其到店时间',
     customerCenter: '客户交流中心',
-    customerCenterSub: '集中查看所有客户聊天，已预约或已到店后加入高意向客户',
+    customerCenterSub: '集中查看所有客户聊天，已预约或已到店后加入预约到店客户',
     replyLibrary: '云端回复素材库',
     replyLibrarySub: '统一上传和维护客服常用文字、图片和短视频',
     leads: '客资提成',
@@ -651,8 +651,8 @@ const permissionLabels = [
   ['shipmentsEdit', '录入/编辑在途货物', 'Create / edit inbound shipments'],
   ['schedulesView', '查看员工调休表', 'View staff schedule'],
   ['schedulesEdit', '录入/编辑员工调休表/发送提醒', 'Create / edit staff schedule / send reminders'],
-  ['prospectsView', '查看高意向客户', 'View high-intent customers'],
-  ['prospectsEdit', '录入/编辑高意向客户', 'Create / edit high-intent customers'],
+  ['prospectsView', '查看预约到店客户', 'View appointment / arrival customers'],
+  ['prospectsEdit', '录入/编辑预约到店客户', 'Create / edit appointment / arrival customers'],
   ['leadsView', '查看客资', 'View leads'],
   ['leadsEdit', '录入/编辑客资', 'Create / edit leads'],
   ['commissionView', '查看客服提成', 'View customer service commissions'],
@@ -2350,7 +2350,7 @@ const views = {
     return panel(t('inventoryAlerts'), hasPerm('inventoryEdit') ? `<button class="btn" onclick="setPage('inventory')">${t('processInventory')}</button>` : '', inventorySearchBox(alertRows) + `<div id="inventorySearchResults">${inventoryAlertTable(true, null, true)}</div>` + `<p class="note">${lang === 'zh' ? '在库存商品里设置“预警库存/最低数量”。当当前库存小于或等于这个数量时，这里会自动生成补货报警。' : 'Set the reorder level on each SKU. When current stock is less than or equal to that number, the item appears here for replenishment.'}</p>`);
   },
   customerCenter() {
-    return panel(t('customerCenter'), hasPerm('prospectsEdit') ? `<button class="btn primary" onclick="openProspect(null,'customerConversations')">${lang === 'zh' ? '新增客户交流' : 'New conversation'}</button>` : '', customerCenterSearchBox() + `<div id="customerCenterSearchResults">${customerCenterTable(searchedCustomerCenterRows())}</div>` + `<p class="note">${lang === 'zh' ? '这里集中查看所有客户交流。只有跟进状态为“已预约”或“已到店”时，客户才会自动转入高意向客户。' : 'All customer conversations appear here. Customers are promoted only after an appointment is set or they arrive.'}</p>`);
+    return panel(t('customerCenter'), hasPerm('prospectsEdit') ? `<button class="btn primary" onclick="openProspect(null,'customerConversations')">${lang === 'zh' ? '新增客户交流' : 'New conversation'}</button>` : '', customerCenterSearchBox() + `<div id="customerCenterSearchResults">${customerCenterTable(searchedCustomerCenterRows())}</div>` + `<p class="note">${lang === 'zh' ? '这里集中查看所有客户交流。只有跟进状态为“已预约”或“已到店”时，客户才会自动转入预约到店客户。' : 'All customer conversations appear here. Customers are promoted only after an appointment is set or they arrive.'}</p>`);
   },
   replyLibrary() {
     return panel(t('replyLibrary'), hasPerm('prospectsEdit') ? `<button class="btn primary" onclick="openReplyTemplateEditor('text')">${lang === 'zh' ? '新增回复素材' : 'New reply'}</button>` : '', replyLibraryPageHtml());
@@ -3252,7 +3252,7 @@ function prospectSearchCountText() {
 }
 
 function prospectSearchBox() {
-  return `<div class="search-row prospect-search" role="search" aria-label="${lang === 'zh' ? '搜索高意向客户' : 'Search high-intent customers'}">
+  return `<div class="search-row prospect-search" role="search" aria-label="${lang === 'zh' ? '搜索预约到店客户' : 'Search appointment / arrival customers'}">
     <input id="prospectSearchInput" value="${escapeHtml(prospectSearch)}" placeholder="${lang === 'zh' ? '搜索客户姓名、电话、车型、需求、平台、跟进人员…' : 'Search name, phone, vehicle, request, platform, or owner…'}" oninput="setProspectSearch(this.value)" autocomplete="off" />
     <button class="btn" onclick="setProspectSearch('')">${t('clearSearch')}</button>
     <span id="prospectSearchCount" class="note">${prospectSearchCountText()}</span>
@@ -3267,7 +3267,7 @@ function prospectTable(rows = searchedProspectRows()) {
     const appointment = item.appointmentDate || item.appointmentTime ? `${escapeHtml(item.appointmentDate || '')}<br><span class="note">${escapeHtml(item.appointmentTime || '')}</span>` : '';
     return `<tr><td class="prospect-nowrap">${escapeHtml(item.date || '')}</td><td class="prospect-time">${prospectTimeCell(item)}</td><td><div class="prospect-clamp prospect-clamp-2">${escapeHtml(item.source || '')}</div></td><td><div class="prospect-clamp">${escapeHtml(item.customer || '')}</div><span class="note prospect-nowrap">${escapeHtml(item.phone || '')}</span></td><td><div class="prospect-clamp">${escapeHtml(item.vehicle || '')}</div><div class="note prospect-clamp prospect-clamp-2">${escapeHtml(item.need || '')}</div></td><td class="prospect-time">${appointment}</td><td><div class="prospect-clamp prospect-clamp-2">${rep ? escapeHtml(rep.name) : escapeHtml(item.ownerName || '') || t('unassigned')}</div></td><td>${prospectIntentPill(item.intentLevel)}</td><td>${prospectStatusPill(item.status)}</td><td><div class="prospect-clamp prospect-clamp-2" title="${escapeHtml(prospectConversationSummary(item))}">${escapeHtml(shortText(prospectConversationSummary(item), 48))}</div></td><td><div class="prospect-clamp prospect-clamp-2" title="${escapeHtml(item.note || '')}">${escapeHtml(shortText(item.note || '', 48))}</div></td>${actionCell('Prospect','prospects',item.id)}</tr>`;
   }).join('')}
-  ${rows.length ? '' : `<tr><td colspan="12" class="note">${lang === 'zh' ? '还没有高意向客户。' : 'No high-intent customers yet.'}</td></tr>`}
+  ${rows.length ? '' : `<tr><td colspan="12" class="note">${lang === 'zh' ? '还没有预约到店客户。' : 'No appointment / arrival customers yet.'}</td></tr>`}
   </tbody></table></div>`;
 }
 
@@ -3430,7 +3430,7 @@ function renderProspectWorkspace() {
         ${prospectIntentPill(item.intentLevel)} ${prospectStatusPill(item.status)}
       </div>
       <div class="prospect-workspace-actions">
-        ${collection === 'customerConversations' && item.promotedProspectId ? `<span class="pill good">${lang === 'zh' ? '已转入高意向客户' : 'Promoted to high intent'}</span>` : ''}
+        ${collection === 'customerConversations' && item.promotedProspectId ? `<span class="pill good">${lang === 'zh' ? '已转入预约到店客户' : 'Promoted to appointment / arrival'}</span>` : ''}
         <button class="prospect-workspace-close" onclick="closeProspectWorkspace()" aria-label="${lang === 'zh' ? '关闭聊天工作台' : 'Close chat workspace'}">×</button>
       </div>
     </header>
@@ -4139,14 +4139,14 @@ function openJob(id, preset = {}) {
 
 function openJobFromProspect(prospectId) {
   const prospect = (state.prospects || []).find(row => row.id === prospectId);
-  if (!prospect) return alert(lang === 'zh' ? '找不到这位高意向客户。' : 'High-intent customer not found.');
+  if (!prospect) return alert(lang === 'zh' ? '找不到这位预约到店客户。' : 'Appointment / arrival customer not found.');
   const existing = (state.jobs || []).find(job => job.id === prospect.convertedJobId || job.sourceProspectId === prospect.id);
   closeModal();
   if (existing) return openJob(existing.id);
   const appointment = [
     prospect.appointmentTime ? `${lang === 'zh' ? '预约时间' : 'Appointment time'}：${prospect.appointmentTime}` : '',
     prospect.need || '',
-    `${lang === 'zh' ? '由高意向客户自动带入' : 'Created from high-intent customer'}：${prospect.customer || prospect.phone || prospect.id}`
+    `${lang === 'zh' ? '由预约到店客户自动带入' : 'Created from appointment / arrival customer'}：${prospect.customer || prospect.phone || prospect.id}`
   ].filter(Boolean).join('\n');
   return openJob(null, {
     date: today(),
@@ -4313,7 +4313,7 @@ function openProspect(id, collection = 'prospects') {
     ['note',t('note'),'textarea',item.note || '', null, 'wide']
   ];
   const conversationPanel = `<div class="wide prospect-dialog-section">${prospectConversationPreview(item)}</div>`;
-  const recordLabel = collection === 'customerConversations' ? (lang === 'zh' ? '客户交流' : 'Customer Conversation') : (lang === 'zh' ? '高意向客户' : 'High-Intent Customer');
+  const recordLabel = collection === 'customerConversations' ? (lang === 'zh' ? '客户交流' : 'Customer Conversation') : (lang === 'zh' ? '预约到店客户' : 'Appointment / Arrival Customer');
   openModal(id ? `${lang === 'zh' ? '编辑' : 'Edit'} ${recordLabel}` : `${lang === 'zh' ? '新增' : 'New'} ${recordLabel}`, formHtml(mainFields) + conversationPanel + formHtml(detailFields), () => {
     const data = readForm(['date','source','customer','phone','vehicle','need','service','appointmentDate','appointmentTime','ownerId','intentLevel','status','intentReason','chatContext','chatTranslation','note']);
     const rep = (state.customerServiceReps || []).find(x => x.id === data.ownerId);
