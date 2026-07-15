@@ -4488,6 +4488,17 @@ function renderSalesOrderLineSkuResults(input) {
       <small>${escapeHtml(product.category || product.unit || '')}</small>
     </button>
   `).join('') : `<div class="sku-result-empty">${lang === 'zh' ? '没有找到匹配型号' : 'No matching model'}</div>`;
+  const rect = input.getBoundingClientRect();
+  const desiredHeight = Math.min(270, Math.max(92, options.length * 48));
+  const roomBelow = window.innerHeight - rect.bottom - 12;
+  const showAbove = roomBelow < Math.min(150, desiredHeight) && rect.top > roomBelow;
+  results.style.position = 'fixed';
+  results.style.left = `${Math.max(8, rect.left)}px`;
+  results.style.right = 'auto';
+  results.style.width = `${Math.min(rect.width, window.innerWidth - Math.max(8, rect.left) - 8)}px`;
+  results.style.top = showAbove ? `${Math.max(8, rect.top - desiredHeight - 5)}px` : `${rect.bottom + 5}px`;
+  results.style.maxHeight = `${showAbove ? Math.min(desiredHeight, rect.top - 13) : Math.min(desiredHeight, roomBelow)}px`;
+  results.style.zIndex = '160';
   results.classList.add('open');
 }
 
