@@ -1037,7 +1037,10 @@ function mobileSnapshot(db, user) {
     leaveRequests: (db.leaveRequests || [])
       .filter(item => approver || item.userId === userId)
       .sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')))
-      .slice(0, 200)
+      .slice(0, 200),
+    personalNotes: (db.personalNotes || [])
+      .filter(item => item.ownerUserId === userId)
+      .sort((a, b) => String(b.updatedAt || b.createdAt || '').localeCompare(String(a.updatedAt || a.createdAt || '')))
   };
 }
 

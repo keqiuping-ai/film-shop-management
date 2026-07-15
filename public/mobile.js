@@ -18,12 +18,15 @@ let messageRecorder = null;
 let messageAudioChunks = [];
 let lang = localStorage.getItem('filmShopCloud.lang') || 'zh';
 const MAX_MESSAGE_ATTACHMENT_BYTES = 8 * 1024 * 1024;
+const GROUP_CHAT_ID = '__all_staff__';
+let lastChatUserId = '';
+let noteSaving = false;
 
 const I18N = {
   zh: {
     languageToggle: 'English',
     loginTitle: 'QUAD FILM 员工端',
-    loginSub: '聊天、打卡、请假审批',
+    loginSub: '聊天、记事本、打卡、请假审批',
     email: '邮箱',
     password: '密码',
     login: '登录',
@@ -32,6 +35,7 @@ const I18N = {
     employee: '员工',
     refresh: '刷新',
     chat: '留言',
+    notes: '记事本',
     clock: '打卡',
     leave: '请假',
     me: '我的',
@@ -41,6 +45,7 @@ const I18N = {
     image: '图片',
     file: '文件',
     voice: '语音',
+    video: '视频',
     stop: '停止',
     send: '发送',
     messagePlaceholder: '输入留言内容...',
@@ -112,11 +117,12 @@ const I18N = {
     logout: '退出登录',
     iosInstall: 'iPhone/iPad 安装方法：点击 Safari 底部“分享”按钮，然后选择“添加到主屏幕”。图标会使用 QUAD FILM 黑色品牌标。',
     browserInstall: '如果浏览器没有弹出安装窗口，请打开浏览器菜单，选择“安装应用”或“添加到主屏幕”。'
+    ,groupChat: '全体员工群聊', myNotes: '我的记事本', notesPrivate: '只有当前账号本人能看到，手机和电脑自动同步。', newMemo: '新建备忘录', newTask: '新建待办', memo: '备忘', todo: '待办', completed: '已完成', finish: '办完了', edit: '编辑', delete: '删除', noteTitle: '标题', noteContent: '详细内容（可不填）', remindAt: '提醒时间', save: '保存', cancel: '取消', noteTitleRequired: '请填写标题', noteTimeRequired: '请选择提醒日期和时间', confirmDeleteNote: '确定删除这条记事吗？', noNotes: '还没有记事或待办。', due: '提醒', attachmentSending: '正在发送附件…'
   },
   en: {
     languageToggle: '中文',
     loginTitle: 'QUAD FILM Staff',
-    loginSub: 'Messages, clock-in, leave approval',
+    loginSub: 'Messages, notes, clock-in, leave approval',
     email: 'Email',
     password: 'Password',
     login: 'Log In',
@@ -125,6 +131,7 @@ const I18N = {
     employee: 'Staff',
     refresh: 'Refresh',
     chat: 'Messages',
+    notes: 'Notes',
     clock: 'Clock',
     leave: 'Leave',
     me: 'Me',
@@ -134,6 +141,7 @@ const I18N = {
     image: 'Image',
     file: 'File',
     voice: 'Voice',
+    video: 'Video',
     stop: 'Stop',
     send: 'Send',
     messagePlaceholder: 'Type a message...',
@@ -205,6 +213,7 @@ const I18N = {
     logout: 'Log Out',
     iosInstall: 'iPhone/iPad: tap the Safari Share button, then choose Add to Home Screen. The icon will use the black QUAD FILM brand icon.',
     browserInstall: 'If the install prompt does not appear, open the browser menu and choose Install App or Add to Home Screen.'
+    ,groupChat: 'All Staff', myNotes: 'My Notes', notesPrivate: 'Only you can see these notes. Phone and desktop stay synced.', newMemo: 'New Memo', newTask: 'New Task', memo: 'Memo', todo: 'To-do', completed: 'Completed', finish: 'Done', edit: 'Edit', delete: 'Delete', noteTitle: 'Title', noteContent: 'Details (optional)', remindAt: 'Reminder', save: 'Save', cancel: 'Cancel', noteTitleRequired: 'Enter a title', noteTimeRequired: 'Choose a reminder date and time', confirmDeleteNote: 'Delete this note?', noNotes: 'No notes or tasks yet.', due: 'Reminder', attachmentSending: 'Sending attachment…'
   }
 };
 
@@ -230,6 +239,7 @@ function applyLanguage() {
   setText('loginHint', t('loginHint'));
   setText('refreshButton', t('refresh'));
   setText('tabChat', t('chat'));
+  setText('tabNotes', t('notes'));
   setText('tabClock', t('clock'));
   setText('tabLeave', t('leave'));
   setText('tabMe', t('me'));
@@ -311,7 +321,8 @@ async function login() {
     });
     token = body.token;
     localStorage.setItem('filmShopCloud.token', token);
-    await sync();
+    lastUserInputAt = 0;
+    await sync({ force: true });
   } catch (err) {
     alert(err.message);
   }
@@ -495,6 +506,7 @@ function render(options = {}) {
   }
   view.classList.toggle('chat-view', tab === 'chat');
   if (tab === 'chat') view.innerHTML = chatHtml();
+  if (tab === 'notes') view.innerHTML = notesHtml();
   if (tab === 'clock') view.innerHTML = clockHtml();
   if (tab === 'leave') view.innerHTML = leaveHtml();
   if (tab === 'me') view.innerHTML = meHtml();
@@ -513,6 +525,7 @@ function renderSnapshot() {
     unread: state?.unread || 0,
     activeUserId,
     messageCount: (state?.messages || []).length,
+    noteCount: (state?.personalNotes || []).length,
     leaveCount: (state?.leaveRequests || []).length,
     clockCount: (state?.clockRecords || []).length
   });
@@ -523,11 +536,14 @@ function staffUsers() {
 }
 
 function unreadFrom(userId) {
+  if (userId === GROUP_CHAT_ID) {
+    return (state.messages || []).filter(message => message.scope === 'group' && message.fromUserId !== user?.id && !(message.readByUserIds || []).includes(user?.id)).length;
+  }
   return (state.messages || []).filter(message => message.fromUserId === userId && message.toUserId === user?.id && !message.readAt).length;
 }
 
 function unreadChatUsers() {
-  return staffUsers().filter(item => unreadFrom(item.id) > 0);
+  return [{ id: GROUP_CHAT_ID }, ...staffUsers()].filter(item => unreadFrom(item.id) > 0);
 }
 
 function selectNextUnreadConversation() {
@@ -539,6 +555,10 @@ function selectNextUnreadConversation() {
 }
 
 function conversation(otherUserId) {
+  if (otherUserId === GROUP_CHAT_ID) {
+    return (state.messages || []).filter(message => message.scope === 'group')
+      .sort((a, b) => String(a.createdAt || '').localeCompare(String(b.createdAt || '')));
+  }
   return (state.messages || []).filter(message =>
     (message.fromUserId === user?.id && message.toUserId === otherUserId) ||
     (message.fromUserId === otherUserId && message.toUserId === user?.id)
@@ -546,24 +566,26 @@ function conversation(otherUserId) {
 }
 
 function chatHtml() {
-  const users = staffUsers();
-  activeUserId = activeUserId || users[0]?.id || '';
+  const users = [{ id: GROUP_CHAT_ID, name: t('groupChat'), group: true }, ...staffUsers()];
+  activeUserId = activeUserId || GROUP_CHAT_ID;
   const active = users.find(item => item.id === activeUserId) || users[0];
   if (!active) return `<div class="panel"><div class="panel-body">${t('noStaff')}</div></div>`;
   activeUserId = active.id;
   const thread = conversation(activeUserId);
   return `<div class="chat-layout">
     <div class="people">
-      ${users.map(item => `<button class="${item.id === activeUserId ? 'active' : ''}" onclick="selectChatUser('${item.id}')">${escapeHtml(item.name || item.email)}${unreadFrom(item.id) ? ` (${unreadFrom(item.id)})` : ''}</button>`).join('')}
+      ${users.map(item => `<button class="person ${item.id === activeUserId ? 'active' : ''}" onclick="selectChatUser('${item.id}')">${avatarHtml(item)}<span>${escapeHtml(item.name || item.email)}${unreadFrom(item.id) ? `<b>${unreadFrom(item.id)}</b>` : ''}</span></button>`).join('')}
     </div>
     <div class="thread" id="thread">
       ${thread.length ? thread.map(messageHtml).join('') : `<p class="hint">${t('noMessages')}</p>`}
     </div>
     <div class="chat-tools">
       <button onclick="document.getElementById('mobileImageInput').click()">${t('image')}</button>
+      <button onclick="document.getElementById('mobileVideoInput').click()">${t('video')}</button>
       <button onclick="document.getElementById('mobileFileInput').click()">${t('file')}</button>
       <button id="mobileVoiceBtn" onclick="toggleVoiceMessage()">${t('voice')}</button>
       <input class="hidden" id="mobileImageInput" type="file" accept="image/*" onchange="sendMessageFile(this.files[0], 'image'); this.value='';" />
+      <input class="hidden" id="mobileVideoInput" type="file" accept="video/*" onchange="sendMessageFile(this.files[0], 'video'); this.value='';" />
       <input class="hidden" id="mobileFileInput" type="file" onchange="sendMessageFile(this.files[0], 'file'); this.value='';" />
     </div>
     <div class="chat-send">
@@ -582,30 +604,42 @@ async function selectChatUser(id) {
 
 function messageHtml(message) {
   const mine = message.fromUserId === user?.id;
-  const read = mine ? ` · ${message.readAt ? t('read') : t('unread')}` : '';
-  return `<div class="bubble ${mine ? 'mine' : ''}">
+  const read = mine && message.scope !== 'group' ? ` · ${message.readAt ? t('read') : t('unread')}` : '';
+  const sender = (state.users || []).find(item => item.id === message.fromUserId) || { name: message.fromName || '' };
+  return `<div class="message-line ${mine ? 'mine' : ''}">${!mine ? avatarHtml(sender) : ''}<div class="bubble ${mine ? 'mine' : ''}">
     ${mine ? `<button class="delete" onclick="deleteMessage('${message.id}')">×</button>` : ''}
     ${message.text ? `<div>${escapeHtml(message.text || '')}</div>` : ''}
     ${messageAttachmentHtml(message.attachment)}
     <small>${mine ? t('self') : escapeHtml(message.fromName || '')} · ${fmtDateTime(message.createdAt)}${read}</small>
-  </div>`;
+  </div>${mine ? avatarHtml(user) : ''}</div>`;
+}
+
+function avatarHtml(item) {
+  if (item?.group) return '<span class="avatar group-avatar">群</span>';
+  const name = String(item?.name || item?.email || '?').trim();
+  if (item?.avatarDataUrl) return `<img class="avatar" src="${escapeHtml(item.avatarDataUrl)}" alt="${escapeHtml(name)}" />`;
+  return `<span class="avatar">${escapeHtml(name.slice(0, 1).toUpperCase())}</span>`;
 }
 
 function messageAttachmentHtml(attachment) {
-  if (!attachment?.dataUrl) return '';
+  const src = attachment?.url || attachment?.dataUrl;
+  if (!src) return '';
   const name = escapeHtml(attachment.name || 'attachment');
   if (attachment.kind === 'image') {
-    return `<img class="message-image" src="${attachment.dataUrl}" alt="${name}" onclick="openImagePreview(this.src, this.alt)" />`;
+    return `<img class="message-image" src="${src}" alt="${name}" onclick="openImagePreview(this.src, this.alt)" />`;
+  }
+  if (attachment.kind === 'video') {
+    return `<video class="message-video" src="${src}" controls preload="metadata" playsinline></video>`;
   }
   if (attachment.kind === 'audio') {
     const audioId = `audio-${Math.random().toString(36).slice(2)}`;
     return `<div class="message-audio">
       <button onclick="toggleAudio('${audioId}', this)" type="button">${t('play')}</button>
       <span>${t('voiceMessage')}</span>
-      <audio id="${audioId}" preload="metadata" src="${attachment.dataUrl}" onended="resetAudioButton(this)"></audio>
+      <audio id="${audioId}" preload="metadata" src="${src}" onended="resetAudioButton(this)"></audio>
     </div>`;
   }
-  return `<a class="message-file" href="${attachment.dataUrl}" download="${name}">${t('filePrefix')}${name}</a>`;
+  return `<a class="message-file" href="${src}" download="${name}">${t('filePrefix')}${name}</a>`;
 }
 
 function openImagePreview(src, title = '') {
@@ -646,7 +680,7 @@ async function markRead(fromUserId) {
   try {
     const body = await api('/api/messages/read', {
       method: 'PUT',
-      body: JSON.stringify({ fromUserId })
+      body: JSON.stringify(fromUserId === GROUP_CHAT_ID ? { groupId: 'all-staff' } : { fromUserId })
     });
     state = { ...state, ...body };
     renderAuth();
@@ -687,10 +721,29 @@ function fileToDataUrl(file) {
   });
 }
 
+async function optimizeMobileImage(file) {
+  if (!String(file?.type || '').startsWith('image/') || file.size <= 850 * 1024) return file;
+  const source = await createImageBitmap(file);
+  const scale = Math.min(1, 1600 / Math.max(source.width, source.height));
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.max(1, Math.round(source.width * scale));
+  canvas.height = Math.max(1, Math.round(source.height * scale));
+  canvas.getContext('2d').drawImage(source, 0, 0, canvas.width, canvas.height);
+  if (source.close) source.close();
+  let quality = .82;
+  let blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', quality));
+  while (blob && blob.size > 850 * 1024 && quality > .42) {
+    quality -= .1;
+    blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', quality));
+  }
+  if (!blob) throw new Error(t('fileReadFailed'));
+  return new File([blob], String(file.name || 'image').replace(/\.[^.]+$/, '') + '.jpg', { type: 'image/jpeg' });
+}
+
 async function postMessage({ text = '', attachment = null }) {
   await api('/api/messages', {
     method: 'POST',
-    body: JSON.stringify({ toUserId: activeUserId, text, attachment })
+    body: JSON.stringify(activeUserId === GROUP_CHAT_ID ? { groupId: 'all-staff', text, attachment } : { toUserId: activeUserId, text, attachment })
   });
   state = await api('/api/mobile/bootstrap');
   renderAuth();
@@ -699,19 +752,27 @@ async function postMessage({ text = '', attachment = null }) {
 
 async function sendMessageFile(file, kind) {
   if (!file || !activeUserId) return;
-  if (file.size > MAX_MESSAGE_ATTACHMENT_BYTES) {
+  if (kind === 'image') {
+    try { file = await optimizeMobileImage(file); }
+    catch (err) { alert(err.message); return; }
+  }
+  const max = kind === 'video' ? 50 * 1024 * 1024 : kind === 'file' ? 5 * 1024 * 1024 : MAX_MESSAGE_ATTACHMENT_BYTES;
+  if (file.size > max) {
     alert(t('attachmentLimit'));
     return;
   }
   try {
-    const dataUrl = await fileToDataUrl(file);
+    const uploaded = await api('/api/message-media/upload', {
+      method: 'POST',
+      body: JSON.stringify({ name: file.name, type: file.type || 'application/octet-stream', dataUrl: await fileToDataUrl(file) })
+    });
     await postMessage({
       attachment: {
         kind,
-        name: file.name || (kind === 'image' ? 'image' : 'file'),
-        type: file.type || 'application/octet-stream',
-        size: file.size,
-        dataUrl
+        name: uploaded.name || file.name || kind,
+        type: uploaded.type || file.type || 'application/octet-stream',
+        size: uploaded.size || file.size,
+        url: uploaded.url
       }
     });
   } catch (err) {
@@ -771,6 +832,81 @@ async function deleteMessage(messageId) {
   } catch (err) {
     alert(err.message);
   }
+}
+
+function notesHtml() {
+  const notes = [...(state.personalNotes || [])].sort((a, b) => {
+    if (a.status !== b.status) return a.status === 'pending' ? -1 : 1;
+    return String(b.updatedAt || b.createdAt || '').localeCompare(String(a.updatedAt || a.createdAt || ''));
+  });
+  return `<div class="notes-head"><div><strong>${t('myNotes')}</strong><p>${t('notesPrivate')}</p></div><div><button onclick="openNoteEditor('', 'memo')">＋ ${t('newMemo')}</button><button class="primary-inline" onclick="openNoteEditor('', 'task')">＋ ${t('newTask')}</button></div></div>
+    <div class="note-grid">${notes.length ? notes.map(noteCardHtml).join('') : `<div class="panel-body hint">${t('noNotes')}</div>`}</div>`;
+}
+
+function noteCardHtml(item) {
+  const completed = item.status === 'completed';
+  return `<article class="note-card ${completed ? 'completed' : ''}" data-note-id="${item.id}">
+    <div class="note-card-top"><span>${item.type === 'task' ? t('todo') : t('memo')}</span><div>${item.type === 'task' && !completed ? `<button onclick="finishNote('${item.id}')">${t('finish')}</button>` : ''}<button onclick="openNoteEditor('${item.id}')">✎</button><button onclick="deleteNote('${item.id}')">×</button></div></div>
+    <h3>${escapeHtml(item.title)}</h3>${item.content ? `<p>${escapeHtml(item.content)}</p>` : ''}
+    ${item.type === 'task' ? `<time>${completed ? '✓ ' + t('completed') : '⏰ ' + t('due') + ' ' + fmtDateTime(item.snoozedUntil || item.remindAt)}</time>` : ''}
+  </article>`;
+}
+
+function openNoteEditor(noteId = '', type = 'memo') {
+  const item = (state.personalNotes || []).find(note => note.id === noteId);
+  const nextType = item?.type || type;
+  const overlay = document.createElement('div');
+  overlay.className = 'mobile-modal';
+  const localDate = item?.remindAt ? new Date(new Date(item.remindAt).getTime() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16) : '';
+  overlay.innerHTML = `<div class="mobile-dialog"><div class="dialog-head"><strong>${item ? t('edit') : (nextType === 'task' ? t('newTask') : t('newMemo'))}</strong><button onclick="this.closest('.mobile-modal').remove()">×</button></div>
+    <label>${t('noteTitle')}<input id="noteEditorTitle" value="${escapeHtml(item?.title || '')}" /></label>
+    <label>${t('noteContent')}<textarea id="noteEditorContent">${escapeHtml(item?.content || '')}</textarea></label>
+    ${nextType === 'task' ? `<label>${t('remindAt')}<input id="noteEditorRemindAt" type="datetime-local" value="${escapeHtml(localDate)}" /></label>` : ''}
+    <div class="dialog-actions"><button onclick="this.closest('.mobile-modal').remove()">${t('cancel')}</button><button class="primary-inline" onclick="saveNote('${noteId}', '${nextType}', this)">${t('save')}</button></div></div>`;
+  document.body.appendChild(overlay);
+  setTimeout(() => overlay.querySelector('#noteEditorTitle')?.focus(), 20);
+}
+
+async function saveNote(noteId, type, button) {
+  if (noteSaving) return;
+  const overlay = button.closest('.mobile-modal');
+  const title = overlay.querySelector('#noteEditorTitle').value.trim();
+  const content = overlay.querySelector('#noteEditorContent').value.trim();
+  const rawTime = overlay.querySelector('#noteEditorRemindAt')?.value || '';
+  if (!title) return alert(t('noteTitleRequired'));
+  if (type === 'task' && !rawTime) return alert(t('noteTimeRequired'));
+  noteSaving = true;
+  button.disabled = true;
+  const existing = (state.personalNotes || []).find(note => note.id === noteId);
+  const body = { ...(existing || {}), type, title, content, remindAt: rawTime ? new Date(rawTime).toISOString() : '', status: existing?.status || 'pending', requestId: existing?.requestId || `mobile-${Date.now()}-${Math.random().toString(36).slice(2)}` };
+  overlay.remove();
+  try {
+    const result = await api(`/api/personal-notes${noteId ? `/${noteId}` : ''}`, { method: noteId ? 'PUT' : 'POST', body: JSON.stringify(body) });
+    const list = (state.personalNotes || []).filter(note => note.id !== result.item.id && note.id !== noteId);
+    state.personalNotes = [result.item, ...list];
+    render();
+  } catch (err) { alert(err.message); }
+  finally { noteSaving = false; }
+}
+
+async function finishNote(noteId) {
+  const item = (state.personalNotes || []).find(note => note.id === noteId);
+  if (!item) return;
+  state.personalNotes = state.personalNotes.map(note => note.id === noteId ? { ...note, status: 'completed' } : note);
+  render();
+  try {
+    const result = await api(`/api/personal-notes/${noteId}`, { method: 'PUT', body: JSON.stringify({ ...item, status: 'completed' }) });
+    state.personalNotes = state.personalNotes.map(note => note.id === noteId ? result.item : note);
+  } catch (err) { state.personalNotes = state.personalNotes.map(note => note.id === noteId ? item : note); render(); alert(err.message); }
+}
+
+async function deleteNote(noteId) {
+  if (!confirm(t('confirmDeleteNote'))) return;
+  const before = [...(state.personalNotes || [])];
+  state.personalNotes = before.filter(note => note.id !== noteId);
+  render();
+  try { await api(`/api/personal-notes/${noteId}`, { method: 'DELETE' }); }
+  catch (err) { state.personalNotes = before; render(); alert(err.message); }
 }
 
 function clockHtml() {

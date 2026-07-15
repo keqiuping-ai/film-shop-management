@@ -160,7 +160,7 @@ button {
   bottom: 0;
   z-index: 6;
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(5, 1fr);
   gap: 6px;
   padding: 8px 10px calc(8px + env(safe-area-inset-bottom));
   background: white;
@@ -227,16 +227,38 @@ button {
   overflow: auto;
   padding-bottom: 8px;
 }
-.people button {
+.people .person {
   white-space: nowrap;
-  min-height: 36px;
-  padding: 0 12px;
+  min-width: 76px;
+  min-height: 58px;
+  padding: 5px 8px;
+  display: grid;
+  justify-items: center;
+  gap: 3px;
+  font-size: 12px;
 }
-.people button.active {
+.people .person span:last-child { display: flex; align-items: center; gap: 4px; }
+.people .person b { min-width: 17px; height: 17px; padding: 0 4px; border-radius: 99px; background: #dc2626; color: white; font-size: 10px; line-height: 17px; }
+.people .person.active {
   background: var(--brand);
   border-color: var(--brand);
   color: white;
 }
+.avatar {
+  width: 34px;
+  height: 34px;
+  flex: 0 0 34px;
+  border-radius: 50%;
+  display: inline-grid;
+  place-items: center;
+  object-fit: cover;
+  background: #edf6f8;
+  border: 1px solid #cfe2e8;
+  color: var(--brand);
+  font-weight: 900;
+  font-style: normal;
+}
+.group-avatar { background: var(--brand); color: white; }
 .thread {
   min-height: 0;
   overflow: auto;
@@ -245,11 +267,13 @@ button {
   border-radius: 14px;
   padding: 10px;
 }
+.message-line { display: flex; align-items: flex-end; gap: 6px; margin-bottom: 9px; }
+.message-line.mine { justify-content: flex-end; }
 .bubble {
   position: relative;
   width: fit-content;
   max-width: 78%;
-  margin: 0 0 8px;
+  margin: 0;
   padding: 9px 30px 8px 11px;
   border-radius: 10px;
   border: 1px solid var(--line);
@@ -257,7 +281,6 @@ button {
   word-break: break-word;
 }
 .bubble.mine {
-  margin-left: auto;
   background: #e6f4f7;
   border-color: #b9dfe8;
 }
@@ -303,6 +326,7 @@ button {
   border: 1px solid var(--line);
   background: white;
 }
+.message-video { display: block; width: min(280px, 100%); max-height: 260px; background: #111; border-radius: 8px; }
 .message-file {
   display: inline-flex;
   max-width: 100%;
@@ -391,3 +415,32 @@ button {
 }
 .approve-grid button:first-child { color: white; background: var(--good); border-color: var(--good); }
 .approve-grid button:last-child { color: white; background: var(--bad); border-color: var(--bad); }
+.notes-head { display: flex; justify-content: space-between; gap: 10px; align-items: flex-start; margin-bottom: 12px; }
+.notes-head strong { font-size: 20px; }
+.notes-head p { margin: 4px 0 0; color: var(--muted); font-size: 12px; }
+.notes-head > div:last-child { display: flex; gap: 7px; flex-shrink: 0; }
+.notes-head button { min-height: 38px; padding: 0 10px; }
+.primary-inline { background: var(--brand); border-color: var(--brand); color: white; }
+.note-grid { display: grid; gap: 10px; grid-template-columns: repeat(auto-fill, minmax(min(280px, 100%), 1fr)); }
+.note-card { background: white; border: 1px solid #b9dfe8; border-radius: 14px; padding: 13px; box-shadow: 0 7px 18px rgba(20,30,40,.06); }
+.note-card.completed { opacity: .65; border-color: var(--line); }
+.note-card-top { display: flex; justify-content: space-between; align-items: center; color: var(--brand); font-size: 12px; font-weight: 900; }
+.note-card-top > div { display: flex; gap: 5px; }
+.note-card-top button { min-height: 30px; padding: 0 9px; }
+.note-card h3 { margin: 10px 0 5px; font-size: 17px; }
+.note-card p { white-space: pre-wrap; margin: 0 0 9px; color: #46515e; font-size: 14px; }
+.note-card time { color: #b45f06; font-size: 13px; font-weight: 800; }
+.mobile-modal { position: fixed; inset: 0; z-index: 60; display: grid; align-items: end; background: rgba(9,16,23,.55); }
+.mobile-dialog { width: 100%; max-height: 88dvh; overflow: auto; background: white; border-radius: 18px 18px 0 0; padding: 16px 16px calc(16px + env(safe-area-inset-bottom)); }
+.dialog-head { display: flex; align-items: center; justify-content: space-between; font-size: 19px; }
+.dialog-head button { min-width: 42px; }
+.dialog-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; margin-top: 14px; }
+@media (min-width: 760px) {
+  #view.chat-view { padding-left: 16px; padding-right: 16px; }
+  .chat-layout { grid-template-columns: 220px minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto auto; column-gap: 10px; }
+  .people { grid-row: 1 / 4; display: block; padding: 0; border: 1px solid var(--line); border-radius: 14px; background: white; }
+  .people .person { width: 100%; min-height: 58px; grid-template-columns: 36px 1fr; justify-items: start; text-align: left; border: 0; border-bottom: 1px solid var(--line); border-radius: 0; }
+  .people .person:first-child { border-radius: 13px 13px 0 0; }
+  .mobile-modal { align-items: center; padding: 20px; }
+  .mobile-dialog { max-width: 560px; border-radius: 18px; }
+}
