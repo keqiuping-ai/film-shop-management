@@ -4460,14 +4460,51 @@ function openCustomerServiceRep(id) {
 }
 
 function salesOrderLineRowHtml(line = {}) {
-  const options = salesOrderSkuSearchOptions().map(product => `<option value="${escapeHtml(product.sku)}" ${String(line.item || '') === String(product.sku) ? 'selected' : ''}>${escapeHtml(salesOrderSkuSearchLabel(product.sku))}</option>`).join('');
   return `<tr class="sales-order-line">
-    <td><select class="sales-line-item"><option value="">${lang === 'zh' ? '选择型号/SKU' : 'Choose SKU'}</option>${options}</select></td>
+    <td><div class="sku-search sales-line-sku-search">
+      <input class="sales-line-item" type="hidden" value="${escapeHtml(line.item || '')}" />
+      <input class="sales-line-item-search" type="text" value="${escapeHtml(salesOrderSkuSearchLabel(line.item || ''))}" autocomplete="off" placeholder="${lang === 'zh' ? '输入型号 / SKU / 名称搜索' : 'Search model / SKU / name'}" />
+      <div class="sku-search-results sales-line-sku-results"></div>
+    </div></td>
     <td><input class="sales-line-price" type="number" min="0" step="0.01" value="${escapeHtml(line.unitPrice ?? 0)}" /></td>
     <td><input class="sales-line-qty" type="number" min="0.01" step="0.01" value="${escapeHtml(line.qty ?? 1)}" /></td>
     <td class="sales-line-total">${currency.format(Number(line.unitPrice || 0) * Number(line.qty || 0))}</td>
     <td><button class="btn sales-line-remove" type="button" onclick="removeSalesOrderLine(this)" title="${lang === 'zh' ? '删除这行' : 'Remove line'}">×</button></td>
   </tr>`;
+}
+
+function renderSalesOrderLineSkuResults(input) {
+  const wrapper = input?.closest('.sales-line-sku-search');
+  const results = wrapper?.querySelector('.sales-line-sku-results');
+  if (!results) return;
+  const query = String(input.value || '').trim().toLowerCase();
+  const options = salesOrderSkuSearchOptions()
+    .filter(product => !query || salesOrderSkuSearchText(product).includes(query))
+    .slice(0, 40);
+  results.innerHTML = options.length ? options.map(product => `
+    <button type="button" class="sku-result" data-sales-line-sku="${escapeHtml(product.sku)}">
+      <strong>${escapeHtml(product.sku)}</strong>
+      <span>${escapeHtml(product.name || '')}</span>
+      <small>${escapeHtml(product.category || product.unit || '')}</small>
+    </button>
+  `).join('') : `<div class="sku-result-empty">${lang === 'zh' ? '没有找到匹配型号' : 'No matching model'}</div>`;
+  results.classList.add('open');
+}
+
+function selectSalesOrderLineSku(button) {
+  const wrapper = button.closest('.sales-line-sku-search');
+  const row = button.closest('.sales-order-line');
+  const sku = button.dataset.salesLineSku || '';
+  const hidden = wrapper?.querySelector('.sales-line-item');
+  const search = wrapper?.querySelector('.sales-line-item-search');
+  if (hidden) hidden.value = sku;
+  if (search) search.value = salesOrderSkuSearchLabel(sku);
+  wrapper?.querySelector('.sales-line-sku-results')?.classList.remove('open');
+  const product = salesOrderVirtualProduct(sku) || state.products.find(item => item.sku === sku);
+  const price = row?.querySelector('.sales-line-price');
+  const currentType = document.getElementById('type')?.value || '';
+  if (price && product && !Number(price.value)) price.value = currentType.startsWith('wholesale') ? Number(product.wholesale || 0) : Number(product.price || 0);
+  updateSalesOrderLinesTotal();
 }
 
 function addSalesOrderLine(line = {}) {
@@ -4541,13 +4578,27 @@ function openSalesOrder(id) {
     }
   );
   document.getElementById('salesOrderLines')?.addEventListener('input', updateSalesOrderLinesTotal);
+  document.getElementById('salesOrderLines')?.addEventListener('focusin', event => {
+    if (event.target.classList.contains('sales-line-item-search')) renderSalesOrderLineSkuResults(event.target);
+  });
+  document.getElementById('salesOrderLines')?.addEventListener('input', event => {
+    if (!event.target.classList.contains('sales-line-item-search')) return;
+    const wrapper = event.target.closest('.sales-line-sku-search');
+    const hidden = wrapper?.querySelector('.sales-line-item');
+    if (hidden) hidden.value = '';
+    renderSalesOrderLineSkuResults(event.target);
+  });
+  document.getElementById('salesOrderLines')?.addEventListener('mousedown', event => {
+    const button = event.target.closest('[data-sales-line-sku]');
+    if (!button) return;
+    event.preventDefault();
+    selectSalesOrderLineSku(button);
+  });
+  document.getElementById('salesOrderLines')?.addEventListener('focusout', event => {
+    if (!event.target.classList.contains('sales-line-item-search')) return;
+    setTimeout(() => event.target.closest('.sales-line-sku-search')?.querySelector('.sales-line-sku-results')?.classList.remove('open'), 150);
+  });
   document.getElementById('salesOrderLines')?.addEventListener('change', event => {
-    if (event.target.classList.contains('sales-line-item')) {
-      const product = salesOrderVirtualProduct(event.target.value) || state.products.find(row => row.sku === event.target.value);
-      const price = event.target.closest('tr')?.querySelector('.sales-line-price');
-      const currentType = document.getElementById('type')?.value || item.type || '';
-      if (price && product && !Number(price.value)) price.value = currentType.startsWith('wholesale') ? Number(product.wholesale || 0) : Number(product.price || 0);
-    }
     updateSalesOrderLinesTotal();
   });
   updateSalesOrderLinesTotal();
