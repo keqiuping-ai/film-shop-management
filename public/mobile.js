@@ -117,7 +117,7 @@ const I18N = {
     logout: '退出登录',
     iosInstall: 'iPhone/iPad 安装方法：点击 Safari 底部“分享”按钮，然后选择“添加到主屏幕”。图标会使用 QUAD FILM 黑色品牌标。',
     browserInstall: '如果浏览器没有弹出安装窗口，请打开浏览器菜单，选择“安装应用”或“添加到主屏幕”。'
-    ,groupChat: '全体员工群聊', myNotes: '我的记事本', notesPrivate: '只有当前账号本人能看到，手机和电脑自动同步。', newMemo: '新建备忘录', newTask: '新建待办', memo: '备忘', todo: '待办', completed: '已完成', finish: '办完了', edit: '编辑', delete: '删除', noteTitle: '标题', noteContent: '详细内容（可不填）', remindAt: '提醒时间', save: '保存', cancel: '取消', noteTitleRequired: '请填写标题', noteTimeRequired: '请选择提醒日期和时间', confirmDeleteNote: '确定删除这条记事吗？', noNotes: '还没有记事或待办。', due: '提醒', attachmentSending: '正在发送附件…'
+    ,groupChat: '全体员工群聊', myNotes: '我的记事本', notesPrivate: '包含自己的记事和别人分享给你的内容；只有原作者能修改。', newMemo: '新建备忘录', newTask: '新建待办', memo: '备忘', todo: '待办', completed: '已完成', finish: '办完了', edit: '编辑', delete: '删除', noteTitle: '标题', noteContent: '详细内容（可不填）', remindAt: '提醒时间', save: '保存', cancel: '取消', noteTitleRequired: '请填写标题', noteTimeRequired: '请选择提醒日期和时间', confirmDeleteNote: '确定删除这条记事吗？', noNotes: '还没有记事或待办。', due: '提醒', attachmentSending: '正在发送附件…'
   },
   en: {
     languageToggle: '中文',
@@ -213,7 +213,7 @@ const I18N = {
     logout: 'Log Out',
     iosInstall: 'iPhone/iPad: tap the Safari Share button, then choose Add to Home Screen. The icon will use the black QUAD FILM brand icon.',
     browserInstall: 'If the install prompt does not appear, open the browser menu and choose Install App or Add to Home Screen.'
-    ,groupChat: 'All Staff', myNotes: 'My Notes', notesPrivate: 'Only you can see these notes. Phone and desktop stay synced.', newMemo: 'New Memo', newTask: 'New Task', memo: 'Memo', todo: 'To-do', completed: 'Completed', finish: 'Done', edit: 'Edit', delete: 'Delete', noteTitle: 'Title', noteContent: 'Details (optional)', remindAt: 'Reminder', save: 'Save', cancel: 'Cancel', noteTitleRequired: 'Enter a title', noteTimeRequired: 'Choose a reminder date and time', confirmDeleteNote: 'Delete this note?', noNotes: 'No notes or tasks yet.', due: 'Reminder', attachmentSending: 'Sending attachment…'
+    ,groupChat: 'All Staff', myNotes: 'My Notes', notesPrivate: 'Includes your notes and notes shared with you; only authors can edit.', newMemo: 'New Memo', newTask: 'New Task', memo: 'Memo', todo: 'To-do', completed: 'Completed', finish: 'Done', edit: 'Edit', delete: 'Delete', noteTitle: 'Title', noteContent: 'Details (optional)', remindAt: 'Reminder', save: 'Save', cancel: 'Cancel', noteTitleRequired: 'Enter a title', noteTimeRequired: 'Choose a reminder date and time', confirmDeleteNote: 'Delete this note?', noNotes: 'No notes or tasks yet.', due: 'Reminder', attachmentSending: 'Sending attachment…'
   }
 };
 
@@ -865,16 +865,22 @@ function notesHtml() {
 
 function noteCardHtml(item) {
   const completed = item.status === 'completed';
+  const canEdit = item.canEdit !== false && (!item.ownerUserId || item.ownerUserId === user?.id);
+  const share = item.shareScope === 'all' ? (lang === 'zh' ? '👥 全体员工' : '👥 All staff') : item.shareScope === 'users' ? (lang === 'zh' ? '↗ 指定员工' : '↗ Selected staff') : (lang === 'zh' ? '🔒 仅自己' : '🔒 Private');
   return `<article class="note-card ${completed ? 'completed' : ''}" data-note-id="${item.id}">
-    <div class="note-card-top"><span>${item.type === 'task' ? t('todo') : t('memo')}</span><div>${item.type === 'task' && !completed ? `<button onclick="finishNote('${item.id}')">${t('finish')}</button>` : ''}<button onclick="openNoteEditor('${item.id}')">✎</button><button onclick="deleteNote('${item.id}')">×</button></div></div>
+    <div class="note-card-top"><span>${item.type === 'task' ? t('todo') : t('memo')}</span><div>${canEdit ? `${item.type === 'task' && !completed ? `<button onclick="finishNote('${item.id}')">${t('finish')}</button>` : ''}<button onclick="openNoteEditor('${item.id}')">✎</button><button onclick="deleteNote('${item.id}')">×</button>` : (lang === 'zh' ? '只读' : 'Read only')}</div></div>
     <h3>${escapeHtml(item.title)}</h3>${item.content ? `<p>${escapeHtml(item.content)}</p>` : ''}
     ${item.type === 'task' ? `<time>${completed ? '✓ ' + t('completed') : '⏰ ' + t('due') + ' ' + fmtDateTime(item.snoozedUntil || item.remindAt)}</time>` : ''}
+    <small>${canEdit ? '' : `${lang === 'zh' ? '来自' : 'From'} ${escapeHtml(item.ownerName || '')} · `}${share}</small>
   </article>`;
 }
 
 function openNoteEditor(noteId = '', type = 'memo') {
   const item = (state.personalNotes || []).find(note => note.id === noteId);
+  if (item && item.canEdit === false) return alert(lang === 'zh' ? '别人分享的记事只能查看。' : 'Shared notes are read-only.');
   const nextType = item?.type || type;
+  const shareScope = ['all', 'users'].includes(item?.shareScope) ? item.shareScope : 'private';
+  const staff = (state.users || []).filter(row => row.active !== false && row.id !== user?.id);
   const overlay = document.createElement('div');
   overlay.className = 'mobile-modal';
   const localDate = item?.remindAt ? new Date(new Date(item.remindAt).getTime() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16) : '';
@@ -882,6 +888,8 @@ function openNoteEditor(noteId = '', type = 'memo') {
     <label>${t('noteTitle')}<input id="noteEditorTitle" value="${escapeHtml(item?.title || '')}" /></label>
     <label>${t('noteContent')}<textarea id="noteEditorContent">${escapeHtml(item?.content || '')}</textarea></label>
     ${nextType === 'task' ? `<label>${t('remindAt')}<input id="noteEditorRemindAt" type="datetime-local" value="${escapeHtml(localDate)}" /></label>` : ''}
+    <label>${lang === 'zh' ? '分享范围' : 'Sharing'}<select id="noteEditorShareScope" onchange="this.closest('.mobile-dialog').querySelector('#noteEditorRecipients').classList.toggle('hidden',this.value!=='users')"><option value="private" ${shareScope === 'private' ? 'selected' : ''}>${lang === 'zh' ? '仅自己可见' : 'Private'}</option><option value="all" ${shareScope === 'all' ? 'selected' : ''}>${lang === 'zh' ? '全体员工' : 'All staff'}</option><option value="users" ${shareScope === 'users' ? 'selected' : ''}>${lang === 'zh' ? '指定员工' : 'Selected staff'}</option></select></label>
+    <div id="noteEditorRecipients" class="note-recipient-list ${shareScope === 'users' ? '' : 'hidden'}">${staff.map(row => `<label><input type="checkbox" value="${escapeHtml(row.id)}" ${(item?.sharedUserIds || []).includes(row.id) ? 'checked' : ''}>${escapeHtml(row.name || row.email)}</label>`).join('')}</div>
     <div class="dialog-actions"><button onclick="this.closest('.mobile-modal').remove()">${t('cancel')}</button><button class="primary-inline" onclick="saveNote('${noteId}', '${nextType}', this)">${t('save')}</button></div></div>`;
   document.body.appendChild(overlay);
   setTimeout(() => overlay.querySelector('#noteEditorTitle')?.focus(), 20);
@@ -893,12 +901,15 @@ async function saveNote(noteId, type, button) {
   const title = overlay.querySelector('#noteEditorTitle').value.trim();
   const content = overlay.querySelector('#noteEditorContent').value.trim();
   const rawTime = overlay.querySelector('#noteEditorRemindAt')?.value || '';
+  const shareScope = overlay.querySelector('#noteEditorShareScope').value;
+  const sharedUserIds = [...overlay.querySelectorAll('#noteEditorRecipients input:checked')].map(input => input.value);
   if (!title) return alert(t('noteTitleRequired'));
   if (type === 'task' && !rawTime) return alert(t('noteTimeRequired'));
+  if (shareScope === 'users' && !sharedUserIds.length) return alert(lang === 'zh' ? '请至少选择一名接收员工' : 'Choose at least one recipient');
   noteSaving = true;
   button.disabled = true;
   const existing = (state.personalNotes || []).find(note => note.id === noteId);
-  const body = { ...(existing || {}), type, title, content, remindAt: rawTime ? new Date(rawTime).toISOString() : '', status: existing?.status || 'pending', requestId: existing?.requestId || `mobile-${Date.now()}-${Math.random().toString(36).slice(2)}` };
+  const body = { ...(existing || {}), type, title, content, remindAt: rawTime ? new Date(rawTime).toISOString() : '', status: existing?.status || 'pending', shareScope, sharedUserIds, requestId: existing?.requestId || `mobile-${Date.now()}-${Math.random().toString(36).slice(2)}` };
   overlay.remove();
   try {
     const result = await api(`/api/personal-notes${noteId ? `/${noteId}` : ''}`, { method: noteId ? 'PUT' : 'POST', body: JSON.stringify(body) });

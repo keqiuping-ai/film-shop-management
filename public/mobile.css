@@ -451,3 +451,6 @@ button {
   .mobile-modal { align-items: center; padding: 20px; }
   .mobile-dialog { max-width: 560px; border-radius: 18px; }
 }
+.note-recipient-list { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; max-height:150px; overflow:auto; padding:10px; border:1px solid #d7e1e6; border-radius:12px; }
+.note-recipient-list label { display:flex; align-items:center; gap:8px; margin:0; }
+.note-recipient-list input { width:auto; }

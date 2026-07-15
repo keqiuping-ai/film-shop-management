@@ -937,6 +937,37 @@ function normalizeAvatarDataUrl(value) {
   return avatar;
 }
 
+function personalNoteVisibleTo(item, user) {
+  if (!item || !user) return false;
+  if (item.ownerUserId === user.id) return true;
+  if (item.shareScope === 'all') return true;
+  return item.shareScope === 'users' && Array.isArray(item.sharedUserIds) && item.sharedUserIds.includes(user.id);
+}
+
+function personalNoteForUser(db, item, user) {
+  const owner = (db.users || []).find(row => row.id === item.ownerUserId);
+  return {
+    ...item,
+    shareScope: ['all', 'users'].includes(item.shareScope) ? item.shareScope : 'private',
+    sharedUserIds: Array.isArray(item.sharedUserIds) ? item.sharedUserIds : [],
+    ownerName: owner?.name || owner?.email || '',
+    canEdit: item.ownerUserId === user.id
+  };
+}
+
+function normalizePersonalNoteSharing(db, user, body, existing = {}) {
+  const requested = ['all', 'users'].includes(body.shareScope) ? body.shareScope : 'private';
+  const activeIds = new Set((db.users || []).filter(row => row.active !== false && row.id !== user.id).map(row => row.id));
+  const sharedUserIds = requested === 'users'
+    ? [...new Set(Array.isArray(body.sharedUserIds) ? body.sharedUserIds.map(String).filter(id => activeIds.has(id)) : [])]
+    : [];
+  return {
+    shareScope: requested === 'users' && !sharedUserIds.length ? 'private' : requested,
+    sharedUserIds,
+    sharedAt: requested === 'private' ? '' : (existing.sharedAt || new Date().toISOString())
+  };
+}
+
 function sanitizeDbForUser(db, user) {
   const p = effectivePermissions(user);
   const canSeeCosts = user?.role === 'owner';
@@ -945,7 +976,7 @@ function sanitizeDbForUser(db, user) {
     users: p.usersManage || p.schedulesView ? db.users.map(safeUser) : [safeUser(user)],
     messageUsers: db.users.filter(item => item.active !== false).map(safeUser),
     messages: messagesForUser(db, user),
-    personalNotes: (db.personalNotes || []).filter(item => item.ownerUserId === user.id),
+    personalNotes: (db.personalNotes || []).filter(item => personalNoteVisibleTo(item, user)).map(item => personalNoteForUser(db, item, user)),
     installers: p.installerView || p.jobsView ? db.installers.map(installer => sanitizeInstaller(installer, p)) : [],
     products: p.inventoryView ? sanitizeProducts(db.products, canSeeCosts) : [],
     priceRules: p.pricingView ? db.priceRules.map(rule => canSeeCosts ? rule : { ...rule, materialCost: 0 }) : [],
@@ -1039,7 +1070,8 @@ function mobileSnapshot(db, user) {
       .sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')))
       .slice(0, 200),
     personalNotes: (db.personalNotes || [])
-      .filter(item => item.ownerUserId === userId)
+      .filter(item => personalNoteVisibleTo(item, user))
+      .map(item => personalNoteForUser(db, item, user))
       .sort((a, b) => String(b.updatedAt || b.createdAt || '').localeCompare(String(a.updatedAt || a.createdAt || '')))
   };
 }
@@ -2666,7 +2698,7 @@ async function api(req, res) {
   const personalNoteMatch = url.pathname.match(/^\/api\/personal-notes(?:\/([^/]+))?$/);
   if (personalNoteMatch) {
     const noteId = personalNoteMatch[1] || '';
-    if (req.method === 'GET') return send(res, 200, (db.personalNotes || []).filter(item => item.ownerUserId === user.id));
+    if (req.method === 'GET') return send(res, 200, (db.personalNotes || []).filter(item => personalNoteVisibleTo(item, user)).map(item => personalNoteForUser(db, item, user)));
     if (req.method === 'POST') {
       const body = await readBody(req);
       const type = body.type === 'task' ? 'task' : 'memo';
@@ -2677,14 +2709,15 @@ async function api(req, res) {
       if (!title) return send(res, 400, { error: '请填写记事标题' });
       if (type === 'task' && (!remindAt || Number.isNaN(new Date(remindAt).getTime()))) return send(res, 400, { error: '请选择正确的提醒日期和时间' });
       const duplicate = requestId ? (db.personalNotes || []).find(item => item.ownerUserId === user.id && item.requestId === requestId) : null;
-      if (duplicate) return send(res, 200, { item: duplicate, data: sanitizeDbForUser(db, user) });
+      if (duplicate) return send(res, 200, { item: personalNoteForUser(db, duplicate, user), data: sanitizeDbForUser(db, user) });
       const now = new Date().toISOString();
-      const item = { id: id(), ownerUserId: user.id, requestId, type, title, content, remindAt, snoozedUntil: '', status: 'pending', createdAt: now, updatedAt: now, completedAt: '' };
+      const sharing = normalizePersonalNoteSharing(db, user, body);
+      const item = { id: id(), ownerUserId: user.id, requestId, type, title, content, remindAt, snoozedUntil: '', status: 'pending', createdAt: now, updatedAt: now, completedAt: '', ...sharing };
       db.personalNotes.push(item);
-      audit(db, user, 'create-personal-note', { collection: 'personalNotes', recordId: item.id, recordLabel: '私人记事', detail: '新增个人记事（内容保持私密）' });
+      audit(db, user, 'create-personal-note', { collection: 'personalNotes', recordId: item.id, recordLabel: '个人记事', detail: sharing.shareScope === 'private' ? '新增私人记事' : '新增并分享记事' });
       writeDb(db);
       notifyDataChanged('personal-note-created', { ownerUserId: user.id });
-      return send(res, 201, { item, data: sanitizeDbForUser(db, user) });
+      return send(res, 201, { item: personalNoteForUser(db, item, user), data: sanitizeDbForUser(db, user) });
     }
     const index = (db.personalNotes || []).findIndex(item => item.id === noteId && item.ownerUserId === user.id);
     if (index < 0) return send(res, 404, { error: '没有找到这条记事' });
@@ -2700,12 +2733,13 @@ async function api(req, res) {
       if (!title) return send(res, 400, { error: '请填写记事标题' });
       if (type === 'task' && (!remindAt || Number.isNaN(new Date(remindAt).getTime()))) return send(res, 400, { error: '请选择正确的提醒日期和时间' });
       if (snoozedUntil && Number.isNaN(new Date(snoozedUntil).getTime())) return send(res, 400, { error: '稍后提醒时间不正确' });
-      const item = { ...existing, type, title, content, remindAt, snoozedUntil, status, updatedAt: new Date().toISOString(), completedAt: status === 'completed' ? (existing.completedAt || new Date().toISOString()) : '' };
+      const sharing = normalizePersonalNoteSharing(db, user, body, existing);
+      const item = { ...existing, type, title, content, remindAt, snoozedUntil, status, ...sharing, updatedAt: new Date().toISOString(), completedAt: status === 'completed' ? (existing.completedAt || new Date().toISOString()) : '' };
       db.personalNotes[index] = item;
-      audit(db, user, 'update-personal-note', { collection: 'personalNotes', recordId: item.id, recordLabel: '私人记事', detail: status === 'completed' ? '完成个人待办（内容保持私密）' : '修改个人记事（内容保持私密）' });
+      audit(db, user, 'update-personal-note', { collection: 'personalNotes', recordId: item.id, recordLabel: '个人记事', detail: status === 'completed' ? '完成个人待办' : '修改个人记事或分享范围' });
       writeDb(db);
       notifyDataChanged('personal-note-updated', { ownerUserId: user.id });
-      return send(res, 200, { item, data: sanitizeDbForUser(db, user) });
+      return send(res, 200, { item: personalNoteForUser(db, item, user), data: sanitizeDbForUser(db, user) });
     }
     if (req.method === 'DELETE') {
       db.personalNotes.splice(index, 1);

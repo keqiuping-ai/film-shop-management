@@ -2411,39 +2411,59 @@ function personalNoteStatus(item) {
   return lang === 'zh' ? '待办' : 'To-do';
 }
 
+function personalNoteCanEdit(item) {
+  return item.canEdit !== false && (!item.ownerUserId || item.ownerUserId === user?.id);
+}
+
+function personalNoteShareText(item) {
+  if (item.shareScope === 'all') return lang === 'zh' ? '👥 已分享给全体员工' : '👥 Shared with all staff';
+  if (item.shareScope === 'users') {
+    const names = (item.sharedUserIds || []).map(id => (state.messageUsers || []).find(row => row.id === id)?.name).filter(Boolean);
+    return `${lang === 'zh' ? '↗ 分享给' : '↗ Shared with'} ${names.join('、') || (lang === 'zh' ? '指定员工' : 'selected staff')}`;
+  }
+  return lang === 'zh' ? '🔒 仅自己可见' : '🔒 Private';
+}
+
 function personalNotesView() {
   const rows = personalNotesList();
-  const pending = rows.filter(item => item.type === 'task' && item.status !== 'completed').length;
+  const pending = rows.filter(item => personalNoteCanEdit(item) && item.type === 'task' && item.status !== 'completed').length;
   const cards = rows.map(item => `
     <article class="personal-note-card ${item.type === 'task' ? 'task' : 'memo'} ${item.status === 'completed' ? 'completed' : ''}">
       <div class="personal-note-card-head">
         <span class="personal-note-kind">${escapeHtml(personalNoteStatus(item))}</span>
-        <div class="personal-note-actions">
+        <div class="personal-note-actions">${personalNoteCanEdit(item) ? `
           ${item.type === 'task' && item.status !== 'completed' ? `<button class="btn compact" onclick="completePersonalNote('${item.id}')">${lang === 'zh' ? '办完了' : 'Done'}</button>` : ''}
           <button class="icon-btn" title="${lang === 'zh' ? '编辑' : 'Edit'}" onclick="openPersonalNote('${item.id}')">✎</button>
           <button class="icon-btn danger" title="${lang === 'zh' ? '删除' : 'Delete'}" onclick="deletePersonalNote('${item.id}')">×</button>
-        </div>
+        ` : `<span class="personal-note-readonly">${lang === 'zh' ? '只读' : 'Read only'}</span>`}</div>
       </div>
       <h3>${escapeHtml(item.title || (lang === 'zh' ? '未命名' : 'Untitled'))}</h3>
       ${item.content ? `<p>${escapeHtml(item.content).replace(/\n/g, '<br>')}</p>` : ''}
       ${item.type === 'task' && item.remindAt ? `<time>⏰ ${formatAppDateTime(item.snoozedUntil || item.remindAt)}${item.snoozedUntil ? (lang === 'zh' ? '（稍后提醒）' : ' (snoozed)') : ''}</time>` : ''}
+      <div class="personal-note-share">${!personalNoteCanEdit(item) ? `${lang === 'zh' ? '来自' : 'From'} ${escapeHtml(item.ownerName || '')} · ` : ''}${escapeHtml(personalNoteShareText(item))}</div>
     </article>`).join('');
   return panel(t('personalNotes'), `
     <button class="btn" onclick="openPersonalNote('', 'memo')">${lang === 'zh' ? '＋ 新建备忘录' : '+ New memo'}</button>
     <button class="btn primary" onclick="openPersonalNote('', 'task')">${lang === 'zh' ? '＋ 新建待办' : '+ New task'}</button>`, `
-    <div class="personal-note-summary"><strong>${lang === 'zh' ? `待办 ${pending} 项` : `${pending} pending`}</strong><span>${lang === 'zh' ? '这里的内容只有当前账号本人能看到' : 'Only this account can see these notes'}</span></div>
+    <div class="personal-note-summary"><strong>${lang === 'zh' ? `我的待办 ${pending} 项` : `${pending} pending`}</strong><span>${lang === 'zh' ? '包含自己的记事和别人分享给你的内容；只有原作者能修改' : 'Includes your notes and notes shared with you; only authors can edit'}</span></div>
     <div class="personal-note-grid">${cards || `<div class="empty-state">${lang === 'zh' ? '还没有记事，点击右上角开始记录。' : 'No notes yet.'}</div>`}</div>`);
 }
 
 function openPersonalNote(noteId = '', forcedType = '') {
   const item = (state.personalNotes || []).find(row => row.id === noteId) || {};
+  if (noteId && !personalNoteCanEdit(item)) return alert(lang === 'zh' ? '这条记事由别人分享，只能查看，不能修改。' : 'This shared note is read-only.');
   const type = forcedType || item.type || 'memo';
+  const shareScope = ['all', 'users'].includes(item.shareScope) ? item.shareScope : 'private';
+  const staff = (state.messageUsers || []).filter(row => row.active !== false && row.id !== user?.id);
+  const staffOptions = staff.map(row => `<label class="personal-note-share-user"><input type="checkbox" name="personalNoteSharedUser" value="${escapeHtml(row.id)}" ${(item.sharedUserIds || []).includes(row.id) ? 'checked' : ''}><span>${escapeHtml(row.name || row.email)}</span></label>`).join('');
   const localDateTime = item.remindAt ? new Date(new Date(item.remindAt).getTime() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16) : '';
   openModal(noteId ? (lang === 'zh' ? '编辑记事' : 'Edit note') : (lang === 'zh' ? '新建记事' : 'New note'), `
     <div class="form-grid">
       <label>${lang === 'zh' ? '类型' : 'Type'}<select id="personalNoteType" onchange="togglePersonalReminderField()"><option value="memo" ${type === 'memo' ? 'selected' : ''}>${lang === 'zh' ? '普通备忘录（不提醒）' : 'Memo (no reminder)'}</option><option value="task" ${type === 'task' ? 'selected' : ''}>${lang === 'zh' ? '待办事项（定时提醒）' : 'Task (scheduled reminder)'}</option></select></label>
       <label>${lang === 'zh' ? '标题' : 'Title'}<input id="personalNoteTitle" value="${escapeHtml(item.title || '')}" placeholder="${lang === 'zh' ? '例如：明天给张三发货' : 'e.g. Ship order tomorrow'}"></label>
       <label id="personalReminderField" class="${type === 'task' ? '' : 'hidden'}">${lang === 'zh' ? '提醒日期和时间' : 'Reminder date and time'}<input id="personalNoteRemindAt" type="datetime-local" value="${localDateTime}"></label>
+      <label>${lang === 'zh' ? '分享范围' : 'Sharing'}<select id="personalNoteShareScope" onchange="togglePersonalNoteShareUsers()"><option value="private" ${shareScope === 'private' ? 'selected' : ''}>${lang === 'zh' ? '🔒 仅自己可见' : '🔒 Private'}</option><option value="all" ${shareScope === 'all' ? 'selected' : ''}>${lang === 'zh' ? '👥 分享给全体员工' : '👥 All staff'}</option><option value="users" ${shareScope === 'users' ? 'selected' : ''}>${lang === 'zh' ? '↗ 分享给指定员工' : '↗ Selected staff'}</option></select></label>
+      <div id="personalNoteShareUsers" class="span-2 personal-note-share-users ${shareScope === 'users' ? '' : 'hidden'}"><strong>${lang === 'zh' ? '选择接收人' : 'Choose recipients'}</strong><div>${staffOptions || `<span>${lang === 'zh' ? '暂无其他员工账号' : 'No other staff accounts'}</span>`}</div></div>
       <label class="span-2">${lang === 'zh' ? '内容' : 'Details'}<textarea id="personalNoteContent" rows="8" placeholder="${lang === 'zh' ? '记录详细内容、电话、地址或要办的事情……' : 'Write details...'}">${escapeHtml(item.content || '')}</textarea></label>
     </div>`, () => savePersonalNote(noteId));
 }
@@ -2452,17 +2472,24 @@ function togglePersonalReminderField() {
   document.getElementById('personalReminderField')?.classList.toggle('hidden', document.getElementById('personalNoteType')?.value !== 'task');
 }
 
+function togglePersonalNoteShareUsers() {
+  document.getElementById('personalNoteShareUsers')?.classList.toggle('hidden', document.getElementById('personalNoteShareScope')?.value !== 'users');
+}
+
 async function savePersonalNote(noteId) {
   if (personalNoteSaving) return;
   const type = document.getElementById('personalNoteType').value;
   const title = document.getElementById('personalNoteTitle').value.trim();
   const content = document.getElementById('personalNoteContent').value.trim();
   const localReminder = document.getElementById('personalNoteRemindAt').value;
+  const shareScope = document.getElementById('personalNoteShareScope').value;
+  const sharedUserIds = [...document.querySelectorAll('input[name="personalNoteSharedUser"]:checked')].map(input => input.value);
   if (!title) return alert(lang === 'zh' ? '请填写标题' : 'Please enter a title');
   if (type === 'task' && !localReminder) return alert(lang === 'zh' ? '待办事项需要选择提醒时间' : 'Choose a reminder time');
+  if (shareScope === 'users' && !sharedUserIds.length) return alert(lang === 'zh' ? '请至少选择一名接收员工' : 'Choose at least one recipient');
   const requestId = globalThis.crypto?.randomUUID?.() || `note-${Date.now()}-${Math.random().toString(36).slice(2)}`;
   const now = new Date().toISOString();
-  const body = { type, title, content, remindAt: type === 'task' ? new Date(localReminder).toISOString() : '', status: itemStatusForSave(noteId, type), requestId };
+  const body = { type, title, content, remindAt: type === 'task' ? new Date(localReminder).toISOString() : '', status: itemStatusForSave(noteId, type), requestId, shareScope, sharedUserIds };
   const previousNotes = [...(state.personalNotes || [])];
   const existing = previousNotes.find(item => item.id === noteId);
   const optimistic = {
@@ -2473,6 +2500,11 @@ async function savePersonalNote(noteId) {
     content,
     remindAt: body.remindAt,
     status: body.status,
+    shareScope,
+    sharedUserIds,
+    ownerUserId: existing?.ownerUserId || user?.id,
+    ownerName: existing?.ownerName || user?.name || user?.email || '',
+    canEdit: true,
     createdAt: existing?.createdAt || now,
     updatedAt: now,
     _pending: true
@@ -2557,7 +2589,7 @@ async function deletePersonalNote(noteId) {
 }
 
 function duePersonalNote() {
-  return (state?.personalNotes || []).filter(item => item.type === 'task' && item.status !== 'completed').find(item => {
+  return (state?.personalNotes || []).filter(item => personalNoteCanEdit(item) && item.type === 'task' && item.status !== 'completed').find(item => {
     const due = new Date(item.snoozedUntil || item.remindAt || '').getTime();
     return Number.isFinite(due) && due <= Date.now();
   });
