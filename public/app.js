@@ -4474,11 +4474,12 @@ function updateSalesOrderLinesTotal() {
 function openSalesOrder(id) {
   const item = state.salesOrders.find(x => x.id === id) || { date: today(), type: 'retail-us', customer: '', salesRep: '', preparedBy: user?.name || '', item: '', qty: 1, unitPrice: 0, status: '待收款', shipping: '', trackingNo: '', paid: 0, paymentMethod: '' };
   const lines = salesOrderLineItems(item);
+  const shippingTracking = [...new Set([item.shipping, item.trackingNo].map(value => String(value || '').trim()).filter(Boolean))].join(' · ');
   const fields = [
     ['date',t('date'),'date',item.date], ['type',t('type'),'select',item.type, salesOrderTypeOptions()], ['customer',t('customer'),'text',item.customer],
     ['salesRep',t('orderSalesRep'),'text',item.salesRep || ''], ['status',t('status'),'select',item.status, salesStatusOptions()], ['paid',`${t('paid')} $`,'number',item.paid],
-    ['paymentMethod',t('paymentMethod'),'select',item.paymentMethod || '', paymentMethodOptions()], ['shipping',t('shipping'),'text',item.shipping],
-    ['trackingNo',t('orderTrackingNo'),'text',item.trackingNo || ''], ['preparedBy',t('preparedBy'),'text',item.preparedBy || user?.name || '']
+    ['paymentMethod',t('paymentMethod'),'select',item.paymentMethod || '', paymentMethodOptions()], ['shippingTracking',lang === 'zh' ? '物流/单号' : 'Shipping / Tracking','text',shippingTracking],
+    ['preparedBy',t('preparedBy'),'text',item.preparedBy || user?.name || '']
   ];
   const lineTable = `<div class="sales-order-lines wide">
     <div class="sales-order-lines-head"><strong>${lang === 'zh' ? '商品明细' : 'Order Items'}</strong><button class="btn" type="button" onclick="addSalesOrderLine()">+ ${lang === 'zh' ? '新增一行' : 'Add line'}</button></div>
@@ -4489,7 +4490,10 @@ function openSalesOrder(id) {
     id ? (lang === 'zh' ? '编辑零售/批发订单' : 'Edit Sales Order') : (lang === 'zh' ? '新增零售/批发订单' : 'New Sales Order'),
     formHtml(fields) + lineTable,
     () => {
-      const data = numeric(readForm(['date','type','customer','salesRep','status','paid','paymentMethod','shipping','trackingNo','preparedBy']), ['paid']);
+      const data = numeric(readForm(['date','type','customer','salesRep','status','paid','paymentMethod','shippingTracking','preparedBy']), ['paid']);
+      data.shipping = String(data.shippingTracking || '').trim();
+      data.trackingNo = data.shipping;
+      delete data.shippingTracking;
       data.items = readSalesOrderLines();
       const first = data.items[0] || {};
       data.item = first.item || '';
