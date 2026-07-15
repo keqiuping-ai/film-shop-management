@@ -296,6 +296,69 @@ button, input, select, textarea { font: inherit; }
   grid-template-columns: repeat(3, minmax(150px, 1fr));
   gap: 12px;
 }
+.sales-order-lines {
+  margin-top: 2px;
+}
+.sales-order-lines-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 7px;
+  font-size: 13px;
+}
+.sales-order-lines-head .btn {
+  min-height: 30px;
+  padding: 0 10px;
+  font-size: 12px;
+}
+.sales-order-lines .table-wrap {
+  border-radius: 7px;
+}
+.sales-lines-table {
+  table-layout: fixed;
+  min-width: 620px;
+  font-size: 12px;
+}
+.sales-lines-table th,
+.sales-lines-table td {
+  padding: 5px 6px;
+  vertical-align: middle;
+}
+.sales-lines-table th:first-child { width: 46%; }
+.sales-lines-table th:nth-child(2) { width: 17%; }
+.sales-lines-table th:nth-child(3) { width: 13%; }
+.sales-lines-table th:nth-child(4) { width: 18%; }
+.sales-lines-table th:last-child { width: 38px; }
+.sales-lines-table input,
+.sales-lines-table select {
+  min-height: 32px;
+  padding: 4px 7px;
+  border-radius: 5px;
+  font-size: 12px;
+}
+.sales-line-total {
+  white-space: nowrap;
+  font-weight: 700;
+}
+.sales-line-remove {
+  min-width: 28px;
+  min-height: 28px;
+  padding: 0;
+  color: #b42318;
+  font-size: 17px;
+}
+.sales-order-grand-total {
+  padding-top: 7px;
+  text-align: right;
+  font-size: 13px;
+}
+.sales-order-items-cell {
+  max-width: 250px;
+  white-space: normal;
+  line-height: 1.35;
+  font-size: 12px;
+}
 label { display: grid; gap: 5px; color: var(--muted); font-size: 12px; margin-bottom: 12px; }
 input, select, textarea {
   width: 100%;

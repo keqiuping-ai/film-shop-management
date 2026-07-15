@@ -1112,17 +1112,35 @@ function isCustomPrintedFilmSku(sku) {
   return String(sku || '') === CUSTOM_PRINTED_FILM_SKU;
 }
 
+function salesOrderItems(order) {
+  const source = Array.isArray(order?.items) && order.items.length
+    ? order.items
+    : [{ item: order?.item, qty: order?.qty, unitPrice: order?.unitPrice }];
+  return source.map(line => ({
+    item: String(line?.item || line?.sku || '').trim(),
+    qty: Number(line?.qty || 0),
+    unitPrice: Number(line?.unitPrice || 0)
+  })).filter(line => line.item);
+}
+
 function validateSalesOrder(db, order) {
-  const product = db.products.find(product => product.sku === order.item);
-  if (!product && !isCustomPrintedFilmSku(order.item)) return '找不到这个商品 SKU，不能新增订单';
-  const qty = Number(order.qty || 0);
-  const unitPrice = Number(order.unitPrice || 0);
-  if (!Number.isFinite(qty) || qty <= 0) return '订单数量必须大于 0';
-  if (!Number.isFinite(unitPrice) || unitPrice < 0) return '订单单价不正确';
-  const minPrice = minimumSalePrice(product);
-  if (minPrice > 0 && unitPrice < minPrice) {
-    return `${product.sku} 最低售价是 $${minPrice}，当前单价 $${unitPrice} 低于最低售价，不能保存订单`;
+  const items = salesOrderItems(order).slice(0, 50).map(line => ({ ...line, item: line.item.slice(0, 160) }));
+  if (!items.length) return '请至少添加一种商品';
+  if (new Set(items.map(line => line.item)).size !== items.length) return '同一个 SKU 请合并为一行填写';
+  for (const line of items) {
+    const product = db.products.find(product => product.sku === line.item);
+    if (!product && !isCustomPrintedFilmSku(line.item)) return `找不到商品 ${line.item}，不能保存订单`;
+    if (!Number.isFinite(line.qty) || line.qty <= 0) return `${line.item} 数量必须大于 0`;
+    if (!Number.isFinite(line.unitPrice) || line.unitPrice < 0) return `${line.item} 单价不正确`;
+    const minPrice = minimumSalePrice(product);
+    if (minPrice > 0 && line.unitPrice < minPrice) {
+      return `${product.sku} 最低售价是 $${minPrice}，当前单价 $${line.unitPrice} 低于最低售价，不能保存订单`;
+    }
   }
+  order.items = items;
+  order.item = items[0].item;
+  order.qty = items[0].qty;
+  order.unitPrice = items[0].unitPrice;
   return '';
 }
 
@@ -3519,8 +3537,11 @@ function validateMovement(db, movement) {
     const order = db.salesOrders.find(o => o.id === movement.salesOrderId);
     if (!order) return '找不到关联的零售批发订单';
     if (order.status !== '待出库') return '只有待出库订单可以通过库存出库自动改为已出库';
-    if (String(order.item || '') !== String(movement.sku || '')) return '出库SKU必须和关联订单商品一致';
-    if (Number(order.qty || 0) !== qty) return `出库数量必须和订单数量一致。订单数量 ${Number(order.qty || 0)}，本次出库 ${qty}`;
+    const orderLine = salesOrderItems(order).find(line => String(line.item) === String(movement.sku || ''));
+    if (!orderLine) return '出库SKU必须和关联订单的某一行商品一致';
+    if (Number(orderLine.qty || 0) !== qty) return `出库数量必须和订单该商品数量一致。订单数量 ${Number(orderLine.qty || 0)}，本次出库 ${qty}`;
+    const alreadyShipped = (db.movements || []).some(row => row.type === 'out' && row.salesOrderId === order.id && String(row.sku) === String(movement.sku));
+    if (alreadyShipped) return '这个订单中的该 SKU 已经出库，不能重复出库';
   }
   const currentQty = Number(product.qty || 0);
   if (movement.type === 'out' && qty > currentQty) {
@@ -3537,9 +3558,15 @@ function applyMovement(db, movement) {
   if (movement.type === 'out' && movement.salesOrderId) {
     const order = db.salesOrders.find(o => o.id === movement.salesOrderId);
     if (order && order.status === '待出库') {
-      order.status = '已出库';
-      order.shippedAt = movement.date || new Date().toISOString().slice(0, 10);
-      order.shippedMovementId = movement.id;
+      const physicalLines = salesOrderItems(order).filter(line => !isCustomPrintedFilmSku(line.item));
+      const shippedSkus = new Set((db.movements || [])
+        .filter(row => row.type === 'out' && row.salesOrderId === order.id)
+        .map(row => String(row.sku || '')));
+      if (physicalLines.every(line => shippedSkus.has(String(line.item)))) {
+        order.status = '已出库';
+        order.shippedAt = movement.date || new Date().toISOString().slice(0, 10);
+        order.shippedMovementId = movement.id;
+      }
     }
   }
 }

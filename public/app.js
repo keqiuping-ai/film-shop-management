@@ -1981,10 +1981,32 @@ function leadCommission(lead, rep) {
 }
 
 function orderCalc(order) {
-  const total = Number(order.qty || 0) * Number(order.unitPrice || 0);
-  const product = state.products.find(x => x.sku === order.item);
-  const cost = product ? Number(product.cost || 0) * Number(order.qty || 0) : 0;
+  const items = salesOrderLineItems(order);
+  const total = items.reduce((sum, line) => sum + Number(line.qty || 0) * Number(line.unitPrice || 0), 0);
+  const cost = items.reduce((sum, line) => {
+    const product = state.products.find(x => x.sku === line.item);
+    return sum + (product ? Number(product.cost || 0) * Number(line.qty || 0) : 0);
+  }, 0);
   return { total, cost, gross: total - cost, balance: total - Number(order.paid || 0) };
+}
+
+function salesOrderLineItems(order) {
+  const rows = Array.isArray(order?.items) ? order.items : [];
+  const normalized = rows.map(line => ({
+    item: String(line?.item || line?.sku || '').trim(),
+    qty: Number(line?.qty || 0),
+    unitPrice: Number(line?.unitPrice || 0)
+  })).filter(line => line.item);
+  if (normalized.length) return normalized;
+  return order?.item ? [{ item: String(order.item), qty: Number(order.qty || 0), unitPrice: Number(order.unitPrice || 0) }] : [];
+}
+
+function salesOrderItemsSummary(order) {
+  return salesOrderLineItems(order).map(line => salesOrderItemLabel(line.item)).join(' / ');
+}
+
+function salesOrderTotalQty(order) {
+  return salesOrderLineItems(order).reduce((sum, line) => sum + Number(line.qty || 0), 0);
 }
 
 function isCustomPrintedFilmSku(sku) {
@@ -2195,13 +2217,18 @@ function updateSalesOrderMinimumHint() {
 }
 
 function validateSalesOrderFormData(data) {
-  const product = salesOrderVirtualProduct(data.item) || state.products.find(item => item.sku === data.item);
-  if (!product) return lang === 'zh' ? '找不到这个商品 SKU。' : 'Cannot find this SKU.';
-  const minPrice = productMinimumSalePrice(product);
-  if (minPrice > 0 && Number(data.unitPrice || 0) < minPrice) {
-    return lang === 'zh'
-      ? `${product.sku} 最低售价是 ${currency.format(minPrice)}，不能低于最低售价保存订单。`
-      : `${product.sku} minimum sale price is ${currency.format(minPrice)}. The order cannot be saved below that price.`;
+  const items = salesOrderLineItems(data);
+  if (!items.length) return lang === 'zh' ? '请至少添加一种商品。' : 'Add at least one item.';
+  for (const line of items) {
+    const product = salesOrderVirtualProduct(line.item) || state.products.find(item => item.sku === line.item);
+    if (!product) return lang === 'zh' ? `找不到商品 ${line.item}。` : `Cannot find SKU ${line.item}.`;
+    if (!(Number(line.qty) > 0)) return lang === 'zh' ? `${line.item} 数量必须大于 0。` : `${line.item} quantity must be greater than 0.`;
+    const minPrice = productMinimumSalePrice(product);
+    if (minPrice > 0 && Number(line.unitPrice || 0) < minPrice) {
+      return lang === 'zh'
+        ? `${product.sku} 最低售价是 ${currency.format(minPrice)}，不能低于最低售价保存订单。`
+        : `${product.sku} minimum sale price is ${currency.format(minPrice)}. The order cannot be saved below that price.`;
+    }
   }
   return '';
 }
@@ -2897,7 +2924,7 @@ function workshopMovementTable() {
 function salesOrderTable() {
   const rows = sortByDateDesc(state.salesOrders || []);
   return `<div class="table-wrap"><table><thead><tr><th>${t('date')}</th><th>${t('type')}</th><th>${t('customer')}</th><th>${t('orderSalesRep')}</th><th>${t('preparedBy')}</th><th>${t('item')}</th><th>${t('qty')}</th><th>${lang === 'zh' ? '总额' : 'Total'}</th><th>${t('paid')}</th><th>${t('paymentMethod')}</th><th>${t('orderTrackingNo')}</th><th>${t('balance')}</th><th>${t('status')}</th><th></th></tr></thead><tbody>
-  ${rows.map(o => { const c = orderCalc(o); return `<tr><td>${o.date}</td><td>${salesOrderTypeName(o.type)}</td><td>${escapeHtml(o.customer)}</td><td>${escapeHtml(o.salesRep || '')}</td><td>${escapeHtml(o.preparedBy || '')}</td><td>${escapeHtml(salesOrderItemLabel(o.item))}</td><td>${Number(o.qty || 0)}</td><td>${currency.format(c.total)}</td><td>${currency.format(Number(o.paid || 0))}</td><td>${escapeHtml(paymentMethodName(o.paymentMethod || ''))}</td><td>${escapeHtml(o.trackingNo || '')}</td><td>${currency.format(c.balance)}</td><td>${statusPill(o.status)}</td>${actionCell('SalesOrder','salesOrders',o.id)}</tr>`; }).join('')}
+  ${rows.map(o => { const c = orderCalc(o); return `<tr><td>${o.date}</td><td>${salesOrderTypeName(o.type)}</td><td>${escapeHtml(o.customer)}</td><td>${escapeHtml(o.salesRep || '')}</td><td>${escapeHtml(o.preparedBy || '')}</td><td class="sales-order-items-cell">${escapeHtml(salesOrderItemsSummary(o))}</td><td>${salesOrderTotalQty(o)}</td><td>${currency.format(c.total)}</td><td>${currency.format(Number(o.paid || 0))}</td><td>${escapeHtml(paymentMethodName(o.paymentMethod || ''))}</td><td>${escapeHtml(o.trackingNo || '')}</td><td>${currency.format(c.balance)}</td><td>${statusPill(o.status)}</td>${actionCell('SalesOrder','salesOrders',o.id)}</tr>`; }).join('')}
   </tbody></table></div>`;
 }
 
@@ -4400,20 +4427,74 @@ function openCustomerServiceRep(id) {
   });
 }
 
+function salesOrderLineRowHtml(line = {}) {
+  const options = salesOrderSkuSearchOptions().map(product => `<option value="${escapeHtml(product.sku)}" ${String(line.item || '') === String(product.sku) ? 'selected' : ''}>${escapeHtml(salesOrderSkuSearchLabel(product.sku))}</option>`).join('');
+  return `<tr class="sales-order-line">
+    <td><select class="sales-line-item"><option value="">${lang === 'zh' ? '选择型号/SKU' : 'Choose SKU'}</option>${options}</select></td>
+    <td><input class="sales-line-price" type="number" min="0" step="0.01" value="${escapeHtml(line.unitPrice ?? 0)}" /></td>
+    <td><input class="sales-line-qty" type="number" min="0.01" step="0.01" value="${escapeHtml(line.qty ?? 1)}" /></td>
+    <td class="sales-line-total">${currency.format(Number(line.unitPrice || 0) * Number(line.qty || 0))}</td>
+    <td><button class="btn sales-line-remove" type="button" onclick="removeSalesOrderLine(this)" title="${lang === 'zh' ? '删除这行' : 'Remove line'}">×</button></td>
+  </tr>`;
+}
+
+function addSalesOrderLine(line = {}) {
+  document.getElementById('salesOrderLines')?.insertAdjacentHTML('beforeend', salesOrderLineRowHtml(line));
+  updateSalesOrderLinesTotal();
+}
+
+function removeSalesOrderLine(button) {
+  const body = document.getElementById('salesOrderLines');
+  if (!body) return;
+  if (body.querySelectorAll('.sales-order-line').length <= 1) return alert(lang === 'zh' ? '订单至少保留一行商品。' : 'Keep at least one item line.');
+  button.closest('.sales-order-line')?.remove();
+  updateSalesOrderLinesTotal();
+}
+
+function readSalesOrderLines() {
+  return [...document.querySelectorAll('#salesOrderLines .sales-order-line')].map(row => ({
+    item: row.querySelector('.sales-line-item')?.value || '',
+    unitPrice: Number(row.querySelector('.sales-line-price')?.value || 0),
+    qty: Number(row.querySelector('.sales-line-qty')?.value || 0)
+  })).filter(line => line.item);
+}
+
+function updateSalesOrderLinesTotal() {
+  document.querySelectorAll('#salesOrderLines .sales-order-line').forEach(row => {
+    const price = Number(row.querySelector('.sales-line-price')?.value || 0);
+    const qty = Number(row.querySelector('.sales-line-qty')?.value || 0);
+    const total = row.querySelector('.sales-line-total');
+    if (total) total.textContent = currency.format(price * qty);
+  });
+  const total = readSalesOrderLines().reduce((sum, line) => sum + line.qty * line.unitPrice, 0);
+  const output = document.getElementById('salesOrderGrandTotal');
+  if (output) output.textContent = currency.format(total);
+}
+
 function openSalesOrder(id) {
   const item = state.salesOrders.find(x => x.id === id) || { date: today(), type: 'retail-us', customer: '', salesRep: '', preparedBy: user?.name || '', item: '', qty: 1, unitPrice: 0, status: '待收款', shipping: '', trackingNo: '', paid: 0, paymentMethod: '' };
+  const lines = salesOrderLineItems(item);
   const fields = [
     ['date',t('date'),'date',item.date], ['type',t('type'),'select',item.type, salesOrderTypeOptions()], ['customer',t('customer'),'text',item.customer],
-    ['salesRep',t('orderSalesRep'),'text',item.salesRep || ''],
-    ['item',lang === 'zh' ? '商品SKU' : 'Item SKU','skuSearch',item.item], ['qty',t('qty'),'number',item.qty], ['unitPrice',lang === 'zh' ? '单价 $' : 'Unit Price $','number',item.unitPrice],
-    ['status',t('status'),'select',item.status, salesStatusOptions()], ['paid',`${t('paid')} $`,'number',item.paid], ['paymentMethod',t('paymentMethod'),'select',item.paymentMethod || '', paymentMethodOptions()], ['shipping',t('shipping'),'text',item.shipping],
+    ['salesRep',t('orderSalesRep'),'text',item.salesRep || ''], ['status',t('status'),'select',item.status, salesStatusOptions()], ['paid',`${t('paid')} $`,'number',item.paid],
+    ['paymentMethod',t('paymentMethod'),'select',item.paymentMethod || '', paymentMethodOptions()], ['shipping',t('shipping'),'text',item.shipping],
     ['trackingNo',t('orderTrackingNo'),'text',item.trackingNo || ''], ['preparedBy',t('preparedBy'),'text',item.preparedBy || user?.name || '']
   ];
+  const lineTable = `<div class="sales-order-lines wide">
+    <div class="sales-order-lines-head"><strong>${lang === 'zh' ? '商品明细' : 'Order Items'}</strong><button class="btn" type="button" onclick="addSalesOrderLine()">+ ${lang === 'zh' ? '新增一行' : 'Add line'}</button></div>
+    <div class="table-wrap"><table class="sales-lines-table"><thead><tr><th>${lang === 'zh' ? '型号 / SKU' : 'Model / SKU'}</th><th>${lang === 'zh' ? '单价' : 'Unit price'}</th><th>${t('qty')}</th><th>${lang === 'zh' ? '小计' : 'Subtotal'}</th><th></th></tr></thead><tbody id="salesOrderLines">${(lines.length ? lines : [{}]).map(salesOrderLineRowHtml).join('')}</tbody></table></div>
+    <div class="sales-order-grand-total">${lang === 'zh' ? '订单总价' : 'Order total'}：<strong id="salesOrderGrandTotal">${currency.format(0)}</strong></div>
+  </div>`;
   openModal(
     id ? (lang === 'zh' ? '编辑零售/批发订单' : 'Edit Sales Order') : (lang === 'zh' ? '新增零售/批发订单' : 'New Sales Order'),
-    formHtml(fields) + `<p class="stock-hint wide" id="salesOrderMinHint"></p>`,
+    formHtml(fields) + lineTable,
     () => {
-      const data = numeric(readForm(['date','type','customer','salesRep','item','qty','unitPrice','status','paid','paymentMethod','shipping','trackingNo','preparedBy']), ['qty','unitPrice','paid']);
+      const data = numeric(readForm(['date','type','customer','salesRep','status','paid','paymentMethod','shipping','trackingNo','preparedBy']), ['paid']);
+      data.items = readSalesOrderLines();
+      const first = data.items[0] || {};
+      data.item = first.item || '';
+      data.qty = Number(first.qty || 0);
+      data.unitPrice = Number(first.unitPrice || 0);
       if (!id) {
         const dateError = validateTodayEntryDate(data.date);
         if (dateError) return alert(dateError);
@@ -4423,10 +4504,17 @@ function openSalesOrder(id) {
       return saveRecord('salesOrders', id, data);
     }
   );
-  setupSalesOrderSkuSearch();
-  document.getElementById('item')?.addEventListener('change', updateSalesOrderMinimumHint);
-  document.getElementById('unitPrice')?.addEventListener('input', updateSalesOrderMinimumHint);
-  updateSalesOrderMinimumHint();
+  document.getElementById('salesOrderLines')?.addEventListener('input', updateSalesOrderLinesTotal);
+  document.getElementById('salesOrderLines')?.addEventListener('change', event => {
+    if (event.target.classList.contains('sales-line-item')) {
+      const product = salesOrderVirtualProduct(event.target.value) || state.products.find(row => row.sku === event.target.value);
+      const price = event.target.closest('tr')?.querySelector('.sales-line-price');
+      const currentType = document.getElementById('type')?.value || item.type || '';
+      if (price && product && !Number(price.value)) price.value = currentType.startsWith('wholesale') ? Number(product.wholesale || 0) : Number(product.price || 0);
+    }
+    updateSalesOrderLinesTotal();
+  });
+  updateSalesOrderLinesTotal();
 }
 
 function openShipment(id) {
@@ -4909,10 +4997,15 @@ function scheduleTypeOptions() {
   return [['work', scheduleTypeName('work')], ['makeup', scheduleTypeName('makeup')], ['adjustedRest', scheduleTypeName('adjustedRest')], ['off', scheduleTypeName('off')]];
 }
 function salesOrderMovementOptions(sku = '') {
-  const pendingOrders = (state.salesOrders || []).filter(order => order.status === '待出库' && !isCustomPrintedFilmSku(order.item) && (!sku || order.item === sku));
-  return [['', lang === 'zh' ? '不关联订单' : 'No related order'], ...pendingOrders.map(order => [
+  const pendingOrders = (state.salesOrders || []).flatMap(order => {
+    if (order.status !== '待出库') return [];
+    return salesOrderLineItems(order)
+      .filter(line => !isCustomPrintedFilmSku(line.item) && (!sku || line.item === sku))
+      .map(line => ({ order, line }));
+  });
+  return [['', lang === 'zh' ? '不关联订单' : 'No related order'], ...pendingOrders.map(({ order, line }) => [
     order.id,
-    `${order.date} · ${order.customer || ''} · ${order.item} · ${Number(order.qty || 0)}`
+    `${order.date} · ${order.customer || ''} · ${line.item} · ${Number(line.qty || 0)}`
   ])];
 }
 function leadSourceOptions() { return ['Yelp','Google Maps','Meta / Facebook','Instagram','Website','Phone Call','Walk-in','Referral','Other']; }
