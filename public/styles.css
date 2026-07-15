@@ -809,7 +809,7 @@ body.modal-lock .prospect-workspace { pointer-events: none; }
 .prospect-sidebar-actions { grid-column: 1 / -1; position: sticky; bottom: 0; z-index: 2; display: grid; grid-template-columns: 120px minmax(0, 1fr); gap: 8px; padding: 8px 0 4px; background: #fff; }
 .prospect-sidebar-pair { display: grid; grid-template-columns: 1fr 112px; gap: 8px; }
 .prospect-sidebar-save { width: 100%; min-height: 42px; margin: 0; }
-.prospect-workspace-conversation { position: relative; min-width: 0; min-height: 0; overflow: hidden; display: grid; grid-template-rows: minmax(0, 1fr) 280px; padding-bottom: 20px; box-sizing: border-box; }
+.prospect-workspace-conversation { position: relative; min-width: 0; min-height: 0; overflow: hidden; display: grid; grid-template-rows: minmax(0, 1fr) 210px; padding-bottom: 12px; box-sizing: border-box; }
 .prospect-workspace-chat {
   position: relative;
   min-height: 0;
@@ -841,15 +841,15 @@ body.modal-lock .prospect-workspace { pointer-events: none; }
 .prospect-chat-message.shop { align-self: flex-end; color: #fff; background: #176d84; border-color: #176d84; border-bottom-right-radius: 6px; }
 .prospect-chat-message.system { align-self: center; width: auto; max-width: 80%; color: var(--muted); background: #e9eef2; border-radius: 999px; box-shadow: none; }
 .prospect-chat-role { margin-bottom: 5px; font-size: 12px; font-weight: 800; opacity: .8; }
-.prospect-chat-text { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.55; }
+.prospect-chat-text { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 14px; line-height: 1.48; }
 .prospect-chat-message time { display: block; margin-top: 6px; font-size: 11px; opacity: .65; }
 .prospect-chat-message.has-delete { padding-right: 42px; }
 .prospect-message-delete { position: absolute; top: 8px; right: 9px; width: 25px; height: 25px; padding: 0; border: 1px solid rgba(255,255,255,.55); border-radius: 50%; background: rgba(0,0,0,.18); color: #fff; font-size: 18px; line-height: 21px; cursor: pointer; }
 .prospect-message-delete:hover { background: #b42318; }
 .prospect-chat-empty { margin: auto; color: var(--muted); }
-.prospect-workspace-composer { position: relative; z-index: 2; align-self: start; transform: translateY(-26px); min-width: 0; min-height: 0; height: 230px; box-sizing: border-box; padding: 10px max(20px, calc((100vw - 1460px) / 2)) 12px; background: #fff; border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 8px 24px rgba(15, 23, 42, .08); display: grid; grid-template-rows: auto auto minmax(0, 1fr); gap: 7px; }
+.prospect-workspace-composer { position: relative; z-index: 2; align-self: start; transform: translateY(-18px); min-width: 0; min-height: 0; height: 170px; box-sizing: border-box; padding: 8px max(20px, calc((100vw - 1460px) / 2)) 10px; background: #fff; border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 8px 24px rgba(15, 23, 42, .08); display: grid; grid-template-rows: auto auto minmax(0, 1fr); gap: 5px; }
 .prospect-sms-status { margin: 0; color: var(--muted); font-size: 13px; }
-.prospect-attachment-tools { min-height: 30px; margin: 0; display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
+.prospect-attachment-tools { min-height: 28px; margin: 0; display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
 .prospect-attachment-tools > button { padding: 5px 9px; border: 1px solid var(--line); border-radius: 7px; background: #f8fafb; color: var(--ink); cursor: pointer; }
 .prospect-attachment-tools > button:hover { background: #eaf5f7; }
 .prospect-attachment-tools .prospect-tool-divider { width: 1px; height: 24px; margin: 0 3px; background: var(--line); }
@@ -858,7 +858,7 @@ body.modal-lock .prospect-workspace { pointer-events: none; }
 #prospectAttachmentPreview { color: var(--primary); font-size: 12px; font-weight: 700; }
 #prospectAttachmentPreview button { margin-left: 3px; border: 0; background: none; color: #b42318; font-size: 18px; cursor: pointer; }
 .prospect-compose-row { min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; align-items: stretch; }
-.prospect-compose-row textarea { width: 100%; min-height: 0; max-height: none; box-sizing: border-box; padding: 13px 14px; font-size: 16px; resize: none; }
+.prospect-compose-row textarea { width: 100%; min-height: 0; max-height: none; box-sizing: border-box; padding: 9px 12px; font-size: 14px; line-height: 1.35; resize: none; }
 .prospect-compose-row .btn { min-width: 118px; min-height: 52px; font-size: 16px; }
 .prospect-chat-media { display: block; max-width: min(420px, 100%); max-height: 300px; margin-top: 8px; border-radius: 12px; object-fit: contain; background: rgba(0,0,0,.08); }
 .prospect-chat-video-placeholder { display: flex; width: min(420px, 100%); min-height: 150px; margin-top: 8px; padding: 20px; flex-direction: column; align-items: center; justify-content: center; gap: 10px; border: 0; border-radius: 12px; background: #173c47; color: #fff; cursor: pointer; }
