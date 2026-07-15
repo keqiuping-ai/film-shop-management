@@ -2670,10 +2670,13 @@ async function api(req, res) {
       const title = String(body.title || '').trim().slice(0, 200);
       const content = String(body.content || '').trim().slice(0, 20000);
       const remindAt = type === 'task' ? String(body.remindAt || '').trim() : '';
+      const requestId = String(body.requestId || '').trim().slice(0, 120);
       if (!title) return send(res, 400, { error: '请填写记事标题' });
       if (type === 'task' && (!remindAt || Number.isNaN(new Date(remindAt).getTime()))) return send(res, 400, { error: '请选择正确的提醒日期和时间' });
+      const duplicate = requestId ? (db.personalNotes || []).find(item => item.ownerUserId === user.id && item.requestId === requestId) : null;
+      if (duplicate) return send(res, 200, { item: duplicate, data: sanitizeDbForUser(db, user) });
       const now = new Date().toISOString();
-      const item = { id: id(), ownerUserId: user.id, type, title, content, remindAt, snoozedUntil: '', status: 'pending', createdAt: now, updatedAt: now, completedAt: '' };
+      const item = { id: id(), ownerUserId: user.id, requestId, type, title, content, remindAt, snoozedUntil: '', status: 'pending', createdAt: now, updatedAt: now, completedAt: '' };
       db.personalNotes.push(item);
       audit(db, user, 'create-personal-note', { collection: 'personalNotes', recordId: item.id, recordLabel: '私人记事', detail: '新增个人记事（内容保持私密）' });
       writeDb(db);

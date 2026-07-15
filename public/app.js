@@ -69,6 +69,8 @@ let messageAudioContext = null;
 let personalReminderTimer = null;
 let personalReminderSoundTimer = null;
 let activePersonalReminderId = '';
+let personalNoteSaving = false;
+const personalNoteUpdatingIds = new Set();
 const AUTO_SYNC_MS = 5 * 60 * 1000;
 const DATA_REVISION_POLL_MS = 15 * 1000;
 const MAX_MESSAGE_ATTACHMENT_BYTES = 8 * 1024 * 1024;
@@ -2373,6 +2375,7 @@ function personalNotesList() {
 }
 
 function personalNoteStatus(item) {
+  if (item._pending) return lang === 'zh' ? '正在同步…' : 'Syncing…';
   if (item.type !== 'task') return lang === 'zh' ? '备忘录' : 'Memo';
   if (item.status === 'completed') return lang === 'zh' ? '已完成' : 'Completed';
   const due = new Date(item.snoozedUntil || item.remindAt || '').getTime();
@@ -2422,21 +2425,49 @@ function togglePersonalReminderField() {
 }
 
 async function savePersonalNote(noteId) {
+  if (personalNoteSaving) return;
   const type = document.getElementById('personalNoteType').value;
   const title = document.getElementById('personalNoteTitle').value.trim();
   const content = document.getElementById('personalNoteContent').value.trim();
   const localReminder = document.getElementById('personalNoteRemindAt').value;
   if (!title) return alert(lang === 'zh' ? '请填写标题' : 'Please enter a title');
   if (type === 'task' && !localReminder) return alert(lang === 'zh' ? '待办事项需要选择提醒时间' : 'Choose a reminder time');
-  const body = { type, title, content, remindAt: type === 'task' ? new Date(localReminder).toISOString() : '', status: itemStatusForSave(noteId, type) };
+  const requestId = globalThis.crypto?.randomUUID?.() || `note-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  const now = new Date().toISOString();
+  const body = { type, title, content, remindAt: type === 'task' ? new Date(localReminder).toISOString() : '', status: itemStatusForSave(noteId, type), requestId };
+  const previousNotes = [...(state.personalNotes || [])];
+  const existing = previousNotes.find(item => item.id === noteId);
+  const optimistic = {
+    ...(existing || {}),
+    id: noteId || `pending-${requestId}`,
+    type,
+    title,
+    content,
+    remindAt: body.remindAt,
+    status: body.status,
+    createdAt: existing?.createdAt || now,
+    updatedAt: now,
+    _pending: true
+  };
+  personalNoteSaving = true;
+  state.personalNotes = noteId
+    ? previousNotes.map(item => item.id === noteId ? optimistic : item)
+    : [...previousNotes, optimistic];
+  closeModal();
+  render();
   try {
     const result = await api(`/api/personal-notes${noteId ? `/${noteId}` : ''}`, { method: noteId ? 'PUT' : 'POST', body: JSON.stringify(body) });
     state = result.data;
-    closeModal();
     render();
     startPersonalReminderChecks();
     broadcastDataChange();
-  } catch (err) { alert(err.message); }
+  } catch (err) {
+    state.personalNotes = previousNotes;
+    render();
+    alert(`${lang === 'zh' ? '保存失败，已恢复原内容：' : 'Save failed. Changes were restored: '}${err.message}`);
+  } finally {
+    personalNoteSaving = false;
+  }
 }
 
 function itemStatusForSave(noteId, type) {
@@ -2445,13 +2476,26 @@ function itemStatusForSave(noteId, type) {
 }
 
 async function updatePersonalNote(noteId, patch) {
+  if (personalNoteUpdatingIds.has(noteId)) return;
   const item = (state.personalNotes || []).find(row => row.id === noteId);
   if (!item) return;
-  const result = await api(`/api/personal-notes/${noteId}`, { method: 'PUT', body: JSON.stringify({ ...item, ...patch }) });
-  state = result.data;
+  const previousNotes = [...(state.personalNotes || [])];
+  personalNoteUpdatingIds.add(noteId);
+  state.personalNotes = previousNotes.map(row => row.id === noteId ? { ...row, ...patch, updatedAt: new Date().toISOString(), _pending: true } : row);
   render();
-  startPersonalReminderChecks();
-  broadcastDataChange();
+  try {
+    const result = await api(`/api/personal-notes/${noteId}`, { method: 'PUT', body: JSON.stringify({ ...item, ...patch }) });
+    state = result.data;
+    render();
+    startPersonalReminderChecks();
+    broadcastDataChange();
+  } catch (err) {
+    state.personalNotes = previousNotes;
+    render();
+    throw err;
+  } finally {
+    personalNoteUpdatingIds.delete(noteId);
+  }
 }
 
 async function completePersonalNote(noteId) {
@@ -2464,13 +2508,24 @@ async function snoozePersonalNote(noteId, minutes = 10) {
 
 async function deletePersonalNote(noteId) {
   if (!confirm(lang === 'zh' ? '确定删除这条记事吗？' : 'Delete this note?')) return;
+  if (personalNoteUpdatingIds.has(noteId)) return;
+  const previousNotes = [...(state.personalNotes || [])];
+  personalNoteUpdatingIds.add(noteId);
+  state.personalNotes = previousNotes.filter(item => item.id !== noteId);
+  if (activePersonalReminderId === noteId) closePersonalReminder();
+  render();
   try {
     const result = await api(`/api/personal-notes/${noteId}`, { method: 'DELETE' });
     state = result.data;
-    if (activePersonalReminderId === noteId) closePersonalReminder();
     render();
     broadcastDataChange();
-  } catch (err) { alert(err.message); }
+  } catch (err) {
+    state.personalNotes = previousNotes;
+    render();
+    alert(`${lang === 'zh' ? '删除失败，记事已恢复：' : 'Delete failed. The note was restored: '}${err.message}`);
+  } finally {
+    personalNoteUpdatingIds.delete(noteId);
+  }
 }
 
 function duePersonalNote() {
