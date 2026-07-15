@@ -826,7 +826,11 @@ function renderAuth() {
   document.getElementById('login').classList.toggle('hidden', loggedIn);
   document.getElementById('app').classList.toggle('hidden', !loggedIn);
   applyStaticTranslations();
-  if (loggedIn) document.getElementById('userLine').textContent = `${user.name} · ${roleNames[user.role] || user.role}`;
+  if (loggedIn) {
+    const userLine = document.getElementById('userLine');
+    userLine.innerHTML = `${userAvatarHtml(user, 'small')}<span class="my-profile-entry-text"><span>${escapeHtml(user.name)} · ${escapeHtml(roleNames[user.role] || user.role)}</span><span class="my-profile-entry-hint">${lang === 'zh' ? '点击更换我的头像' : 'Change my avatar'}</span></span>`;
+    userLine.title = lang === 'zh' ? '修改我的头像' : 'Change my avatar';
+  }
 }
 
 function startAutoSync() {
@@ -2607,8 +2611,8 @@ function handleAvatarUpload(event, hiddenId, previewId) {
     return;
   }
   if (status) status.textContent = lang === 'zh' ? '正在处理照片…' : 'Processing photo…';
-  const reader = new FileReader();
-  reader.onload = () => compressAvatarDataUrl(String(reader.result || ''), 512, 0.82)
+  const sourceUrl = URL.createObjectURL(file);
+  compressAvatarDataUrl(sourceUrl, 512, 0.82)
     .then(dataUrl => {
       if (dataUrl.length > 2 * 1024 * 1024) {
         alert(lang === 'zh' ? '头像压缩后仍然太大，请换一张更小的照片。' : 'The photo is still too large after compression. Please choose a smaller image.');
@@ -2623,8 +2627,8 @@ function handleAvatarUpload(event, hiddenId, previewId) {
     .catch(() => {
       if (status) status.textContent = lang === 'zh' ? '照片读取失败，请重新选择' : 'Could not read photo. Please choose another.';
       alert(lang === 'zh' ? '这张照片暂时无法读取，请在相册里另存为 JPG 后再试。' : 'Could not read this photo. Please save it as JPG and try again.');
-    });
-  reader.readAsDataURL(file);
+    })
+    .finally(() => URL.revokeObjectURL(sourceUrl));
 }
 
 function compressAvatarDataUrl(dataUrl, maxSize, quality) {
@@ -2644,6 +2648,52 @@ function compressAvatarDataUrl(dataUrl, maxSize, quality) {
     image.onerror = reject;
     image.src = dataUrl;
   });
+}
+
+function openMyAvatar() {
+  if (!user) return;
+  openModal(
+    lang === 'zh' ? '我的头像' : 'My Avatar',
+    `<div class="form-grid my-avatar-modal">
+      ${profileAvatarEditor(user, 'myAvatarDataUrl', 'myAvatarPreview', 'handleMyAvatarUpload(event)', 'clearMyAvatar()')}
+      <p class="wide note">${lang === 'zh' ? '这里仅修改您自己的头像，不会改变姓名、角色或任何账号权限。保存后，头像会同步显示在所有电脑、iPad、站内留言和群聊中。' : 'This only changes your own avatar. It does not change your name, role, or permissions. The saved avatar syncs to all devices and internal chats.'}</p>
+    </div>`,
+    saveMyAvatar
+  );
+  document.getElementById('modalSave').textContent = lang === 'zh' ? '保存我的头像' : 'Save My Avatar';
+}
+
+async function saveMyAvatar() {
+  const saveButton = document.getElementById('modalSave');
+  const originalText = saveButton?.textContent || '';
+  try {
+    if (saveButton) {
+      saveButton.disabled = true;
+      saveButton.textContent = lang === 'zh' ? '正在保存…' : 'Saving…';
+    }
+    const body = await api('/api/me', {
+      method: 'PUT',
+      body: JSON.stringify({
+        name: user.name,
+        email: user.email,
+        avatarDataUrl: document.getElementById('myAvatarDataUrl')?.value || ''
+      })
+    });
+    user = body.user;
+    state = body.data;
+    broadcastDataChange();
+    closeModal();
+    renderAuth();
+    render();
+    alert(lang === 'zh' ? '您的头像已经保存并同步到云端。' : 'Your avatar was saved and synced to the cloud.');
+  } catch (err) {
+    alert(err.message);
+  } finally {
+    if (saveButton) {
+      saveButton.disabled = false;
+      saveButton.textContent = originalText;
+    }
+  }
 }
 
 function enhanceExpandablePanels() {

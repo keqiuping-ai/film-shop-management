@@ -76,6 +76,26 @@ aside {
 .mark.small { width: 42px; height: 42px; }
 .brand h1 { margin: 0; font-size: 18px; line-height: 1.2; }
 .brand span { color: #aab7c4; font-size: 12px; }
+.my-profile-entry {
+  margin: 5px 0 0;
+  padding: 3px 6px 3px 3px;
+  border: 0;
+  border-radius: 18px;
+  background: transparent;
+  color: #aab7c4;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  text-align: left;
+}
+.my-profile-entry:hover, .my-profile-entry:focus-visible { background: rgba(255,255,255,.1); color: #fff; outline: none; }
+.my-profile-entry .employee-avatar { border-color: rgba(255,255,255,.35); }
+.my-profile-entry .employee-avatar.small { width: 30px; height: 30px; font-size: 12px; }
+.my-profile-entry-text { display: grid; gap: 1px; }
+.my-profile-entry-hint { color: #7fd3df; font-size: 10px; }
 nav { display: grid; gap: 7px; }
 .nav-btn {
   width: 100%;
