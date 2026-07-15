@@ -777,6 +777,9 @@ async function sync(options = {}) {
     const liveReplyDraft = liveReplyInput?.value ?? replyDraftAtStart;
     const liveReplyHadFocus = document.activeElement === liveReplyInput;
     const liveReplyRevision = prospectReplyRevision;
+    const liveInternalMessageInput = document.getElementById('messageText');
+    const liveInternalMessageDraft = liveInternalMessageInput?.value ?? internalMessageDraft;
+    const liveInternalMessageHadFocus = document.activeElement === liveInternalMessageInput;
     const workspaceAfter = activeProspectWorkspaceId ? JSON.stringify(activeCustomerWorkspaceItem().item || {}) : '';
     preserveProspectWorkspaceRender = Boolean(activeProspectWorkspaceId && (workspaceBefore === workspaceAfter || sidebarWasActive));
     notifyNewUnreadMessages(previousUnreadIds);
@@ -787,8 +790,8 @@ async function sync(options = {}) {
     if (internalMessageModalOpen) {
       renderMessageModal();
       const refreshedInternalInput = document.getElementById('messageText');
-      if (refreshedInternalInput) refreshedInternalInput.value = internalMessageDraft;
-      if (refreshedInternalInput && internalMessageHadFocus) refreshedInternalInput.focus();
+      if (refreshedInternalInput) refreshedInternalInput.value = liveInternalMessageDraft;
+      if (refreshedInternalInput && (liveInternalMessageHadFocus || internalMessageHadFocus)) refreshedInternalInput.focus();
       setTimeout(() => {
         const refreshedThread = document.getElementById('messageThread');
         if (!refreshedThread) return;
@@ -1471,11 +1474,11 @@ function messageBubbleHtml(message) {
   return `<div class="message-row ${mine ? 'mine' : 'theirs'}">
     <div class="message-row-avatar">${userAvatarHtml(sender, 'small')}</div>
     <div class="message-bubble ${mine ? 'mine' : 'theirs'} ${attachmentOnly ? 'attachment-only' : ''}">
-      <button class="message-delete" type="button" title="${lang === 'zh' ? '删除/撤销' : 'Delete'}" onclick="deleteMessage('${message.id}')">×</button>
+      ${message.pending ? '' : `<button class="message-delete" type="button" title="${lang === 'zh' ? '删除/撤销' : 'Delete'}" onclick="deleteMessage('${message.id}')">×</button>`}
       <div class="message-sender-name">${escapeHtml(mine ? (user?.name || (lang === 'zh' ? '我' : 'Me')) : (message.fromName || ''))}</div>
       ${message.text ? `<div class="message-text">${escapeHtml(message.text || '')}</div>` : ''}
       ${messageAttachmentHtml(message.attachment)}
-      <small>${escapeHtml(time)}${readStatus}</small>
+      <small>${escapeHtml(time)}${message.pending ? ` · ${lang === 'zh' ? '发送中…' : 'Sending…'}` : readStatus}</small>
     </div>
   </div>`;
 }
@@ -1563,22 +1566,47 @@ async function sendInternalMessage() {
   const input = document.getElementById('messageText');
   const text = String(input?.value || '').trim();
   if (!activeMessageUserId || !text) return;
-  await postInternalMessage({ text });
+  input.value = '';
+  await postInternalMessage({ text, restoreTextOnError: true });
 }
 
-async function postInternalMessage({ text = '', attachment = null }) {
+async function postInternalMessage({ text = '', attachment = null, restoreTextOnError = false }) {
   if (!activeMessageUserId || (!String(text || '').trim() && !attachment)) return;
+  const recipientId = activeMessageUserId;
+  const pendingId = `pending-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  const pendingMessage = {
+    id: pendingId,
+    pending: true,
+    scope: recipientId === GROUP_CHAT_ID ? 'group' : 'direct',
+    groupId: recipientId === GROUP_CHAT_ID ? 'all-staff' : '',
+    fromUserId: user?.id,
+    fromName: user?.name || user?.email || '',
+    toUserId: recipientId === GROUP_CHAT_ID ? '' : recipientId,
+    text: String(text || '').trim(),
+    attachment,
+    createdAt: new Date().toISOString(),
+    readAt: '',
+    readByUserIds: recipientId === GROUP_CHAT_ID ? [user?.id] : []
+  };
+  state.messages = [...(state.messages || []), pendingMessage];
+  renderMessageModal();
   try {
     state = await api('/api/messages', {
       method: 'POST',
-      body: JSON.stringify(activeMessageUserId === GROUP_CHAT_ID
+      body: JSON.stringify(recipientId === GROUP_CHAT_ID
         ? { groupId: 'all-staff', text: String(text || '').trim(), attachment }
-        : { toUserId: activeMessageUserId, text: String(text || '').trim(), attachment })
+        : { toUserId: recipientId, text: String(text || '').trim(), attachment })
     });
     broadcastDataChange();
     renderMessageModal();
     updateMessageBadge();
   } catch (err) {
+    state.messages = (state.messages || []).filter(message => message.id !== pendingId);
+    if (restoreTextOnError) {
+      const input = document.getElementById('messageText');
+      if (input && !input.value) input.value = String(text || '');
+    }
+    renderMessageModal();
     alert(err.message);
   }
 }
@@ -3577,12 +3605,7 @@ async function deleteProspectMessage(messageId) {
 }
 
 function fileAsDataUrl(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result);
-    reader.onerror = () => reject(new Error(lang === 'zh' ? '读取附件失败' : 'Could not read the attachment'));
-    reader.readAsDataURL(file);
-  });
+  return readBlobAsDataUrl(file);
 }
 
 async function optimizeProspectImage(file) {
@@ -4835,13 +4858,25 @@ function readFileAsDataUrl(file) {
   return readBlobAsDataUrl(file);
 }
 
-function readBlobAsDataUrl(blob) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result || ''));
-    reader.onerror = () => reject(reader.error || new Error('File read failed'));
-    reader.readAsDataURL(blob);
-  });
+async function readBlobAsDataUrl(blob) {
+  if (blob?.arrayBuffer) {
+    const bytes = new Uint8Array(await blob.arrayBuffer());
+    let binary = '';
+    const chunkSize = 0x8000;
+    for (let index = 0; index < bytes.length; index += chunkSize) {
+      binary += String.fromCharCode(...bytes.subarray(index, index + chunkSize));
+    }
+    return `data:${blob.type || 'application/octet-stream'};base64,${btoa(binary)}`;
+  }
+  if (typeof FileReader !== 'undefined') {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result || ''));
+      reader.onerror = () => reject(reader.error || new Error('File read failed'));
+      reader.readAsDataURL(blob);
+    });
+  }
+  throw new Error(lang === 'zh' ? '这个浏览器暂时无法读取附件' : 'This browser cannot read the attachment');
 }
 
 async function importShipmentFile(file) {
