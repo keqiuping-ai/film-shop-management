@@ -1362,6 +1362,38 @@ body.modal-lock .prospect-workspace { pointer-events: none; }
   background: white;
 }
 
+.personal-note-summary {
+  display:flex; align-items:center; justify-content:space-between; gap:12px;
+  padding:12px 14px; margin-bottom:14px; border-radius:10px;
+  background:#f3f8fa; color:var(--muted);
+}
+.personal-note-summary strong { color:var(--text); }
+.personal-note-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:14px; }
+.personal-note-card {
+  min-height:180px; padding:16px; border:1px solid var(--line); border-radius:14px;
+  background:linear-gradient(145deg,#fffef5,#fff9cf); box-shadow:0 8px 20px rgba(30,50,60,.07);
+}
+.personal-note-card.task { background:linear-gradient(145deg,#fff,#ecf8fb); border-color:#b9dfe7; }
+.personal-note-card.completed { opacity:.66; }
+.personal-note-card.completed h3, .personal-note-card.completed p { text-decoration:line-through; }
+.personal-note-card-head { display:flex; align-items:center; justify-content:space-between; gap:10px; }
+.personal-note-kind { font-size:13px; font-weight:700; color:#0f7388; }
+.personal-note-actions { display:flex; gap:6px; align-items:center; }
+.personal-note-card h3 { margin:14px 0 8px; font-size:18px; }
+.personal-note-card p { margin:0 0 14px; color:#42505d; line-height:1.55; overflow-wrap:anywhere; }
+.personal-note-card time { color:#b4640d; font-weight:700; font-size:13px; }
+.empty-state { grid-column:1/-1; padding:60px 20px; text-align:center; color:var(--muted); border:1px dashed var(--line); border-radius:14px; }
+.personal-reminder-overlay { position:fixed; inset:0; z-index:100; display:none; place-items:center; padding:20px; background:rgba(7,18,24,.55); }
+.personal-reminder-overlay.open { display:grid; }
+.personal-reminder-box { width:min(560px,calc(100vw - 30px)); display:grid; grid-template-columns:auto 1fr; gap:18px; padding:26px; border-radius:20px; background:white; box-shadow:0 30px 90px rgba(0,0,0,.35); }
+.personal-reminder-bell { font-size:44px; animation:reminder-ring .8s ease-in-out infinite alternate; transform-origin:top center; }
+.personal-reminder-box small { color:#b4640d; font-weight:800; }
+.personal-reminder-box h2 { margin:6px 0 8px; }
+.personal-reminder-box p { white-space:pre-wrap; line-height:1.5; color:#42505d; }
+.personal-reminder-box time { color:var(--muted); }
+.personal-reminder-buttons { display:flex; justify-content:flex-end; gap:10px; margin-top:20px; }
+@keyframes reminder-ring { from { transform:rotate(-10deg); } to { transform:rotate(10deg); } }
+
 @media (max-width: 980px) {
   .app { grid-template-columns: 1fr; }
   aside { height: auto; position: static; }
@@ -1377,4 +1409,5 @@ body.modal-lock .prospect-workspace { pointer-events: none; }
   .message-people { max-height: 180px; }
   .message-thread { max-height: none; }
   .message-bubble { max-width: 88%; }
+  .personal-note-grid { grid-template-columns:1fr; }
 }

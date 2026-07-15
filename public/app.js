@@ -66,6 +66,9 @@ let messageAudioChunks = [];
 let internalMessageComposing = false;
 let knownUnreadMessageIds = null;
 let messageAudioContext = null;
+let personalReminderTimer = null;
+let personalReminderSoundTimer = null;
+let activePersonalReminderId = '';
 const AUTO_SYNC_MS = 5 * 60 * 1000;
 const DATA_REVISION_POLL_MS = 15 * 1000;
 const MAX_MESSAGE_ATTACHMENT_BYTES = 8 * 1024 * 1024;
@@ -142,6 +145,8 @@ const dict = {
     usersSub: '老板、店长、前台、销售、文员、仓库、师傅、财务',
     settings: '设置',
     settingsSub: '店名、密码、联网安装说明',
+    personalNotes: '我的记事本',
+    personalNotesSub: '私人备忘、待办事项和定时提醒',
     tint: '窗膜',
     wrap: 'TPU改色',
     ppf: 'PPF',
@@ -381,6 +386,8 @@ const dict = {
     usersSub: 'Owner, manager, front desk, sales, clerk, warehouse, installer, finance',
     settings: 'Settings',
     settingsSub: 'Shop name, password, and installation notes',
+    personalNotes: 'My Notebook',
+    personalNotesSub: 'Private memos, tasks, and scheduled reminders',
     tint: 'Window Tint',
     wrap: 'TPU Color Change',
     ppf: 'PPF',
@@ -591,6 +598,7 @@ const pages = [
   ['reports', 'reports', 'reportsSub'],
   ['audit', 'audit', 'auditSub'],
   ['users', 'users', 'usersSub'],
+  ['personalNotes', 'personalNotes', 'personalNotesSub'],
   ['settings', 'settings', 'settingsSub']
 ];
 
@@ -613,6 +621,7 @@ const pagePermissions = {
   reports: 'reportsView',
   audit: ['reportsView', 'usersManage'],
   users: 'usersManage',
+  personalNotes: null,
   settings: null
 };
 
@@ -746,6 +755,7 @@ async function logout() {
   user = null;
   stopAutoSync();
   stopRealtimeSync();
+  stopPersonalReminderChecks();
   renderAuth();
 }
 
@@ -805,6 +815,7 @@ async function sync(options = {}) {
     if (refreshedReplyInput && liveReplyHadFocus && liveReplyRevision === prospectReplyRevision) refreshedReplyInput.focus();
     startAutoSync();
     startRealtimeSync();
+    startPersonalReminderChecks();
     updateSyncStatus();
   } catch (err) {
     if (options.silent) {
@@ -1718,7 +1729,7 @@ function updateVoiceButton(recording) {
 }
 
 function navIcon(id) {
-  return { modules:'▦', dashboard:'⌂', jobs:'▣', installers:'◉', pricing:'$', inventory:'▤', workshopInventory:'▥', inventoryAlerts:'!', customerCenter:'💬', replyLibrary:'☁', prospects:'★', leads:'☎', orders:'⇄', shipments:'✈', schedules:'◫', expenses:'◇', reports:'◌', audit:'◷', users:'◎', settings:'⚙' }[id] || '□';
+  return { modules:'▦', dashboard:'⌂', jobs:'▣', installers:'◉', pricing:'$', inventory:'▤', workshopInventory:'▥', inventoryAlerts:'!', customerCenter:'💬', replyLibrary:'☁', prospects:'★', leads:'☎', orders:'⇄', shipments:'✈', schedules:'◫', expenses:'◇', reports:'◌', audit:'◷', users:'◎', personalNotes:'📝', settings:'⚙' }[id] || '□';
 }
 
 function moduleGrid(availablePages) {
@@ -2352,7 +2363,175 @@ function sortByDateFieldDesc(rows, field) {
   return [...(rows || [])].sort((a, b) => String(b[field] || '').localeCompare(String(a[field] || '')));
 }
 
+function personalNotesList() {
+  return [...(state.personalNotes || [])].sort((a, b) => {
+    if (a.status !== b.status) return a.status === 'pending' ? -1 : 1;
+    const aTime = a.snoozedUntil || a.remindAt || a.updatedAt || '';
+    const bTime = b.snoozedUntil || b.remindAt || b.updatedAt || '';
+    return a.type === 'task' ? String(aTime).localeCompare(String(bTime)) : String(bTime).localeCompare(String(aTime));
+  });
+}
+
+function personalNoteStatus(item) {
+  if (item.type !== 'task') return lang === 'zh' ? '备忘录' : 'Memo';
+  if (item.status === 'completed') return lang === 'zh' ? '已完成' : 'Completed';
+  const due = new Date(item.snoozedUntil || item.remindAt || '').getTime();
+  if (Number.isFinite(due) && due <= Date.now()) return lang === 'zh' ? '已到期' : 'Due';
+  return lang === 'zh' ? '待办' : 'To-do';
+}
+
+function personalNotesView() {
+  const rows = personalNotesList();
+  const pending = rows.filter(item => item.type === 'task' && item.status !== 'completed').length;
+  const cards = rows.map(item => `
+    <article class="personal-note-card ${item.type === 'task' ? 'task' : 'memo'} ${item.status === 'completed' ? 'completed' : ''}">
+      <div class="personal-note-card-head">
+        <span class="personal-note-kind">${escapeHtml(personalNoteStatus(item))}</span>
+        <div class="personal-note-actions">
+          ${item.type === 'task' && item.status !== 'completed' ? `<button class="btn compact" onclick="completePersonalNote('${item.id}')">${lang === 'zh' ? '办完了' : 'Done'}</button>` : ''}
+          <button class="icon-btn" title="${lang === 'zh' ? '编辑' : 'Edit'}" onclick="openPersonalNote('${item.id}')">✎</button>
+          <button class="icon-btn danger" title="${lang === 'zh' ? '删除' : 'Delete'}" onclick="deletePersonalNote('${item.id}')">×</button>
+        </div>
+      </div>
+      <h3>${escapeHtml(item.title || (lang === 'zh' ? '未命名' : 'Untitled'))}</h3>
+      ${item.content ? `<p>${escapeHtml(item.content).replace(/\n/g, '<br>')}</p>` : ''}
+      ${item.type === 'task' && item.remindAt ? `<time>⏰ ${formatAppDateTime(item.snoozedUntil || item.remindAt)}${item.snoozedUntil ? (lang === 'zh' ? '（稍后提醒）' : ' (snoozed)') : ''}</time>` : ''}
+    </article>`).join('');
+  return panel(t('personalNotes'), `
+    <button class="btn" onclick="openPersonalNote('', 'memo')">${lang === 'zh' ? '＋ 新建备忘录' : '+ New memo'}</button>
+    <button class="btn primary" onclick="openPersonalNote('', 'task')">${lang === 'zh' ? '＋ 新建待办' : '+ New task'}</button>`, `
+    <div class="personal-note-summary"><strong>${lang === 'zh' ? `待办 ${pending} 项` : `${pending} pending`}</strong><span>${lang === 'zh' ? '这里的内容只有当前账号本人能看到' : 'Only this account can see these notes'}</span></div>
+    <div class="personal-note-grid">${cards || `<div class="empty-state">${lang === 'zh' ? '还没有记事，点击右上角开始记录。' : 'No notes yet.'}</div>`}</div>`);
+}
+
+function openPersonalNote(noteId = '', forcedType = '') {
+  const item = (state.personalNotes || []).find(row => row.id === noteId) || {};
+  const type = forcedType || item.type || 'memo';
+  const localDateTime = item.remindAt ? new Date(new Date(item.remindAt).getTime() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16) : '';
+  openModal(noteId ? (lang === 'zh' ? '编辑记事' : 'Edit note') : (lang === 'zh' ? '新建记事' : 'New note'), `
+    <div class="form-grid">
+      <label>${lang === 'zh' ? '类型' : 'Type'}<select id="personalNoteType" onchange="togglePersonalReminderField()"><option value="memo" ${type === 'memo' ? 'selected' : ''}>${lang === 'zh' ? '普通备忘录（不提醒）' : 'Memo (no reminder)'}</option><option value="task" ${type === 'task' ? 'selected' : ''}>${lang === 'zh' ? '待办事项（定时提醒）' : 'Task (scheduled reminder)'}</option></select></label>
+      <label>${lang === 'zh' ? '标题' : 'Title'}<input id="personalNoteTitle" value="${escapeHtml(item.title || '')}" placeholder="${lang === 'zh' ? '例如：明天给张三发货' : 'e.g. Ship order tomorrow'}"></label>
+      <label id="personalReminderField" class="${type === 'task' ? '' : 'hidden'}">${lang === 'zh' ? '提醒日期和时间' : 'Reminder date and time'}<input id="personalNoteRemindAt" type="datetime-local" value="${localDateTime}"></label>
+      <label class="span-2">${lang === 'zh' ? '内容' : 'Details'}<textarea id="personalNoteContent" rows="8" placeholder="${lang === 'zh' ? '记录详细内容、电话、地址或要办的事情……' : 'Write details...'}">${escapeHtml(item.content || '')}</textarea></label>
+    </div>`, () => savePersonalNote(noteId));
+}
+
+function togglePersonalReminderField() {
+  document.getElementById('personalReminderField')?.classList.toggle('hidden', document.getElementById('personalNoteType')?.value !== 'task');
+}
+
+async function savePersonalNote(noteId) {
+  const type = document.getElementById('personalNoteType').value;
+  const title = document.getElementById('personalNoteTitle').value.trim();
+  const content = document.getElementById('personalNoteContent').value.trim();
+  const localReminder = document.getElementById('personalNoteRemindAt').value;
+  if (!title) return alert(lang === 'zh' ? '请填写标题' : 'Please enter a title');
+  if (type === 'task' && !localReminder) return alert(lang === 'zh' ? '待办事项需要选择提醒时间' : 'Choose a reminder time');
+  const body = { type, title, content, remindAt: type === 'task' ? new Date(localReminder).toISOString() : '', status: itemStatusForSave(noteId, type) };
+  try {
+    const result = await api(`/api/personal-notes${noteId ? `/${noteId}` : ''}`, { method: noteId ? 'PUT' : 'POST', body: JSON.stringify(body) });
+    state = result.data;
+    closeModal();
+    render();
+    startPersonalReminderChecks();
+    broadcastDataChange();
+  } catch (err) { alert(err.message); }
+}
+
+function itemStatusForSave(noteId, type) {
+  if (type !== 'task') return 'pending';
+  return (state.personalNotes || []).find(item => item.id === noteId)?.status || 'pending';
+}
+
+async function updatePersonalNote(noteId, patch) {
+  const item = (state.personalNotes || []).find(row => row.id === noteId);
+  if (!item) return;
+  const result = await api(`/api/personal-notes/${noteId}`, { method: 'PUT', body: JSON.stringify({ ...item, ...patch }) });
+  state = result.data;
+  render();
+  startPersonalReminderChecks();
+  broadcastDataChange();
+}
+
+async function completePersonalNote(noteId) {
+  try { await updatePersonalNote(noteId, { status: 'completed', snoozedUntil: '' }); closePersonalReminder(); } catch (err) { alert(err.message); }
+}
+
+async function snoozePersonalNote(noteId, minutes = 10) {
+  try { await updatePersonalNote(noteId, { status: 'pending', snoozedUntil: new Date(Date.now() + minutes * 60000).toISOString() }); closePersonalReminder(); } catch (err) { alert(err.message); }
+}
+
+async function deletePersonalNote(noteId) {
+  if (!confirm(lang === 'zh' ? '确定删除这条记事吗？' : 'Delete this note?')) return;
+  try {
+    const result = await api(`/api/personal-notes/${noteId}`, { method: 'DELETE' });
+    state = result.data;
+    if (activePersonalReminderId === noteId) closePersonalReminder();
+    render();
+    broadcastDataChange();
+  } catch (err) { alert(err.message); }
+}
+
+function duePersonalNote() {
+  return (state?.personalNotes || []).filter(item => item.type === 'task' && item.status !== 'completed').find(item => {
+    const due = new Date(item.snoozedUntil || item.remindAt || '').getTime();
+    return Number.isFinite(due) && due <= Date.now();
+  });
+}
+
+function playPersonalReminderSound() {
+  const ctx = getMessageAudioContext();
+  if (!ctx || ctx.state === 'suspended') return;
+  const start = ctx.currentTime + .02;
+  playTone(ctx, start, 784); playTone(ctx, start + .2, 1047); playTone(ctx, start + .4, 1319);
+}
+
+function showPersonalReminder(item) {
+  activePersonalReminderId = item.id;
+  let overlay = document.getElementById('personalReminderOverlay');
+  if (!overlay) {
+    overlay = document.createElement('div');
+    overlay.id = 'personalReminderOverlay';
+    overlay.className = 'personal-reminder-overlay';
+    document.body.appendChild(overlay);
+  }
+  overlay.innerHTML = `<div class="personal-reminder-box"><div class="personal-reminder-bell">🔔</div><div><small>${lang === 'zh' ? '待办事项到时间了' : 'Task reminder'}</small><h2>${escapeHtml(item.title)}</h2>${item.content ? `<p>${escapeHtml(item.content)}</p>` : ''}<time>${formatAppDateTime(item.remindAt)}</time><div class="personal-reminder-buttons"><button class="btn" onclick="snoozePersonalNote('${item.id}', 10)">${lang === 'zh' ? '10分钟后提醒' : 'Remind in 10 min'}</button><button class="btn primary" onclick="completePersonalNote('${item.id}')">${lang === 'zh' ? '✓ 已办完' : '✓ Done'}</button></div></div></div>`;
+  overlay.classList.add('open');
+  playPersonalReminderSound();
+  clearInterval(personalReminderSoundTimer);
+  personalReminderSoundTimer = setInterval(playPersonalReminderSound, 15000);
+  if ('Notification' in window && Notification.permission === 'granted') new Notification(item.title, { body: item.content || (lang === 'zh' ? '待办事项到时间了' : 'Task is due') });
+}
+
+function closePersonalReminder() {
+  document.getElementById('personalReminderOverlay')?.classList.remove('open');
+  clearInterval(personalReminderSoundTimer);
+  personalReminderSoundTimer = null;
+  activePersonalReminderId = '';
+}
+
+function checkPersonalReminders() {
+  if (!state || !user) return;
+  const item = duePersonalNote();
+  if (!item) return closePersonalReminder();
+  if (activePersonalReminderId !== item.id) showPersonalReminder(item);
+}
+
+function startPersonalReminderChecks() {
+  if (!token || !state) return;
+  if (!personalReminderTimer) personalReminderTimer = setInterval(checkPersonalReminders, 10000);
+  checkPersonalReminders();
+}
+
+function stopPersonalReminderChecks() {
+  clearInterval(personalReminderTimer);
+  personalReminderTimer = null;
+  closePersonalReminder();
+}
+
 const views = {
+  personalNotes() { return personalNotesView(); },
   dashboard() {
     const dashboardJobs = filteredJobs(false);
     const dashboardOrders = filteredSalesOrders();

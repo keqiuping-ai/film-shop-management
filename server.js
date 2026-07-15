@@ -202,6 +202,7 @@ function seedDb() {
     shipments: [],
     schedules: [],
     scheduleReminderLogs: [],
+    personalNotes: [],
     customerServiceReps: [
       { id: id(), name: '前台客服', role: '前台', invitePay: 20, closePay: 50, active: true }
     ],
@@ -252,6 +253,7 @@ function readDb() {
   if (!Array.isArray(db.shipments)) db.shipments = [];
   if (!Array.isArray(db.schedules)) db.schedules = [];
   if (!Array.isArray(db.scheduleReminderLogs)) db.scheduleReminderLogs = [];
+  if (!Array.isArray(db.personalNotes)) db.personalNotes = [];
   if (!Array.isArray(db.messages)) db.messages = [];
   if (!Array.isArray(db.clockRecords)) db.clockRecords = [];
   if (!Array.isArray(db.leaveRequests)) db.leaveRequests = [];
@@ -943,6 +945,7 @@ function sanitizeDbForUser(db, user) {
     users: p.usersManage || p.schedulesView ? db.users.map(safeUser) : [safeUser(user)],
     messageUsers: db.users.filter(item => item.active !== false).map(safeUser),
     messages: messagesForUser(db, user),
+    personalNotes: (db.personalNotes || []).filter(item => item.ownerUserId === user.id),
     installers: p.installerView || p.jobsView ? db.installers.map(installer => sanitizeInstaller(installer, p)) : [],
     products: p.inventoryView ? sanitizeProducts(db.products, canSeeCosts) : [],
     priceRules: p.pricingView ? db.priceRules.map(rule => canSeeCosts ? rule : { ...rule, materialCost: 0 }) : [],
@@ -2655,6 +2658,57 @@ async function api(req, res) {
 
   if (req.method === 'GET' && url.pathname === '/api/mobile/bootstrap') {
     return send(res, 200, mobileSnapshot(db, user), undefined, req);
+  }
+
+  const personalNoteMatch = url.pathname.match(/^\/api\/personal-notes(?:\/([^/]+))?$/);
+  if (personalNoteMatch) {
+    const noteId = personalNoteMatch[1] || '';
+    if (req.method === 'GET') return send(res, 200, (db.personalNotes || []).filter(item => item.ownerUserId === user.id));
+    if (req.method === 'POST') {
+      const body = await readBody(req);
+      const type = body.type === 'task' ? 'task' : 'memo';
+      const title = String(body.title || '').trim().slice(0, 200);
+      const content = String(body.content || '').trim().slice(0, 20000);
+      const remindAt = type === 'task' ? String(body.remindAt || '').trim() : '';
+      if (!title) return send(res, 400, { error: '请填写记事标题' });
+      if (type === 'task' && (!remindAt || Number.isNaN(new Date(remindAt).getTime()))) return send(res, 400, { error: '请选择正确的提醒日期和时间' });
+      const now = new Date().toISOString();
+      const item = { id: id(), ownerUserId: user.id, type, title, content, remindAt, snoozedUntil: '', status: 'pending', createdAt: now, updatedAt: now, completedAt: '' };
+      db.personalNotes.push(item);
+      audit(db, user, 'create-personal-note', { collection: 'personalNotes', recordId: item.id, recordLabel: '私人记事', detail: '新增个人记事（内容保持私密）' });
+      writeDb(db);
+      notifyDataChanged('personal-note-created', { ownerUserId: user.id });
+      return send(res, 201, { item, data: sanitizeDbForUser(db, user) });
+    }
+    const index = (db.personalNotes || []).findIndex(item => item.id === noteId && item.ownerUserId === user.id);
+    if (index < 0) return send(res, 404, { error: '没有找到这条记事' });
+    if (req.method === 'PUT') {
+      const body = await readBody(req);
+      const existing = db.personalNotes[index];
+      const type = body.type === 'task' ? 'task' : 'memo';
+      const title = String(body.title || '').trim().slice(0, 200);
+      const content = String(body.content || '').trim().slice(0, 20000);
+      const remindAt = type === 'task' ? String(body.remindAt || '').trim() : '';
+      const snoozedUntil = type === 'task' ? String(body.snoozedUntil || '').trim() : '';
+      const status = body.status === 'completed' ? 'completed' : 'pending';
+      if (!title) return send(res, 400, { error: '请填写记事标题' });
+      if (type === 'task' && (!remindAt || Number.isNaN(new Date(remindAt).getTime()))) return send(res, 400, { error: '请选择正确的提醒日期和时间' });
+      if (snoozedUntil && Number.isNaN(new Date(snoozedUntil).getTime())) return send(res, 400, { error: '稍后提醒时间不正确' });
+      const item = { ...existing, type, title, content, remindAt, snoozedUntil, status, updatedAt: new Date().toISOString(), completedAt: status === 'completed' ? (existing.completedAt || new Date().toISOString()) : '' };
+      db.personalNotes[index] = item;
+      audit(db, user, 'update-personal-note', { collection: 'personalNotes', recordId: item.id, recordLabel: '私人记事', detail: status === 'completed' ? '完成个人待办（内容保持私密）' : '修改个人记事（内容保持私密）' });
+      writeDb(db);
+      notifyDataChanged('personal-note-updated', { ownerUserId: user.id });
+      return send(res, 200, { item, data: sanitizeDbForUser(db, user) });
+    }
+    if (req.method === 'DELETE') {
+      db.personalNotes.splice(index, 1);
+      audit(db, user, 'delete-personal-note', { collection: 'personalNotes', recordId: noteId, recordLabel: '私人记事', detail: '删除个人记事（内容保持私密）' });
+      writeDb(db);
+      notifyDataChanged('personal-note-deleted', { ownerUserId: user.id });
+      return send(res, 200, { ok: true, data: sanitizeDbForUser(db, user) });
+    }
+    return send(res, 405, { error: 'Method not allowed' });
   }
 
   if (req.method === 'POST' && url.pathname === '/api/mobile/clock') {
