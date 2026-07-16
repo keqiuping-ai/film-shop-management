@@ -1074,14 +1074,42 @@ body.modal-lock .prospect-workspace { pointer-events: none; }
 .confirmation-editor-intro { display:flex; justify-content:space-between; gap:12px; align-items:center; padding:12px 14px; margin-bottom:14px; border-radius:10px; background:#eef7f8; }
 .confirmation-editor-intro span { color:var(--muted); font-size:13px; text-align:right; }
 .confirmation-editor-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; }
+.confirmation-editor-grid.confirmation-top-grid { grid-template-columns:repeat(3,minmax(0,1fr)); }
 .confirmation-editor-grid.compact { margin-top:12px; }
 .confirmation-editor-grid label { display:flex; flex-direction:column; gap:6px; color:var(--muted); font-weight:700; }
 .confirmation-editor-grid .span-2 { grid-column:span 2; }
+.confirmation-editor-grid .span-3 { grid-column:span 3; }
 .confirmation-editor-section { margin-top:14px; padding:14px; border:1px solid var(--line); border-radius:12px; }
 .confirmation-editor-section h4 { margin:0 0 10px; color:var(--primary); }
 .confirmation-check-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; }
 .confirmation-check-grid label { display:flex; align-items:center; gap:7px; min-height:38px; padding:7px 9px; border:1px solid var(--line); border-radius:9px; font-size:13px; }
 .confirmation-check-grid input { width:auto; }
+.confirmation-modal-open .dialog { width:min(1180px,calc(100vw - 24px)); max-height:calc(100vh - 24px); }
+.confirmation-modal-open .dialog .body { padding:12px 16px; }
+.confirmation-modal-open .confirmation-editor-intro { padding:8px 10px; margin-bottom:9px; }
+.confirmation-modal-open .confirmation-editor-grid { gap:8px 10px; }
+.confirmation-modal-open .confirmation-editor-grid label { gap:3px; font-size:13px; }
+.confirmation-modal-open .confirmation-editor-grid input,
+.confirmation-modal-open .confirmation-editor-grid select { min-height:36px; height:36px; padding:6px 10px; }
+.confirmation-modal-open .confirmation-editor-grid textarea { min-height:58px; padding:7px 10px; }
+.confirmation-modal-open .confirmation-editor-section { margin-top:9px; padding:10px; }
+.confirmation-modal-open .confirmation-editor-section h4 { margin-bottom:7px; }
+.confirmation-selection-layout { display:grid; grid-template-columns:minmax(320px,.9fr) minmax(420px,1.4fr); gap:12px; align-items:center; }
+.confirmation-selection-layout .confirmation-car-diagram { display:block; width:100%; height:150px; padding:5px; border:1px solid var(--line); border-radius:10px; background:#f8fafb; }
+.confirmation-selection-layout .car-outline,.confirmation-selection-layout .car-panel,.confirmation-selection-layout .car-glass { fill:#fff; stroke:#263746; stroke-width:2; transition:.15s; }
+.confirmation-selection-layout .selected { fill:#79cbd4; }
+.confirmation-selection-layout text { font:bold 13px Arial; text-anchor:middle; fill:#14222e; pointer-events:none; }
+.confirmation-selection-layout .diagram-part { cursor:pointer; }
+.confirmation-selection-layout .diagram-part:hover > path,.confirmation-selection-layout .diagram-part:hover > rect { fill:#dff4f6; }
+.confirmation-photo-block { border:1px dashed #9fb6c8; border-radius:10px; padding:8px; }
+.confirmation-photo-head { display:flex; justify-content:space-between; align-items:center; gap:10px; }
+.confirmation-photo-head .btn { min-height:34px; padding:5px 10px; }
+.confirmation-photo-empty { display:block; padding:9px 0 2px; color:var(--muted); font-size:13px; }
+.confirmation-photo-grid { display:flex; flex-wrap:wrap; gap:8px; margin-top:8px; }
+.confirmation-photo-grid figure { position:relative; width:112px; margin:0; }
+.confirmation-photo-grid img { width:112px; height:76px; object-fit:cover; border-radius:8px; border:1px solid var(--line); }
+.confirmation-photo-grid button { position:absolute; top:3px; right:3px; width:24px; height:24px; border:0; border-radius:50%; color:#fff; background:rgba(0,0,0,.68); cursor:pointer; }
+.confirmation-photo-grid figcaption { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:11px; color:var(--muted); }
 .print-root { display:none; }
 
 @media print {
@@ -1129,6 +1157,10 @@ body.modal-lock .prospect-workspace { pointer-events: none; }
   .confirmation-check-grid { grid-template-columns:1fr; }
   .confirmation-editor-grid { grid-template-columns:1fr; }
   .confirmation-editor-grid .span-2 { grid-column:auto; }
+  .confirmation-editor-grid.confirmation-top-grid { grid-template-columns:1fr; }
+  .confirmation-editor-grid .span-3 { grid-column:auto; }
+  .confirmation-selection-layout { grid-template-columns:1fr; }
+  .confirmation-selection-layout .confirmation-car-diagram { height:130px; }
 }
 .message-modal-open .dialog {
   width: calc(100vw - 16px);

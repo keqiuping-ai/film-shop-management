@@ -4548,6 +4548,9 @@ function openJob(id, preset = {}) {
   }
 }
 
+let jobConfirmationPhotoDraft = [];
+let jobConfirmationPhotoUploading = false;
+
 const tintConfirmationParts = [
   ['windshield','前挡风玻璃 / Windshield'], ['frontLeft','左前门玻璃 / Left front'], ['frontRight','右前门玻璃 / Right front'],
   ['rearLeft','左后门玻璃 / Left rear'], ['rearRight','右后门玻璃 / Right rear'], ['rearWindow','后挡风玻璃 / Rear window'],
@@ -4562,7 +4565,7 @@ const ppfConfirmationParts = [
 
 function confirmationCheckList(name, options, selected = []) {
   const values = new Set(Array.isArray(selected) ? selected : []);
-  return `<div class="confirmation-check-grid">${options.map(([value, label]) => `<label><input type="checkbox" name="${name}" value="${value}" ${values.has(value) ? 'checked' : ''}><span>${escapeHtml(label)}</span></label>`).join('')}</div>`;
+  return `<div class="confirmation-check-grid">${options.map(([value, label]) => `<label><input type="checkbox" name="${name}" value="${value}" ${values.has(value) ? 'checked' : ''} onchange="refreshConfirmationDiagrams()"><span>${escapeHtml(label)}</span></label>`).join('')}</div>`;
 }
 
 function openJobConfirmation(jobId) {
@@ -4572,19 +4575,21 @@ function openJobConfirmation(jobId) {
   const services = jobServices(job);
   const showTint = services.includes('tint');
   const showPpf = services.includes('ppf');
+  jobConfirmationPhotoDraft = Array.isArray(confirmation.damagePhotos) ? confirmation.damagePhotos.map(photo => ({ ...photo })) : [];
   openModal(lang === 'zh' ? '客户施工确认单' : 'Customer Installation Confirmation', `
     <div class="confirmation-editor-intro">
       <strong>${escapeHtml(job.customer || '')} · ${escapeHtml(job.vehicle || '')}</strong>
       <span>${lang === 'zh' ? '勾选施工位置并填写必要说明；保存后在打印窗口选择 Brother HL-L2465DW、A4、纵向、100%比例。' : 'Select installation areas, then print to Brother HL-L2465DW on A4 portrait at 100% scale.'}</span>
     </div>
-    <div class="confirmation-editor-grid">
+    <div class="confirmation-editor-grid confirmation-top-grid">
       <label>${lang === 'zh' ? '车牌 / VIN' : 'Plate / VIN'}<input id="confirmVin" value="${escapeHtml(confirmation.vin || job.vin || '')}"></label>
       <label>${lang === 'zh' ? '车身颜色' : 'Vehicle color'}<input id="confirmVehicleColor" value="${escapeHtml(confirmation.vehicleColor || '')}"></label>
-      <label class="span-2">${lang === 'zh' ? '特殊配置（雷达、摄像头、电子锁等）' : 'Special equipment'}<input id="confirmSpecialEquipment" value="${escapeHtml(confirmation.specialEquipment || '')}"></label>
+      <label>打印语言 / Print language<select id="confirmPrintLanguage"><option value="en" ${(confirmation.printLanguage || 'en') === 'en' ? 'selected' : ''}>English 英文</option><option value="zh" ${confirmation.printLanguage === 'zh' ? 'selected' : ''}>中文 Chinese</option><option value="bilingual" ${confirmation.printLanguage === 'bilingual' ? 'selected' : ''}>中英双语 Bilingual</option></select></label>
+      <label class="span-3">${lang === 'zh' ? '特殊配置（雷达、摄像头、电子锁等）' : 'Special equipment'}<input id="confirmSpecialEquipment" value="${escapeHtml(confirmation.specialEquipment || '')}"></label>
     </div>
-    ${showTint ? `<section class="confirmation-editor-section"><h4>窗膜施工位置 / WINDOW TINT</h4>${confirmationCheckList('confirmTintPart', tintConfirmationParts, confirmation.tintParts)}
+    ${showTint ? `<section class="confirmation-editor-section"><h4>窗膜施工位置 / WINDOW TINT</h4><div class="confirmation-selection-layout"><div id="confirmTintDiagram">${tintVehicleDiagram(confirmation.tintParts, true)}</div>${confirmationCheckList('confirmTintPart', tintConfirmationParts, confirmation.tintParts)}</div>
       <div class="confirmation-editor-grid compact"><label>膜系列 / Film<input id="confirmTintFilm" value="${escapeHtml(confirmation.tintFilm || job.package || '')}"></label><label>透光率 VLT<input id="confirmTintVlt" value="${escapeHtml(confirmation.tintVlt || '')}" placeholder="例如 NA70 / NA28 / NA15"></label></div></section>` : ''}
-    ${showPpf ? `<section class="confirmation-editor-section"><h4>PPF施工位置 / PAINT PROTECTION FILM</h4>${confirmationCheckList('confirmPpfPart', ppfConfirmationParts, confirmation.ppfParts)}
+    ${showPpf ? `<section class="confirmation-editor-section"><h4>PPF施工位置 / PAINT PROTECTION FILM</h4><div class="confirmation-selection-layout"><div id="confirmPpfDiagram">${ppfVehicleDiagram(confirmation.ppfParts, true)}</div>${confirmationCheckList('confirmPpfPart', ppfConfirmationParts, confirmation.ppfParts)}</div>
       <div class="confirmation-editor-grid compact"><label>PPF产品 / Film<input id="confirmPpfFilm" value="${escapeHtml(confirmation.ppfFilm || job.package || '')}"></label><label>表面 / Finish<select id="confirmPpfFinish"><option value="gloss" ${confirmation.ppfFinish !== 'matte' ? 'selected' : ''}>亮面 Gloss</option><option value="matte" ${confirmation.ppfFinish === 'matte' ? 'selected' : ''}>哑面 Matte</option></select></label></div></section>` : ''}
     ${!showTint && !showPpf ? `<p class="note">${lang === 'zh' ? '本施工单没有选择窗膜或 PPF；确认单仍会打印基础施工资料。' : 'This job has no tint or PPF service selected.'}</p>` : ''}
     <section class="confirmation-editor-section"><h4>施工要求与风险 / REQUIREMENTS & RISKS</h4>
@@ -4593,12 +4598,64 @@ function openJobConfirmation(jobId) {
         <label>无刀施工 / Blade-free<select id="confirmBladeFree"><option value="yes" ${confirmation.bladeFree !== 'no' ? 'selected' : ''}>是 Yes</option><option value="no" ${confirmation.bladeFree === 'no' ? 'selected' : ''}>否 No</option></select></label>
         <label>包边要求 / Edge wrap<input id="confirmEdgeWrap" value="${escapeHtml(confirmation.edgeWrap || '')}" placeholder="mm / 说明"></label>
         <label>预计交车 / Delivery<input id="confirmDelivery" type="date" value="${escapeHtml(confirmation.deliveryDate || job.scheduleDate || '')}"></label>
-        <label class="span-2">原车状况及风险 / Existing damage & risks<textarea id="confirmRisks" rows="3">${escapeHtml(confirmation.risks || '')}</textarea></label>
-        <label class="span-2">其他说明 / Other notes<textarea id="confirmNotes" rows="3">${escapeHtml(confirmation.notes || job.notes || '')}</textarea></label>
+        <label class="span-2">原车状况及风险 / Existing damage & risks<textarea id="confirmRisks" rows="2">${escapeHtml(confirmation.risks || '')}</textarea></label>
+        <div class="span-2 confirmation-photo-block"><div class="confirmation-photo-head"><b>原车刮蹭照片 / Damage photos</b><button type="button" class="btn" onclick="document.getElementById('confirmDamagePhotoInput').click()">📷 拍照 / 上传</button><input id="confirmDamagePhotoInput" type="file" accept="image/*" capture="environment" multiple hidden onchange="uploadJobDamagePhotos(event)"></div><div id="confirmDamagePhotoList"></div></div>
+        <label class="span-2">其他说明 / Other notes<textarea id="confirmNotes" rows="2">${escapeHtml(confirmation.notes || job.notes || '')}</textarea></label>
       </div>
     </section>`, () => saveAndPrintJobConfirmation(jobId));
+  document.getElementById('modal')?.classList.add('confirmation-modal-open');
+  renderJobDamagePhotos();
   const save = document.getElementById('modalSave');
   if (save) save.textContent = lang === 'zh' ? '保存并打印 A4' : 'Save & Print A4';
+}
+
+function refreshConfirmationDiagrams() {
+  const tint = document.getElementById('confirmTintDiagram');
+  const ppf = document.getElementById('confirmPpfDiagram');
+  if (tint) tint.innerHTML = tintVehicleDiagram(checkedConfirmationValues('confirmTintPart'), true);
+  if (ppf) ppf.innerHTML = ppfVehicleDiagram(checkedConfirmationValues('confirmPpfPart'), true);
+}
+
+function toggleConfirmationPart(name, value) {
+  const box = document.querySelector(`input[name="${name}"][value="${value}"]`);
+  if (!box) return;
+  box.checked = !box.checked;
+  refreshConfirmationDiagrams();
+}
+
+function renderJobDamagePhotos() {
+  const root = document.getElementById('confirmDamagePhotoList');
+  if (!root) return;
+  root.innerHTML = jobConfirmationPhotoDraft.length ? `<div class="confirmation-photo-grid">${jobConfirmationPhotoDraft.map((photo, index) => `<figure><img src="${escapeHtml(photo.url || '')}" alt="${escapeHtml(photo.name || 'Damage photo')}"><button type="button" aria-label="删除" onclick="removeJobDamagePhoto(${index})">×</button><figcaption>${escapeHtml(photo.name || `照片 ${index + 1}`)}</figcaption></figure>`).join('')}</div>` : '<span class="confirmation-photo-empty">尚未上传照片 / No photos uploaded</span>';
+}
+
+function removeJobDamagePhoto(index) {
+  jobConfirmationPhotoDraft.splice(index, 1);
+  renderJobDamagePhotos();
+}
+
+async function uploadJobDamagePhotos(event) {
+  const input = event?.target;
+  const files = [...(input?.files || [])];
+  if (!files.length || jobConfirmationPhotoUploading) return;
+  if (jobConfirmationPhotoDraft.length + files.length > 8) return alert('最多保存 8 张原车照片 / Maximum 8 photos');
+  jobConfirmationPhotoUploading = true;
+  const save = document.getElementById('modalSave');
+  if (save) save.disabled = true;
+  try {
+    for (const original of files) {
+      const file = await optimizeProspectImage(original);
+      const uploaded = await api('/api/job-media/upload', { method: 'POST', body: JSON.stringify({ name: file.name, type: file.type || 'image/jpeg', dataUrl: await fileAsDataUrl(file) }) });
+      jobConfirmationPhotoDraft.push({ name: uploaded.name, type: uploaded.type, size: uploaded.size, url: uploaded.url });
+      renderJobDamagePhotos();
+    }
+  } catch (err) {
+    alert(err.message);
+  } finally {
+    jobConfirmationPhotoUploading = false;
+    if (save) save.disabled = false;
+    if (input) input.value = '';
+  }
 }
 
 function checkedConfirmationValues(name) {
@@ -4621,6 +4678,8 @@ async function saveAndPrintJobConfirmation(jobId) {
     deliveryDate: document.getElementById('confirmDelivery')?.value || '', risks: document.getElementById('confirmRisks')?.value.trim() || '',
     notes: document.getElementById('confirmNotes')?.value.trim() || '', updatedAt: new Date().toISOString(), updatedBy: user?.name || ''
   };
+  confirmation.printLanguage = document.getElementById('confirmPrintLanguage')?.value || 'en';
+  confirmation.damagePhotos = jobConfirmationPhotoDraft.map(photo => ({ name: photo.name, type: photo.type, size: photo.size, url: photo.url }));
   try {
     state = await api(`/api/jobs/${jobId}`, { method: 'PUT', body: JSON.stringify({ confirmation }) });
     const savedJob = state.jobs.find(row => row.id === jobId) || { ...job, confirmation };
@@ -4640,54 +4699,58 @@ function confirmationSelectedLabels(selected, options) {
   return options.filter(([value]) => selected?.includes(value)).map(([, label]) => label).join('；') || '—';
 }
 
-function tintVehicleDiagram(selected = []) {
+function tintVehicleDiagram(selected = [], interactive = false, printLanguage = 'bilingual') {
+  const click = value => interactive ? ` onclick="toggleConfirmationPart('confirmTintPart','${value}')"` : '';
   return `<svg class="confirmation-car-diagram" viewBox="0 0 520 190" role="img" aria-label="Window tint locations">
     <path class="car-outline" d="M70 55 Q105 18 180 15 H340 Q415 18 450 55 L480 135 Q474 170 430 174 H90 Q46 170 40 135Z"/>
-    <path class="car-glass ${selected.includes('windshield') ? 'selected' : ''}" d="M174 31 H346 L386 70 H134Z"/><text x="260" y="55">前挡</text>
-    <path class="car-glass ${selected.includes('frontLeft') ? 'selected' : ''}" d="M117 78 H245 V112 H96Z"/><text x="169" y="100">左前</text>
-    <path class="car-glass ${selected.includes('frontRight') ? 'selected' : ''}" d="M275 78 H403 L424 112 H275Z"/><text x="351" y="100">右前</text>
-    <path class="car-glass ${selected.includes('rearLeft') ? 'selected' : ''}" d="M91 119 H245 V151 H77Z"/><text x="163" y="140">左后</text>
-    <path class="car-glass ${selected.includes('rearRight') ? 'selected' : ''}" d="M275 119 H429 L443 151 H275Z"/><text x="357" y="140">右后</text>
-    <path class="car-glass ${selected.includes('rearWindow') ? 'selected' : ''}" d="M190 157 H330 L351 174 H169Z"/><text x="260" y="170">后挡</text>
-    <rect class="car-glass ${selected.includes('sunroof') ? 'selected' : ''}" x="225" y="78" width="70" height="55" rx="8"/><text x="260" y="110">天窗</text>
+    <g class="diagram-part"${click('windshield')}><path class="car-glass ${selected.includes('windshield') ? 'selected' : ''}" d="M174 31 H346 L386 70 H134Z"/><text x="260" y="55">前挡 Windshield</text></g>
+    <g class="diagram-part"${click('frontLeft')}><path class="car-glass ${selected.includes('frontLeft') ? 'selected' : ''}" d="M117 78 H245 V112 H96Z"/><text x="169" y="100">左前 LF</text></g>
+    <g class="diagram-part"${click('frontRight')}><path class="car-glass ${selected.includes('frontRight') ? 'selected' : ''}" d="M275 78 H403 L424 112 H275Z"/><text x="351" y="100">右前 RF</text></g>
+    <g class="diagram-part"${click('rearLeft')}><path class="car-glass ${selected.includes('rearLeft') ? 'selected' : ''}" d="M91 119 H245 V151 H77Z"/><text x="163" y="140">左后 LR</text></g>
+    <g class="diagram-part"${click('rearRight')}><path class="car-glass ${selected.includes('rearRight') ? 'selected' : ''}" d="M275 119 H429 L443 151 H275Z"/><text x="357" y="140">右后 RR</text></g>
+    <g class="diagram-part"${click('rearWindow')}><path class="car-glass ${selected.includes('rearWindow') ? 'selected' : ''}" d="M190 157 H330 L351 174 H169Z"/><text x="260" y="170">后挡 Rear</text></g>
+    <g class="diagram-part"${click('sunroof')}><rect class="car-glass ${selected.includes('sunroof') ? 'selected' : ''}" x="225" y="78" width="70" height="55" rx="8"/><text x="260" y="110">天窗 Roof</text></g>
   </svg>`;
 }
 
-function ppfVehicleDiagram(selected = []) {
+function ppfVehicleDiagram(selected = [], interactive = false, printLanguage = 'bilingual') {
   const all = selected.includes('fullVehicle');
   const on = key => all || selected.includes(key) || (selected.includes('fullFront') && ['frontBumper','hood','leftFender','rightFender'].includes(key));
+  const click = value => interactive ? ` onclick="toggleConfirmationPart('confirmPpfPart','${value}')"` : '';
   return `<svg class="confirmation-car-diagram" viewBox="0 0 520 190" role="img" aria-label="PPF locations">
     <path class="car-outline ${all ? 'selected' : ''}" d="M46 130 L72 75 Q97 35 170 29 H350 Q423 35 448 75 L474 130 L454 165 H66Z"/>
-    <path class="car-panel ${on('frontBumper') ? 'selected' : ''}" d="M46 130 H474 L454 165 H66Z"/><text x="260" y="153">前杠</text>
-    <path class="car-panel ${on('hood') ? 'selected' : ''}" d="M143 76 H377 L410 126 H110Z"/><text x="260" y="106">引擎盖</text>
-    <path class="car-panel ${on('leftFender') ? 'selected' : ''}" d="M72 76 H143 L110 126 H52Z"/><text x="99" y="104">左叶</text>
-    <path class="car-panel ${on('rightFender') ? 'selected' : ''}" d="M377 76 H448 L468 126 H410Z"/><text x="421" y="104">右叶</text>
-    <path class="car-panel ${on('roof') ? 'selected' : ''}" d="M188 38 H332 L362 70 H158Z"/><text x="260" y="60">车顶</text>
+    <g class="diagram-part"${click('frontBumper')}><path class="car-panel ${on('frontBumper') ? 'selected' : ''}" d="M46 130 H474 L454 165 H66Z"/><text x="260" y="153">前保险杠 Front bumper</text></g>
+    <g class="diagram-part"${click('hood')}><path class="car-panel ${on('hood') ? 'selected' : ''}" d="M143 76 H377 L410 126 H110Z"/><text x="260" y="106">引擎盖 Hood</text></g>
+    <g class="diagram-part"${click('leftFender')}><path class="car-panel ${on('leftFender') ? 'selected' : ''}" d="M72 76 H143 L110 126 H52Z"/><text x="99" y="104">左叶子板 LF</text></g>
+    <g class="diagram-part"${click('rightFender')}><path class="car-panel ${on('rightFender') ? 'selected' : ''}" d="M377 76 H448 L468 126 H410Z"/><text x="421" y="104">右叶子板 RF</text></g>
+    <g class="diagram-part"${click('roof')}><path class="car-panel ${on('roof') ? 'selected' : ''}" d="M188 38 H332 L362 70 H158Z"/><text x="260" y="60">车顶 Roof</text></g>
   </svg>`;
 }
 
 function renderJobConfirmationPrint(job) {
   const c = job.confirmation || {};
+  const printLanguage = ['en','zh','bilingual'].includes(c.printLanguage) ? c.printLanguage : 'en';
+  const L = (en, zh) => printLanguage === 'en' ? en : printLanguage === 'zh' ? zh : `${en} / ${zh}`;
   const services = jobServices(job);
   const tint = services.includes('tint');
   const ppf = services.includes('ppf');
   const root = document.getElementById('printRoot');
   if (!root) return;
   root.innerHTML = `<article class="confirmation-print-page">
-    <header class="confirmation-print-head"><img src="/quad-film-icon.png" alt="QUAD FILM"><div><h1>INSTALLATION AGREEMENT & SERVICE ACCEPTANCE</h1><p>QUAD FILM 客户施工确认单</p></div><div class="confirmation-order-no">JOB # ${escapeHtml(job.id?.slice(-8).toUpperCase() || '')}</div></header>
+    <header class="confirmation-print-head"><img src="/quad-film-icon.png" alt="QUAD FILM"><div><h1>${L('INSTALLATION AGREEMENT & SERVICE ACCEPTANCE','客户施工确认单')}</h1><p>QUAD FILM</p></div><div class="confirmation-order-no">${L('JOB #','施工单 #')} ${escapeHtml(job.id?.slice(-8).toUpperCase() || '')}</div></header>
     <section class="confirmation-info-grid">
-      <div><b>Customer 客户</b><span>${escapeHtml(job.customer || '—')}</span></div><div><b>Phone 电话</b><span>${escapeHtml(job.phone || '—')}</span></div><div><b>Date 日期</b><span>${escapeHtml(job.scheduleDate || job.date || '—')}</span></div>
-      <div><b>Vehicle 车辆</b><span>${escapeHtml(job.vehicle || '—')}</span></div><div><b>Plate / VIN</b><span>${escapeHtml(c.vin || job.vin || '—')}</span></div><div><b>Color 颜色</b><span>${escapeHtml(c.vehicleColor || '—')}</span></div>
-      <div class="span-3"><b>Special equipment 特殊配置</b><span>${escapeHtml(c.specialEquipment || 'None / 无')}</span></div>
+      <div><b>${L('Customer','客户')}</b><span>${escapeHtml(job.customer || '—')}</span></div><div><b>${L('Phone','电话')}</b><span>${escapeHtml(job.phone || '—')}</span></div><div><b>${L('Date','日期')}</b><span>${escapeHtml(job.scheduleDate || job.date || '—')}</span></div>
+      <div><b>${L('Vehicle','车辆')}</b><span>${escapeHtml(job.vehicle || '—')}</span></div><div><b>${L('Plate / VIN','车牌 / VIN')}</b><span>${escapeHtml(c.vin || job.vin || '—')}</span></div><div><b>${L('Color','颜色')}</b><span>${escapeHtml(c.vehicleColor || '—')}</span></div>
+      <div class="span-3"><b>${L('Special equipment','特殊配置')}</b><span>${escapeHtml(c.specialEquipment || L('None','无'))}</span></div>
     </section>
     <div class="confirmation-service-layout ${tint && ppf ? 'two' : 'one'}">
-      ${tint ? `<section class="confirmation-print-section"><h2>WINDOW TINT · 窗膜施工范围</h2>${tintVehicleDiagram(c.tintParts)}<p class="selected-parts"><b>Selected 已选：</b>${escapeHtml(confirmationSelectedLabels(c.tintParts, tintConfirmationParts))}</p><div class="confirmation-inline"><span><b>Film 膜：</b>${escapeHtml(c.tintFilm || job.package || '—')}</span><span><b>VLT：</b>${escapeHtml(c.tintVlt || '—')}</span></div></section>` : ''}
-      ${ppf ? `<section class="confirmation-print-section"><h2>PAINT PROTECTION FILM · PPF施工范围</h2>${ppfVehicleDiagram(c.ppfParts)}<p class="selected-parts"><b>Selected 已选：</b>${escapeHtml(confirmationSelectedLabels(c.ppfParts, ppfConfirmationParts))}</p><div class="confirmation-inline"><span><b>Film 膜：</b>${escapeHtml(c.ppfFilm || job.package || '—')}</span><span><b>Finish：</b>${c.ppfFinish === 'matte' ? 'Matte 哑面' : 'Gloss 亮面'}</span></div></section>` : ''}
+      ${tint ? `<section class="confirmation-print-section"><h2>${L('WINDOW TINT AREAS','窗膜施工范围')}</h2>${tintVehicleDiagram(c.tintParts)}<p class="selected-parts"><b>${L('Selected','已选')}：</b>${escapeHtml(confirmationSelectedLabels(c.tintParts, tintConfirmationParts))}</p><div class="confirmation-inline"><span><b>${L('Film','膜')}：</b>${escapeHtml(c.tintFilm || job.package || '—')}</span><span><b>VLT：</b>${escapeHtml(c.tintVlt || '—')}</span></div></section>` : ''}
+      ${ppf ? `<section class="confirmation-print-section"><h2>${L('PAINT PROTECTION FILM AREAS','PPF施工范围')}</h2>${ppfVehicleDiagram(c.ppfParts)}<p class="selected-parts"><b>${L('Selected','已选')}：</b>${escapeHtml(confirmationSelectedLabels(c.ppfParts, ppfConfirmationParts))}</p><div class="confirmation-inline"><span><b>${L('Film','膜')}：</b>${escapeHtml(c.ppfFilm || job.package || '—')}</span><span><b>${L('Finish','表面')}：</b>${c.ppfFinish === 'matte' ? L('Matte','哑面') : L('Gloss','亮面')}</span></div></section>` : ''}
       ${!tint && !ppf ? `<section class="confirmation-print-section"><h2>SERVICE · 施工项目</h2><p>${escapeHtml(serviceLabelList(job))} · ${escapeHtml(job.package || '')}</p></section>` : ''}
     </div>
-    <section class="confirmation-print-section confirmation-requirements"><h2>REQUIREMENTS & VEHICLE CONDITION · 施工要求与原车状况</h2><div class="confirmation-four"><span>${c.disassembly === 'yes' ? '☑' : '☐'} Disassembly 拆件</span><span>${c.bladeFree !== 'no' ? '☑' : '☐'} Blade-free 无刀</span><span><b>Edge wrap 包边：</b>${escapeHtml(c.edgeWrap || '—')}</span><span><b>Delivery 交车：</b>${escapeHtml(c.deliveryDate || '—')}</span></div><p><b>Existing damage / Risks 原车划痕及风险：</b>${escapeHtml(c.risks || 'None noted / 未记录')}</p><p><b>Other notes 其他说明：</b>${escapeHtml(c.notes || '—')}</p></section>
+    <section class="confirmation-print-section confirmation-requirements"><h2>${L('REQUIREMENTS & VEHICLE CONDITION','施工要求与原车状况')}</h2><div class="confirmation-four"><span>${c.disassembly === 'yes' ? '☑' : '☐'} ${L('Disassembly','拆件')}</span><span>${c.bladeFree !== 'no' ? '☑' : '☐'} ${L('Blade-free','无刀施工')}</span><span><b>${L('Edge wrap','包边')}：</b>${escapeHtml(c.edgeWrap || '—')}</span><span><b>${L('Delivery','交车')}：</b>${escapeHtml(c.deliveryDate || '—')}</span></div><p><b>${L('Existing damage / Risks','原车划痕及风险')}：</b>${escapeHtml(c.risks || L('None noted','未记录'))}</p><p><b>${L('Damage photos stored with job','原车照片已随施工单保存')}：</b>${Number(c.damagePhotos?.length || 0)}</p><p><b>${L('Other notes','其他说明')}：</b>${escapeHtml(c.notes || '—')}</p></section>
     <section class="confirmation-payment"><span><b>Quoted price 报价：</b>${currency.format(Number(job.price || 0))}</span><span><b>Deposit 订金：</b>${currency.format(Number(job.deposit || 0))}</span><span><b>Balance 余款：</b>${currency.format(Math.max(0, Number(job.price || 0) - Number(job.paidAmount || job.deposit || 0)))}</span><span><b>Payment 付款：</b>${escapeHtml(paymentMethodName(job.paymentMethod) || '—')}</span></section>
-    <section class="confirmation-terms"><h2>CUSTOMER ACKNOWLEDGEMENT · 客户确认</h2><ol><li>Vehicle condition, service areas, film type and shade shown above have been reviewed and approved. 客户已核对原车状况、施工部位、膜型及透光率。</li><li>Film installation is a detailed handcraft service. Minor edge texture, small bubbles or silvering within industry tolerance may occur and are not defects. 贴膜属于精细手工施工，行业容许范围内的轻微边缘纹理、小气泡或银纹不属于质量问题。</li><li>Customer authorizes the selected installation and any approved disassembly. Completed custom services and materials are non-refundable; all sales are final. 客户授权所选施工及已同意的拆装；定制施工完成后不退款。</li><li>This agreement is governed by Nevada law. 本确认单适用内华达州法律。</li></ol></section>
+    <section class="confirmation-terms"><h2>${L('CUSTOMER ACKNOWLEDGEMENT','客户确认')}</h2><ol><li>${L('Vehicle condition, service areas, film type and shade shown above have been reviewed and approved.','客户已核对原车状况、施工部位、膜型及透光率。')}</li><li>${L('Film installation is a detailed handcraft service. Minor edge texture, small bubbles or silvering within industry tolerance may occur and are not defects.','贴膜属于精细手工施工，行业容许范围内的轻微边缘纹理、小气泡或银纹不属于质量问题。')}</li><li>${L('Customer authorizes the selected installation and any approved disassembly. Completed custom services and materials are non-refundable; all sales are final.','客户授权所选施工及已同意的拆装；定制施工完成后不退款。')}</li><li>${L('This agreement is governed by Nevada law.','本确认单适用内华达州法律。')}</li></ol></section>
     <section class="confirmation-signatures"><div>Customer Signature 客户签名：<span></span></div><div>Date 日期：<span></span></div><div>Advisor 接待：<span>${escapeHtml(repName(job.receptionRepId) || job.preparedBy || '')}</span></div></section>
     <footer><b>QUAD FILM / QD AUTO IMAGE</b><span>3359 W Oquendo Rd, Las Vegas, NV 89118 · (702) 354-8143</span><span>A4 · Brother HL-L2465DW</span></footer>
   </article>`;
@@ -5558,7 +5621,7 @@ function roleDefaultPermissions(role) {
 }
 
 function openModal(title, html, onSave) {
-  document.getElementById('modal').classList.remove('message-modal-open');
+  document.getElementById('modal').classList.remove('message-modal-open', 'confirmation-modal-open');
   document.body.classList.add('modal-lock');
   const workspace = document.getElementById('prospectWorkspace');
   if (workspace) workspace.style.pointerEvents = 'none';
@@ -5571,6 +5634,7 @@ function openModal(title, html, onSave) {
   }
   document.getElementById('modalBody').innerHTML = html;
   document.getElementById('modalSave').onclick = onSave;
+  document.getElementById('modalSave').disabled = false;
   document.getElementById('modalSave').textContent = t('save');
   const cancel = document.querySelector('.dialog footer .btn');
   if (cancel) cancel.textContent = t('cancel');
@@ -5579,7 +5643,7 @@ function openModal(title, html, onSave) {
 function closeModal() {
   closeReplyTemplateVideoPreview();
   if (messageRecorder && messageRecorder.state === 'recording') messageRecorder.stop();
-  document.getElementById('modal').classList.remove('open', 'message-modal-open');
+  document.getElementById('modal').classList.remove('open', 'message-modal-open', 'confirmation-modal-open');
   document.getElementById('modal').classList.remove('reply-library-open');
   document.body.classList.remove('modal-lock');
   const workspace = document.getElementById('prospectWorkspace');

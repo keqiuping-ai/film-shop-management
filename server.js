@@ -3009,8 +3009,9 @@ async function api(req, res) {
     });
   }
 
-  if (req.method === 'POST' && ['/api/customer-media/upload', '/api/message-media/upload'].includes(url.pathname)) {
+  if (req.method === 'POST' && ['/api/customer-media/upload', '/api/message-media/upload', '/api/job-media/upload'].includes(url.pathname)) {
     if (url.pathname === '/api/customer-media/upload' && !canAccess(user, 'prospectsEdit')) return send(res, 403, { error: '没有发送客户附件的权限' });
+    if (url.pathname === '/api/job-media/upload' && !canAccess(user, 'jobsEdit') && !canAccess(user, 'jobsCreate')) return send(res, 403, { error: '没有修改施工单的权限' });
     const body = await readBody(req);
     const name = String(body.name || '附件').trim().slice(0, 160);
     let contentType = String(body.type || 'application/octet-stream').trim().slice(0, 120);
