@@ -3382,6 +3382,7 @@ async function api(req, res) {
       item.preparedBy = user.name || '';
       item.preparedByUserId = user.id;
       item.createdAt = new Date().toISOString();
+      if (String(item.status || '').trim() === '已交车') item.deliveredAt = item.deliveredAt || item.createdAt;
       if (!canSeeCosts) item.materialCost = 0;
     }
     if (collection === 'products' && !canSeeCosts) {
@@ -3400,6 +3401,7 @@ async function api(req, res) {
       item.preparedBy = String(item.preparedBy || user.name || '').trim();
       item.preparedByUserId = user.id;
       item.createdAt = new Date().toISOString();
+      if (String(item.status || '').trim() === '已出库') item.shippedAt = item.shippedAt || item.createdAt;
     }
     if (collection === 'prospects' || collection === 'customerConversations') {
       const now = new Date().toISOString();
@@ -3494,11 +3496,13 @@ async function api(req, res) {
       if (error) return send(res, 400, { error });
     }
     if (collection === 'jobs') {
+      const previousStatus = String(db[collection][idx].status || '').trim();
       normalizeJobServices(next);
       next.preparedBy = db[collection][idx].preparedBy || user.name || '';
       next.preparedByUserId = db[collection][idx].preparedByUserId || user.id;
       next.updatedBy = user.name || '';
       next.updatedAt = new Date().toISOString();
+      if (String(next.status || '').trim() === '已交车' && previousStatus !== '已交车') next.deliveredAt = next.updatedAt;
       if (!canSeeCosts) next.materialCost = db[collection][idx].materialCost || 0;
     }
     if (collection === 'products' && !canSeeCosts) {
@@ -3511,6 +3515,7 @@ async function api(req, res) {
       normalizeExpense(next);
     }
     if (collection === 'salesOrders') {
+      const previousStatus = String(db[collection][idx].status || '').trim();
       next.salesRep = String(next.salesRep || '').trim();
       const error = validateSalesOrder(db, next);
       if (error) return send(res, 400, { error });
@@ -3518,6 +3523,7 @@ async function api(req, res) {
       next.preparedByUserId = db[collection][idx].preparedByUserId || user.id;
       next.updatedBy = user.name || '';
       next.updatedAt = new Date().toISOString();
+      if (String(next.status || '').trim() === '已出库' && previousStatus !== '已出库') next.shippedAt = next.updatedAt;
     }
     if (collection === 'prospects' || collection === 'customerConversations') {
       const now = new Date().toISOString();

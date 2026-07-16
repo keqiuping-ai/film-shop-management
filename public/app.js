@@ -139,7 +139,7 @@ const dict = {
     schedules: '员工调休',
     schedulesSub: '周末补班、调休休息、月度出勤和邮件提醒',
     reports: '报表',
-    reportsSub: '月度利润、工费、库存预警',
+    reportsSub: '标准损益表、会计余额和成本附表',
     audit: '操作记录',
     auditSub: '查询新增、修改、删除记录',
     expenses: '运营成本',
@@ -381,7 +381,7 @@ const dict = {
     schedules: 'Staff Schedule',
     schedulesSub: 'Weekend makeup shifts, adjusted rest, monthly attendance, and email reminders',
     reports: 'Reports',
-    reportsSub: 'Monthly profit, installer pay, and stock alerts',
+    reportsSub: 'Standard profit or loss, accounting balances, and cost schedules',
     audit: 'Activity Log',
     auditSub: 'Review create, edit, and delete history',
     expenses: 'Operating Costs',
@@ -1247,6 +1247,38 @@ function filteredExpenses(range = activeJobDateRange()) {
   return (state.expenses || []).filter(expense => expenseAppliesToDateRange(expense, range));
 }
 
+function dateFallsInRange(value, range = activeJobDateRange()) {
+  const date = String(value || '').slice(0, 10);
+  if (!date) return false;
+  return (!range.start || date >= range.start) && (!range.end || date <= range.end);
+}
+
+function filteredAccountingJobs(range = activeJobDateRange()) {
+  return (state.jobs || [])
+    .filter(job => dateFallsInRange(job.deliveredAt || job.date, range))
+    .filter(jobMatchesSource)
+    .filter(jobMatchesPerson);
+}
+
+function filteredAccountingSalesOrders(range = activeJobDateRange()) {
+  return (state.salesOrders || [])
+    .filter(order => dateFallsInRange(order.shippedAt || order.date, range))
+    .filter(orderMatchesPerson);
+}
+
+function accountingBalanceJobs(range = activeJobDateRange()) {
+  return (state.jobs || [])
+    .filter(job => !range.end || String(job.deliveredAt || job.date || '').slice(0, 10) <= range.end)
+    .filter(jobMatchesSource)
+    .filter(jobMatchesPerson);
+}
+
+function accountingBalanceSalesOrders(range = activeJobDateRange()) {
+  return (state.salesOrders || [])
+    .filter(order => !range.end || String(order.shippedAt || order.date || '').slice(0, 10) <= range.end)
+    .filter(orderMatchesPerson);
+}
+
 function searchedJobs(rows) {
   const query = normalizeSearchText(jobSearch);
   if (!query) return rows;
@@ -1813,6 +1845,54 @@ function isStartedRevenueJob(job) {
 
 function revenueJobs(jobs = []) {
   return (jobs || []).filter(isStartedRevenueJob);
+}
+
+function isRecognizedJobRevenue(job) {
+  const status = String(job?.status || '').trim().toLowerCase();
+  return ['已交车', 'delivered', 'completed'].includes(status) && Number(job?.price || 0) !== 0;
+}
+
+function isRecognizedSalesRevenue(order) {
+  const status = String(order?.status || '').trim().toLowerCase();
+  return ['已出库', 'shipped', 'delivered', 'completed'].includes(status) && orderCalc(order).total !== 0;
+}
+
+function accountingStatement(jobs = [], salesOrders = [], expenses = [], range = null, balanceJobs = jobs, balanceOrders = salesOrders) {
+  const recognizedJobs = (jobs || []).filter(isRecognizedJobRevenue);
+  const recognizedOrders = (salesOrders || []).filter(isRecognizedSalesRevenue);
+  const serviceRevenue = recognizedJobs.reduce((sum, job) => sum + jobCalc(job).price, 0);
+  const productRevenue = recognizedOrders.reduce((sum, order) => sum + orderCalc(order).total, 0);
+  const revenue = serviceRevenue + productRevenue;
+  const jobMaterials = recognizedJobs.reduce((sum, job) => sum + jobCalc(job).material, 0);
+  const productCost = recognizedOrders.reduce((sum, order) => sum + orderCalc(order).cost, 0);
+  const directMaterials = jobMaterials + productCost;
+  const totalProductionPayroll = totalLaborForJobs(recognizedJobs, range);
+  const directLabor = recognizedJobs.reduce((sum, job) => sum + jobCalc(job).labor, 0);
+  const unallocatedProductionPayroll = Math.max(0, totalProductionPayroll - directLabor);
+  const costOfSales = directMaterials + directLabor;
+  const grossProfit = revenue - costOfSales;
+  const sellingCommissions = leadReportRows(recognizedJobs).reduce((sum, row) => sum + row.commission, 0);
+  const expenseAllocations = (expenses || []).map(expense => ({ expense, amount: allocatedExpenseAmount(expense, range) }));
+  const otherOperatingExpenses = expenseAllocations.reduce((sum, row) => sum + row.amount, 0);
+  const operatingExpenses = unallocatedProductionPayroll + sellingCommissions + otherOperatingExpenses;
+  const operatingIncome = grossProfit - operatingExpenses;
+  const jobReceivables = (balanceJobs || []).filter(isRecognizedJobRevenue).reduce((sum, job) => sum + Math.max(0, jobCalc(job).price - jobPaidAmount(job)), 0);
+  const orderReceivables = (balanceOrders || []).filter(isRecognizedSalesRevenue).reduce((sum, order) => sum + Math.max(0, orderCalc(order).total - Number(order.paid || 0)), 0);
+  const accountsReceivable = jobReceivables + orderReceivables;
+  const customerDeposits = (balanceJobs || []).filter(job => !isRecognizedJobRevenue(job) && !['取消', 'canceled', 'cancelled'].includes(String(job?.status || '').trim().toLowerCase())).reduce((sum, job) => sum + Math.max(0, jobPaidAmount(job)), 0)
+    + (balanceOrders || []).filter(order => !isRecognizedSalesRevenue(order) && !['已取消', 'canceled', 'cancelled'].includes(String(order?.status || '').trim().toLowerCase()))
+      .reduce((sum, order) => sum + Math.max(0, Number(order.paid || 0)), 0);
+  const missingJobMaterialCosts = recognizedJobs.filter(job => Number(job.price || 0) > 0 && Number(job.materialCost || 0) <= 0).length;
+  const missingProductCosts = recognizedOrders.reduce((count, order) => count + salesOrderLineItems(order).filter(line => {
+    const product = state.products.find(item => item.sku === line.item);
+    return !product || Number(product.cost || 0) <= 0;
+  }).length, 0);
+  return {
+    recognizedJobs, recognizedOrders, serviceRevenue, productRevenue, revenue,
+    jobMaterials, productCost, directMaterials, directLabor, totalProductionPayroll, unallocatedProductionPayroll, costOfSales, grossProfit,
+    sellingCommissions, expenseAllocations, otherOperatingExpenses, operatingExpenses, operatingIncome,
+    accountsReceivable, customerDeposits, missingJobMaterialCosts, missingProductCosts
+  };
 }
 
 function servicePoint(service, installer = {}) {
@@ -2645,6 +2725,76 @@ function stopPersonalReminderChecks() {
   closePersonalReminder();
 }
 
+function reportAmount(value, protectedValue = true) {
+  if (protectedValue && !canSeeFinance()) return hiddenValue();
+  return currency.format(Number(value || 0));
+}
+
+function financialStatementRow(label, amount, revenue, className = '', protectedValue = true) {
+  const percentage = Number(revenue || 0) ? `${(Number(amount || 0) / Number(revenue) * 100).toFixed(1)}%` : '—';
+  return `<tr class="${className}"><td>${escapeHtml(label)}</td><td class="financial-amount">${reportAmount(amount, protectedValue)}</td><td class="financial-percent">${protectedValue && !canSeeFinance() ? '—' : percentage}</td></tr>`;
+}
+
+function financialStatementSummary(statement, range) {
+  const start = escapeHtml(range?.start || '—');
+  const end = escapeHtml(range?.end || '—');
+  const qualityWarnings = [];
+  if (statement.missingJobMaterialCosts) qualityWarnings.push(lang === 'zh'
+    ? `${statement.missingJobMaterialCosts} 张已交车施工单没有材料成本，毛利可能被高估。`
+    : `${statement.missingJobMaterialCosts} delivered jobs have no material cost; gross profit may be overstated.`);
+  if (statement.missingProductCosts) qualityWarnings.push(lang === 'zh'
+    ? `${statement.missingProductCosts} 行已出库商品没有成本，毛利可能被高估。`
+    : `${statement.missingProductCosts} shipped product lines have no cost; gross profit may be overstated.`);
+  if (!qualityWarnings.length) qualityWarnings.push(lang === 'zh' ? '本期已确认收入记录未发现缺失的直接成本。' : 'No missing direct costs were detected in recognized revenue records.');
+  return `<section class="financial-report">
+    <div class="financial-report-head">
+      <div><p class="financial-kicker">${lang === 'zh' ? '权责发生制 · 功能法列报' : 'Accrual basis · Function of expense'}</p><h2>${lang === 'zh' ? '损益表（利润表）' : 'Statement of Profit or Loss'}</h2><p>${start} — ${end} · USD</p></div>
+      <button class="btn" onclick="window.print()">${lang === 'zh' ? '打印 / 保存 PDF' : 'Print / Save PDF'}</button>
+    </div>
+    <div class="financial-report-grid">
+      <div class="financial-statement-card">
+        <table class="financial-statement"><thead><tr><th>${lang === 'zh' ? '科目' : 'Account'}</th><th>${lang === 'zh' ? '本期金额' : 'Current period'}</th><th>${lang === 'zh' ? '占收入' : '% revenue'}</th></tr></thead><tbody>
+          <tr class="financial-section"><td colspan="3">${lang === 'zh' ? '营业收入' : 'REVENUE'}</td></tr>
+          ${financialStatementRow(lang === 'zh' ? '施工服务收入（仅已交车）' : 'Installation service revenue (delivered only)', statement.serviceRevenue, statement.revenue)}
+          ${financialStatementRow(lang === 'zh' ? '商品销售收入（仅已出库）' : 'Product sales revenue (shipped only)', statement.productRevenue, statement.revenue)}
+          ${financialStatementRow(lang === 'zh' ? '营业收入合计' : 'Total revenue', statement.revenue, statement.revenue, 'financial-subtotal')}
+          <tr class="financial-section"><td colspan="3">${lang === 'zh' ? '营业成本' : 'COST OF SALES'}</td></tr>
+          ${financialStatementRow(lang === 'zh' ? '直接材料及商品成本' : 'Direct materials and product costs', -statement.directMaterials, statement.revenue)}
+          ${financialStatementRow(lang === 'zh' ? '直接人工及生产工资' : 'Direct labor and production payroll', -statement.directLabor, statement.revenue)}
+          ${financialStatementRow(lang === 'zh' ? '营业成本合计' : 'Total cost of sales', -statement.costOfSales, statement.revenue, 'financial-subtotal')}
+          ${financialStatementRow(lang === 'zh' ? '毛利' : 'Gross profit', statement.grossProfit, statement.revenue, 'financial-total')}
+          <tr class="financial-section"><td colspan="3">${lang === 'zh' ? '营业费用' : 'OPERATING EXPENSES'}</td></tr>
+          ${financialStatementRow(lang === 'zh' ? '未分配生产底薪' : 'Unallocated production base payroll', -statement.unallocatedProductionPayroll, statement.revenue)}
+          ${financialStatementRow(lang === 'zh' ? '销售及客服提成' : 'Sales and customer service commissions', -statement.sellingCommissions, statement.revenue)}
+          ${financialStatementRow(lang === 'zh' ? '一般及行政费用' : 'General and administrative expenses', -statement.otherOperatingExpenses, statement.revenue)}
+          ${financialStatementRow(lang === 'zh' ? '营业费用合计' : 'Total operating expenses', -statement.operatingExpenses, statement.revenue, 'financial-subtotal')}
+          ${financialStatementRow(lang === 'zh' ? '营业利润 / 税前暂计利润' : 'Operating income / provisional pre-tax income', statement.operatingIncome, statement.revenue, 'financial-grand-total')}
+          <tr class="financial-unrecorded"><td>${lang === 'zh' ? '所得税、利息、折旧及其他损益' : 'Income tax, interest, depreciation and other items'}</td><td colspan="2">${lang === 'zh' ? '尚未建账，不计入上述利润' : 'Not recorded; excluded above'}</td></tr>
+        </tbody></table>
+      </div>
+      <div class="financial-side">
+        <div class="financial-balance-card"><h3>${lang === 'zh' ? '会计余额摘要' : 'Accounting balance summary'}</h3>
+          <div><span>${lang === 'zh' ? '应收账款' : 'Accounts receivable'}</span><strong>${reportAmount(statement.accountsReceivable)}</strong></div>
+          <div><span>${lang === 'zh' ? '客户预收 / 合同负债' : 'Customer deposits / contract liabilities'}</span><strong>${reportAmount(statement.customerDeposits)}</strong></div>
+          <p>${lang === 'zh' ? '应收只包含已交车或已出库但尚未收齐的金额；未完工订单收款不计收入。' : 'Receivables include only delivered or shipped items not fully collected. Payments on unfulfilled orders are not revenue.'}</p>
+        </div>
+        <div class="financial-quality-card"><h3>${lang === 'zh' ? '数据完整性检查' : 'Data integrity checks'}</h3><ul>${qualityWarnings.map(item => `<li>${escapeHtml(item)}</li>`).join('')}</ul>
+          <p>${lang === 'zh' ? '现有付款记录没有独立的收款日期，因此本报表不能可靠生成本期现金流量表。资产负债表还需要现金账户、应付账款、固定资产、折旧、税费和期末盘点数据。' : 'Payment records do not have separate receipt dates, so a reliable period cash flow statement cannot yet be produced. A full balance sheet also requires cash accounts, payables, fixed assets, depreciation, taxes, and period-end inventory counts.'}</p>
+        </div>
+      </div>
+    </div>
+    <p class="financial-policy-note">${lang === 'zh' ? '确认政策：施工收入在交车时确认；商品收入在出库时确认；直接材料和生产人工计入营业成本；客服提成及运营成本计入营业费用。取消、排期、施工中、待质检、返工、待收款和仅已付款但未履约的订单不确认收入。' : 'Recognition policy: service revenue is recognized on delivery; product revenue on shipment; direct materials and production labor are cost of sales; customer service commissions and operating costs are operating expenses. Canceled, scheduled, in-progress, QC-pending, rework, payment-pending, and paid-but-unfulfilled orders are not revenue.'}</p>
+  </section>`;
+}
+
+function accountingExpenseSchedule(statement) {
+  const rows = statement.expenseAllocations || [];
+  return `<div class="table-wrap"><table><thead><tr><th>${t('date')}</th><th>${t('expenseCategory')}</th><th>${t('vendor')}</th><th>${t('adPeriod')}</th><th>${lang === 'zh' ? '原始金额' : 'Original'}</th><th>${lang === 'zh' ? '本期分摊' : 'Period allocation'}</th></tr></thead><tbody>
+    ${rows.map(row => `<tr><td>${escapeHtml(row.expense.date || '')}</td><td>${escapeHtml(row.expense.category || '')}</td><td>${escapeHtml(row.expense.vendor || '')}</td><td>${escapeHtml(expenseAdPeriod(row.expense))}</td><td>${reportAmount(row.expense.amount)}</td><td>${reportAmount(row.amount)}</td></tr>`).join('')}
+    ${rows.length ? `<tr class="total-row"><td colspan="5">${lang === 'zh' ? '本期营业费用分摊合计' : 'Total period operating expense allocation'}</td><td>${reportAmount(statement.otherOperatingExpenses)}</td></tr>` : `<tr><td colspan="6" class="note">${lang === 'zh' ? '还没有运营成本记录。' : 'No operating cost records yet.'}</td></tr>`}
+  </tbody></table></div><p class="note">${lang === 'zh' ? '跨日期广告费用按活动覆盖天数分摊；标记“每月固定”的费用从登记月份起按月计提，避免漏算或重复全额计算。' : 'Advertising expenses spanning multiple dates are allocated by covered days. Expenses marked monthly recurring accrue each month from their recorded month.'}</p>`;
+}
+
 const views = {
   personalNotes() { return personalNotesView(); },
   dashboard() {
@@ -2756,26 +2906,14 @@ const views = {
   },
   reports() {
     const reportRange = activeJobDateRange();
-    const reportJobs = filteredJobs(false);
-    const reportRevenueJobs = revenueJobs(reportJobs);
-    const reportOrders = filteredSalesOrders();
+    const reportJobs = filteredAccountingJobs(reportRange);
+    const reportOrders = filteredAccountingSalesOrders(reportRange);
     const reportExpenses = filteredExpenses(reportRange);
-    const reportKpis = kpis(reportRevenueJobs, reportOrders);
-    const labor = totalLaborForJobs(reportRevenueJobs, reportRange);
-    const material = reportRevenueJobs.reduce((a, j) => a + jobCalc(j).material, 0);
-    const orderGross = reportOrders.reduce((a, o) => a + orderCalc(o).gross, 0);
-    const operatingCost = operatingCostTotal(reportRange);
-    const serviceCommission = leadReportRows(reportRevenueJobs).reduce((sum, row) => sum + row.commission, 0);
-    const net = reportKpis.jobGross + orderGross - operatingCost - serviceCommission;
-    return `${jobFilterControls()}<div class="grid stats" style="margin-top:14px">
-      <div class="stat"><span>${t('materialCost')}</span><strong>${canSeeFinance() ? currency.format(material) : hiddenValue()}</strong></div>
-      <div class="stat"><span>${t('labor')}</span><strong>${currency.format(labor)}</strong></div>
-      <div class="stat"><span>${t('totalCommission')}</span><strong>${canSeeCommission() ? currency.format(serviceCommission) : hiddenValue()}</strong></div>
-      <div class="stat"><span>${lang === 'zh' ? '运营成本' : 'Operating Costs'}</span><strong>${currency.format(operatingCost)}</strong></div>
-      <div class="stat"><span>${lang === 'zh' ? '扣固定成本后利润' : 'Net After Fixed Cost'}</span><strong>${canSeeFinance() ? currency.format(net) : hiddenValue()}</strong></div>
-    </div><div class="split" style="margin-top:14px">
-      <div class="panel"><div class="panel-head"><h3>${lang === 'zh' ? '师傅工费汇总' : 'Installer Pay Summary'}</h3></div>${laborReport(reportRevenueJobs, reportRange)}<div class="panel-head subhead"><h3>${lang === 'zh' ? '客服提成汇总' : 'Customer Service Commission Summary'}</h3></div>${leadReportTable(reportRevenueJobs)}</div>
-      <div class="panel"><div class="panel-head"><h3>${t('expenses')}</h3><button class="btn" onclick="setPage('expenses')">${t('viewAll')}</button></div>${expenseTable(false, reportExpenses)}</div>
+    const statement = accountingStatement(reportJobs, reportOrders, reportExpenses, reportRange, accountingBalanceJobs(reportRange), accountingBalanceSalesOrders(reportRange));
+    return `${jobFilterControls()}${financialStatementSummary(statement, reportRange)}
+    <div class="split report-supporting-schedules" style="margin-top:14px">
+      <div class="panel"><div class="panel-head"><h3>${lang === 'zh' ? '附表：人工与销售提成' : 'Schedule: Payroll & Commissions'}</h3></div>${laborReport(statement.recognizedJobs, reportRange)}<div class="panel-head subhead"><h3>${lang === 'zh' ? '客服提成明细' : 'Customer Service Commission Detail'}</h3></div>${leadReportTable(statement.recognizedJobs)}</div>
+      <div class="panel"><div class="panel-head"><h3>${lang === 'zh' ? '附表：营业费用分摊' : 'Schedule: Operating Expense Allocation'}</h3><button class="btn" onclick="setPage('expenses')">${t('viewAll')}</button></div>${accountingExpenseSchedule(statement)}</div>
     </div>`;
   },
   audit() {
@@ -3082,7 +3220,44 @@ function expenseAppliesToDateRange(expense, range = activeJobDateRange()) {
     return rangeStart <= end && rangeEnd >= start;
   }
   const date = String(expense.date || '').slice(0, 10);
+  if (expense.recurring) return (!range.end || date <= range.end);
   return (!range.start || date >= range.start) && (!range.end || date <= range.end);
+}
+
+function utcDayNumber(value) {
+  const parts = String(value || '').slice(0, 10).split('-').map(Number);
+  if (parts.length !== 3 || parts.some(part => !Number.isFinite(part))) return NaN;
+  return Math.floor(Date.UTC(parts[0], parts[1] - 1, parts[2]) / 86400000);
+}
+
+function allocatedExpenseAmount(expense, range = activeJobDateRange()) {
+  const amount = Number(expense?.amount || 0);
+  const adStart = String(expense?.adStartDate || '').slice(0, 10);
+  const adEnd = String(expense?.adEndDate || '').slice(0, 10);
+  if (!adStart && !adEnd) {
+    if (!expense?.recurring) return expenseAppliesToDateRange(expense, range) ? amount : 0;
+    const firstMonth = String(expense.date || range?.start || '').slice(0, 7);
+    const rangeStartMonth = String(range?.start || firstMonth).slice(0, 7);
+    const rangeEndMonth = String(range?.end || rangeStartMonth).slice(0, 7);
+    const effectiveStart = firstMonth && firstMonth > rangeStartMonth ? firstMonth : rangeStartMonth;
+    const [startYear, startMonth] = effectiveStart.split('-').map(Number);
+    const [endYear, endMonth] = rangeEndMonth.split('-').map(Number);
+    if (![startYear, startMonth, endYear, endMonth].every(Number.isFinite)) return 0;
+    const monthCount = (endYear - startYear) * 12 + endMonth - startMonth + 1;
+    return monthCount > 0 ? amount * monthCount : 0;
+  }
+  const periodStart = adStart || adEnd;
+  const periodEnd = adEnd || adStart;
+  const rangeStart = range?.start || periodStart;
+  const rangeEnd = range?.end || periodEnd;
+  const startDay = utcDayNumber(periodStart);
+  const endDay = utcDayNumber(periodEnd);
+  const overlapStart = Math.max(startDay, utcDayNumber(rangeStart));
+  const overlapEnd = Math.min(endDay, utcDayNumber(rangeEnd));
+  if (![startDay, endDay, overlapStart, overlapEnd].every(Number.isFinite) || overlapEnd < overlapStart) return 0;
+  const totalDays = Math.max(1, endDay - startDay + 1);
+  const overlapDays = overlapEnd - overlapStart + 1;
+  return amount * overlapDays / totalDays;
 }
 
 function sourceStatsTable(jobs, label = jobFilterDateLabel()) {
