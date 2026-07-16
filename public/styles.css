@@ -1415,7 +1415,8 @@ body.modal-lock .prospect-workspace { pointer-events: none; }
   inset: 0;
   display: none;
   background: rgba(10, 16, 22, .58);
-  z-index: 30;
+  /* Must stay above the regular editor/message modal (z-index: 80). */
+  z-index: 200;
   padding: 18px;
 }
 .zoom-modal.open { display: block; }
@@ -1465,6 +1466,10 @@ body.modal-lock .prospect-workspace { pointer-events: none; }
 .image-preview-open .zoom-body {
   padding: 0;
   background: #0b1117;
+}
+.zoom-modal.image-preview-open {
+  z-index: 220;
+  background: rgba(3, 8, 13, .88);
 }
 .image-preview-wrap {
   min-height: 100%;
