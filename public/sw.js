@@ -1,4 +1,4 @@
-const CACHE_NAME = 'film-shop-v37';
+const CACHE_NAME = 'film-shop-v38';
 const ASSETS = [
     '/',
     '/mobile.html',
@@ -10,7 +10,9 @@ const ASSETS = [
     '/mobile.webmanifest',
     '/quad-film-icon.png',
     '/quad-film-icon-192.png',
-    '/quad-film-icon-512.png'
+    '/quad-film-icon-512.png',
+    '/assets/window-tint-vehicle.png',
+    '/assets/ppf-vehicle.png'
   ];
 
 self.addEventListener('install', event => {

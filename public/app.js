@@ -4904,32 +4904,41 @@ function confirmationFilmName(value, printLanguage) {
 }
 
 function tintVehicleDiagram(selected = [], interactive = false, printLanguage = 'bilingual') {
-  const L = (en, zh) => printLanguage === 'zh' ? zh : printLanguage === 'en' ? en : `${zh} ${en}`;
   const click = value => interactive ? ` onclick="toggleConfirmationPart('confirmTintPart','${value}')"` : '';
-  return `<svg class="confirmation-car-diagram" viewBox="0 0 520 190" role="img" aria-label="Window tint locations">
-    <path class="car-outline" d="M70 55 Q105 18 180 15 H340 Q415 18 450 55 L480 135 Q474 170 430 174 H90 Q46 170 40 135Z"/>
-    <g class="diagram-part"${click('windshield')}><path class="car-glass ${selected.includes('windshield') ? 'selected' : ''}" d="M174 31 H346 L386 70 H134Z"/><text x="260" y="55">${L('Windshield','前挡风玻璃')}</text></g>
-    <g class="diagram-part"${click('frontLeft')}><path class="car-glass ${selected.includes('frontLeft') ? 'selected' : ''}" d="M117 78 H245 V112 H96Z"/><text x="169" y="100">${L('Left front','左前')}</text></g>
-    <g class="diagram-part"${click('frontRight')}><path class="car-glass ${selected.includes('frontRight') ? 'selected' : ''}" d="M275 78 H403 L424 112 H275Z"/><text x="351" y="100">${L('Right front','右前')}</text></g>
-    <g class="diagram-part"${click('rearLeft')}><path class="car-glass ${selected.includes('rearLeft') ? 'selected' : ''}" d="M91 119 H245 V151 H77Z"/><text x="163" y="140">${L('Left rear','左后')}</text></g>
-    <g class="diagram-part"${click('rearRight')}><path class="car-glass ${selected.includes('rearRight') ? 'selected' : ''}" d="M275 119 H429 L443 151 H275Z"/><text x="357" y="140">${L('Right rear','右后')}</text></g>
-    <g class="diagram-part"${click('rearWindow')}><path class="car-glass ${selected.includes('rearWindow') ? 'selected' : ''}" d="M190 157 H330 L351 174 H169Z"/><text x="260" y="170">${L('Rear window','后挡风玻璃')}</text></g>
-    <g class="diagram-part"${click('sunroof')}><rect class="car-glass ${selected.includes('sunroof') ? 'selected' : ''}" x="225" y="78" width="70" height="55" rx="8"/><text x="260" y="110">${L('Sunroof','天窗')}</text></g>
+  const on = key => selected.includes(key);
+  const both = (...keys) => keys.some(on);
+  return `<svg class="confirmation-car-diagram realistic" viewBox="0 0 1600 1024" role="img" aria-label="Window tint locations" preserveAspectRatio="xMidYMid meet">
+    <image class="vehicle-base" href="/assets/window-tint-vehicle.png" x="0" y="0" width="1600" height="1024"/>
+    <g class="diagram-part"${click('windshield')}><path class="diagram-highlight ${on('windshield') ? 'selected' : ''}" d="M363 171 Q540 113 787 148 L850 195 L824 404 Q603 455 345 392Z"/></g>
+    <g class="diagram-part"${click('sunroof')}><path class="diagram-highlight ${on('sunroof') ? 'selected' : ''}" d="M644 78 Q884 45 1145 104 L1130 167 Q903 197 665 153Z"/></g>
+    <g class="diagram-part"${click('frontLeft')}><path class="diagram-highlight ${on('frontLeft') ? 'selected' : ''}" d="M886 197 L1038 184 L1064 339 L875 370Z"/></g>
+    <g class="diagram-part"${click('frontRight')}><path class="diagram-highlight ${on('frontRight') ? 'selected' : ''}" d="M886 197 L1038 184 L1064 339 L875 370Z"/></g>
+    <g class="diagram-part"${click('rearLeft')}><path class="diagram-highlight ${on('rearLeft') ? 'selected' : ''}" d="M1050 184 L1217 194 L1260 315 L1077 338Z"/></g>
+    <g class="diagram-part"${click('rearRight')}><path class="diagram-highlight ${on('rearRight') ? 'selected' : ''}" d="M1050 184 L1217 194 L1260 315 L1077 338Z"/></g>
+    <g class="diagram-part"${click('quarterWindows')}><path class="diagram-highlight ${on('quarterWindows') ? 'selected' : ''}" d="M1229 197 L1324 214 L1372 293 L1273 311Z"/></g>
+    <g class="diagram-part"${click('rearWindow')}><path class="diagram-highlight ${on('rearWindow') ? 'selected' : ''}" d="M1324 214 L1412 254 L1444 330 L1384 337 L1372 293Z"/></g>
+    <path class="diagram-selection-ring ${both('frontLeft','frontRight','rearLeft','rearRight','quarterWindows') ? 'selected' : ''}" d="M868 181 Q1120 137 1341 203 L1390 302 Q1152 372 866 383Z"/>
   </svg>`;
 }
 
 function ppfVehicleDiagram(selected = [], interactive = false, printLanguage = 'bilingual') {
-  const L = (en, zh) => printLanguage === 'zh' ? zh : printLanguage === 'en' ? en : `${zh} ${en}`;
   const all = selected.includes('fullVehicle');
   const on = key => all || selected.includes(key) || (selected.includes('fullFront') && ['frontBumper','hood','leftFender','rightFender'].includes(key));
   const click = value => interactive ? ` onclick="toggleConfirmationPart('confirmPpfPart','${value}')"` : '';
-  return `<svg class="confirmation-car-diagram" viewBox="0 0 520 190" role="img" aria-label="PPF locations">
-    <path class="car-outline ${all ? 'selected' : ''}" d="M46 130 L72 75 Q97 35 170 29 H350 Q423 35 448 75 L474 130 L454 165 H66Z"/>
-    <g class="diagram-part"${click('frontBumper')}><path class="car-panel ${on('frontBumper') ? 'selected' : ''}" d="M46 130 H474 L454 165 H66Z"/><text x="260" y="153">${L('Front bumper','前保险杠')}</text></g>
-    <g class="diagram-part"${click('hood')}><path class="car-panel ${on('hood') ? 'selected' : ''}" d="M143 76 H377 L410 126 H110Z"/><text x="260" y="106">${L('Hood','引擎盖')}</text></g>
-    <g class="diagram-part"${click('leftFender')}><path class="car-panel ${on('leftFender') ? 'selected' : ''}" d="M72 76 H143 L110 126 H52Z"/><text x="99" y="104">${L('Left fender','左叶子板')}</text></g>
-    <g class="diagram-part"${click('rightFender')}><path class="car-panel ${on('rightFender') ? 'selected' : ''}" d="M377 76 H448 L468 126 H410Z"/><text x="421" y="104">${L('Right fender','右叶子板')}</text></g>
-    <g class="diagram-part"${click('roof')}><path class="car-panel ${on('roof') ? 'selected' : ''}" d="M188 38 H332 L362 70 H158Z"/><text x="260" y="60">${L('Roof','车顶')}</text></g>
+  return `<svg class="confirmation-car-diagram realistic" viewBox="0 0 1600 1024" role="img" aria-label="PPF locations" preserveAspectRatio="xMidYMid meet">
+    <image class="vehicle-base" href="/assets/ppf-vehicle.png" x="0" y="0" width="1600" height="1024"/>
+    <path class="diagram-full-vehicle ${all ? 'selected' : ''}" d="M42 462 Q125 321 403 251 Q683 84 1120 151 Q1390 185 1493 361 L1518 632 Q1408 778 1160 776 Q978 797 848 857 Q628 931 448 836 Q238 815 73 687Z"/>
+    <g class="diagram-part"${click('frontBumper')}><path class="diagram-highlight ${on('frontBumper') ? 'selected' : ''}" d="M43 520 Q95 472 267 472 L474 523 L529 681 Q384 788 161 728 L46 652Z"/></g>
+    <g class="diagram-part"${click('hood')}><path class="diagram-highlight ${on('hood') ? 'selected' : ''}" d="M80 447 Q290 292 674 253 L807 368 Q587 483 277 505Z"/></g>
+    <g class="diagram-part"${click('leftFender')}><path class="diagram-highlight ${on('leftFender') ? 'selected' : ''}" d="M500 484 Q655 397 809 385 L860 566 Q771 542 665 575 L552 695 L493 611Z"/></g>
+    <g class="diagram-part"${click('rightFender')}><path class="diagram-highlight ${on('rightFender') ? 'selected' : ''}" d="M500 484 Q655 397 809 385 L860 566 Q771 542 665 575 L552 695 L493 611Z"/></g>
+    <g class="diagram-part"${click('mirrors')}><path class="diagram-highlight ${on('mirrors') ? 'selected' : ''}" d="M879 319 Q947 289 1018 323 L1002 377 Q943 400 886 367Z"/></g>
+    <g class="diagram-part"${click('doors')}><path class="diagram-highlight ${on('doors') ? 'selected' : ''}" d="M855 384 L1134 354 L1261 613 L1185 715 L858 672Z"/></g>
+    <g class="diagram-part"${click('rockers')}><path class="diagram-highlight ${on('rockers') ? 'selected' : ''}" d="M818 681 Q1014 720 1246 678 L1262 726 Q1031 788 790 735Z"/></g>
+    <g class="diagram-part"${click('roof')}><path class="diagram-highlight ${on('roof') ? 'selected' : ''}" d="M613 150 Q888 101 1135 170 L1094 213 Q854 198 625 220Z"/></g>
+    <g class="diagram-part"${click('rearQuarters')}><path class="diagram-highlight ${on('rearQuarters') ? 'selected' : ''}" d="M1243 333 Q1395 315 1468 407 L1486 582 Q1406 627 1299 618 L1251 490Z"/></g>
+    <g class="diagram-part"${click('trunk')}><path class="diagram-highlight ${on('trunk') ? 'selected' : ''}" d="M1338 236 Q1455 276 1491 372 L1456 416 Q1393 347 1296 333Z"/></g>
+    <g class="diagram-part"${click('rearBumper')}><path class="diagram-highlight ${on('rearBumper') ? 'selected' : ''}" d="M1405 588 L1513 552 L1514 650 Q1457 736 1334 754 L1300 700Z"/></g>
   </svg>`;
 }
 
