@@ -5124,7 +5124,7 @@ function showJobConfirmationPrintPreview(job) {
   }
   const documentHtml = document.getElementById('printRoot')?.innerHTML || '';
   overlay.innerHTML = `<div class="confirmation-preview-dialog">
-    <header><div><h2>${lang === 'zh' ? 'A4 打印预览' : 'A4 Print Preview'}</h2><p>${printLanguage === 'zh' ? '中文文件' : 'English document'} · Brother HL-L2465DW · A4 · 100%</p></div><div class="confirmation-preview-actions"><button type="button" class="btn" onclick="closeJobConfirmationPrintPreview()">${lang === 'zh' ? '返回修改' : 'Back'}</button><button type="button" class="btn primary" onclick="printJobConfirmationFromPreview()">${lang === 'zh' ? '确认并打印' : 'Confirm & Print'}</button></div></header>
+    <header><div><h2>${lang === 'zh' ? 'A4 打印预览' : 'A4 Print Preview'}</h2><p>${printLanguage === 'zh' ? '中文文件' : 'English document'} · Brother HL-L2465DW · A4 · 100%</p></div><div class="confirmation-preview-actions"><button type="button" class="btn" onclick="closeJobConfirmationPrintPreview()">${lang === 'zh' ? '返回修改' : 'Back'}</button><button type="button" class="btn primary" onclick="printJobConfirmationFromPreview(this)">${lang === 'zh' ? '确认并打印' : 'Confirm & Print'}</button></div></header>
     <div class="confirmation-preview-scroll"><div class="confirmation-preview-sheet">${documentHtml}</div></div>
   </div>`;
   overlay.classList.add('open');
@@ -5136,8 +5136,42 @@ function closeJobConfirmationPrintPreview() {
   document.body.classList.remove('modal-lock');
 }
 
-function printJobConfirmationFromPreview() {
-  window.print();
+function printJobConfirmationFromPreview(button) {
+  const printRoot = document.getElementById('printRoot');
+  if (!printRoot?.innerHTML.trim()) {
+    return alert(lang === 'zh' ? '打印内容尚未生成，请返回后重新打开打印预览。' : 'Print content is not ready. Please go back and reopen the preview.');
+  }
+
+  const originalText = button?.textContent || '';
+  if (button) {
+    button.disabled = true;
+    button.textContent = lang === 'zh' ? '正在打开系统打印窗口…' : 'Opening system print dialog…';
+  }
+
+  const restoreButton = () => {
+    if (button) {
+      button.disabled = false;
+      button.textContent = originalText;
+    }
+  };
+
+  // Safari 要求 window.print() 必须在用户点击事件中同步执行；经过
+  // window.open、load 或 setTimeout 后会失去用户激活状态，从而看起来毫无响应。
+  window.addEventListener('afterprint', restoreButton, { once: true });
+  try {
+    window.focus();
+    window.print();
+  } catch (error) {
+    window.removeEventListener('afterprint', restoreButton);
+    restoreButton();
+    console.error('Unable to open system print dialog:', error);
+    return alert(lang === 'zh'
+      ? '无法打开系统打印窗口，请确认 Safari 没有处于锁定模式，然后重试。'
+      : 'Unable to open the system print dialog. Make sure Safari is not in a restricted mode and try again.');
+  }
+
+  // 部分 Safari 版本关闭打印窗口后不会触发 afterprint，避免按钮一直处于禁用状态。
+  setTimeout(restoreButton, 1500);
 }
 
 function openJobFromProspect(prospectId) {
