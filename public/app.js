@@ -1878,19 +1878,35 @@ function isRecognizedJobRevenue(job) {
   return ['已交车', 'delivered', 'completed'].includes(status) && Number(job?.price || 0) !== 0;
 }
 
-function isRecognizedSalesRevenue(order) {
+function isShippedSalesOrder(order) {
   const status = String(order?.status || '').trim().toLowerCase();
   return ['已出库', 'shipped', 'delivered', 'completed'].includes(status) && orderCalc(order).total !== 0;
+}
+
+function recognizedSalesCollection(order) {
+  const status = String(order?.status || '').trim().toLowerCase();
+  if (['已取消', '取消', 'canceled', 'cancelled'].includes(status)) return 0;
+  const total = Math.max(0, Number(orderCalc(order).total || 0));
+  const paid = Math.max(0, Number(order?.paid || 0));
+  return Math.min(total, paid);
+}
+
+function isRecognizedSalesRevenue(order) {
+  return recognizedSalesCollection(order) > 0;
 }
 
 function accountingStatement(jobs = [], salesOrders = [], expenses = [], range = null, balanceJobs = jobs, balanceOrders = salesOrders) {
   const recognizedJobs = (jobs || []).filter(isRecognizedJobRevenue);
   const recognizedOrders = (salesOrders || []).filter(isRecognizedSalesRevenue);
   const serviceRevenue = recognizedJobs.reduce((sum, job) => sum + jobCalc(job).price, 0);
-  const productRevenue = recognizedOrders.reduce((sum, order) => sum + orderCalc(order).total, 0);
+  const productRevenue = recognizedOrders.reduce((sum, order) => sum + recognizedSalesCollection(order), 0);
   const revenue = serviceRevenue + productRevenue;
   const jobMaterials = recognizedJobs.reduce((sum, job) => sum + jobCalc(job).material, 0);
-  const productCost = recognizedOrders.reduce((sum, order) => sum + orderCalc(order).cost, 0);
+  const productCost = recognizedOrders.reduce((sum, order) => {
+    const calc = orderCalc(order);
+    const recognizedRatio = calc.total > 0 ? recognizedSalesCollection(order) / calc.total : 0;
+    return sum + calc.cost * recognizedRatio;
+  }, 0);
   const directMaterials = jobMaterials + productCost;
   const totalProductionPayroll = totalLaborForJobs(recognizedJobs, range);
   const directLabor = recognizedJobs.reduce((sum, job) => sum + jobCalc(job).labor, 0);
@@ -1903,11 +1919,11 @@ function accountingStatement(jobs = [], salesOrders = [], expenses = [], range =
   const operatingExpenses = unallocatedProductionPayroll + sellingCommissions + otherOperatingExpenses;
   const operatingIncome = grossProfit - operatingExpenses;
   const jobReceivables = (balanceJobs || []).filter(isRecognizedJobRevenue).reduce((sum, job) => sum + Math.max(0, jobCalc(job).price - jobPaidAmount(job)), 0);
-  const orderReceivables = (balanceOrders || []).filter(isRecognizedSalesRevenue).reduce((sum, order) => sum + Math.max(0, orderCalc(order).total - Number(order.paid || 0)), 0);
+  const orderReceivables = (balanceOrders || []).filter(isShippedSalesOrder).reduce((sum, order) => sum + Math.max(0, orderCalc(order).total - Number(order.paid || 0)), 0);
   const accountsReceivable = jobReceivables + orderReceivables;
   const customerDeposits = (balanceJobs || []).filter(job => !isRecognizedJobRevenue(job) && !['取消', 'canceled', 'cancelled'].includes(String(job?.status || '').trim().toLowerCase())).reduce((sum, job) => sum + Math.max(0, jobPaidAmount(job)), 0)
-    + (balanceOrders || []).filter(order => !isRecognizedSalesRevenue(order) && !['已取消', 'canceled', 'cancelled'].includes(String(order?.status || '').trim().toLowerCase()))
-      .reduce((sum, order) => sum + Math.max(0, Number(order.paid || 0)), 0);
+    + (balanceOrders || []).filter(order => !['已取消', '取消', 'canceled', 'cancelled'].includes(String(order?.status || '').trim().toLowerCase()))
+      .reduce((sum, order) => sum + Math.max(0, Number(order.paid || 0) - Math.max(0, orderCalc(order).total)), 0);
   const missingJobMaterialCosts = recognizedJobs.filter(job => Number(job.price || 0) > 0 && Number(job.materialCost || 0) <= 0).length;
   const missingProductCosts = recognizedOrders.reduce((count, order) => count + salesOrderLineItems(order).filter(line => {
     const product = state.products.find(item => item.sku === line.item);
@@ -2769,8 +2785,8 @@ function financialStatementSummary(statement, range) {
     ? `${statement.missingJobMaterialCosts} 张已交车施工单没有材料成本，毛利可能被高估。`
     : `${statement.missingJobMaterialCosts} delivered jobs have no material cost; gross profit may be overstated.`);
   if (statement.missingProductCosts) qualityWarnings.push(lang === 'zh'
-    ? `${statement.missingProductCosts} 行已出库商品没有成本，毛利可能被高估。`
-    : `${statement.missingProductCosts} shipped product lines have no cost; gross profit may be overstated.`);
+    ? `${statement.missingProductCosts} 行已收款商品没有成本，毛利可能被高估。`
+    : `${statement.missingProductCosts} collected product lines have no cost; gross profit may be overstated.`);
   if (!qualityWarnings.length) qualityWarnings.push(lang === 'zh' ? '本期已确认收入记录未发现缺失的直接成本。' : 'No missing direct costs were detected in recognized revenue records.');
   return `<section class="financial-report">
     <div class="financial-report-head">
@@ -2782,7 +2798,7 @@ function financialStatementSummary(statement, range) {
         <table class="financial-statement"><thead><tr><th>${lang === 'zh' ? '科目' : 'Account'}</th><th>${lang === 'zh' ? '本期金额' : 'Current period'}</th><th>${lang === 'zh' ? '占收入' : '% revenue'}</th></tr></thead><tbody>
           <tr class="financial-section"><td colspan="3">${lang === 'zh' ? '营业收入' : 'REVENUE'}</td></tr>
           ${financialStatementRow(lang === 'zh' ? '施工服务收入（仅已交车）' : 'Installation service revenue (delivered only)', statement.serviceRevenue, statement.revenue)}
-          ${financialStatementRow(lang === 'zh' ? '商品销售收入（仅已出库）' : 'Product sales revenue (shipped only)', statement.productRevenue, statement.revenue)}
+          ${financialStatementRow(lang === 'zh' ? '商品销售收入（按实际已收款）' : 'Product sales revenue (cash collected)', statement.productRevenue, statement.revenue)}
           ${financialStatementRow(lang === 'zh' ? '营业收入合计' : 'Total revenue', statement.revenue, statement.revenue, 'financial-subtotal')}
           <tr class="financial-section"><td colspan="3">${lang === 'zh' ? '营业成本' : 'COST OF SALES'}</td></tr>
           ${financialStatementRow(lang === 'zh' ? '直接材料及商品成本' : 'Direct materials and product costs', -statement.directMaterials, statement.revenue)}
@@ -2802,14 +2818,14 @@ function financialStatementSummary(statement, range) {
         <div class="financial-balance-card"><h3>${lang === 'zh' ? '会计余额摘要' : 'Accounting balance summary'}</h3>
           <div><span>${lang === 'zh' ? '应收账款' : 'Accounts receivable'}</span><strong>${reportAmount(statement.accountsReceivable)}</strong></div>
           <div><span>${lang === 'zh' ? '客户预收 / 合同负债' : 'Customer deposits / contract liabilities'}</span><strong>${reportAmount(statement.customerDeposits)}</strong></div>
-          <p>${lang === 'zh' ? '应收只包含已交车或已出库但尚未收齐的金额；未完工订单收款不计收入。' : 'Receivables include only delivered or shipped items not fully collected. Payments on unfulfilled orders are not revenue.'}</p>
+          <p>${lang === 'zh' ? '施工应收包含已交车但尚未收齐的金额；商品应收包含已出库但尚未收齐的金额。商品销售收入按销售单实际已收金额确认，不受是否出库影响。' : 'Service receivables include delivered jobs not fully collected; product receivables include shipped orders not fully collected. Product sales revenue is recognized from actual collections regardless of shipment status.'}</p>
         </div>
         <div class="financial-quality-card"><h3>${lang === 'zh' ? '数据完整性检查' : 'Data integrity checks'}</h3><ul>${qualityWarnings.map(item => `<li>${escapeHtml(item)}</li>`).join('')}</ul>
           <p>${lang === 'zh' ? '现有付款记录没有独立的收款日期，因此本报表不能可靠生成本期现金流量表。资产负债表还需要现金账户、应付账款、固定资产、折旧、税费和期末盘点数据。' : 'Payment records do not have separate receipt dates, so a reliable period cash flow statement cannot yet be produced. A full balance sheet also requires cash accounts, payables, fixed assets, depreciation, taxes, and period-end inventory counts.'}</p>
         </div>
       </div>
     </div>
-    <p class="financial-policy-note">${lang === 'zh' ? '确认政策：施工收入在交车时确认；商品收入在出库时确认；直接材料和生产人工计入营业成本；客服提成及运营成本计入营业费用。取消、排期、施工中、待质检、返工、待收款和仅已付款但未履约的订单不确认收入。' : 'Recognition policy: service revenue is recognized on delivery; product revenue on shipment; direct materials and production labor are cost of sales; customer service commissions and operating costs are operating expenses. Canceled, scheduled, in-progress, QC-pending, rework, payment-pending, and paid-but-unfulfilled orders are not revenue.'}</p>
+    <p class="financial-policy-note">${lang === 'zh' ? '确认政策：施工收入在交车时确认；商品销售收入按销售单实际已收金额确认，部分收款仅确认已收部分，不以出库状态为依据；相关商品成本按已收款比例配比。直接材料和生产人工计入营业成本；客服提成及运营成本计入营业费用。已取消销售单和未收款销售单不确认商品收入。' : 'Recognition policy: service revenue is recognized on delivery. Product sales revenue is recognized from actual collections, with partial collections recognized only to the amount collected and independent of shipment status; related product cost is matched proportionally. Direct materials and production labor are cost of sales; customer service commissions and operating costs are operating expenses. Canceled and uncollected sales orders are excluded from product revenue.'}</p>
   </section>`;
 }
 
