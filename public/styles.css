@@ -1560,6 +1560,25 @@ body.modal-lock .prospect-workspace { pointer-events: none; }
 .personal-note-share-users > div { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:8px; margin-top:10px; max-height:160px; overflow:auto; }
 .personal-note-share-user { display:flex !important; flex-direction:row !important; align-items:center; gap:8px; padding:8px 10px; border:1px solid var(--line); border-radius:10px; background:white; }
 .personal-note-share-user input { width:auto; margin:0; }
+.reimbursement-stats { grid-template-columns:repeat(4,minmax(0,1fr)); margin-bottom:14px; }
+.reimbursement-table .reimbursement-purpose { max-width:230px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.reimbursement-form { display:flex; flex-direction:column; gap:14px; }
+.reimbursement-form-head { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:12px 14px; border:1px solid var(--line); border-radius:12px; background:var(--soft); }
+.reimbursement-form-head>div { display:flex; align-items:center; gap:10px; }
+.reimbursement-upload { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:10px 16px; align-items:center; padding:14px; border:1px solid var(--line); border-radius:14px; background:#f8fbfc; }
+.reimbursement-upload p { margin:4px 0 0; }
+.reimbursement-upload-btn { position:relative; cursor:pointer; }
+.reimbursement-upload-btn input { position:absolute; width:1px; height:1px; opacity:0; overflow:hidden; pointer-events:none; }
+.reimbursement-upload>span,.reimbursement-receipts { grid-column:1/-1; }
+.reimbursement-receipts { display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:10px; }
+.reimbursement-draft-receipt { position:relative; min-width:0; }
+.reimbursement-draft-receipt>.icon-btn { position:absolute; top:5px; right:5px; background:rgba(255,255,255,.94); }
+.reimbursement-receipt { display:flex; flex-direction:column; gap:7px; height:100%; min-height:105px; padding:9px; border:1px solid var(--line); border-radius:11px; background:white; color:var(--ink); text-decoration:none; overflow:hidden; }
+.reimbursement-receipt img { width:100%; height:92px; object-fit:cover; border-radius:8px; background:#eef3f6; }
+.reimbursement-receipt span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:12px; }
+.reimbursement-file-icon { display:grid; place-items:center; min-height:92px; border-radius:8px; background:#eef3f6; font-size:34px; }
+.reimbursement-approval { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:10px; padding:13px 14px; border:1px solid #b9dfe7; border-radius:13px; background:#eef9fb; }
+.reimbursement-approval-actions { display:flex; flex-wrap:wrap; gap:8px; }
 .personal-note-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:14px; }
 .personal-note-card {
   min-height:180px; padding:16px; border:1px solid var(--line); border-radius:14px;
@@ -1603,6 +1622,9 @@ body.modal-lock .prospect-workspace { pointer-events: none; }
   .message-thread { max-height: none; }
   .message-bubble { max-width: 88%; }
   .personal-note-grid { grid-template-columns:1fr; }
+  .reimbursement-stats { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .reimbursement-upload { grid-template-columns:1fr; }
+  .reimbursement-upload>* { grid-column:1!important; }
 }
 
 .financial-report { margin-top:14px; background:#fff; border:1px solid var(--line); border-radius:18px; box-shadow:var(--shadow); overflow:hidden; }

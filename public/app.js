@@ -144,6 +144,8 @@ const dict = {
     auditSub: '查询新增、修改、删除记录',
     expenses: '运营成本',
     expensesSub: '房租、水电、保险、广告、软件和其他费用',
+    reimbursements: '员工报销',
+    reimbursementsSub: '费用申请、凭证、审批和A4报销单',
     users: '账号权限',
     usersSub: '老板、店长、前台、销售、文员、仓库、师傅、财务',
     settings: '设置',
@@ -385,6 +387,8 @@ const dict = {
     audit: 'Activity Log',
     auditSub: 'Review create, edit, and delete history',
     expenses: 'Operating Costs',
+    reimbursements: 'Employee Reimbursements',
+    reimbursementsSub: 'Expense claims, receipts, approvals and A4 forms',
     expensesSub: 'Rent, utilities, insurance, ads, software, and other expenses',
     users: 'Users & Roles',
     usersSub: 'Owner, manager, front desk, sales, clerk, warehouse, installer, finance',
@@ -599,6 +603,7 @@ const pages = [
   ['shipments', 'shipments', 'shipmentsSub'],
   ['schedules', 'schedules', 'schedulesSub'],
   ['expenses', 'expenses', 'expensesSub'],
+  ['reimbursements', 'reimbursements', 'reimbursementsSub'],
   ['reports', 'reports', 'reportsSub'],
   ['audit', 'audit', 'auditSub'],
   ['users', 'users', 'usersSub'],
@@ -622,6 +627,7 @@ const pagePermissions = {
   shipments: 'shipmentsView',
   schedules: 'schedulesView',
   expenses: 'expensesView',
+  reimbursements: 'reimbursementsView',
   reports: 'reportsView',
   audit: ['reportsView', 'usersManage'],
   users: 'usersManage',
@@ -644,6 +650,7 @@ const writePermissions = {
   shipments: 'shipmentsEdit',
   schedules: 'schedulesEdit',
   expenses: 'expensesEdit',
+  reimbursements: 'reimbursementsCreate',
   users: 'usersManage'
 };
 
@@ -672,6 +679,9 @@ const permissionLabels = [
   ['commissionView', '查看客服提成', 'View customer service commissions'],
   ['commissionEdit', '编辑客服提成规则', 'Edit customer service commission rules'],
   ['expensesView', '查看运营成本', 'View operating costs'],
+  ['reimbursementsView', '查看员工报销', 'View reimbursements'],
+  ['reimbursementsCreate', '提交员工报销', 'Submit reimbursements'],
+  ['reimbursementsApprove', '审批员工报销', 'Approve reimbursements'],
   ['expensesEdit', '编辑运营成本', 'Edit operating costs'],
   ['reportsView', '查看报表', 'View reports'],
   ['fullFinanceView', '查看完整财报/成本/利润', 'View full financials / costs / profit'],
@@ -1243,8 +1253,24 @@ function filteredSalesOrders() {
     .filter(orderMatchesPerson);
 }
 
+function reimbursedExpenseRows() {
+  return (state.reimbursements || []).filter(row => row.status === '已报销').map(row => ({
+    id: `reimbursement-${row.id}`,
+    date: row.reimbursedAt?.slice(0, 10) || row.date,
+    category: `${lang === 'zh' ? '员工报销' : 'Reimbursement'} · ${row.category || ''}`,
+    vendor: row.vendor || row.employeeName || '',
+    amount: Number(row.amount || 0),
+    note: `${row.reimbursementNo || ''} ${row.purpose || ''}`.trim(),
+    recurring: false
+  }));
+}
+
+function allOperatingExpenseRows() {
+  return [...(state.expenses || []), ...reimbursedExpenseRows()];
+}
+
 function filteredExpenses(range = activeJobDateRange()) {
-  return (state.expenses || []).filter(expense => expenseAppliesToDateRange(expense, range));
+  return allOperatingExpenseRows().filter(expense => expenseAppliesToDateRange(expense, range));
 }
 
 function dateFallsInRange(value, range = activeJobDateRange()) {
@@ -1791,7 +1817,7 @@ function updateVoiceButton(recording) {
 }
 
 function navIcon(id) {
-  return { modules:'▦', dashboard:'⌂', jobs:'▣', installers:'◉', pricing:'$', inventory:'▤', workshopInventory:'▥', inventoryAlerts:'!', customerCenter:'💬', replyLibrary:'☁', prospects:'★', leads:'☎', orders:'⇄', shipments:'✈', schedules:'◫', expenses:'◇', reports:'◌', audit:'◷', users:'◎', personalNotes:'📝', settings:'⚙' }[id] || '□';
+  return { modules:'▦', dashboard:'⌂', jobs:'▣', installers:'◉', pricing:'$', inventory:'▤', workshopInventory:'▥', inventoryAlerts:'!', customerCenter:'💬', replyLibrary:'☁', prospects:'★', leads:'☎', orders:'⇄', shipments:'✈', schedules:'◫', expenses:'◇', reimbursements:'🧾', reports:'◌', audit:'◷', users:'◎', personalNotes:'📝', settings:'⚙' }[id] || '□';
 }
 
 function moduleGrid(availablePages) {
@@ -2457,7 +2483,7 @@ function expenseAppliesToMonth(expense, month = currentMonth()) {
 }
 
 function operatingCostTotal(range = null) {
-  const expenses = state.expenses || [];
+  const expenses = allOperatingExpenseRows();
   if (expenses.length) {
     const rows = range ? expenses.filter(expense => expenseAppliesToDateRange(expense, range)) : expenses;
     return rows.reduce((sum, expense) => sum + Number(expense.amount || 0), 0);
@@ -2903,6 +2929,9 @@ const views = {
   },
   expenses() {
     return panel(t('expenses'), hasPerm('expensesEdit') ? `<button class="btn primary" onclick="openExpense()">${t('addNew')}</button>` : '', expenseTable() + `<p class="note">${lang === 'zh' ? '这里录入房租、水电费、保险、广告、软件订阅等运营成本。报表会自动扣除这些费用。' : 'Enter rent, utilities, insurance, advertising, software subscriptions, and other operating costs here. Reports deduct these costs automatically.'}</p>`);
+  },
+  reimbursements() {
+    return reimbursementView();
   },
   reports() {
     const reportRange = activeJobDateRange();
@@ -3567,6 +3596,95 @@ function expenseTable(actions = true, sourceRows = state.expenses || []) {
   ${rows.length ? `<tr class="total-row"><td colspan="5">${lang === 'zh' ? '总计' : 'Total'}</td><td>${currency.format(total)}</td><td></td><td></td>${actions ? '<td></td>' : ''}</tr>` : ''}
   ${rows.length ? '' : `<tr><td colspan="${actions ? 9 : 8}" class="note">${lang === 'zh' ? '还没有运营成本记录。' : 'No operating cost records yet.'}</td></tr>`}
   </tbody></table></div>`;
+}
+
+function reimbursementStatusLabel(status) {
+  const labels = {
+    '待审批': lang === 'zh' ? '待审批' : 'Pending',
+    '已批准': lang === 'zh' ? '已批准' : 'Approved',
+    '已驳回': lang === 'zh' ? '已驳回' : 'Rejected',
+    '已报销': lang === 'zh' ? '已报销' : 'Reimbursed'
+  };
+  return labels[status] || status || '';
+}
+
+function reimbursementStatusPill(status) {
+  const tone = status === '已报销' ? 'good' : status === '已批准' ? 'info' : status === '已驳回' ? 'bad' : 'warn';
+  return `<span class="pill ${tone}">${escapeHtml(reimbursementStatusLabel(status))}</span>`;
+}
+
+function reimbursementView() {
+  const rows = [...(state.reimbursements || [])].sort((a, b) => String(b.createdAt || b.date || '').localeCompare(String(a.createdAt || a.date || '')));
+  const pending = rows.filter(row => row.status === '待审批').reduce((sum, row) => sum + Number(row.amount || 0), 0);
+  const approved = rows.filter(row => row.status === '已批准').reduce((sum, row) => sum + Number(row.amount || 0), 0);
+  const reimbursed = rows.filter(row => row.status === '已报销').reduce((sum, row) => sum + Number(row.amount || 0), 0);
+  const actions = hasPerm('reimbursementsCreate') ? `<button class="btn primary" onclick="openReimbursement()">${lang === 'zh' ? '提交报销' : 'New Claim'}</button>` : '';
+  return panel(t('reimbursements'), actions, `
+    <div class="grid stats reimbursement-stats">
+      <div class="stat"><span>${lang === 'zh' ? '待审批' : 'Pending'}</span><strong>${currency.format(pending)}</strong></div>
+      <div class="stat"><span>${lang === 'zh' ? '已批准待付款' : 'Approved, unpaid'}</span><strong>${currency.format(approved)}</strong></div>
+      <div class="stat"><span>${lang === 'zh' ? '已报销' : 'Reimbursed'}</span><strong>${currency.format(reimbursed)}</strong></div>
+    </div>
+    <div class="table-wrap reimbursement-table"><table><thead><tr>
+      <th>${lang === 'zh' ? '报销单号' : 'Claim No.'}</th><th>${lang === 'zh' ? '员工' : 'Employee'}</th><th>${lang === 'zh' ? '费用日期' : 'Expense Date'}</th><th>${lang === 'zh' ? '类别/商家' : 'Category / Vendor'}</th><th>${t('amount')}</th><th>${lang === 'zh' ? '凭证' : 'Receipts'}</th><th>${t('status')}</th><th></th>
+    </tr></thead><tbody>
+      ${rows.map(row => `<tr class="clickable-row" onclick="openReimbursement('${row.id}')"><td><strong>${escapeHtml(row.reimbursementNo || '')}</strong><div class="note reimbursement-purpose">${escapeHtml(row.purpose || '')}</div></td><td>${escapeHtml(row.employeeName || '')}</td><td>${escapeHtml(row.date || '')}</td><td>${escapeHtml(row.category || '')}<div class="note">${escapeHtml(row.vendor || '')}</div></td><td><strong>${currency.format(Number(row.amount || 0))}</strong></td><td>${(row.attachments || []).length}</td><td>${reimbursementStatusPill(row.status)}</td><td><div class="mini-actions"><button class="icon-btn" onclick="event.stopPropagation(); printReimbursement('${row.id}')" title="${lang === 'zh' ? '打印' : 'Print'}">⎙</button></div></td></tr>`).join('')}
+      ${rows.length ? '' : `<tr><td colspan="8" class="note">${lang === 'zh' ? '还没有报销申请。员工可用手机拍摄小票后提交。' : 'No reimbursement claims yet. Staff can photograph receipts on a phone.'}</td></tr>`}
+    </tbody></table></div>
+    <p class="note">${lang === 'zh' ? '财务规则：待审批和已批准的申请不会计入运营成本；只有标记“已报销”后才进入财务报表。' : 'Accounting rule: pending and approved claims are excluded from operating costs; only reimbursed claims enter the financial statements.'}</p>`);
+}
+
+function reimbursementAttachmentHtml(attachment) {
+  const type = String(attachment.type || '');
+  const preview = type.startsWith('image/')
+    ? `<img src="${escapeHtml(attachment.url || '')}" alt="${escapeHtml(attachment.name || '')}">`
+    : `<div class="reimbursement-file-icon">📄</div>`;
+  return `<a class="reimbursement-receipt" href="${escapeHtml(attachment.url || '')}" target="_blank" rel="noopener">${preview}<span>${escapeHtml(attachment.name || '')}</span></a>`;
+}
+
+async function reimbursementFileDataUrl(file) {
+  if (file.size > 5 * 1024 * 1024) throw new Error(lang === 'zh' ? '单个凭证不能超过 5MB，请压缩后重试。' : 'Each receipt must be 5MB or smaller.');
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  let binary = '';
+  const size = 0x8000;
+  for (let i = 0; i < bytes.length; i += size) binary += String.fromCharCode(...bytes.subarray(i, i + size));
+  return `data:${file.type || 'application/octet-stream'};base64,${btoa(binary)}`;
+}
+
+async function uploadReimbursementReceipts(input) {
+  const files = [...(input?.files || [])];
+  if (!files.length) return;
+  const box = document.getElementById('reimbursementReceiptStatus');
+  try {
+    input.disabled = true;
+    if (box) box.textContent = lang === 'zh' ? `正在上传 ${files.length} 个凭证…` : `Uploading ${files.length} receipt(s)…`;
+    for (const file of files) {
+      const optimized = String(file?.type || '').startsWith('image/') ? await optimizeProspectImage(file) : file;
+      const result = await api('/api/reimbursement-media/upload', {
+        method: 'POST',
+        body: JSON.stringify({ name: optimized.name, type: optimized.type, dataUrl: await reimbursementFileDataUrl(optimized) })
+      });
+      window.reimbursementDraftAttachments = [...(window.reimbursementDraftAttachments || []), result];
+    }
+    renderReimbursementDraftReceipts();
+  } catch (err) {
+    alert(err.message);
+  } finally {
+    input.disabled = false;
+    input.value = '';
+    if (box) box.textContent = '';
+  }
+}
+
+function removeReimbursementDraftReceipt(index) {
+  window.reimbursementDraftAttachments = (window.reimbursementDraftAttachments || []).filter((_, i) => i !== index);
+  renderReimbursementDraftReceipts();
+}
+
+function renderReimbursementDraftReceipts() {
+  const container = document.getElementById('reimbursementReceipts');
+  if (!container) return;
+  container.innerHTML = (window.reimbursementDraftAttachments || []).map((file, index) => `<div class="reimbursement-draft-receipt">${reimbursementAttachmentHtml(file)}<button type="button" class="icon-btn" onclick="removeReimbursementDraftReceipt(${index})">×</button></div>`).join('');
 }
 
 function expenseAdPeriod(expense) {
@@ -4598,6 +4716,7 @@ function collectionName(collection) {
     leads: t('leads'),
     customerServiceReps: lang === 'zh' ? '客服提成规则' : 'Commission Rules',
     expenses: t('expenses'),
+    reimbursements: t('reimbursements'),
     users: t('users')
   };
   return names[collection] || collection || '';
@@ -4659,6 +4778,7 @@ function collectionPermission(collection, action) {
     leads: { edit: 'leadsEdit', delete: 'leadsEdit' },
     customerServiceReps: { edit: 'commissionEdit', delete: 'commissionEdit' },
     expenses: { edit: 'expensesEdit', delete: 'expensesEdit' },
+    reimbursements: { edit: 'reimbursementsCreate', delete: 'reimbursementsCreate' },
     users: { edit: 'usersManage', delete: 'usersManage' }
   };
   return map[collection]?.[action];
@@ -4677,6 +4797,7 @@ function openQuickAdd() {
   if (current === 'shipments' && hasPerm('shipmentsEdit')) return openShipment();
   if (current === 'schedules' && hasPerm('schedulesEdit')) return openSchedule();
   if (current === 'expenses' && hasPerm('expensesEdit')) return openExpense();
+  if (current === 'reimbursements' && hasPerm('reimbursementsCreate')) return openReimbursement();
   if (current === 'users' && hasPerm('usersManage')) return openUser();
   alert(lang === 'zh' ? '你没有新增权限。' : 'You do not have create permission.');
 }
@@ -5494,6 +5615,115 @@ function openExpense(id) {
   });
 }
 
+function reimbursementCategoryOptions() {
+  return (lang === 'zh'
+    ? ['交通出行','工具设备','材料耗材','办公用品','餐饮','网络采购','其他']
+    : ['Transportation','Tools & equipment','Materials & supplies','Office supplies','Meals','Online purchase','Other'])
+    .map(value => [value, value]);
+}
+
+function reimbursementPaymentOptions() {
+  return (lang === 'zh' ? ['个人现金','个人银行卡','个人信用卡','公司卡','其他'] : ['Personal cash','Personal debit card','Personal credit card','Company card','Other'])
+    .map(value => [value, value]);
+}
+
+function openReimbursement(id) {
+  const item = (state.reimbursements || []).find(row => row.id === id) || {
+    date: today(), category: lang === 'zh' ? '材料耗材' : 'Materials & supplies', vendor: '', purpose: '', amount: 0,
+    paymentMethod: lang === 'zh' ? '个人银行卡' : 'Personal debit card', notes: '', attachments: [], status: '待审批'
+  };
+  const canApprove = hasPerm('reimbursementsApprove');
+  const canEdit = !id || item.status === '待审批';
+  window.reimbursementDraftAttachments = [...(item.attachments || [])];
+  const approval = id && canApprove ? `<div class="reimbursement-approval wide">
+    <strong>${lang === 'zh' ? '审批操作' : 'Approval actions'}</strong>
+    <div class="reimbursement-approval-actions">
+      ${item.status === '待审批' ? `<button type="button" class="btn primary" onclick="updateReimbursementStatus('${item.id}','已批准',this)">${lang === 'zh' ? '批准' : 'Approve'}</button><button type="button" class="btn" onclick="updateReimbursementStatus('${item.id}','已驳回',this)">${lang === 'zh' ? '驳回' : 'Reject'}</button>` : ''}
+      ${item.status === '已批准' ? `<button type="button" class="btn primary" onclick="updateReimbursementStatus('${item.id}','已报销',this)">${lang === 'zh' ? '确认已付款' : 'Mark reimbursed'}</button>` : ''}
+      <button type="button" class="btn" onclick="printReimbursement('${item.id}')">${lang === 'zh' ? '打印预览' : 'Print preview'}</button>
+    </div>
+    ${item.rejectionReason ? `<p class="note">${lang === 'zh' ? '驳回原因：' : 'Reason: '}${escapeHtml(item.rejectionReason)}</p>` : ''}
+  </div>` : '';
+  openModal(id ? (lang === 'zh' ? '报销申请详情' : 'Reimbursement claim') : (lang === 'zh' ? '提交员工报销' : 'New reimbursement claim'), `
+    <div class="reimbursement-form">
+      <div class="reimbursement-form-head"><div><strong>${escapeHtml(item.reimbursementNo || (lang === 'zh' ? '新报销申请' : 'New claim'))}</strong>${id ? reimbursementStatusPill(item.status) : ''}</div><span>${escapeHtml(item.employeeName || user?.name || '')}</span></div>
+      ${formHtml([
+        ['reimbursementExpenseDate',lang === 'zh' ? '费用日期' : 'Expense date','date',item.date],
+        ['reimbursementCategory',lang === 'zh' ? '费用类别' : 'Category','select',item.category,reimbursementCategoryOptions()],
+        ['reimbursementVendor',lang === 'zh' ? '商家/收款方' : 'Vendor','text',item.vendor],
+        ['reimbursementPurpose',lang === 'zh' ? '用途说明' : 'Business purpose','text',item.purpose],
+        ['reimbursementAmount',`${lang === 'zh' ? '报销金额' : 'Amount'} $`,'number',item.amount],
+        ['reimbursementPaymentMethod',lang === 'zh' ? '付款方式' : 'Payment method','select',item.paymentMethod,reimbursementPaymentOptions()],
+        ['reimbursementNote',lang === 'zh' ? '补充说明' : 'Notes','textarea',item.notes,null,'wide']
+      ])}
+      <div class="reimbursement-upload wide">
+        <div><strong>${lang === 'zh' ? '原始凭证/小票' : 'Original receipts'}</strong><p class="note">${lang === 'zh' ? '手机可直接拍照；也可上传图片或 PDF，每张凭证都会保存在 Railway 云端。' : 'Take a photo on mobile or upload images/PDFs. Receipts are stored in Railway.'}</p></div>
+        ${canEdit ? `<label class="btn reimbursement-upload-btn">📷 ${lang === 'zh' ? '拍照或上传凭证' : 'Photo / upload'}<input type="file" accept="image/*,.pdf,application/pdf" capture="environment" multiple onchange="uploadReimbursementReceipts(this)"></label>` : ''}
+        <span id="reimbursementReceiptStatus" class="note"></span><div id="reimbursementReceipts" class="reimbursement-receipts"></div>
+      </div>${approval}
+    </div>`, async () => {
+      if (!canEdit || window.reimbursementSaving) return;
+      const data = {
+        date: document.getElementById('reimbursementExpenseDate')?.value || '',
+        category: document.getElementById('reimbursementCategory')?.value || '',
+        vendor: document.getElementById('reimbursementVendor')?.value || '',
+        purpose: document.getElementById('reimbursementPurpose')?.value || '',
+        amount: Number(document.getElementById('reimbursementAmount')?.value || 0),
+        paymentMethod: document.getElementById('reimbursementPaymentMethod')?.value || '',
+        notes: document.getElementById('reimbursementNote')?.value || '',
+        attachments: window.reimbursementDraftAttachments || [],
+        requestId: item.requestId || (globalThis.crypto?.randomUUID ? globalThis.crypto.randomUUID() : `claim-${Date.now()}-${Math.random()}`)
+      };
+      if (!data.date || !data.category || !data.purpose.trim() || data.amount <= 0) return alert(lang === 'zh' ? '请填写费用日期、类别、用途和正确金额。' : 'Date, category, purpose and a valid amount are required.');
+      const button = document.getElementById('modalSave');
+      try {
+        window.reimbursementSaving = true;
+        if (button) { button.disabled = true; button.textContent = lang === 'zh' ? '正在保存…' : 'Saving…'; }
+        state = await api(`/api/reimbursements${id ? `/${id}` : ''}`, { method: id ? 'PUT' : 'POST', body: JSON.stringify(data) });
+        broadcastDataChange(); closeModal(); render();
+      } catch (err) {
+        alert(err.message);
+        if (button) { button.disabled = false; button.textContent = t('save'); }
+      } finally { window.reimbursementSaving = false; }
+    });
+  renderReimbursementDraftReceipts();
+  document.querySelectorAll('.reimbursement-form input,.reimbursement-form select,.reimbursement-form textarea').forEach(el => { if (!canEdit) el.disabled = true; });
+  const save = document.getElementById('modalSave');
+  if (save) save.hidden = !canEdit;
+}
+
+async function updateReimbursementStatus(id, status, button) {
+  const item = (state.reimbursements || []).find(row => row.id === id);
+  if (!item || !hasPerm('reimbursementsApprove')) return;
+  let rejectionReason = item.rejectionReason || '';
+  if (status === '已驳回') {
+    rejectionReason = prompt(lang === 'zh' ? '请输入驳回原因：' : 'Enter rejection reason:') || '';
+    if (!rejectionReason.trim()) return;
+  }
+  try {
+    if (button) button.disabled = true;
+    state = await api(`/api/reimbursements/${id}`, { method: 'PUT', body: JSON.stringify({ ...item, status, rejectionReason }) });
+    broadcastDataChange(); closeModal(); render(); openReimbursement(id);
+  } catch (err) { alert(err.message); if (button) button.disabled = false; }
+}
+
+function printReimbursement(id) {
+  const item = (state.reimbursements || []).find(row => row.id === id);
+  if (!item) return;
+  const win = window.open('', '_blank');
+  if (!win) return alert(lang === 'zh' ? '浏览器阻止了打印预览窗口，请允许弹出窗口。' : 'Allow pop-ups to open print preview.');
+  const label = (zh, en) => lang === 'zh' ? zh : en;
+  const receipts = (item.attachments || []).map(file => String(file.type || '').startsWith('image/')
+    ? `<figure><img src="${escapeHtml(file.url || '')}"><figcaption>${escapeHtml(file.name || '')}</figcaption></figure>`
+    : `<p>📎 <a href="${escapeHtml(file.url || '')}">${escapeHtml(file.name || '')}</a></p>`).join('');
+  win.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(item.reimbursementNo || '')}</title><style>
+    @page{size:A4;margin:12mm}*{box-sizing:border-box}body{font-family:Arial,"Noto Sans SC",sans-serif;color:#18212b;margin:0;font-size:12px}header{display:flex;justify-content:space-between;align-items:flex-end;border-bottom:3px solid #14758a;padding-bottom:12px;margin-bottom:16px}h1{margin:0;font-size:24px}.no{font-weight:700}.grid{display:grid;grid-template-columns:1fr 1fr;gap:0;border:1px solid #9da9b5}.cell{padding:9px 11px;border-right:1px solid #9da9b5;border-bottom:1px solid #9da9b5;min-height:54px}.cell:nth-child(2n){border-right:0}.wide{grid-column:1/-1;border-right:0}.cell b{display:block;color:#647282;font-size:10px;margin-bottom:5px}.amount{font-size:22px;font-weight:800;color:#14758a}.receipts{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-top:14px}.receipts figure{margin:0;border:1px solid #ccd4dc;padding:6px;break-inside:avoid}.receipts img{width:100%;height:190px;object-fit:contain}.receipts figcaption{font-size:10px;color:#667;margin-top:4px}.sign{display:grid;grid-template-columns:1fr 1fr;gap:36px;margin-top:38px}.line{border-top:1px solid #333;padding-top:6px}.actions{position:fixed;right:16px;top:12px}.actions button{padding:10px 16px;background:#14758a;color:white;border:0;border-radius:6px}@media print{.actions{display:none}}
+  </style></head><body><div class="actions"><button onclick="window.print()">${label('打印 A4','Print A4')}</button></div><header><div><h1>QUAD FILM · ${label('员工费用报销单','EMPLOYEE EXPENSE CLAIM')}</h1><div>${label('正式报销凭证与审批记录','Reimbursement record and approval')}</div></div><div class="no">${escapeHtml(item.reimbursementNo || '')}</div></header>
+  <div class="grid"><div class="cell"><b>${label('申请员工','Employee')}</b>${escapeHtml(item.employeeName || '')}</div><div class="cell"><b>${label('费用日期','Expense date')}</b>${escapeHtml(item.date || '')}</div><div class="cell"><b>${label('费用类别','Category')}</b>${escapeHtml(item.category || '')}</div><div class="cell"><b>${label('商家/收款方','Vendor')}</b>${escapeHtml(item.vendor || '—')}</div><div class="cell wide"><b>${label('业务用途','Business purpose')}</b>${escapeHtml(item.purpose || '')}</div><div class="cell"><b>${label('付款方式','Payment method')}</b>${escapeHtml(item.paymentMethod || '')}</div><div class="cell"><b>${label('报销金额','Claim amount')}</b><span class="amount">${currency.format(Number(item.amount || 0))}</span></div><div class="cell wide"><b>${label('补充说明','Notes')}</b>${escapeHtml(item.notes || '—')}</div><div class="cell"><b>${label('状态','Status')}</b>${escapeHtml(reimbursementStatusLabel(item.status))}</div><div class="cell"><b>${label('审批人/付款人','Approved / paid by')}</b>${escapeHtml(item.reimbursedBy || item.approvedBy || '—')}</div></div>
+  ${receipts ? `<h2>${label('原始凭证','ORIGINAL RECEIPTS')}</h2><div class="receipts">${receipts}</div>` : ''}<div class="sign"><div class="line">${label('员工签名 / 日期','Employee signature / Date')}</div><div class="line">${label('审批人签名 / 日期','Approver signature / Date')}</div></div></body></html>`);
+  win.document.close();
+}
+
 function openUser(id, presetRole = 'frontdesk') {
   const item = state.users.find(x => x.id === id) || { name: '', email: '', role: presetRole, active: true };
   const permissions = { ...roleDefaultPermissions(item.role), ...(item.permissions || {}) };
@@ -5857,12 +6087,12 @@ function roleDefaultPermissions(role) {
   const byRole = {
     owner: all,
     manager: all,
-    frontdesk: { ...none, jobsView: true, jobsCreate: true, pricingView: true, ordersView: true, ordersEdit: true, shipmentsView: true, schedulesView: true, leadsView: true, leadsEdit: true, prospectsView: true, prospectsEdit: true },
-    sales: { ...none, jobsView: true, jobsCreate: true, pricingView: true, ordersView: true, ordersEdit: true, shipmentsView: true, schedulesView: true, leadsView: true, leadsEdit: true, prospectsView: true, prospectsEdit: true },
-    clerk: { ...none, jobsView: true, jobsCreate: true, jobsEdit: true, pricingView: true, inventoryView: true, ordersView: true, ordersEdit: true, shipmentsView: true, shipmentsEdit: true, schedulesView: true, schedulesEdit: true, leadsView: true, leadsEdit: true, prospectsView: true, prospectsEdit: true, expensesView: true, expensesEdit: true },
-    warehouse: { ...none, inventoryView: true, inventoryEdit: true, ordersView: true, shipmentsView: true, shipmentsEdit: true, schedulesView: true },
-    installer: { ...none, jobsView: true },
-    finance: { ...none, jobsView: true, ordersView: true, shipmentsView: true, schedulesView: true, leadsView: true, prospectsView: true, commissionView: true, reportsView: true, fullFinanceView: true, expensesView: true, expensesEdit: true, inventoryView: true, settingsEdit: true }
+    frontdesk: { ...none, jobsView: true, jobsCreate: true, pricingView: true, ordersView: true, ordersEdit: true, shipmentsView: true, schedulesView: true, leadsView: true, leadsEdit: true, prospectsView: true, prospectsEdit: true, reimbursementsView: true, reimbursementsCreate: true },
+    sales: { ...none, jobsView: true, jobsCreate: true, pricingView: true, ordersView: true, ordersEdit: true, shipmentsView: true, schedulesView: true, leadsView: true, leadsEdit: true, prospectsView: true, prospectsEdit: true, reimbursementsView: true, reimbursementsCreate: true },
+    clerk: { ...none, jobsView: true, jobsCreate: true, jobsEdit: true, pricingView: true, inventoryView: true, ordersView: true, ordersEdit: true, shipmentsView: true, shipmentsEdit: true, schedulesView: true, schedulesEdit: true, leadsView: true, leadsEdit: true, prospectsView: true, prospectsEdit: true, expensesView: true, expensesEdit: true, reimbursementsView: true, reimbursementsCreate: true },
+    warehouse: { ...none, inventoryView: true, inventoryEdit: true, ordersView: true, shipmentsView: true, shipmentsEdit: true, schedulesView: true, reimbursementsView: true, reimbursementsCreate: true },
+    installer: { ...none, jobsView: true, reimbursementsView: true, reimbursementsCreate: true },
+    finance: { ...none, jobsView: true, ordersView: true, shipmentsView: true, schedulesView: true, leadsView: true, prospectsView: true, commissionView: true, reportsView: true, fullFinanceView: true, expensesView: true, expensesEdit: true, inventoryView: true, settingsEdit: true, reimbursementsView: true, reimbursementsCreate: true, reimbursementsApprove: true }
   };
   return byRole[role] || none;
 }
@@ -5881,6 +6111,7 @@ function openModal(title, html, onSave) {
   }
   document.getElementById('modalBody').innerHTML = html;
   document.getElementById('modalSave').onclick = onSave;
+  document.getElementById('modalSave').hidden = false;
   document.getElementById('modalSave').disabled = false;
   document.getElementById('modalSave').textContent = t('save');
   const cancel = document.querySelector('.dialog footer .btn');

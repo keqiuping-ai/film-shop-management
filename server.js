@@ -203,6 +203,7 @@ function seedDb() {
     schedules: [],
     scheduleReminderLogs: [],
     personalNotes: [],
+    reimbursements: [],
     customerServiceReps: [
       { id: id(), name: '前台客服', role: '前台', invitePay: 20, closePay: 50, active: true }
     ],
@@ -254,6 +255,7 @@ function readDb() {
   if (!Array.isArray(db.schedules)) db.schedules = [];
   if (!Array.isArray(db.scheduleReminderLogs)) db.scheduleReminderLogs = [];
   if (!Array.isArray(db.personalNotes)) db.personalNotes = [];
+  if (!Array.isArray(db.reimbursements)) db.reimbursements = [];
   if (!Array.isArray(db.messages)) db.messages = [];
   if (!Array.isArray(db.clockRecords)) db.clockRecords = [];
   if (!Array.isArray(db.leaveRequests)) db.leaveRequests = [];
@@ -898,6 +900,9 @@ function defaultPermissions(role) {
     commissionEdit: false,
     expensesView: false,
     expensesEdit: false,
+    reimbursementsView: false,
+    reimbursementsCreate: false,
+    reimbursementsApprove: false,
     reportsView: false,
     fullFinanceView: false,
     usersManage: false,
@@ -907,12 +912,12 @@ function defaultPermissions(role) {
   const byRole = {
     owner: all,
     manager: all,
-    frontdesk: { ...none, jobsView: true, jobsCreate: true, pricingView: true, ordersView: true, ordersEdit: true, shipmentsView: true, schedulesView: true, leadsView: true, leadsEdit: true, prospectsView: true, prospectsEdit: true },
-    sales: { ...none, jobsView: true, jobsCreate: true, pricingView: true, ordersView: true, ordersEdit: true, shipmentsView: true, schedulesView: true, leadsView: true, leadsEdit: true, prospectsView: true, prospectsEdit: true },
-    clerk: { ...none, jobsView: true, jobsCreate: true, jobsEdit: true, pricingView: true, inventoryView: true, ordersView: true, ordersEdit: true, shipmentsView: true, shipmentsEdit: true, schedulesView: true, schedulesEdit: true, leadsView: true, leadsEdit: true, prospectsView: true, prospectsEdit: true, expensesView: true, expensesEdit: true },
-    warehouse: { ...none, inventoryView: true, inventoryEdit: true, ordersView: true, shipmentsView: true, shipmentsEdit: true, schedulesView: true },
-    installer: { ...none, jobsView: true },
-    finance: { ...none, jobsView: true, ordersView: true, shipmentsView: true, schedulesView: true, leadsView: true, prospectsView: true, commissionView: true, reportsView: true, fullFinanceView: true, expensesView: true, expensesEdit: true, inventoryView: true, settingsEdit: true }
+    frontdesk: { ...none, jobsView: true, jobsCreate: true, pricingView: true, ordersView: true, ordersEdit: true, shipmentsView: true, schedulesView: true, leadsView: true, leadsEdit: true, prospectsView: true, prospectsEdit: true, reimbursementsView: true, reimbursementsCreate: true },
+    sales: { ...none, jobsView: true, jobsCreate: true, pricingView: true, ordersView: true, ordersEdit: true, shipmentsView: true, schedulesView: true, leadsView: true, leadsEdit: true, prospectsView: true, prospectsEdit: true, reimbursementsView: true, reimbursementsCreate: true },
+    clerk: { ...none, jobsView: true, jobsCreate: true, jobsEdit: true, pricingView: true, inventoryView: true, ordersView: true, ordersEdit: true, shipmentsView: true, shipmentsEdit: true, schedulesView: true, schedulesEdit: true, leadsView: true, leadsEdit: true, prospectsView: true, prospectsEdit: true, expensesView: true, expensesEdit: true, reimbursementsView: true, reimbursementsCreate: true },
+    warehouse: { ...none, inventoryView: true, inventoryEdit: true, ordersView: true, shipmentsView: true, shipmentsEdit: true, schedulesView: true, reimbursementsView: true, reimbursementsCreate: true },
+    installer: { ...none, jobsView: true, reimbursementsView: true, reimbursementsCreate: true },
+    finance: { ...none, jobsView: true, ordersView: true, shipmentsView: true, schedulesView: true, leadsView: true, prospectsView: true, commissionView: true, reportsView: true, fullFinanceView: true, expensesView: true, expensesEdit: true, reimbursementsView: true, reimbursementsCreate: true, reimbursementsApprove: true, inventoryView: true, settingsEdit: true }
   };
   return byRole[role] || none;
 }
@@ -971,6 +976,7 @@ function normalizePersonalNoteSharing(db, user, body, existing = {}) {
 function sanitizeDbForUser(db, user) {
   const p = effectivePermissions(user);
   const canSeeCosts = user?.role === 'owner';
+  const canApproveReimbursements = Boolean(p.reimbursementsApprove);
   return {
     settings: db.settings,
     users: p.usersManage || p.schedulesView ? db.users.map(safeUser) : [safeUser(user)],
@@ -991,6 +997,7 @@ function sanitizeDbForUser(db, user) {
     customerConversations: p.prospectsView ? (db.customerConversations || []) : [],
     replyTemplates: p.prospectsView ? (db.replyTemplates || []) : [],
     expenses: p.expensesView || p.fullFinanceView ? (db.expenses || []) : [],
+    reimbursements: p.reimbursementsView ? (db.reimbursements || []).filter(item => canApproveReimbursements || item.employeeUserId === user.id) : [],
     movements: p.inventoryView ? db.movements : [],
     workshopMovements: p.inventoryView ? (db.workshopMovements || []) : [],
     auditLogs: p.usersManage || p.reportsView ? db.auditLogs : [],
@@ -1140,6 +1147,39 @@ function normalizeExpense(expense) {
   expense.adPlacement = String(expense.adPlacement || '').trim();
   expense.adStartDate = String(expense.adStartDate || '').trim();
   expense.adEndDate = String(expense.adEndDate || '').trim();
+}
+
+function normalizeReimbursement(item) {
+  item.date = String(item.expenseDate || item.date || '').trim().slice(0, 10);
+  item.expenseDate = item.date;
+  item.category = String(item.category || '').trim().slice(0, 80);
+  item.vendor = String(item.vendor || '').trim().slice(0, 120);
+  item.purpose = String(item.purpose || '').trim().slice(0, 500);
+  item.paymentMethod = String(item.paymentMethod || '').trim().slice(0, 60);
+  item.notes = String(item.notes || '').trim().slice(0, 2000);
+  item.amount = Math.round(Number(item.amount || 0) * 100) / 100;
+  item.attachments = (Array.isArray(item.attachments) ? item.attachments : [])
+    .filter(file => String(file?.url || '').includes('/customer-media/'))
+    .slice(0, 10)
+    .map(file => ({
+      url: String(file.url),
+      name: String(file.name || '报销凭证').slice(0, 160),
+      type: String(file.type || 'application/octet-stream').slice(0, 100)
+    }));
+}
+
+function validateReimbursement(item) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(item.date || ''))) return '请选择实际消费日期';
+  if (!item.category) return '请选择报销类别';
+  if (!item.purpose) return '请填写费用用途';
+  if (!Number.isFinite(item.amount) || item.amount <= 0) return '报销金额必须大于 0';
+  if (!item.attachments.length && !item.notes) return '请上传小票/凭证；如果没有小票，请在备注中说明原因';
+  return '';
+}
+
+function reimbursementNumber() {
+  const day = new Date().toISOString().slice(0, 10).replaceAll('-', '');
+  return `ER-${day}-${String(id()).replace(/[^a-zA-Z0-9]/g, '').slice(-6).toUpperCase()}`;
 }
 
 function minimumSalePrice(product) {
@@ -2316,6 +2356,7 @@ function collectionPermission(collection, method) {
     replyTemplates: { GET: 'prospectsView', POST: 'prospectsEdit', PUT: 'prospectsEdit', DELETE: 'prospectsEdit' },
     customerServiceReps: { GET: 'leadsView', POST: 'commissionEdit', PUT: 'commissionEdit', DELETE: 'commissionEdit' },
     expenses: { GET: 'expensesView', POST: 'expensesEdit', PUT: 'expensesEdit', DELETE: 'expensesEdit' },
+    reimbursements: { GET: 'reimbursementsView', POST: 'reimbursementsCreate', PUT: 'reimbursementsCreate', DELETE: 'reimbursementsCreate' },
     users: { GET: 'usersManage', POST: 'usersManage', PUT: 'usersManage', DELETE: 'usersManage' }
   };
   return map[collection]?.[method];
@@ -3009,9 +3050,10 @@ async function api(req, res) {
     });
   }
 
-  if (req.method === 'POST' && ['/api/customer-media/upload', '/api/message-media/upload', '/api/job-media/upload'].includes(url.pathname)) {
+  if (req.method === 'POST' && ['/api/customer-media/upload', '/api/message-media/upload', '/api/job-media/upload', '/api/reimbursement-media/upload'].includes(url.pathname)) {
     if (url.pathname === '/api/customer-media/upload' && !canAccess(user, 'prospectsEdit')) return send(res, 403, { error: '没有发送客户附件的权限' });
     if (url.pathname === '/api/job-media/upload' && !canAccess(user, 'jobsEdit') && !canAccess(user, 'jobsCreate')) return send(res, 403, { error: '没有修改施工单的权限' });
+    if (url.pathname === '/api/reimbursement-media/upload' && !canAccess(user, 'reimbursementsCreate')) return send(res, 403, { error: '没有提交报销凭证的权限' });
     const body = await readBody(req);
     const name = String(body.name || '附件').trim().slice(0, 160);
     let contentType = String(body.type || 'application/octet-stream').trim().slice(0, 120);
@@ -3025,7 +3067,7 @@ async function api(req, res) {
     } else if (data.length > 5 * 1024 * 1024) {
       return send(res, 400, { error: '非视频附件不能超过 5MB' });
     }
-    if (contentType.startsWith('image/') && data.length > 900 * 1024) return send(res, 400, { error: '图片压缩后仍超过 900KB，请换一张图片重试' });
+    if (contentType.startsWith('image/') && data.length > 900 * 1024 && url.pathname !== '/api/reimbursement-media/upload') return send(res, 400, { error: '图片压缩后仍超过 900KB，请换一张图片重试' });
     fs.mkdirSync(CUSTOMER_MEDIA_DIR, { recursive: true });
     if (contentType.startsWith('video/')) {
       try {
@@ -3332,7 +3374,7 @@ async function api(req, res) {
   const match = url.pathname.match(/^\/api\/([a-zA-Z]+)(?:\/([^/]+))?$/);
   if (!match) return send(res, 404, { error: 'Not found' });
   const [, collection, recordId] = match;
-  const allowed = ['jobs', 'installers', 'products', 'priceRules', 'salesOrders', 'shipments', 'schedules', 'movements', 'workshopMovements', 'expenses', 'leads', 'prospects', 'customerConversations', 'replyTemplates', 'customerServiceReps', 'users'];
+  const allowed = ['jobs', 'installers', 'products', 'priceRules', 'salesOrders', 'shipments', 'schedules', 'movements', 'workshopMovements', 'expenses', 'reimbursements', 'leads', 'prospects', 'customerConversations', 'replyTemplates', 'customerServiceReps', 'users'];
   if (!allowed.includes(collection)) return send(res, 404, { error: 'Unknown collection' });
 
   const permission = collectionPermission(collection, req.method);
@@ -3393,6 +3435,22 @@ async function api(req, res) {
     }
     if (collection === 'expenses') {
       normalizeExpense(item);
+    }
+    if (collection === 'reimbursements') {
+      normalizeReimbursement(item);
+      const duplicate = item.requestId && db.reimbursements.find(row => row.requestId === item.requestId && row.employeeUserId === user.id);
+      if (duplicate) return send(res, 200, sanitizeDbForUser(db, user));
+      const error = validateReimbursement(item);
+      if (error) return send(res, 400, { error });
+      const now = new Date().toISOString();
+      item.reimbursementNo = reimbursementNumber();
+      item.employeeUserId = user.id;
+      item.employeeName = user.name || user.email;
+      item.employeeEmail = user.email || '';
+      item.status = '待审批';
+      item.submittedAt = now;
+      item.createdAt = now;
+      item.updatedAt = now;
     }
     if (collection === 'salesOrders') {
       item.salesRep = String(item.salesRep || '').trim();
@@ -3514,6 +3572,45 @@ async function api(req, res) {
     if (collection === 'expenses') {
       normalizeExpense(next);
     }
+    if (collection === 'reimbursements') {
+      const beforeReimbursement = db[collection][idx];
+      const canApprove = canAccess(user, 'reimbursementsApprove');
+      const isOwner = beforeReimbursement.employeeUserId === user.id;
+      if (!canApprove && !isOwner) return send(res, 403, { error: '只能修改自己的报销申请' });
+      if (!canApprove && beforeReimbursement.status !== '待审批') return send(res, 400, { error: '已审批的报销不能再修改，请联系财务' });
+      next.reimbursementNo = beforeReimbursement.reimbursementNo;
+      next.employeeUserId = beforeReimbursement.employeeUserId;
+      next.employeeName = beforeReimbursement.employeeName;
+      next.employeeEmail = beforeReimbursement.employeeEmail;
+      next.createdAt = beforeReimbursement.createdAt;
+      next.submittedAt = beforeReimbursement.submittedAt;
+      if (!canApprove) next.status = beforeReimbursement.status;
+      const statuses = new Set(['待审批', '已批准', '已驳回', '已报销']);
+      if (!statuses.has(String(next.status || ''))) return send(res, 400, { error: '报销状态不正确' });
+      normalizeReimbursement(next);
+      const error = validateReimbursement(next);
+      if (error) return send(res, 400, { error });
+      const now = new Date().toISOString();
+      next.updatedAt = now;
+      next.updatedBy = user.name || user.email;
+      if (canApprove && next.status !== beforeReimbursement.status) {
+        if (next.status === '已批准') {
+          next.approvedAt = now;
+          next.approvedBy = user.name || user.email;
+          next.approvedByUserId = user.id;
+        }
+        if (next.status === '已驳回') {
+          next.rejectedAt = now;
+          next.rejectedBy = user.name || user.email;
+          next.rejectedByUserId = user.id;
+        }
+        if (next.status === '已报销') {
+          next.reimbursedAt = now;
+          next.reimbursedBy = user.name || user.email;
+          next.reimbursedByUserId = user.id;
+        }
+      }
+    }
     if (collection === 'salesOrders') {
       const previousStatus = String(db[collection][idx].status || '').trim();
       next.salesRep = String(next.salesRep || '').trim();
@@ -3577,6 +3674,13 @@ async function api(req, res) {
     if (collection === 'users') {
       const existing = db.users.find(x => x.id === recordId);
       if (existing?.role === 'owner') return send(res, 400, { error: '老板账号不能删除' });
+    }
+    if (collection === 'reimbursements') {
+      const existingReimbursement = db.reimbursements.find(x => x.id === recordId);
+      if (!existingReimbursement) return send(res, 404, { error: 'Record not found' });
+      const canApprove = canAccess(user, 'reimbursementsApprove');
+      if (!canApprove && existingReimbursement.employeeUserId !== user.id) return send(res, 403, { error: '只能删除自己的报销申请' });
+      if (existingReimbursement.status !== '待审批') return send(res, 400, { error: '已审批的报销记录需要保留，不能删除' });
     }
     const existing = db[collection].find(x => x.id === recordId);
     db[collection] = db[collection].filter(x => x.id !== recordId);
