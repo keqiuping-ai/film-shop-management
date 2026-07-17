@@ -1111,10 +1111,52 @@ body.modal-lock .prospect-workspace { pointer-events: none; }
 .confirmation-photo-grid button { position:absolute; top:3px; right:3px; width:24px; height:24px; border:0; border-radius:50%; color:#fff; background:rgba(0,0,0,.68); cursor:pointer; }
 .confirmation-photo-grid figcaption { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:11px; color:var(--muted); }
 .print-root { display:none; }
+.confirmation-print-preview { position:fixed; inset:0; z-index:260; display:none; background:rgba(15,23,42,.78); }
+.confirmation-print-preview.open { display:block; }
+.confirmation-preview-dialog { height:100%; display:grid; grid-template-rows:auto minmax(0,1fr); background:#e8edf1; }
+.confirmation-preview-dialog > header { display:flex; align-items:center; justify-content:space-between; gap:16px; padding:12px 20px; background:#fff; border-bottom:1px solid #cbd5e1; box-shadow:0 2px 8px rgba(15,23,42,.12); z-index:1; }
+.confirmation-preview-dialog h2 { margin:0; font-size:20px; }
+.confirmation-preview-dialog header p { margin:3px 0 0; color:var(--muted); font-size:13px; }
+.confirmation-preview-actions { display:flex; gap:10px; }
+.confirmation-preview-scroll { min-height:0; overflow:auto; padding:22px; }
+.confirmation-preview-sheet { box-sizing:border-box; width:210mm; min-height:297mm; margin:0 auto; padding:8mm; background:#fff; color:#111; box-shadow:0 10px 35px rgba(15,23,42,.25); }
+.confirmation-preview-sheet .confirmation-print-page { width:100%; font:9.2pt/1.28 Arial,Helvetica,sans-serif; color:#111; }
+.confirmation-preview-sheet .confirmation-print-head { display:grid; grid-template-columns:14mm 1fr auto; align-items:center; gap:3mm; padding-bottom:2.5mm; border-bottom:2px solid #111; }
+.confirmation-preview-sheet .confirmation-print-head img { width:13mm; height:13mm; object-fit:contain; }
+.confirmation-preview-sheet .confirmation-print-head h1 { margin:0; font-size:13pt; letter-spacing:.2px; }
+.confirmation-preview-sheet .confirmation-print-head p { margin:1mm 0 0; font-size:9pt; }
+.confirmation-preview-sheet .confirmation-order-no { font-weight:700; font-size:8.5pt; }
+.confirmation-preview-sheet .confirmation-info-grid { display:grid; grid-template-columns:repeat(3,1fr); margin-top:2.5mm; border:1px solid #333; }
+.confirmation-preview-sheet .confirmation-info-grid > div { min-height:9mm; padding:1.4mm 2mm; border-right:1px solid #777; border-bottom:1px solid #777; }
+.confirmation-preview-sheet .confirmation-info-grid > div:nth-child(3n) { border-right:0; }
+.confirmation-preview-sheet .confirmation-info-grid .span-3 { grid-column:span 3; border-right:0; border-bottom:0; }
+.confirmation-preview-sheet .confirmation-info-grid b { display:block; font-size:7.5pt; color:#444; }
+.confirmation-preview-sheet .confirmation-info-grid span { display:block; margin-top:.8mm; font-weight:700; }
+.confirmation-preview-sheet .confirmation-service-layout { display:grid; gap:2.5mm; margin-top:2.5mm; }
+.confirmation-preview-sheet .confirmation-service-layout.two { grid-template-columns:1fr 1fr; }
+.confirmation-preview-sheet .confirmation-print-section { border:1px solid #333; padding:2mm; }
+.confirmation-preview-sheet .confirmation-print-section h2,.confirmation-preview-sheet .confirmation-terms h2 { margin:-2mm -2mm 1.5mm; padding:1.4mm 2mm; background:#eee; border-bottom:1px solid #333; font-size:8.5pt; }
+.confirmation-preview-sheet .confirmation-car-diagram { display:block; width:100%; height:31mm; }
+.confirmation-preview-sheet .car-outline,.confirmation-preview-sheet .car-panel,.confirmation-preview-sheet .car-glass { fill:#fff; stroke:#111; stroke-width:2; }
+.confirmation-preview-sheet .car-outline.selected,.confirmation-preview-sheet .car-panel.selected,.confirmation-preview-sheet .car-glass.selected { fill:#a9a9a9; }
+.confirmation-preview-sheet .confirmation-car-diagram text { font:bold 15px Arial; text-anchor:middle; fill:#111; }
+.confirmation-preview-sheet .selected-parts { min-height:10mm; margin:1mm 0; font-size:7.5pt; }
+.confirmation-preview-sheet .confirmation-inline,.confirmation-preview-sheet .confirmation-four,.confirmation-preview-sheet .confirmation-payment { display:flex; flex-wrap:wrap; justify-content:space-between; gap:1.5mm 4mm; }
+.confirmation-preview-sheet .confirmation-requirements { margin-top:2.5mm; }
+.confirmation-preview-sheet .confirmation-requirements p { margin:1.5mm 0 0; min-height:5mm; }
+.confirmation-preview-sheet .confirmation-payment { margin-top:2.5mm; padding:2mm; border:1px solid #333; font-size:8.5pt; }
+.confirmation-preview-sheet .confirmation-terms { margin-top:2.5mm; border:1px solid #333; }
+.confirmation-preview-sheet .confirmation-terms h2 { margin:0; }
+.confirmation-preview-sheet .confirmation-terms ol { margin:1.5mm 2mm 1.5mm 6mm; padding-left:3mm; font-size:7.1pt; line-height:1.22; }
+.confirmation-preview-sheet .confirmation-signatures { display:grid; grid-template-columns:1.5fr .7fr 1fr; gap:5mm; margin-top:4mm; font-weight:700; }
+.confirmation-preview-sheet .confirmation-signatures div { white-space:nowrap; }
+.confirmation-preview-sheet .confirmation-signatures span { display:inline-block; min-width:30mm; padding:0 1mm 1mm; border-bottom:1px solid #111; }
+.confirmation-preview-sheet .confirmation-print-page footer { display:flex; justify-content:space-between; gap:3mm; margin-top:3mm; padding-top:1.5mm; border-top:1px solid #333; font-size:6.8pt; }
 
 @media print {
   @page { size:A4 portrait; margin:8mm; }
   body > *:not(.print-root) { display:none !important; }
+  .confirmation-print-preview { display:none !important; }
   body { margin:0 !important; background:#fff !important; color:#111 !important; }
   .print-root { display:block !important; }
   .confirmation-print-page { width:100%; font:9.2pt/1.28 Arial, Helvetica, sans-serif; color:#111; }
@@ -1149,6 +1191,15 @@ body.modal-lock .prospect-workspace { pointer-events: none; }
   .confirmation-signatures div { white-space:nowrap; }
   .confirmation-signatures span { display:inline-block; min-width:30mm; padding:0 1mm 1mm; border-bottom:1px solid #111; }
   .confirmation-print-page footer { display:flex; justify-content:space-between; gap:3mm; margin-top:3mm; padding-top:1.5mm; border-top:1px solid #333; font-size:6.8pt; }
+}
+
+@media (max-width:900px) {
+  .confirmation-preview-dialog > header { align-items:flex-start; padding:10px 12px; }
+  .confirmation-preview-dialog h2 { font-size:17px; }
+  .confirmation-preview-actions { flex-direction:column-reverse; }
+  .confirmation-preview-actions .btn { min-height:36px; padding:6px 10px; }
+  .confirmation-preview-scroll { padding:12px; }
+  .confirmation-preview-sheet { transform-origin:top left; }
 }
 
 @media (max-width:700px) {

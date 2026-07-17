@@ -4727,20 +4727,25 @@ let jobConfirmationPhotoDraft = [];
 let jobConfirmationPhotoUploading = false;
 
 const tintConfirmationParts = [
-  ['windshield','前挡风玻璃 / Windshield'], ['frontLeft','左前门玻璃 / Left front'], ['frontRight','右前门玻璃 / Right front'],
-  ['rearLeft','左后门玻璃 / Left rear'], ['rearRight','右后门玻璃 / Right rear'], ['rearWindow','后挡风玻璃 / Rear window'],
-  ['sunroof','天窗 / Sunroof'], ['quarterWindows','三角窗 / Quarter windows'], ['removeOldTint','拆除旧膜 / Remove old tint']
+  ['windshield','Windshield','前挡风玻璃'], ['frontLeft','Left front window','左前门玻璃'], ['frontRight','Right front window','右前门玻璃'],
+  ['rearLeft','Left rear window','左后门玻璃'], ['rearRight','Right rear window','右后门玻璃'], ['rearWindow','Rear window','后挡风玻璃'],
+  ['sunroof','Sunroof','天窗'], ['quarterWindows','Quarter windows','三角窗'], ['removeOldTint','Remove old tint','拆除旧膜']
 ];
 const ppfConfirmationParts = [
-  ['fullFront','前脸套装（前杠＋引擎盖＋左右叶子板） / Full front'], ['fullVehicle','全车 / Full vehicle'],
-  ['frontBumper','前保险杠 / Front bumper'], ['hood','引擎盖 / Hood'], ['leftFender','左叶子板 / Left fender'], ['rightFender','右叶子板 / Right fender'],
-  ['mirrors','后视镜 / Mirrors'], ['doors','车门 / Doors'], ['rockers','侧裙 / Rocker panels'], ['roof','车顶 / Roof'],
-  ['rearQuarters','后叶子板 / Rear quarters'], ['trunk','后备箱盖 / Trunk'], ['rearBumper','后保险杠 / Rear bumper']
+  ['fullFront','Full front (bumper, hood and both fenders)','前脸套装（前杠＋引擎盖＋左右叶子板）'], ['fullVehicle','Full vehicle','全车'],
+  ['frontBumper','Front bumper','前保险杠'], ['hood','Hood','引擎盖'], ['leftFender','Left fender','左叶子板'], ['rightFender','Right fender','右叶子板'],
+  ['mirrors','Mirrors','后视镜'], ['doors','Doors','车门'], ['rockers','Rocker panels','侧裙'], ['roof','Roof','车顶'],
+  ['rearQuarters','Rear quarter panels','后叶子板'], ['trunk','Trunk lid','后备箱盖'], ['rearBumper','Rear bumper','后保险杠']
 ];
+
+function confirmationOptionLabel(option, printLanguage = 'bilingual') {
+  const [, en, zh] = option;
+  return printLanguage === 'en' ? en : printLanguage === 'zh' ? zh : `${zh} / ${en}`;
+}
 
 function confirmationCheckList(name, options, selected = []) {
   const values = new Set(Array.isArray(selected) ? selected : []);
-  return `<div class="confirmation-check-grid">${options.map(([value, label]) => `<label><input type="checkbox" name="${name}" value="${value}" ${values.has(value) ? 'checked' : ''} onchange="refreshConfirmationDiagrams()"><span>${escapeHtml(label)}</span></label>`).join('')}</div>`;
+  return `<div class="confirmation-check-grid">${options.map(option => `<label><input type="checkbox" name="${name}" value="${option[0]}" ${values.has(option[0]) ? 'checked' : ''} onchange="refreshConfirmationDiagrams()"><span>${escapeHtml(confirmationOptionLabel(option))}</span></label>`).join('')}</div>`;
 }
 
 function openJobConfirmation(jobId) {
@@ -4754,17 +4759,17 @@ function openJobConfirmation(jobId) {
   openModal(lang === 'zh' ? '客户施工确认单' : 'Customer Installation Confirmation', `
     <div class="confirmation-editor-intro">
       <strong>${escapeHtml(job.customer || '')} · ${escapeHtml(job.vehicle || '')}</strong>
-      <span>${lang === 'zh' ? '勾选施工位置并填写必要说明；保存后在打印窗口选择 Brother HL-L2465DW、A4、纵向、100%比例。' : 'Select installation areas, then print to Brother HL-L2465DW on A4 portrait at 100% scale.'}</span>
+      <span>${lang === 'zh' ? '勾选施工位置并填写必要说明；保存后先查看 A4 预览，确认无误后再选择 Brother HL-L2465DW、A4、纵向、100%比例。' : 'Select installation areas, review the A4 preview, then print to Brother HL-L2465DW on A4 portrait at 100% scale.'}</span>
     </div>
     <div class="confirmation-editor-grid confirmation-top-grid">
       <label>${lang === 'zh' ? '车牌 / VIN' : 'Plate / VIN'}<input id="confirmVin" value="${escapeHtml(confirmation.vin || job.vin || '')}"></label>
       <label>${lang === 'zh' ? '车身颜色' : 'Vehicle color'}<input id="confirmVehicleColor" value="${escapeHtml(confirmation.vehicleColor || '')}"></label>
-      <label>打印语言 / Print language<select id="confirmPrintLanguage"><option value="en" ${(confirmation.printLanguage || 'en') === 'en' ? 'selected' : ''}>English 英文</option><option value="zh" ${confirmation.printLanguage === 'zh' ? 'selected' : ''}>中文 Chinese</option><option value="bilingual" ${confirmation.printLanguage === 'bilingual' ? 'selected' : ''}>中英双语 Bilingual</option></select></label>
+      <label>打印语言 / Print language<select id="confirmPrintLanguage" onchange="refreshConfirmationDiagrams()"><option value="en" ${(confirmation.printLanguage || 'en') !== 'zh' ? 'selected' : ''}>English</option><option value="zh" ${confirmation.printLanguage === 'zh' ? 'selected' : ''}>中文</option></select></label>
       <label class="span-3">${lang === 'zh' ? '特殊配置（雷达、摄像头、电子锁等）' : 'Special equipment'}<input id="confirmSpecialEquipment" value="${escapeHtml(confirmation.specialEquipment || '')}"></label>
     </div>
-    ${showTint ? `<section class="confirmation-editor-section"><h4>窗膜施工位置 / WINDOW TINT</h4><div class="confirmation-selection-layout"><div id="confirmTintDiagram">${tintVehicleDiagram(confirmation.tintParts, true)}</div>${confirmationCheckList('confirmTintPart', tintConfirmationParts, confirmation.tintParts)}</div>
+    ${showTint ? `<section class="confirmation-editor-section"><h4>窗膜施工位置 / WINDOW TINT</h4><div class="confirmation-selection-layout"><div id="confirmTintDiagram">${tintVehicleDiagram(confirmation.tintParts, true, confirmation.printLanguage === 'zh' ? 'zh' : 'en')}</div>${confirmationCheckList('confirmTintPart', tintConfirmationParts, confirmation.tintParts)}</div>
       <div class="confirmation-editor-grid compact"><label>膜系列 / Film<input id="confirmTintFilm" value="${escapeHtml(confirmation.tintFilm || job.package || '')}"></label><label>透光率 VLT<input id="confirmTintVlt" value="${escapeHtml(confirmation.tintVlt || '')}" placeholder="例如 NA70 / NA28 / NA15"></label></div></section>` : ''}
-    ${showPpf ? `<section class="confirmation-editor-section"><h4>PPF施工位置 / PAINT PROTECTION FILM</h4><div class="confirmation-selection-layout"><div id="confirmPpfDiagram">${ppfVehicleDiagram(confirmation.ppfParts, true)}</div>${confirmationCheckList('confirmPpfPart', ppfConfirmationParts, confirmation.ppfParts)}</div>
+    ${showPpf ? `<section class="confirmation-editor-section"><h4>PPF施工位置 / PAINT PROTECTION FILM</h4><div class="confirmation-selection-layout"><div id="confirmPpfDiagram">${ppfVehicleDiagram(confirmation.ppfParts, true, confirmation.printLanguage === 'zh' ? 'zh' : 'en')}</div>${confirmationCheckList('confirmPpfPart', ppfConfirmationParts, confirmation.ppfParts)}</div>
       <div class="confirmation-editor-grid compact"><label>PPF产品 / Film<input id="confirmPpfFilm" value="${escapeHtml(confirmation.ppfFilm || job.package || '')}"></label><label>表面 / Finish<select id="confirmPpfFinish"><option value="gloss" ${confirmation.ppfFinish !== 'matte' ? 'selected' : ''}>亮面 Gloss</option><option value="matte" ${confirmation.ppfFinish === 'matte' ? 'selected' : ''}>哑面 Matte</option></select></label></div></section>` : ''}
     ${!showTint && !showPpf ? `<p class="note">${lang === 'zh' ? '本施工单没有选择窗膜或 PPF；确认单仍会打印基础施工资料。' : 'This job has no tint or PPF service selected.'}</p>` : ''}
     <section class="confirmation-editor-section"><h4>施工要求与风险 / REQUIREMENTS & RISKS</h4>
@@ -4781,14 +4786,15 @@ function openJobConfirmation(jobId) {
   document.getElementById('modal')?.classList.add('confirmation-modal-open');
   renderJobDamagePhotos();
   const save = document.getElementById('modalSave');
-  if (save) save.textContent = lang === 'zh' ? '保存并打印 A4' : 'Save & Print A4';
+  if (save) save.textContent = lang === 'zh' ? '保存并预览 A4' : 'Save & Preview A4';
 }
 
 function refreshConfirmationDiagrams() {
   const tint = document.getElementById('confirmTintDiagram');
   const ppf = document.getElementById('confirmPpfDiagram');
-  if (tint) tint.innerHTML = tintVehicleDiagram(checkedConfirmationValues('confirmTintPart'), true);
-  if (ppf) ppf.innerHTML = ppfVehicleDiagram(checkedConfirmationValues('confirmPpfPart'), true);
+  const printLanguage = document.getElementById('confirmPrintLanguage')?.value || 'en';
+  if (tint) tint.innerHTML = tintVehicleDiagram(checkedConfirmationValues('confirmTintPart'), true, printLanguage);
+  if (ppf) ppf.innerHTML = ppfVehicleDiagram(checkedConfirmationValues('confirmPpfPart'), true, printLanguage);
 }
 
 function toggleConfirmationPart(name, value) {
@@ -4862,7 +4868,7 @@ async function saveAndPrintJobConfirmation(jobId) {
     broadcastDataChange();
     closeModal();
     render();
-    setTimeout(() => window.print(), 80);
+    showJobConfirmationPrintPreview(savedJob);
   } catch (err) {
     if (button) button.disabled = false;
     alert(err.message);
@@ -4870,42 +4876,73 @@ async function saveAndPrintJobConfirmation(jobId) {
 }
 
 function confirmationMark(selected, value) { return selected?.includes(value) ? '☑' : '☐'; }
-function confirmationSelectedLabels(selected, options) {
-  return options.filter(([value]) => selected?.includes(value)).map(([, label]) => label).join('；') || '—';
+function confirmationSelectedLabels(selected, options, printLanguage) {
+  return options.filter(([value]) => selected?.includes(value)).map(option => confirmationOptionLabel(option, printLanguage)).join(printLanguage === 'zh' ? '；' : '; ') || '—';
+}
+
+function confirmationPrintText(value, printLanguage, fallback = '—') {
+  const text = String(value ?? '').trim();
+  if (!text) return fallback;
+  if (printLanguage !== 'en' || !/[\u3400-\u9fff]/u.test(text)) return text;
+  const englishOnly = text
+    .replace(/[\u3400-\u9fff]+/gu, ' ')
+    .replace(/[\uff0c\u3002\uff1b\uff1a\u3001\uff01\uff1f\uff08\uff09]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return /[A-Za-z0-9]/.test(englishOnly) ? englishOnly : fallback;
+}
+
+function confirmationFilmName(value, printLanguage) {
+  const names = {
+    '基本款': ['Standard', '基本款'],
+    '标准款': ['Standard', '标准款'],
+    '高级款': ['Premium', '高级款'],
+    '顶级款': ['Elite', '顶级款']
+  };
+  const pair = names[String(value || '').trim()];
+  return pair ? pair[printLanguage === 'zh' ? 1 : 0] : confirmationPrintText(value, printLanguage);
 }
 
 function tintVehicleDiagram(selected = [], interactive = false, printLanguage = 'bilingual') {
+  const L = (en, zh) => printLanguage === 'zh' ? zh : printLanguage === 'en' ? en : `${zh} ${en}`;
   const click = value => interactive ? ` onclick="toggleConfirmationPart('confirmTintPart','${value}')"` : '';
   return `<svg class="confirmation-car-diagram" viewBox="0 0 520 190" role="img" aria-label="Window tint locations">
     <path class="car-outline" d="M70 55 Q105 18 180 15 H340 Q415 18 450 55 L480 135 Q474 170 430 174 H90 Q46 170 40 135Z"/>
-    <g class="diagram-part"${click('windshield')}><path class="car-glass ${selected.includes('windshield') ? 'selected' : ''}" d="M174 31 H346 L386 70 H134Z"/><text x="260" y="55">前挡 Windshield</text></g>
-    <g class="diagram-part"${click('frontLeft')}><path class="car-glass ${selected.includes('frontLeft') ? 'selected' : ''}" d="M117 78 H245 V112 H96Z"/><text x="169" y="100">左前 LF</text></g>
-    <g class="diagram-part"${click('frontRight')}><path class="car-glass ${selected.includes('frontRight') ? 'selected' : ''}" d="M275 78 H403 L424 112 H275Z"/><text x="351" y="100">右前 RF</text></g>
-    <g class="diagram-part"${click('rearLeft')}><path class="car-glass ${selected.includes('rearLeft') ? 'selected' : ''}" d="M91 119 H245 V151 H77Z"/><text x="163" y="140">左后 LR</text></g>
-    <g class="diagram-part"${click('rearRight')}><path class="car-glass ${selected.includes('rearRight') ? 'selected' : ''}" d="M275 119 H429 L443 151 H275Z"/><text x="357" y="140">右后 RR</text></g>
-    <g class="diagram-part"${click('rearWindow')}><path class="car-glass ${selected.includes('rearWindow') ? 'selected' : ''}" d="M190 157 H330 L351 174 H169Z"/><text x="260" y="170">后挡 Rear</text></g>
-    <g class="diagram-part"${click('sunroof')}><rect class="car-glass ${selected.includes('sunroof') ? 'selected' : ''}" x="225" y="78" width="70" height="55" rx="8"/><text x="260" y="110">天窗 Roof</text></g>
+    <g class="diagram-part"${click('windshield')}><path class="car-glass ${selected.includes('windshield') ? 'selected' : ''}" d="M174 31 H346 L386 70 H134Z"/><text x="260" y="55">${L('Windshield','前挡风玻璃')}</text></g>
+    <g class="diagram-part"${click('frontLeft')}><path class="car-glass ${selected.includes('frontLeft') ? 'selected' : ''}" d="M117 78 H245 V112 H96Z"/><text x="169" y="100">${L('Left front','左前')}</text></g>
+    <g class="diagram-part"${click('frontRight')}><path class="car-glass ${selected.includes('frontRight') ? 'selected' : ''}" d="M275 78 H403 L424 112 H275Z"/><text x="351" y="100">${L('Right front','右前')}</text></g>
+    <g class="diagram-part"${click('rearLeft')}><path class="car-glass ${selected.includes('rearLeft') ? 'selected' : ''}" d="M91 119 H245 V151 H77Z"/><text x="163" y="140">${L('Left rear','左后')}</text></g>
+    <g class="diagram-part"${click('rearRight')}><path class="car-glass ${selected.includes('rearRight') ? 'selected' : ''}" d="M275 119 H429 L443 151 H275Z"/><text x="357" y="140">${L('Right rear','右后')}</text></g>
+    <g class="diagram-part"${click('rearWindow')}><path class="car-glass ${selected.includes('rearWindow') ? 'selected' : ''}" d="M190 157 H330 L351 174 H169Z"/><text x="260" y="170">${L('Rear window','后挡风玻璃')}</text></g>
+    <g class="diagram-part"${click('sunroof')}><rect class="car-glass ${selected.includes('sunroof') ? 'selected' : ''}" x="225" y="78" width="70" height="55" rx="8"/><text x="260" y="110">${L('Sunroof','天窗')}</text></g>
   </svg>`;
 }
 
 function ppfVehicleDiagram(selected = [], interactive = false, printLanguage = 'bilingual') {
+  const L = (en, zh) => printLanguage === 'zh' ? zh : printLanguage === 'en' ? en : `${zh} ${en}`;
   const all = selected.includes('fullVehicle');
   const on = key => all || selected.includes(key) || (selected.includes('fullFront') && ['frontBumper','hood','leftFender','rightFender'].includes(key));
   const click = value => interactive ? ` onclick="toggleConfirmationPart('confirmPpfPart','${value}')"` : '';
   return `<svg class="confirmation-car-diagram" viewBox="0 0 520 190" role="img" aria-label="PPF locations">
     <path class="car-outline ${all ? 'selected' : ''}" d="M46 130 L72 75 Q97 35 170 29 H350 Q423 35 448 75 L474 130 L454 165 H66Z"/>
-    <g class="diagram-part"${click('frontBumper')}><path class="car-panel ${on('frontBumper') ? 'selected' : ''}" d="M46 130 H474 L454 165 H66Z"/><text x="260" y="153">前保险杠 Front bumper</text></g>
-    <g class="diagram-part"${click('hood')}><path class="car-panel ${on('hood') ? 'selected' : ''}" d="M143 76 H377 L410 126 H110Z"/><text x="260" y="106">引擎盖 Hood</text></g>
-    <g class="diagram-part"${click('leftFender')}><path class="car-panel ${on('leftFender') ? 'selected' : ''}" d="M72 76 H143 L110 126 H52Z"/><text x="99" y="104">左叶子板 LF</text></g>
-    <g class="diagram-part"${click('rightFender')}><path class="car-panel ${on('rightFender') ? 'selected' : ''}" d="M377 76 H448 L468 126 H410Z"/><text x="421" y="104">右叶子板 RF</text></g>
-    <g class="diagram-part"${click('roof')}><path class="car-panel ${on('roof') ? 'selected' : ''}" d="M188 38 H332 L362 70 H158Z"/><text x="260" y="60">车顶 Roof</text></g>
+    <g class="diagram-part"${click('frontBumper')}><path class="car-panel ${on('frontBumper') ? 'selected' : ''}" d="M46 130 H474 L454 165 H66Z"/><text x="260" y="153">${L('Front bumper','前保险杠')}</text></g>
+    <g class="diagram-part"${click('hood')}><path class="car-panel ${on('hood') ? 'selected' : ''}" d="M143 76 H377 L410 126 H110Z"/><text x="260" y="106">${L('Hood','引擎盖')}</text></g>
+    <g class="diagram-part"${click('leftFender')}><path class="car-panel ${on('leftFender') ? 'selected' : ''}" d="M72 76 H143 L110 126 H52Z"/><text x="99" y="104">${L('Left fender','左叶子板')}</text></g>
+    <g class="diagram-part"${click('rightFender')}><path class="car-panel ${on('rightFender') ? 'selected' : ''}" d="M377 76 H448 L468 126 H410Z"/><text x="421" y="104">${L('Right fender','右叶子板')}</text></g>
+    <g class="diagram-part"${click('roof')}><path class="car-panel ${on('roof') ? 'selected' : ''}" d="M188 38 H332 L362 70 H158Z"/><text x="260" y="60">${L('Roof','车顶')}</text></g>
   </svg>`;
 }
 
 function renderJobConfirmationPrint(job) {
   const c = job.confirmation || {};
-  const printLanguage = ['en','zh','bilingual'].includes(c.printLanguage) ? c.printLanguage : 'en';
-  const L = (en, zh) => printLanguage === 'en' ? en : printLanguage === 'zh' ? zh : `${en} / ${zh}`;
+  const printLanguage = c.printLanguage === 'zh' ? 'zh' : 'en';
+  const L = (en, zh) => printLanguage === 'zh' ? zh : en;
+  const P = (value, fallback = '—') => confirmationPrintText(value, printLanguage, fallback);
+  const sep = printLanguage === 'zh' ? '：' : ':';
+  const strictServiceNames = { tint: L('Window tint','汽车窗膜'), wrap: L('Color change film','改色膜'), ppf: L('Paint protection film','漆面保护膜'), ceramic: L('Architectural film','建筑膜') };
+  const strictServiceLabel = jobServices(job).map(service => strictServiceNames[service] || service).join(' + ');
+  const strictPaymentNames = { cash:L('Cash','现金'), visa:'Visa', card:L('Card','刷卡'), zelle:'Zelle', check:L('Check','支票'), other:L('Other','其他') };
+  const strictPaymentName = strictPaymentNames[job.paymentMethod] || job.paymentMethod || '—';
   const services = jobServices(job);
   const tint = services.includes('tint');
   const ppf = services.includes('ppf');
@@ -4914,21 +4951,49 @@ function renderJobConfirmationPrint(job) {
   root.innerHTML = `<article class="confirmation-print-page">
     <header class="confirmation-print-head"><img src="/quad-film-icon.png" alt="QUAD FILM"><div><h1>${L('INSTALLATION AGREEMENT & SERVICE ACCEPTANCE','客户施工确认单')}</h1><p>QUAD FILM</p></div><div class="confirmation-order-no">${L('JOB #','施工单 #')} ${escapeHtml(job.id?.slice(-8).toUpperCase() || '')}</div></header>
     <section class="confirmation-info-grid">
-      <div><b>${L('Customer','客户')}</b><span>${escapeHtml(job.customer || '—')}</span></div><div><b>${L('Phone','电话')}</b><span>${escapeHtml(job.phone || '—')}</span></div><div><b>${L('Date','日期')}</b><span>${escapeHtml(job.scheduleDate || job.date || '—')}</span></div>
-      <div><b>${L('Vehicle','车辆')}</b><span>${escapeHtml(job.vehicle || '—')}</span></div><div><b>${L('Plate / VIN','车牌 / VIN')}</b><span>${escapeHtml(c.vin || job.vin || '—')}</span></div><div><b>${L('Color','颜色')}</b><span>${escapeHtml(c.vehicleColor || '—')}</span></div>
-      <div class="span-3"><b>${L('Special equipment','特殊配置')}</b><span>${escapeHtml(c.specialEquipment || L('None','无'))}</span></div>
+      <div><b>${L('Customer','客户')}</b><span>${escapeHtml(P(job.customer, L('Customer','客户')))}</span></div><div><b>${L('Phone','电话')}</b><span>${escapeHtml(P(job.phone))}</span></div><div><b>${L('Date','日期')}</b><span>${escapeHtml(P(job.scheduleDate || job.date))}</span></div>
+      <div><b>${L('Vehicle','车辆')}</b><span>${escapeHtml(P(job.vehicle, L('Vehicle not specified','未填写车型')))}</span></div><div><b>${L('Plate / VIN','车牌 / VIN')}</b><span>${escapeHtml(P(c.vin || job.vin))}</span></div><div><b>${L('Color','颜色')}</b><span>${escapeHtml(P(c.vehicleColor))}</span></div>
+      <div class="span-3"><b>${L('Special equipment','特殊配置')}</b><span>${escapeHtml(P(c.specialEquipment, L('None','无')))}</span></div>
     </section>
     <div class="confirmation-service-layout ${tint && ppf ? 'two' : 'one'}">
-      ${tint ? `<section class="confirmation-print-section"><h2>${L('WINDOW TINT AREAS','窗膜施工范围')}</h2>${tintVehicleDiagram(c.tintParts)}<p class="selected-parts"><b>${L('Selected','已选')}：</b>${escapeHtml(confirmationSelectedLabels(c.tintParts, tintConfirmationParts))}</p><div class="confirmation-inline"><span><b>${L('Film','膜')}：</b>${escapeHtml(c.tintFilm || job.package || '—')}</span><span><b>VLT：</b>${escapeHtml(c.tintVlt || '—')}</span></div></section>` : ''}
-      ${ppf ? `<section class="confirmation-print-section"><h2>${L('PAINT PROTECTION FILM AREAS','PPF施工范围')}</h2>${ppfVehicleDiagram(c.ppfParts)}<p class="selected-parts"><b>${L('Selected','已选')}：</b>${escapeHtml(confirmationSelectedLabels(c.ppfParts, ppfConfirmationParts))}</p><div class="confirmation-inline"><span><b>${L('Film','膜')}：</b>${escapeHtml(c.ppfFilm || job.package || '—')}</span><span><b>${L('Finish','表面')}：</b>${c.ppfFinish === 'matte' ? L('Matte','哑面') : L('Gloss','亮面')}</span></div></section>` : ''}
-      ${!tint && !ppf ? `<section class="confirmation-print-section"><h2>SERVICE · 施工项目</h2><p>${escapeHtml(serviceLabelList(job))} · ${escapeHtml(job.package || '')}</p></section>` : ''}
+      ${tint ? `<section class="confirmation-print-section"><h2>${L('WINDOW TINT AREAS','窗膜施工范围')}</h2>${tintVehicleDiagram(c.tintParts, false, printLanguage)}<p class="selected-parts"><b>${L('Selected','已选')}${sep}</b> ${escapeHtml(confirmationSelectedLabels(c.tintParts, tintConfirmationParts, printLanguage))}</p><div class="confirmation-inline"><span><b>${L('Film','膜')}${sep}</b> ${escapeHtml(confirmationFilmName(c.tintFilm || job.package, printLanguage))}</span><span><b>VLT${sep}</b> ${escapeHtml(P(c.tintVlt))}</span></div></section>` : ''}
+      ${ppf ? `<section class="confirmation-print-section"><h2>${L('PAINT PROTECTION FILM AREAS','漆面保护膜施工范围')}</h2>${ppfVehicleDiagram(c.ppfParts, false, printLanguage)}<p class="selected-parts"><b>${L('Selected','已选')}${sep}</b> ${escapeHtml(confirmationSelectedLabels(c.ppfParts, ppfConfirmationParts, printLanguage))}</p><div class="confirmation-inline"><span><b>${L('Film','膜')}${sep}</b> ${escapeHtml(confirmationFilmName(c.ppfFilm || job.package, printLanguage))}</span><span><b>${L('Finish','表面')}${sep}</b> ${c.ppfFinish === 'matte' ? L('Matte','哑面') : L('Gloss','亮面')}</span></div></section>` : ''}
+      ${!tint && !ppf ? `<section class="confirmation-print-section"><h2>${L('SERVICE','施工项目')}</h2><p>${escapeHtml(strictServiceLabel)} · ${escapeHtml(job.package || '')}</p></section>` : ''}
     </div>
-    <section class="confirmation-print-section confirmation-requirements"><h2>${L('REQUIREMENTS & VEHICLE CONDITION','施工要求与原车状况')}</h2><div class="confirmation-four"><span>${c.disassembly === 'yes' ? '☑' : '☐'} ${L('Disassembly','拆件')}</span><span>${c.bladeFree !== 'no' ? '☑' : '☐'} ${L('Blade-free','无刀施工')}</span><span><b>${L('Edge wrap','包边')}：</b>${escapeHtml(c.edgeWrap || '—')}</span><span><b>${L('Delivery','交车')}：</b>${escapeHtml(c.deliveryDate || '—')}</span></div><p><b>${L('Existing damage / Risks','原车划痕及风险')}：</b>${escapeHtml(c.risks || L('None noted','未记录'))}</p><p><b>${L('Damage photos stored with job','原车照片已随施工单保存')}：</b>${Number(c.damagePhotos?.length || 0)}</p><p><b>${L('Other notes','其他说明')}：</b>${escapeHtml(c.notes || '—')}</p></section>
-    <section class="confirmation-payment"><span><b>Quoted price 报价：</b>${currency.format(Number(job.price || 0))}</span><span><b>Deposit 订金：</b>${currency.format(Number(job.deposit || 0))}</span><span><b>Balance 余款：</b>${currency.format(Math.max(0, Number(job.price || 0) - Number(job.paidAmount || job.deposit || 0)))}</span><span><b>Payment 付款：</b>${escapeHtml(paymentMethodName(job.paymentMethod) || '—')}</span></section>
+    <section class="confirmation-print-section confirmation-requirements"><h2>${L('REQUIREMENTS & VEHICLE CONDITION','施工要求与原车状况')}</h2><div class="confirmation-four"><span>${c.disassembly === 'yes' ? '☑' : '☐'} ${L('Disassembly','拆件')}</span><span>${c.bladeFree !== 'no' ? '☑' : '☐'} ${L('Blade-free','无刀施工')}</span><span><b>${L('Edge wrap','包边')}${sep}</b>${escapeHtml(P(c.edgeWrap))}</span><span><b>${L('Delivery','交车')}${sep}</b>${escapeHtml(P(c.deliveryDate))}</span></div><p><b>${L('Existing damage / Risks','原车划痕及风险')}${sep}</b>${escapeHtml(P(c.risks, L('See internal job notes','未记录')))}</p><p><b>${L('Damage photos stored with job','原车照片已随施工单保存')}${sep}</b>${Number(c.damagePhotos?.length || 0)}</p><p><b>${L('Other notes','其他说明')}${sep}</b>${escapeHtml(P(c.notes))}</p></section>
+    <section class="confirmation-payment"><span><b>${L('Quoted price','报价')}:</b> ${currency.format(Number(job.price || 0))}</span><span><b>${L('Deposit','订金')}:</b> ${currency.format(Number(job.deposit || 0))}</span><span><b>${L('Balance','余款')}:</b> ${currency.format(Math.max(0, Number(job.price || 0) - Number(job.paidAmount || job.deposit || 0)))}</span><span><b>${L('Payment','付款')}:</b> ${escapeHtml(strictPaymentName)}</span></section>
     <section class="confirmation-terms"><h2>${L('CUSTOMER ACKNOWLEDGEMENT','客户确认')}</h2><ol><li>${L('Vehicle condition, service areas, film type and shade shown above have been reviewed and approved.','客户已核对原车状况、施工部位、膜型及透光率。')}</li><li>${L('Film installation is a detailed handcraft service. Minor edge texture, small bubbles or silvering within industry tolerance may occur and are not defects.','贴膜属于精细手工施工，行业容许范围内的轻微边缘纹理、小气泡或银纹不属于质量问题。')}</li><li>${L('Customer authorizes the selected installation and any approved disassembly. Completed custom services and materials are non-refundable; all sales are final.','客户授权所选施工及已同意的拆装；定制施工完成后不退款。')}</li><li>${L('This agreement is governed by Nevada law.','本确认单适用内华达州法律。')}</li></ol></section>
-    <section class="confirmation-signatures"><div>Customer Signature 客户签名：<span></span></div><div>Date 日期：<span></span></div><div>Advisor 接待：<span>${escapeHtml(repName(job.receptionRepId) || job.preparedBy || '')}</span></div></section>
+    <section class="confirmation-signatures"><div>${L('Customer Signature','客户签名')}${sep} <span></span></div><div>${L('Date','日期')}${sep} <span></span></div><div>${L('Advisor','接待')}${sep} <span>${escapeHtml(P(repName(job.receptionRepId) || job.preparedBy, L('QUAD Staff','店内员工')))}</span></div></section>
     <footer><b>QUAD FILM / QD AUTO IMAGE</b><span>3359 W Oquendo Rd, Las Vegas, NV 89118 · (702) 354-8143</span><span>A4 · Brother HL-L2465DW</span></footer>
   </article>`;
+}
+
+function showJobConfirmationPrintPreview(job) {
+  renderJobConfirmationPrint(job);
+  const printLanguage = job.confirmation?.printLanguage === 'zh' ? 'zh' : 'en';
+  let overlay = document.getElementById('confirmationPrintPreview');
+  if (!overlay) {
+    overlay = document.createElement('div');
+    overlay.id = 'confirmationPrintPreview';
+    overlay.className = 'confirmation-print-preview';
+    document.body.appendChild(overlay);
+  }
+  const documentHtml = document.getElementById('printRoot')?.innerHTML || '';
+  overlay.innerHTML = `<div class="confirmation-preview-dialog">
+    <header><div><h2>${lang === 'zh' ? 'A4 打印预览' : 'A4 Print Preview'}</h2><p>${printLanguage === 'zh' ? '中文文件' : 'English document'} · Brother HL-L2465DW · A4 · 100%</p></div><div class="confirmation-preview-actions"><button type="button" class="btn" onclick="closeJobConfirmationPrintPreview()">${lang === 'zh' ? '返回修改' : 'Back'}</button><button type="button" class="btn primary" onclick="printJobConfirmationFromPreview()">${lang === 'zh' ? '确认并打印' : 'Confirm & Print'}</button></div></header>
+    <div class="confirmation-preview-scroll"><div class="confirmation-preview-sheet">${documentHtml}</div></div>
+  </div>`;
+  overlay.classList.add('open');
+  document.body.classList.add('modal-lock');
+}
+
+function closeJobConfirmationPrintPreview() {
+  document.getElementById('confirmationPrintPreview')?.classList.remove('open');
+  document.body.classList.remove('modal-lock');
+}
+
+function printJobConfirmationFromPreview() {
+  window.print();
 }
 
 function openJobFromProspect(prospectId) {
