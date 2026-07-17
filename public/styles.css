@@ -1103,6 +1103,8 @@ body.modal-lock .prospect-workspace { pointer-events: none; }
 .confirmation-car-diagram.realistic .diagram-full-vehicle.selected { fill:rgba(255,196,0,.22); stroke:#d79a00; }
 .confirmation-car-diagram.realistic .diagram-selection-ring.selected { fill:transparent; stroke:rgba(215,154,0,.55); stroke-width:5; }
 .confirmation-car-diagram.realistic .diagram-part .diagram-highlight { pointer-events:all; }
+.confirmation-car-diagram.realistic.tint-top-view .diagram-exploded { fill:#171a1d; stroke:#050505; stroke-width:8; }
+.confirmation-car-diagram.realistic.tint-top-view .diagram-highlight.selected { fill:rgba(255,216,0,.84); stroke:#e0b800; }
 .confirmation-selection-layout text { font:bold 13px Arial; text-anchor:middle; fill:#14222e; pointer-events:none; }
 .confirmation-selection-layout .diagram-part { cursor:pointer; }
 .confirmation-selection-layout .diagram-part:hover > .diagram-highlight { fill:rgba(255,213,65,.30); stroke:#e2ac00; }

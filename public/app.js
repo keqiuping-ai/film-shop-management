@@ -4906,18 +4906,16 @@ function confirmationFilmName(value, printLanguage) {
 function tintVehicleDiagram(selected = [], interactive = false, printLanguage = 'bilingual') {
   const click = value => interactive ? ` onclick="toggleConfirmationPart('confirmTintPart','${value}')"` : '';
   const on = key => selected.includes(key);
-  const both = (...keys) => keys.some(on);
-  return `<svg class="confirmation-car-diagram realistic" viewBox="0 0 1600 1024" role="img" aria-label="Window tint locations" preserveAspectRatio="xMidYMid meet">
-    <image class="vehicle-base" href="/assets/window-tint-vehicle.png" x="0" y="0" width="1600" height="1024"/>
-    <g class="diagram-part"${click('windshield')}><path class="diagram-highlight ${on('windshield') ? 'selected' : ''}" d="M363 171 Q540 113 787 148 L850 195 L824 404 Q603 455 345 392Z"/></g>
-    <g class="diagram-part"${click('sunroof')}><path class="diagram-highlight ${on('sunroof') ? 'selected' : ''}" d="M644 78 Q884 45 1145 104 L1130 167 Q903 197 665 153Z"/></g>
-    <g class="diagram-part"${click('frontLeft')}><path class="diagram-highlight ${on('frontLeft') ? 'selected' : ''}" d="M886 197 L1038 184 L1064 339 L875 370Z"/></g>
-    <g class="diagram-part"${click('frontRight')}><path class="diagram-highlight ${on('frontRight') ? 'selected' : ''}" d="M886 197 L1038 184 L1064 339 L875 370Z"/></g>
-    <g class="diagram-part"${click('rearLeft')}><path class="diagram-highlight ${on('rearLeft') ? 'selected' : ''}" d="M1050 184 L1217 194 L1260 315 L1077 338Z"/></g>
-    <g class="diagram-part"${click('rearRight')}><path class="diagram-highlight ${on('rearRight') ? 'selected' : ''}" d="M1050 184 L1217 194 L1260 315 L1077 338Z"/></g>
-    <g class="diagram-part"${click('quarterWindows')}><path class="diagram-highlight ${on('quarterWindows') ? 'selected' : ''}" d="M1229 197 L1324 214 L1372 293 L1273 311Z"/></g>
-    <g class="diagram-part"${click('rearWindow')}><path class="diagram-highlight ${on('rearWindow') ? 'selected' : ''}" d="M1324 214 L1412 254 L1444 330 L1384 337 L1372 293Z"/></g>
-    <path class="diagram-selection-ring ${both('frontLeft','frontRight','rearLeft','rearRight','quarterWindows') ? 'selected' : ''}" d="M868 181 Q1120 137 1341 203 L1390 302 Q1152 372 866 383Z"/>
+  return `<svg class="confirmation-car-diagram realistic tint-top-view" viewBox="0 0 1650 1254" role="img" aria-label="Window tint locations" preserveAspectRatio="xMidYMid meet">
+    <image class="vehicle-base" href="/assets/window-tint-vehicle-top-v2.png" x="198" y="0" width="1254" height="1254"/>
+    <g class="diagram-part"${click('rearWindow')}><path class="diagram-highlight ${on('rearWindow') ? 'selected' : ''}" d="M664 62 Q823 37 986 62 Q1014 70 1025 112 L1039 152 Q825 126 611 152 L625 111 Q638 72 664 62Z"/></g>
+    <g class="diagram-part"${click('sunroof')}><path class="diagram-highlight ${on('sunroof') ? 'selected' : ''}" d="M628 159 Q825 133 1022 159 L1050 318 Q825 331 600 318Z"/></g>
+    <g class="diagram-part"${click('windshield')}><path class="diagram-highlight ${on('windshield') ? 'selected' : ''}" d="M590 354 Q825 334 1060 354 L1090 573 Q1071 612 1028 626 Q825 648 622 626 Q579 612 560 573Z"/></g>
+    <g class="diagram-part"${click('rearLeft')}><path class="diagram-highlight diagram-exploded ${on('rearLeft') ? 'selected' : ''}" d="M56 224 Q123 190 220 208 L253 224 L233 413 L48 395Z"/></g>
+    <g class="diagram-part"${click('frontLeft')}><path class="diagram-highlight diagram-exploded ${on('frontLeft') ? 'selected' : ''}" d="M48 426 L233 414 L253 616 L214 632 Q118 645 56 606Z"/></g>
+    <g class="diagram-part"${click('rearRight')}><path class="diagram-highlight diagram-exploded ${on('rearRight') ? 'selected' : ''}" d="M1594 224 Q1527 190 1430 208 L1397 224 L1417 413 L1602 395Z"/></g>
+    <g class="diagram-part"${click('frontRight')}><path class="diagram-highlight diagram-exploded ${on('frontRight') ? 'selected' : ''}" d="M1602 426 L1417 414 L1397 616 L1436 632 Q1532 645 1594 606Z"/></g>
+    <g class="diagram-part"${click('quarterWindows')}><path class="diagram-highlight diagram-exploded ${on('quarterWindows') ? 'selected' : ''}" d="M78 184 Q142 158 210 178 L224 202 Q136 187 56 220Z M1572 184 Q1508 158 1440 178 L1426 202 Q1514 187 1594 220Z"/></g>
   </svg>`;
 }
 
