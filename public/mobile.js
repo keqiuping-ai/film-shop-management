@@ -13,6 +13,8 @@ let lastUserInputAt = 0;
 let markReadTimer = null;
 const chatDrafts = new Map();
 let leaveDraft = {};
+let reimbursementDraft = {};
+let reimbursementAttachments = [];
 let deferredInstall = null;
 let messageRecorder = null;
 let messageAudioChunks = [];
@@ -38,6 +40,7 @@ const I18N = {
     notes: '记事本',
     clock: '打卡',
     leave: '请假',
+    reimbursement: '报销',
     me: '我的',
     requestFailed: '请求失败',
     noStaff: '还没有可留言的员工账号。',
@@ -117,7 +120,7 @@ const I18N = {
     logout: '退出登录',
     iosInstall: 'iPhone/iPad 安装方法：点击 Safari 底部“分享”按钮，然后选择“添加到主屏幕”。图标会使用 QUAD FILM 黑色品牌标。',
     browserInstall: '如果浏览器没有弹出安装窗口，请打开浏览器菜单，选择“安装应用”或“添加到主屏幕”。'
-    ,groupChat: '全体员工群聊', myNotes: '我的记事本', notesPrivate: '包含自己的记事和别人分享给你的内容；只有原作者能修改。', newMemo: '新建备忘录', newTask: '新建待办', memo: '备忘', todo: '待办', completed: '已完成', finish: '办完了', edit: '编辑', delete: '删除', noteTitle: '标题', noteContent: '详细内容（可不填）', remindAt: '提醒时间', save: '保存', cancel: '取消', noteTitleRequired: '请填写标题', noteTimeRequired: '请选择提醒日期和时间', confirmDeleteNote: '确定删除这条记事吗？', noNotes: '还没有记事或待办。', due: '提醒', attachmentSending: '正在发送附件…'
+    ,groupChat: '全体员工群聊', myNotes: '我的记事本', notesPrivate: '包含自己的记事和别人分享给你的内容；只有原作者能修改。', newMemo: '新建备忘录', newTask: '新建待办', memo: '备忘', todo: '待办', completed: '已完成', finish: '办完了', edit: '编辑', delete: '删除', noteTitle: '标题', noteContent: '详细内容（可不填）', remindAt: '提醒时间', save: '保存', cancel: '取消', noteTitleRequired: '请填写标题', noteTimeRequired: '请选择提醒日期和时间', confirmDeleteNote: '确定删除这条记事吗？', noNotes: '还没有记事或待办。', due: '提醒', attachmentSending: '正在发送附件…', submitClaim: '提交报销', expenseDate: '消费日期', category: '报销类别', vendor: '商家（可不填）', purpose: '费用用途', amount: '金额', paymentMethod: '付款方式（可不填）', claimNotes: '备注（没有小票时必须说明）', receipt: '拍照或上传小票', receiptHint: '支持照片或 PDF，单个不超过 5MB', myClaims: '我的报销记录', noClaims: '暂无报销记录', claimSubmitted: '报销申请已提交', uploadingReceipt: '正在上传凭证…', remove: '删除', noClaimPermission: '当前账号没有提交报销的权限。', receiptCount: '个凭证'
   },
   en: {
     languageToggle: '中文',
@@ -134,6 +137,7 @@ const I18N = {
     notes: 'Notes',
     clock: 'Clock',
     leave: 'Leave',
+    reimbursement: 'Expense',
     me: 'Me',
     requestFailed: 'Request failed',
     noStaff: 'No staff accounts are available for messaging.',
@@ -213,7 +217,7 @@ const I18N = {
     logout: 'Log Out',
     iosInstall: 'iPhone/iPad: tap the Safari Share button, then choose Add to Home Screen. The icon will use the black QUAD FILM brand icon.',
     browserInstall: 'If the install prompt does not appear, open the browser menu and choose Install App or Add to Home Screen.'
-    ,groupChat: 'All Staff', myNotes: 'My Notes', notesPrivate: 'Includes your notes and notes shared with you; only authors can edit.', newMemo: 'New Memo', newTask: 'New Task', memo: 'Memo', todo: 'To-do', completed: 'Completed', finish: 'Done', edit: 'Edit', delete: 'Delete', noteTitle: 'Title', noteContent: 'Details (optional)', remindAt: 'Reminder', save: 'Save', cancel: 'Cancel', noteTitleRequired: 'Enter a title', noteTimeRequired: 'Choose a reminder date and time', confirmDeleteNote: 'Delete this note?', noNotes: 'No notes or tasks yet.', due: 'Reminder', attachmentSending: 'Sending attachment…'
+    ,groupChat: 'All Staff', myNotes: 'My Notes', notesPrivate: 'Includes your notes and notes shared with you; only authors can edit.', newMemo: 'New Memo', newTask: 'New Task', memo: 'Memo', todo: 'To-do', completed: 'Completed', finish: 'Done', edit: 'Edit', delete: 'Delete', noteTitle: 'Title', noteContent: 'Details (optional)', remindAt: 'Reminder', save: 'Save', cancel: 'Cancel', noteTitleRequired: 'Enter a title', noteTimeRequired: 'Choose a reminder date and time', confirmDeleteNote: 'Delete this note?', noNotes: 'No notes or tasks yet.', due: 'Reminder', attachmentSending: 'Sending attachment…', submitClaim: 'Submit Expense', expenseDate: 'Expense Date', category: 'Category', vendor: 'Vendor (optional)', purpose: 'Business Purpose', amount: 'Amount', paymentMethod: 'Payment Method (optional)', claimNotes: 'Notes (required without a receipt)', receipt: 'Take Photo or Upload Receipt', receiptHint: 'Photo or PDF, up to 5MB each', myClaims: 'My Expense Claims', noClaims: 'No expense claims', claimSubmitted: 'Expense claim submitted', uploadingReceipt: 'Uploading receipt…', remove: 'Remove', noClaimPermission: 'This account cannot submit expense claims.', receiptCount: 'receipt(s)'
   }
 };
 
@@ -242,6 +246,7 @@ function applyLanguage() {
   setText('tabNotes', t('notes'));
   setText('tabClock', t('clock'));
   setText('tabLeave', t('leave'));
+  setText('tabReimbursement', t('reimbursement'));
   setText('tabMe', t('me'));
   if (!user) setText('userName', t('employeeApp'));
 }
@@ -430,7 +435,7 @@ function chatDraft(userId) {
 }
 
 function hasActiveDraft() {
-  return (tab === 'chat' && activeUserId && Boolean(chatDraft(activeUserId))) || (tab === 'leave' && hasLeaveDraft());
+  return (tab === 'chat' && activeUserId && Boolean(chatDraft(activeUserId))) || (tab === 'leave' && hasLeaveDraft()) || (tab === 'reimbursement' && hasReimbursementDraft());
 }
 
 function saveLeaveDraft() {
@@ -458,7 +463,18 @@ function clearLeaveDraft() {
 function saveActiveDrafts() {
   saveActiveChatDraft();
   saveLeaveDraft();
+  saveReimbursementDraft();
 }
+
+function saveReimbursementDraft() {
+  const fields = ['claimDate', 'claimCategory', 'claimVendor', 'claimPurpose', 'claimAmount', 'claimPaymentMethod', 'claimNotes'];
+  const next = {};
+  fields.forEach(id => { const element = document.getElementById(id); if (element) next[id] = element.value; });
+  if (Object.keys(next).length) reimbursementDraft = { ...reimbursementDraft, ...next };
+}
+
+function reimbursementDraftValue(id, fallback = '') { return reimbursementDraft[id] ?? fallback; }
+function hasReimbursementDraft() { return reimbursementAttachments.length > 0 || Object.values(reimbursementDraft).some(value => String(value || '').trim()); }
 
 function scheduleActiveConversationRead() {
   if (tab !== 'chat' || !activeUserId || !unreadFrom(activeUserId)) return;
@@ -511,6 +527,7 @@ function render(options = {}) {
   if (tab === 'notes') view.innerHTML = notesHtml();
   if (tab === 'clock') view.innerHTML = clockHtml();
   if (tab === 'leave') view.innerHTML = leaveHtml();
+  if (tab === 'reimbursement') view.innerHTML = reimbursementHtml();
   if (tab === 'me') view.innerHTML = meHtml();
   lastRenderSnapshot = snapshot;
   if (tab === 'chat') {
@@ -529,7 +546,8 @@ function renderSnapshot() {
     messageCount: (state?.messages || []).length,
     noteCount: (state?.personalNotes || []).length,
     leaveCount: (state?.leaveRequests || []).length,
-    clockCount: (state?.clockRecords || []).length
+    clockCount: (state?.clockRecords || []).length,
+    reimbursementCount: (state?.reimbursements || []).length
   });
 }
 
@@ -1082,6 +1100,115 @@ async function reviewLeave(id, status) {
     render();
   } catch (err) {
     alert(err.message);
+  }
+}
+
+function reimbursementCategoryOptions(selected = '') {
+  const options = lang === 'zh'
+    ? ['交通/汽油', '停车/过路费', '餐饮', '办公用品', '工具/材料', '差旅/住宿', '广告/推广', '其他']
+    : ['Transportation / Gas', 'Parking / Tolls', 'Meals', 'Office Supplies', 'Tools / Materials', 'Travel / Lodging', 'Advertising', 'Other'];
+  return `<option value="">${lang === 'zh' ? '请选择' : 'Select'}</option>` + options.map(label => `<option value="${escapeHtml(label)}" ${label === selected ? 'selected' : ''}>${escapeHtml(label)}</option>`).join('');
+}
+
+function reimbursementStatus(value) {
+  if (lang === 'zh') return value;
+  return { '待审批': 'Pending', '已批准': 'Approved', '已驳回': 'Rejected', '已报销': 'Reimbursed' }[value] || value;
+}
+
+function reimbursementStatusClass(value) {
+  return value === '已批准' || value === '已报销' ? 'approved' : value === '已驳回' ? 'rejected' : 'pending';
+}
+
+function reimbursementHtml() {
+  saveReimbursementDraft();
+  const today = new Intl.DateTimeFormat('en-CA', { timeZone: APP_TIMEZONE, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+  const claims = state.reimbursements || [];
+  const form = state.canCreateReimbursements ? `<div class="panel">
+    <div class="panel-head">${t('submitClaim')}</div>
+    <div class="panel-body reimbursement-form">
+      <label>${t('expenseDate')}<input id="claimDate" type="date" value="${escapeHtml(reimbursementDraftValue('claimDate', today))}" oninput="saveReimbursementDraft(); markUserInput()"></label>
+      <label>${t('category')}<select id="claimCategory" onchange="saveReimbursementDraft(); markUserInput()">${reimbursementCategoryOptions(reimbursementDraftValue('claimCategory'))}</select></label>
+      <label>${t('vendor')}<input id="claimVendor" value="${escapeHtml(reimbursementDraftValue('claimVendor'))}" oninput="saveReimbursementDraft(); markUserInput()"></label>
+      <label>${t('purpose')}<textarea id="claimPurpose" oninput="saveReimbursementDraft(); markUserInput()">${escapeHtml(reimbursementDraftValue('claimPurpose'))}</textarea></label>
+      <label>${t('amount')}<input id="claimAmount" type="number" min="0.01" step="0.01" inputmode="decimal" value="${escapeHtml(reimbursementDraftValue('claimAmount'))}" oninput="saveReimbursementDraft(); markUserInput()"></label>
+      <label>${t('paymentMethod')}<input id="claimPaymentMethod" value="${escapeHtml(reimbursementDraftValue('claimPaymentMethod'))}" oninput="saveReimbursementDraft(); markUserInput()"></label>
+      <div class="reimbursement-upload"><label for="claimReceipts">📷 ${t('receipt')}</label><span class="hint">${t('receiptHint')}</span><input id="claimReceipts" type="file" accept="image/*,.pdf,application/pdf" capture="environment" multiple onchange="uploadReimbursementAttachments(this)"></div>
+      <div id="claimReceiptList" class="receipt-list">${reimbursementAttachmentListHtml()}</div>
+      <label>${t('claimNotes')}<textarea id="claimNotes" oninput="saveReimbursementDraft(); markUserInput()">${escapeHtml(reimbursementDraftValue('claimNotes'))}</textarea></label>
+      <button id="submitClaimButton" class="primary" onclick="submitReimbursement()">${t('submitClaim')}</button>
+    </div>
+  </div>` : `<div class="panel"><div class="panel-body hint">${t('noClaimPermission')}</div></div>`;
+  return `${form}<div class="panel"><div class="panel-head">${t('myClaims')}</div>${claims.length ? claims.map(reimbursementItemHtml).join('') : `<div class="row"><span>${t('noClaims')}</span></div>`}</div>`;
+}
+
+function reimbursementAttachmentListHtml() {
+  return reimbursementAttachments.map((file, index) => `<div class="receipt-item"><span>📎 ${escapeHtml(file.name || t('receipt'))}</span><button type="button" onclick="removeReimbursementAttachment(${index})">×</button></div>`).join('');
+}
+
+function reimbursementItemHtml(item) {
+  return `<div class="row"><div style="width:100%"><strong>${escapeHtml(item.reimbursementNo || '')} <span class="status ${reimbursementStatusClass(item.status)}">${escapeHtml(reimbursementStatus(item.status))}</span></strong><span>${escapeHtml(item.date || '')} · ${escapeHtml(item.category || '')}${item.vendor ? ` · ${escapeHtml(item.vendor)}` : ''}</span><span>${escapeHtml(item.purpose || '')}</span><div style="display:flex;justify-content:space-between;align-items:center;margin-top:7px"><strong class="claim-amount">$${Number(item.amount || 0).toFixed(2)}</strong><span>${(item.attachments || []).length} ${t('receiptCount')}</span></div></div></div>`;
+}
+
+function removeReimbursementAttachment(index) {
+  reimbursementAttachments = reimbursementAttachments.filter((_, itemIndex) => itemIndex !== index);
+  const list = document.getElementById('claimReceiptList');
+  if (list) list.innerHTML = reimbursementAttachmentListHtml();
+}
+
+async function uploadReimbursementAttachments(input) {
+  const files = [...(input?.files || [])];
+  if (!files.length) return;
+  try {
+    input.disabled = true;
+    for (let file of files) {
+      if (String(file.type || '').startsWith('image/')) file = await optimizeMobileImage(file);
+      if (file.size > 5 * 1024 * 1024) throw new Error(t('receiptHint'));
+      const uploaded = await api('/api/reimbursement-media/upload', {
+        method: 'POST',
+        body: JSON.stringify({ name: file.name, type: file.type || 'application/octet-stream', dataUrl: await fileToDataUrl(file) })
+      });
+      reimbursementAttachments.push({ name: uploaded.name, type: uploaded.type, url: uploaded.url });
+    }
+    const list = document.getElementById('claimReceiptList');
+    if (list) list.innerHTML = reimbursementAttachmentListHtml();
+  } catch (err) {
+    alert(err.message);
+  } finally {
+    input.disabled = false;
+    input.value = '';
+  }
+}
+
+async function submitReimbursement() {
+  saveReimbursementDraft();
+  const button = document.getElementById('submitClaimButton');
+  try {
+    if (button) button.disabled = true;
+    await api('/api/reimbursements', {
+      method: 'POST',
+      body: JSON.stringify({
+        requestId: `mobile-claim-${user.id}-${Date.now()}`,
+        date: reimbursementDraftValue('claimDate'),
+        category: reimbursementDraftValue('claimCategory'),
+        vendor: reimbursementDraftValue('claimVendor'),
+        purpose: reimbursementDraftValue('claimPurpose'),
+        amount: reimbursementDraftValue('claimAmount'),
+        paymentMethod: reimbursementDraftValue('claimPaymentMethod'),
+        notes: reimbursementDraftValue('claimNotes'),
+        attachments: reimbursementAttachments
+      })
+    });
+    reimbursementDraft = {};
+    reimbursementAttachments = [];
+    lastUserInputAt = 0;
+    state = await api('/api/mobile/bootstrap');
+    renderAuth();
+    render({ preserveActiveInput: false });
+    alert(t('claimSubmitted'));
+  } catch (err) {
+    alert(err.message);
+  } finally {
+    if (button) button.disabled = false;
   }
 }
 

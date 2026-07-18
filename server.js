@@ -1065,12 +1065,21 @@ function canApproveLeave(user) {
 function mobileSnapshot(db, user) {
   const userId = user?.id || '';
   const approver = canApproveLeave(user);
+  const permissions = effectivePermissions(user);
+  const canApproveReimbursements = Boolean(permissions.reimbursementsApprove);
   return {
     user: safeUser(user),
     users: db.users.filter(item => item.active !== false).map(safeUser),
     messages: messagesForUser(db, user),
     unread: unreadMessageCount(db, user),
     canApproveLeave: approver,
+    canCreateReimbursements: Boolean(permissions.reimbursementsCreate),
+    reimbursements: permissions.reimbursementsView
+      ? (db.reimbursements || [])
+        .filter(item => canApproveReimbursements || item.employeeUserId === userId)
+        .sort((a, b) => String(b.createdAt || b.date || '').localeCompare(String(a.createdAt || a.date || '')))
+        .slice(0, 200)
+      : [],
     clockRecords: (db.clockRecords || [])
       .filter(item => approver || item.userId === userId)
       .sort((a, b) => String(b.at || '').localeCompare(String(a.at || '')))
