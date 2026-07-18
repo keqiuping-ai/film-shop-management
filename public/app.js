@@ -4011,11 +4011,32 @@ function prospectTimeCell(item) {
   return `<span class="prospect-time-line">${lang === 'zh' ? '加入' : 'Added'} ${escapeHtml(added)}</span><span class="note prospect-time-line">${lang === 'zh' ? '更新' : 'Updated'} ${escapeHtml(updated)}</span>`;
 }
 
+function customerPhoneMatchKey(value) {
+  const digits = String(value || '').replace(/\D/g, '');
+  return digits.length > 10 ? digits.slice(-10) : digits;
+}
+
+function prospectHasGeneratedJob(item) {
+  if (item.convertedJobId) return true;
+  const phoneKey = customerPhoneMatchKey(item.phone);
+  const prospectDate = String(item.date || item.appointmentDate || '').slice(0, 10);
+  const nameKey = normalizeCustomerLookupText(item.customer || '');
+  return (state.jobs || []).some(job => {
+    if (job.sourceProspectId === item.id) return true;
+    const jobPhoneKey = customerPhoneMatchKey(job.phone);
+    const identityMatches = phoneKey
+      ? jobPhoneKey === phoneKey
+      : Boolean(nameKey && normalizeCustomerLookupText(job.customer || '') === nameKey);
+    if (!identityMatches) return false;
+    const jobDate = String(job.date || job.scheduleDate || job.createdAt || '').slice(0, 10);
+    return !prospectDate || !jobDate || jobDate >= prospectDate;
+  });
+}
+
 function sortedProspectRows() {
-  const linkedProspectIds = new Set((state.jobs || []).map(job => job.sourceProspectId).filter(Boolean));
   return (state.prospects || [])
     .filter(item => ['已预约', '已到店'].includes(String(item.status || '')))
-    .filter(item => !item.convertedJobId && !linkedProspectIds.has(item.id))
+    .filter(item => !prospectHasGeneratedJob(item))
     .map(item => ({ ...item, _kind: 'prospect' }))
     .sort((a, b) => {
       const appointmentDiff = new Date(`${a.appointmentDate || '9999-12-31'}T${a.appointmentTime || '23:59'}`).getTime()
