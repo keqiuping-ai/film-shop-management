@@ -2953,7 +2953,7 @@ const views = {
     return panel(t('replyLibrary'), hasPerm('prospectsEdit') ? `<button class="btn primary" onclick="openReplyTemplateEditor('text')">${lang === 'zh' ? '新增回复素材' : 'New reply'}</button>` : '', replyLibraryPageHtml());
   },
   prospects() {
-    return panel(t('prospects'), hasPerm('prospectsEdit') ? `<button class="btn primary" onclick="openProspect()">${t('addNew')}</button>` : '', prospectSearchBox() + `<div id="prospectSearchResults">${prospectTable(searchedProspectRows())}</div>` + `<p class="note">${lang === 'zh' ? '店长工作台只显示已预约、已到店、排期和施工中的客户；已交车、已取消及普通旧客资不会显示。点击卡片即可查看完整资料、历史聊天并继续给客户发短信。' : 'The manager board shows only appointed, arrived, scheduled, and active workshop customers. Open a card for details, history, and SMS follow-up.'}</p>`);
+    return panel(t('prospects'), hasPerm('prospectsEdit') ? `<button class="btn primary" onclick="openProspect()">${t('addNew')}</button>` : '', prospectSearchBox() + `<div id="prospectSearchResults">${prospectTable(searchedProspectRows())}</div>` + `<p class="note">${lang === 'zh' ? '这里只显示已预约或已到店、但尚未生成施工单的客户。生成施工单后，客户会立即离开本页面，后续只在“施工订单”中管理。点击卡片可查看完整资料、历史聊天并继续发短信。' : 'Only appointed or arrived customers without a job appear here. Once a job is created, the customer leaves this page and is managed in Jobs.'}</p>`);
   },
   leads() {
     const actions = hasPerm('leadsEdit') ? `<button class="btn primary" onclick="openLead()">${t('addNew')}</button>` : '';
@@ -4012,36 +4012,19 @@ function prospectTimeCell(item) {
 }
 
 function sortedProspectRows() {
-  const activeJobs = (state.jobs || []).filter(job => ['排期', '施工中', '待质检', '返工'].includes(String(job.status || '')));
-  const activeJobIds = new Set(activeJobs.map(job => job.id));
-  const activeSourceIds = new Set(activeJobs.map(job => job.sourceProspectId).filter(Boolean));
-  const prospects = (state.prospects || [])
-    .filter(item => ['已预约', '已到店', '已转施工单'].includes(String(item.status || '')))
-    .filter(item => !activeSourceIds.has(item.id) && (!item.convertedJobId || activeJobIds.has(item.convertedJobId)))
-    .map(item => ({ ...item, _kind: 'prospect' }));
-  const jobs = activeJobs.map(job => {
-    const prospect = (state.prospects || []).find(item => item.id === job.sourceProspectId);
-    return {
-      ...job,
-      _kind: 'job',
-      _prospect: prospect || null,
-      appointmentDate: job.scheduleDate || prospect?.appointmentDate || '',
-      appointmentTime: prospect?.appointmentTime || '',
-      need: prospect?.need || job.notes || '',
-      ownerId: prospect?.ownerId || job.leadRepId || job.receptionRepId || '',
-      ownerName: prospect?.ownerName || '',
-      createdAt: job.createdAt || job.date || '',
-      updatedAt: job.updatedAt || job.createdAt || job.date || ''
-    };
-  });
-  return [...prospects, ...jobs].sort((a, b) => {
-    const appointmentDiff = new Date(`${a.appointmentDate || '9999-12-31'}T${a.appointmentTime || '23:59'}`).getTime()
-      - new Date(`${b.appointmentDate || '9999-12-31'}T${b.appointmentTime || '23:59'}`).getTime();
-    if (Number.isFinite(appointmentDiff) && appointmentDiff) return appointmentDiff;
-    const activityDiff = new Date(prospectActivityTime(b)).getTime() - new Date(prospectActivityTime(a)).getTime();
-    if (Number.isFinite(activityDiff) && activityDiff) return activityDiff;
-    return String(b.date || '').localeCompare(String(a.date || ''));
-  });
+  const linkedProspectIds = new Set((state.jobs || []).map(job => job.sourceProspectId).filter(Boolean));
+  return (state.prospects || [])
+    .filter(item => ['已预约', '已到店'].includes(String(item.status || '')))
+    .filter(item => !item.convertedJobId && !linkedProspectIds.has(item.id))
+    .map(item => ({ ...item, _kind: 'prospect' }))
+    .sort((a, b) => {
+      const appointmentDiff = new Date(`${a.appointmentDate || '9999-12-31'}T${a.appointmentTime || '23:59'}`).getTime()
+        - new Date(`${b.appointmentDate || '9999-12-31'}T${b.appointmentTime || '23:59'}`).getTime();
+      if (Number.isFinite(appointmentDiff) && appointmentDiff) return appointmentDiff;
+      const activityDiff = new Date(prospectActivityTime(b)).getTime() - new Date(prospectActivityTime(a)).getTime();
+      if (Number.isFinite(activityDiff) && activityDiff) return activityDiff;
+      return String(b.date || '').localeCompare(String(a.date || ''));
+    });
 }
 
 function prospectSearchText(item) {
@@ -4083,7 +4066,7 @@ function prospectTable(rows = searchedProspectRows()) {
     const stageLabel = isJob ? item.status : (item.status === '已到店' ? (lang === 'zh' ? '已经到店' : 'Arrived') : (lang === 'zh' ? '预约待到店' : 'Appointment'));
     const chatItem = item._prospect || item;
     const openAction = isJob && !item._prospect ? `openJob('${item.id}')` : `openProspectWorkspace('prospects','${chatItem.id}')`;
-    const serviceText = isJob ? serviceLabelList(item) : (serviceNames[item.service] || item.service || '');
+    const serviceText = isJob ? serviceLabelList(item) : (item.service ? (serviceNames[item.service] || item.service) : '');
     const needText = item.need || item.notes || item.note || '';
     const appointmentText = [item.appointmentDate, item.appointmentTime].filter(Boolean).join(' ');
     return `<article class="appointment-card ${stage}" onclick="${openAction}">
@@ -4103,7 +4086,7 @@ function prospectTable(rows = searchedProspectRows()) {
       </div></footer>
     </article>`;
   }).join('')}
-  ${rows.length ? '' : `<div class="empty-state">${lang === 'zh' ? '目前没有已预约、排期或施工中的客户。' : 'No appointment, scheduled, or active workshop customers.'}</div>`}
+  ${rows.length ? '' : `<div class="empty-state">${lang === 'zh' ? '目前没有已预约或已到店、且尚未生成施工单的客户。' : 'No appointed or arrived customers are waiting for job creation.'}</div>`}
   </div>`;
 }
 
