@@ -3481,13 +3481,24 @@ function jobCardClass(status) {
   return 'scheduled';
 }
 
+function compareActiveJobsBySchedule(a, b) {
+  const aDate = String(a.scheduleDate || '9999-12-31').slice(0, 10);
+  const bDate = String(b.scheduleDate || '9999-12-31').slice(0, 10);
+  const dateDifference = aDate.localeCompare(bDate);
+  if (dateDifference) return dateDifference;
+  const statusOrder = { '排期': 0, '施工中': 1, '待质检': 2, '返工': 3 };
+  const statusDifference = (statusOrder[String(a.status || '排期')] ?? 9) - (statusOrder[String(b.status || '排期')] ?? 9);
+  if (statusDifference) return statusDifference;
+  return String(a.createdAt || a.date || '').localeCompare(String(b.createdAt || b.date || ''));
+}
+
 function jobActiveCards(rows) {
   return `<div class="job-card-board">
     ${rows.map(job => {
       const calc = jobCalc(job);
       const status = String(job.status || '排期');
       const canOpen = hasPerm('jobsEdit');
-      const scheduleText = job.scheduleDate || job.date || (lang === 'zh' ? '待安排' : 'Pending');
+      const scheduleText = job.scheduleDate || (lang === 'zh' ? '待安排' : 'Pending');
       const serviceText = [serviceLabelList(job), job.package].filter(Boolean).join(' · ');
       const ownerText = job.salesRep || repName(job.receptionRepId) || repName(job.leadRepId) || job.preparedBy || t('unassigned');
       return `<article class="job-card ${jobCardClass(status)}" ${canOpen ? `onclick="openJob('${job.id}')" role="button" tabindex="0" onkeydown="if(event.key==='Enter')openJob('${job.id}')"` : ''}>
@@ -3527,10 +3538,10 @@ function jobArchiveTable(rows) {
 }
 
 function jobBoard(rows) {
-  const active = rows.filter(job => !jobIsArchived(job));
+  const active = rows.filter(job => !jobIsArchived(job)).sort(compareActiveJobsBySchedule);
   const archived = rows.filter(jobIsArchived);
   return `<section class="job-board-section">
-    <div class="job-section-heading"><div><h4>${lang === 'zh' ? '排单与正在施工' : 'Scheduled & Active Jobs'}</h4><p>${lang === 'zh' ? '需要继续处理的施工单优先显示' : 'Jobs that still need attention'}</p></div><span>${active.length}</span></div>
+    <div class="job-section-heading"><div><h4>${lang === 'zh' ? '排单与正在施工' : 'Scheduled & Active Jobs'}</h4><p>${lang === 'zh' ? '按施工时间从早到晚排列；同一天排单优先' : 'Earliest job date first; scheduled jobs lead within the same day'}</p></div><span>${active.length}</span></div>
     ${jobActiveCards(active)}
     <div class="job-section-heading archived"><div><h4>${lang === 'zh' ? '已成交与历史订单' : 'Completed & Historical Jobs'}</h4><p>${lang === 'zh' ? '已交车和取消订单以紧凑表格保留在下方' : 'Delivered and canceled jobs in a compact list'}</p></div><span>${archived.length}</span></div>
     ${jobArchiveTable(archived)}
