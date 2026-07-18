@@ -224,6 +224,7 @@ function seedDb() {
     messages: [],
     clockRecords: [],
     leaveRequests: [],
+    employeeActivity: [],
     auditLogs: []
   };
 }
@@ -259,6 +260,7 @@ function readDb() {
   if (!Array.isArray(db.messages)) db.messages = [];
   if (!Array.isArray(db.clockRecords)) db.clockRecords = [];
   if (!Array.isArray(db.leaveRequests)) db.leaveRequests = [];
+  if (!Array.isArray(db.employeeActivity)) db.employeeActivity = [];
   if (!Array.isArray(db.workshopMovements)) db.workshopMovements = [];
   return db;
 }
@@ -979,7 +981,7 @@ function sanitizeDbForUser(db, user) {
   const canApproveReimbursements = Boolean(p.reimbursementsApprove);
   return {
     settings: db.settings,
-    users: p.usersManage || p.schedulesView ? db.users.map(safeUser) : [safeUser(user)],
+    users: p.usersManage || p.schedulesView || p.reportsView ? db.users.map(safeUser) : [safeUser(user)],
     messageUsers: db.users.filter(item => item.active !== false).map(safeUser),
     messages: messagesForUser(db, user),
     personalNotes: (db.personalNotes || []).filter(item => personalNoteVisibleTo(item, user)).map(item => personalNoteForUser(db, item, user)),
@@ -1001,6 +1003,7 @@ function sanitizeDbForUser(db, user) {
     movements: p.inventoryView ? db.movements : [],
     workshopMovements: p.inventoryView ? (db.workshopMovements || []) : [],
     auditLogs: p.usersManage || p.reportsView ? db.auditLogs : [],
+    employeeActivity: p.usersManage || p.reportsView ? (db.employeeActivity || []) : [],
     permissions: p
   };
 }
@@ -2730,6 +2733,26 @@ async function api(req, res) {
 
   if (req.method === 'GET' && url.pathname === '/api/sync-status') {
     return send(res, 200, { revision: databaseRevision(), at: new Date().toISOString() }, undefined, req);
+  }
+
+  if (req.method === 'POST' && url.pathname === '/api/activity-heartbeat') {
+    const body = await readBody(req);
+    const now = new Date();
+    const bucketAt = new Date(Math.floor(now.getTime() / 300000) * 300000).toISOString();
+    const page = String(body.page || '').slice(0, 40);
+    const rows = db.employeeActivity || (db.employeeActivity = []);
+    const existing = rows.find(row => row.userId === user.id && row.bucketAt === bucketAt);
+    if (existing) {
+      existing.lastAt = now.toISOString();
+      existing.page = page || existing.page;
+      existing.signals = Math.min(99, Number(existing.signals || 0) + 1);
+    } else {
+      rows.push({ id: id(), userId: user.id, userName: user.name, bucketAt, lastAt: now.toISOString(), page, signals: 1 });
+    }
+    const cutoff = Date.now() - 120 * 24 * 60 * 60 * 1000;
+    db.employeeActivity = rows.filter(row => new Date(row.bucketAt).getTime() >= cutoff);
+    writeDb(db);
+    return send(res, 200, { ok: true, bucketAt });
   }
 
   if (req.method === 'GET' && url.pathname === '/api/mobile/bootstrap') {

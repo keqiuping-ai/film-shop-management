@@ -40,6 +40,9 @@ let jobPersonFilter = '';
 let scheduleMonth = today().slice(0, 7);
 let jobMonth = today().slice(0, 7);
 let auditDate = today();
+let workTimeDate = today();
+let activityHeartbeatTimer = null;
+let lastEmployeeInteractionAt = Date.now();
 let deferredInstall = null;
 let lang = localStorage.getItem('filmShopCloud.lang') || 'zh';
 let syncTimer = null;
@@ -138,6 +141,8 @@ const dict = {
     shipmentsSub: '中国海运、空运到拉斯维加斯的货物跟踪',
     schedules: '员工调休',
     schedulesSub: '周末补班、调休休息、月度出勤和邮件提醒',
+    workTime: '员工工作时间',
+    workTimeSub: '每天生成员工系统活跃时段、八小时覆盖率和工作曲线',
     reports: '报表',
     reportsSub: '标准损益表、会计余额和成本附表',
     audit: '操作记录',
@@ -382,6 +387,8 @@ const dict = {
     shipmentsSub: 'China ocean and air freight tracking to Las Vegas',
     schedules: 'Staff Schedule',
     schedulesSub: 'Weekend makeup shifts, adjusted rest, monthly attendance, and email reminders',
+    workTime: 'Employee Work Time',
+    workTimeSub: 'Daily system-active periods, eight-hour coverage, and activity timeline',
     reports: 'Reports',
     reportsSub: 'Standard profit or loss, accounting balances, and cost schedules',
     audit: 'Activity Log',
@@ -602,6 +609,7 @@ const pages = [
   ['orders', 'orders', 'ordersSub'],
   ['shipments', 'shipments', 'shipmentsSub'],
   ['schedules', 'schedules', 'schedulesSub'],
+  ['workTime', 'workTime', 'workTimeSub'],
   ['expenses', 'expenses', 'expensesSub'],
   ['reimbursements', 'reimbursements', 'reimbursementsSub'],
   ['reports', 'reports', 'reportsSub'],
@@ -626,6 +634,7 @@ const pagePermissions = {
   orders: 'ordersView',
   shipments: 'shipmentsView',
   schedules: 'schedulesView',
+  workTime: ['reportsView', 'usersManage'],
   expenses: 'expensesView',
   reimbursements: 'reimbursementsView',
   reports: 'reportsView',
@@ -862,6 +871,7 @@ function startAutoSync() {
   if (!token) return;
   if (!syncTimer) syncTimer = setInterval(() => sync({ silent: true }), AUTO_SYNC_MS);
   if (!dataRevisionTimer) dataRevisionTimer = setInterval(checkServerDataRevision, DATA_REVISION_POLL_MS);
+  startEmployeeActivityTracking();
 }
 
 function stopAutoSync() {
@@ -869,6 +879,25 @@ function stopAutoSync() {
   syncTimer = null;
   if (dataRevisionTimer) clearInterval(dataRevisionTimer);
   dataRevisionTimer = null;
+  if (activityHeartbeatTimer) clearInterval(activityHeartbeatTimer);
+  activityHeartbeatTimer = null;
+}
+
+function markEmployeeInteraction() {
+  lastEmployeeInteractionAt = Date.now();
+}
+
+async function sendEmployeeActivityHeartbeat() {
+  if (!token || document.hidden || Date.now() - lastEmployeeInteractionAt > 5 * 60 * 1000) return;
+  try {
+    await api('/api/activity-heartbeat', { method: 'POST', body: JSON.stringify({ page: current }) });
+  } catch {}
+}
+
+function startEmployeeActivityTracking() {
+  if (activityHeartbeatTimer) return;
+  sendEmployeeActivityHeartbeat();
+  activityHeartbeatTimer = setInterval(sendEmployeeActivityHeartbeat, 60 * 1000);
 }
 
 async function checkServerDataRevision() {
@@ -939,8 +968,9 @@ window.addEventListener('storage', event => {
   if (event.key === 'filmShopCloud.dataChangedAt' && token) sync({ silent: true });
 });
 
-['pointerdown', 'keydown'].forEach(eventName => {
+['pointerdown', 'keydown', 'wheel', 'touchstart'].forEach(eventName => {
   window.addEventListener(eventName, () => getMessageAudioContext(), { once: true });
+  window.addEventListener(eventName, markEmployeeInteraction, { passive: true });
 });
 
 document.addEventListener('visibilitychange', () => {
@@ -1817,7 +1847,7 @@ function updateVoiceButton(recording) {
 }
 
 function navIcon(id) {
-  return { modules:'▦', dashboard:'⌂', jobs:'▣', installers:'◉', pricing:'$', inventory:'▤', workshopInventory:'▥', inventoryAlerts:'!', customerCenter:'💬', replyLibrary:'☁', prospects:'★', leads:'☎', orders:'⇄', shipments:'✈', schedules:'◫', expenses:'◇', reimbursements:'🧾', reports:'◌', audit:'◷', users:'◎', personalNotes:'📝', settings:'⚙' }[id] || '□';
+  return { modules:'▦', dashboard:'⌂', jobs:'▣', installers:'◉', pricing:'$', inventory:'▤', workshopInventory:'▥', inventoryAlerts:'!', customerCenter:'💬', replyLibrary:'☁', prospects:'★', leads:'☎', orders:'⇄', shipments:'✈', schedules:'◫', workTime:'◴', expenses:'◇', reimbursements:'🧾', reports:'◌', audit:'◷', users:'◎', personalNotes:'📝', settings:'⚙' }[id] || '□';
 }
 
 function moduleGrid(availablePages) {
@@ -2942,6 +2972,9 @@ const views = {
   schedules() {
     const actions = hasPerm('schedulesEdit') ? `<div class="mini-actions"><button class="btn primary" onclick="openSchedule()">${t('addNew')}</button><button class="btn" onclick="sendTomorrowScheduleReminder()">${t('sendTomorrowReminder')}</button></div>` : '';
     return panel(t('schedules'), actions, scheduleControls() + scheduleStatsTable() + `<div style="margin-top:14px">${scheduleTable()}</div>` + `<div style="margin-top:14px">${scheduleReminderTable()}</div><p class="note">${lang === 'zh' ? '邮件提醒会在前一天发送。云端需要配置 RESEND_API_KEY 和 REMINDER_FROM_EMAIL 后才能真正自动发邮件；未配置时系统会提示。' : 'Email reminders are sent one day ahead. Cloud email requires RESEND_API_KEY and REMINDER_FROM_EMAIL to be configured.'}</p>`);
+  },
+  workTime() {
+    return employeeWorkTimeView();
   },
   expenses() {
     return panel(t('expenses'), hasPerm('expensesEdit') ? `<button class="btn primary" onclick="openExpense()">${t('addNew')}</button>` : '', expenseTable() + `<p class="note">${lang === 'zh' ? '这里录入房租、水电费、保险、广告、软件订阅等运营成本。报表会自动扣除这些费用。' : 'Enter rent, utilities, insurance, advertising, software subscriptions, and other operating costs here. Reports deduct these costs automatically.'}</p>`);
@@ -4671,6 +4704,100 @@ function laborReport(jobsSource = state.jobs || [], range = null) {
     total: sum.total + row.total
   }), { count: 0, points: 0, base: 0, overagePay: 0, total: 0 });
   return `<div class="table-wrap"><table><thead><tr><th>${t('tech')}</th><th>${lang === 'zh' ? '订单数' : 'Jobs'}</th><th>${lang === 'zh' ? '任务积分' : 'Points'}</th><th>${t('basePay')}</th><th>${lang === 'zh' ? '超产提成' : 'Bonus'}</th><th>${t('labor')}</th></tr></thead><tbody>${rows.map(r => `<tr><td>${escapeHtml(r.name)}</td><td>${r.count}</td><td>${r.points === null ? '-' : Number(r.points || 0).toFixed(1).replace(/\\.0$/, '')}</td><td>${currency.format(Number(r.base || 0))}</td><td>${currency.format(Number(r.overagePay || 0))}</td><td>${currency.format(r.total)}</td></tr>`).join('')}${rows.length ? `<tr class="total-row"><td>${lang === 'zh' ? '总计' : 'Total'}</td><td>${grand.count}</td><td>${grand.points.toFixed(1).replace(/\\.0$/, '')}</td><td>${currency.format(grand.base)}</td><td>${currency.format(grand.overagePay)}</td><td>${currency.format(grand.total)}</td></tr>` : ''}</tbody></table></div>`;
+}
+
+function appDateTimeParts(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  return Object.fromEntries(new Intl.DateTimeFormat('en-US', {
+    timeZone: APP_TIMEZONE, year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', hour12: false
+  }).formatToParts(date).map(part => [part.type, part.value]));
+}
+
+function appDateKey(value) {
+  const parts = appDateTimeParts(value);
+  return parts ? `${parts.year}-${parts.month}-${parts.day}` : '';
+}
+
+function workMinuteOfDay(value) {
+  const parts = appDateTimeParts(value);
+  return parts ? Number(parts.hour) * 60 + Number(parts.minute) : 0;
+}
+
+function workMinuteLabel(minute) {
+  const safe = Math.max(0, Math.min(1439, Number(minute || 0)));
+  return `${String(Math.floor(safe / 60)).padStart(2, '0')}:${String(safe % 60).padStart(2, '0')}`;
+}
+
+function employeeWorkRows() {
+  const ignoredIds = new Set(['system', 'twilio-webhook', 'twilio-reconcile', 'twilio-fallback', 'twilio-voice']);
+  const employees = (state.users || []).filter(item => item.active !== false && item.role !== 'owner');
+  return employees.map(employee => {
+    const buckets = new Set();
+    (state.employeeActivity || []).forEach(row => {
+      if (row.userId === employee.id && appDateKey(row.bucketAt) === workTimeDate) {
+        buckets.add(Math.floor(workMinuteOfDay(row.bucketAt) / 5) * 5);
+      }
+    });
+    (state.auditLogs || []).forEach(row => {
+      if (ignoredIds.has(row.userId) || row.userId !== employee.id || appDateKey(row.at) !== workTimeDate) return;
+      buckets.add(Math.floor(workMinuteOfDay(row.at) / 5) * 5);
+    });
+    const minutes = [...buckets].sort((a, b) => a - b);
+    const periods = [];
+    minutes.forEach(minute => {
+      const last = periods[periods.length - 1];
+      if (last && minute <= last.end) last.end = Math.max(last.end, minute + 5);
+      else periods.push({ start: minute, end: minute + 5 });
+    });
+    const activeMinutes = minutes.length * 5;
+    return {
+      employee,
+      minutes,
+      periods,
+      activeMinutes,
+      first: periods[0]?.start,
+      last: periods[periods.length - 1]?.end,
+      coverage: Math.min(100, activeMinutes / 480 * 100)
+    };
+  }).sort((a, b) => b.activeMinutes - a.activeMinutes || a.employee.name.localeCompare(b.employee.name));
+}
+
+function employeeTimeline(row) {
+  const blocks = row.periods.map(period => `<i style="left:${(period.start / 1440 * 100).toFixed(3)}%;width:${Math.max(.4, (period.end - period.start) / 1440 * 100).toFixed(3)}%" title="${workMinuteLabel(period.start)}–${workMinuteLabel(period.end)}"></i>`).join('');
+  return `<div class="work-time-line">${blocks}</div><div class="work-time-axis"><span>00</span><span>06</span><span>12</span><span>18</span><span>24</span></div>`;
+}
+
+function employeeWorkTimeView() {
+  const rows = employeeWorkRows();
+  const totalActive = rows.reduce((sum, row) => sum + row.activeMinutes, 0);
+  const activeEmployees = rows.filter(row => row.activeMinutes > 0).length;
+  return `<div class="panel work-time-panel">
+    <div class="panel-head"><div><h3>${lang === 'zh' ? '员工每日工作时间' : 'Daily Employee Work Time'}</h3><p class="note">${lang === 'zh' ? '依据系统操作记录和五分钟活跃信号生成' : 'Generated from system actions and five-minute activity signals'}</p></div></div>
+    <div class="work-time-controls">
+      <label>${lang === 'zh' ? '工作日期' : 'Work date'}<input type="date" value="${escapeHtml(workTimeDate)}" onchange="setWorkTimeDate(this.value)"></label>
+      <button class="btn" onclick="setWorkTimeDate(today())">${lang === 'zh' ? '今天' : 'Today'}</button>
+      <button class="btn" onclick="window.print()">${lang === 'zh' ? '打印日报' : 'Print report'}</button>
+      <span class="note">${lang === 'zh' ? `${activeEmployees} 人有活动 · 合计 ${(totalActive / 60).toFixed(1)} 小时` : `${activeEmployees} active · ${(totalActive / 60).toFixed(1)} total hours`}</span>
+    </div>
+    <div class="table-wrap"><table class="work-time-table"><thead><tr>
+      <th>${lang === 'zh' ? '员工' : 'Employee'}</th><th>${lang === 'zh' ? '首次活动' : 'First'}</th><th>${lang === 'zh' ? '最后活动' : 'Last'}</th><th>${lang === 'zh' ? '系统活跃时段' : 'Active periods'}</th><th>${lang === 'zh' ? '活跃时间' : 'Active time'}</th><th>${lang === 'zh' ? '八小时覆盖率' : '8-hour coverage'}</th><th>${lang === 'zh' ? '全天工作曲线' : 'Daily timeline'}</th>
+    </tr></thead><tbody>${rows.map(row => `<tr>
+      <td><strong>${escapeHtml(row.employee.name)}</strong><br><span class="note">${escapeHtml(roleNames[row.employee.role] || row.employee.role)}</span></td>
+      <td>${row.first === undefined ? '—' : workMinuteLabel(row.first)}</td><td>${row.last === undefined ? '—' : workMinuteLabel(row.last)}</td>
+      <td>${row.periods.length ? row.periods.map(period => `<span class="work-period">${workMinuteLabel(period.start)}–${workMinuteLabel(period.end)}</span>`).join('') : `<span class="note">${lang === 'zh' ? '无系统活动' : 'No system activity'}</span>`}</td>
+      <td><strong>${(row.activeMinutes / 60).toFixed(1)}h</strong><br><span class="note">${row.activeMinutes} min</span></td>
+      <td><div class="work-coverage"><i style="width:${row.coverage.toFixed(1)}%"></i></div><strong>${row.coverage.toFixed(0)}%</strong></td>
+      <td>${employeeTimeline(row)}</td>
+    </tr>`).join('')}</tbody></table></div>
+    <p class="note work-time-disclaimer">${lang === 'zh' ? '说明：此表反映员工在本系统中的可验证活跃时间，不等同于完整考勤。接电话、接待客户、施工或其他线下工作可能不会显示；请结合排班和实际工作判断。' : 'This report reflects verifiable activity in this system, not complete attendance. Calls, customer reception, installation, and other offline work may not appear.'}</p>
+  </div>`;
+}
+
+function setWorkTimeDate(value) {
+  workTimeDate = value || today();
+  render();
 }
 
 function auditControls() {
