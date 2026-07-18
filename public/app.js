@@ -1215,8 +1215,6 @@ function inventorySearchBox(rows = state.products) {
 
 function jobSearchText(job) {
   return [
-    job.customerNumber,
-    customerNumberLabel(job),
     job.date,
     job.scheduleDate,
     job.customer,
@@ -1236,21 +1234,6 @@ function jobSearchText(job) {
     job.paymentMethod,
     job.price
   ].map(normalizeSearchText).join('|');
-}
-
-function customerNumberLabel(item) {
-  const number = Number(item?.customerNumber || 0);
-  return Number.isInteger(number) && number > 0 ? `#${String(number).padStart(4, '0')}` : '';
-}
-
-function customerNumberBadge(item) {
-  const label = customerNumberLabel(item);
-  return label ? `<span class="customer-number-badge">${escapeHtml(label)}</span>` : '';
-}
-
-function customerNumberSearchMatches(item, value) {
-  const match = String(value || '').trim().match(/^#?0*(\d+)$/);
-  return Boolean(match && Number(item?.customerNumber || 0) === Number(match[1]));
 }
 
 function jobMatchesDate(job) {
@@ -1363,7 +1346,7 @@ function accountingBalanceSalesOrders(range = activeJobDateRange()) {
 function searchedJobs(rows) {
   const query = normalizeSearchText(jobSearch);
   if (!query) return rows;
-  return rows.filter(job => customerNumberSearchMatches(job, jobSearch) || jobSearchText(job).includes(query));
+  return rows.filter(job => jobSearchText(job).includes(query));
 }
 
 function jobSearchCountText(rows) {
@@ -3485,7 +3468,7 @@ function jobTable(rows, actions = false) {
     const c = jobCalc(j);
     const financeCells = `<td>${paymentStatusPill(j)}</td>${canSeeFinance() ? `<td>${currency.format(c.gross)}</td>` : ''}`;
     const rowClick = actions && hasPerm('jobsEdit') ? ` onclick="openJob('${j.id}')" class="click-row"` : '';
-    return `<tr${rowClick}><td>${j.date}</td><td>${escapeHtml(j.scheduleDate || '')}</td><td><div class="customer-number-line">${escapeHtml(j.customer)}${customerNumberBadge(j)}</div><span class="note">${escapeHtml(j.phone || '')}</span></td><td>${escapeHtml(j.source || '')}</td><td>${escapeHtml(j.vehicle)}</td><td>${escapeHtml(repName(j.leadRepId))}</td><td>${escapeHtml(repName(j.receptionRepId))}</td><td>${escapeHtml(j.salesRep || '')}</td><td>${escapeHtml(j.preparedBy || '')}</td><td>${escapeHtml(serviceLabelList(j))} · ${escapeHtml(j.package)}</td><td>${escapeHtml(jobInstallerNames(j))}</td><td>${statusPill(j.status)}</td><td>${currency.format(c.price)}</td>${financeCells}${actions ? actionCell('Job', 'jobs', j.id) : ''}</tr>`;
+    return `<tr${rowClick}><td>${j.date}</td><td>${escapeHtml(j.scheduleDate || '')}</td><td>${escapeHtml(j.customer)}<br><span class="note">${escapeHtml(j.phone || '')}</span></td><td>${escapeHtml(j.source || '')}</td><td>${escapeHtml(j.vehicle)}</td><td>${escapeHtml(repName(j.leadRepId))}</td><td>${escapeHtml(repName(j.receptionRepId))}</td><td>${escapeHtml(j.salesRep || '')}</td><td>${escapeHtml(j.preparedBy || '')}</td><td>${escapeHtml(serviceLabelList(j))} · ${escapeHtml(j.package)}</td><td>${escapeHtml(jobInstallerNames(j))}</td><td>${statusPill(j.status)}</td><td>${currency.format(c.price)}</td>${financeCells}${actions ? actionCell('Job', 'jobs', j.id) : ''}</tr>`;
   }).join('')}
   ${rows.length ? '' : `<tr><td colspan="${colSpan}" class="note">${lang === 'zh' ? '没有匹配的施工单。' : 'No matching job orders.'}</td></tr>`}
   </tbody></table></div>`;
@@ -3588,13 +3571,13 @@ function workshopMovementTable() {
 function salesOrderTable() {
   const rows = sortByDateDesc(state.salesOrders || []);
   return `<div class="table-wrap"><table><thead><tr><th>${t('date')}</th><th>${t('type')}</th><th>${t('customer')}</th><th>${t('orderSalesRep')}</th><th>${t('preparedBy')}</th><th>${t('item')}</th><th>${t('qty')}</th><th>${lang === 'zh' ? '总额' : 'Total'}</th><th>${t('paid')}</th><th>${t('paymentMethod')}</th><th>${t('orderTrackingNo')}</th><th>${t('balance')}</th><th>${t('status')}</th><th></th></tr></thead><tbody>
-  ${rows.map(o => { const c = orderCalc(o); return `<tr class="${o.portalNew || o.portalCustomerUnread ? 'portal-new-order' : ''}"><td>${o.date}${o.portalNew ? '<span class="portal-new-badge">客户新单</span>' : o.portalCustomerUnread ? '<span class="portal-new-badge">新留言</span>' : o.portalSource ? '<span class="pill info">客户客户端</span>' : ''}</td><td>${salesOrderTypeName(o.type)}</td><td><div class="customer-number-line">${escapeHtml(o.customer)}${customerNumberBadge(o)}</div></td><td>${escapeHtml(o.salesRep || '')}</td><td>${escapeHtml(o.preparedBy || '')}</td><td class="sales-order-items-cell">${escapeHtml(salesOrderItemsSummary(o))}</td><td>${salesOrderTotalQty(o)}</td><td>${currency.format(c.total)}</td><td>${currency.format(Number(o.paid || 0))}</td><td>${escapeHtml(paymentMethodName(o.paymentMethod || ''))}</td><td>${escapeHtml(o.trackingNo || '')}</td><td>${currency.format(c.balance)}</td><td>${statusPill(o.status)}</td>${actionCell('SalesOrder','salesOrders',o.id)}</tr>`; }).join('')}
+  ${rows.map(o => { const c = orderCalc(o); return `<tr class="${o.portalNew || o.portalCustomerUnread ? 'portal-new-order' : ''}"><td>${o.date}${o.portalNew ? '<span class="portal-new-badge">客户新单</span>' : o.portalCustomerUnread ? '<span class="portal-new-badge">新留言</span>' : o.portalSource ? '<span class="pill info">客户客户端</span>' : ''}</td><td>${salesOrderTypeName(o.type)}</td><td>${escapeHtml(o.customer)}</td><td>${escapeHtml(o.salesRep || '')}</td><td>${escapeHtml(o.preparedBy || '')}</td><td class="sales-order-items-cell">${escapeHtml(salesOrderItemsSummary(o))}</td><td>${salesOrderTotalQty(o)}</td><td>${currency.format(c.total)}</td><td>${currency.format(Number(o.paid || 0))}</td><td>${escapeHtml(paymentMethodName(o.paymentMethod || ''))}</td><td>${escapeHtml(o.trackingNo || '')}</td><td>${currency.format(c.balance)}</td><td>${statusPill(o.status)}</td>${actionCell('SalesOrder','salesOrders',o.id)}</tr>`; }).join('')}
   </tbody></table></div>`;
 }
 
 function portalCustomerTable() {
   const rows = state.portalCustomers || [];
-  return `<div class="table-wrap"><table><thead><tr><th>${lang === 'zh' ? '客户/公司' : 'Customer'}</th><th>${lang === 'zh' ? '联系人' : 'Contact'}</th><th>${lang === 'zh' ? '登录账号' : 'Login'}</th><th>${lang === 'zh' ? '地址' : 'Address'}</th><th>${lang === 'zh' ? '业务员' : 'Sales rep'}</th><th>${lang === 'zh' ? '协议价数量' : 'SKU prices'}</th><th>${t('status')}</th><th></th></tr></thead><tbody>${rows.map(c => `<tr><td><div class="customer-number-line"><strong>${escapeHtml(c.businessName || '')}</strong>${customerNumberBadge(c)}</div><span class="note">${escapeHtml(c.note || '')}</span></td><td>${escapeHtml(c.contactName || '')}<br><span class="note">${escapeHtml(c.phone || '')}<br>${escapeHtml(c.email || '')}</span></td><td>${escapeHtml(c.account || '')}</td><td>${escapeHtml(c.address || '')}</td><td>${escapeHtml(c.salesRep || '')}</td><td>${Object.keys(c.prices || {}).length}</td><td>${statusPill(c.active === false ? '停用' : (c.status || '正常'))}</td><td><button class="btn" onclick="openPortalCustomer('${c.id}')">${t('edit')}</button></td></tr>`).join('')}${rows.length ? '' : `<tr><td colspan="8" class="note">${lang === 'zh' ? '还没有客户账号。' : 'No customer accounts.'}</td></tr>`}</tbody></table></div>`;
+  return `<div class="table-wrap"><table><thead><tr><th>${lang === 'zh' ? '客户/公司' : 'Customer'}</th><th>${lang === 'zh' ? '联系人' : 'Contact'}</th><th>${lang === 'zh' ? '登录账号' : 'Login'}</th><th>${lang === 'zh' ? '地址' : 'Address'}</th><th>${lang === 'zh' ? '业务员' : 'Sales rep'}</th><th>${lang === 'zh' ? '协议价数量' : 'SKU prices'}</th><th>${t('status')}</th><th></th></tr></thead><tbody>${rows.map(c => `<tr><td><strong>${escapeHtml(c.businessName || '')}</strong><br><span class="note">${escapeHtml(c.note || '')}</span></td><td>${escapeHtml(c.contactName || '')}<br><span class="note">${escapeHtml(c.phone || '')}<br>${escapeHtml(c.email || '')}</span></td><td>${escapeHtml(c.account || '')}</td><td>${escapeHtml(c.address || '')}</td><td>${escapeHtml(c.salesRep || '')}</td><td>${Object.keys(c.prices || {}).length}</td><td>${statusPill(c.active === false ? '停用' : (c.status || '正常'))}</td><td><button class="btn" onclick="openPortalCustomer('${c.id}')">${t('edit')}</button></td></tr>`).join('')}${rows.length ? '' : `<tr><td colspan="8" class="note">${lang === 'zh' ? '还没有客户账号。' : 'No customer accounts.'}</td></tr>`}</tbody></table></div>`;
 }
 
 function portalPriceRows(customer) {
@@ -4036,7 +4019,7 @@ function sortedProspectRows() {
 function prospectSearchText(item) {
   const rep = (state.customerServiceReps || []).find(row => row.id === item.ownerId);
   return [
-    item.customerNumber, customerNumberLabel(item), item.date, item.source, item.customer, item.phone, item.vehicle, item.need,
+    item.date, item.source, item.customer, item.phone, item.vehicle, item.need,
     item.appointmentDate, item.appointmentTime, rep?.name, item.ownerName,
     item.intentLevel, item.status, item.callNote, item.note,
     prospectConversationSummary(item)
@@ -4046,7 +4029,7 @@ function prospectSearchText(item) {
 function searchedProspectRows() {
   const rows = sortedProspectRows();
   const query = normalizeCustomerLookupText(prospectSearch);
-  return query ? rows.filter(item => customerNumberSearchMatches(item, prospectSearch) || prospectSearchText(item).includes(query)) : rows;
+  return query ? rows.filter(item => prospectSearchText(item).includes(query)) : rows;
 }
 
 function prospectSearchCountText() {
@@ -4069,7 +4052,7 @@ function prospectTable(rows = searchedProspectRows()) {
   ${rows.map(item => {
     const rep = (state.customerServiceReps || []).find(x => x.id === item.ownerId);
     const appointment = item.appointmentDate || item.appointmentTime ? `${escapeHtml(item.appointmentDate || '')}<br><span class="note">${escapeHtml(item.appointmentTime || '')}</span>` : '';
-    return `<tr><td class="prospect-nowrap">${escapeHtml(item.date || '')}</td><td class="prospect-time">${prospectTimeCell(item)}</td><td><div class="prospect-clamp prospect-clamp-2">${escapeHtml(item.source || '')}</div></td><td><div class="customer-number-line"><div class="prospect-clamp">${escapeHtml(item.customer || '')}</div>${customerNumberBadge(item)}</div><span class="note prospect-nowrap">${escapeHtml(item.phone || '')}</span></td><td><div class="prospect-clamp">${escapeHtml(item.vehicle || '')}</div><div class="note prospect-clamp prospect-clamp-2">${escapeHtml(item.need || '')}</div></td><td class="prospect-time">${appointment}</td><td><div class="prospect-clamp prospect-clamp-2">${rep ? escapeHtml(rep.name) : escapeHtml(item.ownerName || '') || t('unassigned')}</div></td><td>${prospectIntentPill(item.intentLevel)}</td><td>${prospectStatusPill(item.status)}</td><td><div class="prospect-clamp prospect-clamp-2" title="${escapeHtml(prospectConversationSummary(item))}">${escapeHtml(shortText(prospectConversationSummary(item), 48))}</div></td><td><div class="prospect-clamp prospect-clamp-2" title="${escapeHtml(item.note || '')}">${escapeHtml(shortText(item.note || '', 48))}</div></td>${actionCell('Prospect','prospects',item.id)}</tr>`;
+    return `<tr><td class="prospect-nowrap">${escapeHtml(item.date || '')}</td><td class="prospect-time">${prospectTimeCell(item)}</td><td><div class="prospect-clamp prospect-clamp-2">${escapeHtml(item.source || '')}</div></td><td><div class="prospect-clamp">${escapeHtml(item.customer || '')}</div><span class="note prospect-nowrap">${escapeHtml(item.phone || '')}</span></td><td><div class="prospect-clamp">${escapeHtml(item.vehicle || '')}</div><div class="note prospect-clamp prospect-clamp-2">${escapeHtml(item.need || '')}</div></td><td class="prospect-time">${appointment}</td><td><div class="prospect-clamp prospect-clamp-2">${rep ? escapeHtml(rep.name) : escapeHtml(item.ownerName || '') || t('unassigned')}</div></td><td>${prospectIntentPill(item.intentLevel)}</td><td>${prospectStatusPill(item.status)}</td><td><div class="prospect-clamp prospect-clamp-2" title="${escapeHtml(prospectConversationSummary(item))}">${escapeHtml(shortText(prospectConversationSummary(item), 48))}</div></td><td><div class="prospect-clamp prospect-clamp-2" title="${escapeHtml(item.note || '')}">${escapeHtml(shortText(item.note || '', 48))}</div></td>${actionCell('Prospect','prospects',item.id)}</tr>`;
   }).join('')}
   ${rows.length ? '' : `<tr><td colspan="12" class="note">${lang === 'zh' ? '还没有预约到店客户。' : 'No appointment / arrival customers yet.'}</td></tr>`}
   </tbody></table></div>`;
@@ -4116,7 +4099,7 @@ function customerAwaitingReply(item) {
 function customerCenterSearchText(item) {
   const rep = (state.customerServiceReps || []).find(row => row.id === item.ownerId);
   return [
-    item.customerNumber, customerNumberLabel(item), item.date, item.source, item.customer, item.phone, item.vehicle, item.need,
+    item.date, item.source, item.customer, item.phone, item.vehicle, item.need,
     item.appointmentDate, item.appointmentTime, rep?.name, item.ownerName,
     item.intentLevel, item.status, item.callNote, item.note,
     prospectConversationSummary(item)
@@ -4130,7 +4113,7 @@ function normalizeCustomerLookupText(value) {
 function searchedCustomerCenterRows() {
   const rows = customerCenterRows().filter(item => !customerCenterPendingOnly || customerAwaitingReply(item));
   const query = normalizeCustomerLookupText(customerCenterSearch);
-  return query ? rows.filter(item => customerNumberSearchMatches(item, customerCenterSearch) || customerCenterSearchText(item).includes(query)) : rows;
+  return query ? rows.filter(item => customerCenterSearchText(item).includes(query)) : rows;
 }
 
 function customerCenterSearchCountText() {
@@ -4165,7 +4148,7 @@ function customerCenterTable(rows = searchedCustomerCenterRows()) {
       const latestText = replyState.latest ? cleanConversationText(replyState.latest.text || replyState.latest.message || replyState.latest.content || '') : '';
       const pendingBadge = replyState.pending ? `<span class="customer-pending-badge" title="${escapeHtml(latestText)}"><i></i>${lang === 'zh' ? '待回复' : 'Reply'}${replyState.count > 1 ? ` ${replyState.count}` : ''}</span>` : '';
       const newBadge = item.newCustomer ? `<span class="customer-new-badge"><i></i>${lang === 'zh' ? '新客户' : 'New'}</span>` : '';
-      return `<tr class="click-row ${replyState.pending ? 'customer-pending-row' : ''} ${item.newCustomer ? 'customer-new-row' : ''}" onclick="openProspectWorkspace('${item._collection}','${item.id}')"><td class="prospect-nowrap">${escapeHtml(item.date || '')}</td><td class="prospect-time">${prospectTimeCell(item)}</td><td><div class="prospect-clamp prospect-clamp-2">${escapeHtml(item.source || '')}</div>${newBadge}</td><td><div class="customer-name-with-alert"><div class="customer-number-line"><div class="prospect-clamp prospect-clamp-2">${escapeHtml(item.customer || (lang === 'zh' ? '未命名客户' : 'Unnamed'))}</div>${customerNumberBadge(item)}</div>${pendingBadge}</div><span class="note prospect-nowrap">${escapeHtml(item.phone || '')}</span>${replyState.pending && latestText ? `<div class="customer-pending-preview" title="${escapeHtml(latestText)}">${escapeHtml(shortText(latestText, 28))}</div>` : ''}</td><td><div class="prospect-clamp prospect-clamp-2">${escapeHtml(item.vehicle || '')}</div><div class="note prospect-clamp prospect-clamp-2">${escapeHtml(item.need || '')}</div></td><td class="prospect-time">${appointment}</td><td><div class="prospect-clamp prospect-clamp-2">${rep ? escapeHtml(rep.name) : escapeHtml(item.ownerName || '') || t('unassigned')}</div></td><td class="customer-center-status-col">${prospectStatusPill(item.status)}</td><td class="customer-center-intent-col">${prospectIntentPill(item.intentLevel)}</td></tr>`;
+      return `<tr class="click-row ${replyState.pending ? 'customer-pending-row' : ''} ${item.newCustomer ? 'customer-new-row' : ''}" onclick="openProspectWorkspace('${item._collection}','${item.id}')"><td class="prospect-nowrap">${escapeHtml(item.date || '')}</td><td class="prospect-time">${prospectTimeCell(item)}</td><td><div class="prospect-clamp prospect-clamp-2">${escapeHtml(item.source || '')}</div>${newBadge}</td><td><div class="customer-name-with-alert"><div class="prospect-clamp prospect-clamp-2">${escapeHtml(item.customer || (lang === 'zh' ? '未命名客户' : 'Unnamed'))}</div>${pendingBadge}</div><span class="note prospect-nowrap">${escapeHtml(item.phone || '')}</span>${replyState.pending && latestText ? `<div class="customer-pending-preview" title="${escapeHtml(latestText)}">${escapeHtml(shortText(latestText, 28))}</div>` : ''}</td><td><div class="prospect-clamp prospect-clamp-2">${escapeHtml(item.vehicle || '')}</div><div class="note prospect-clamp prospect-clamp-2">${escapeHtml(item.need || '')}</div></td><td class="prospect-time">${appointment}</td><td><div class="prospect-clamp prospect-clamp-2">${rep ? escapeHtml(rep.name) : escapeHtml(item.ownerName || '') || t('unassigned')}</div></td><td class="customer-center-status-col">${prospectStatusPill(item.status)}</td><td class="customer-center-intent-col">${prospectIntentPill(item.intentLevel)}</td></tr>`;
     }).join('')}
     ${rows.length ? '' : `<tr><td colspan="9" class="note">${lang === 'zh' ? '还没有客户交流记录。' : 'No customer conversations yet.'}</td></tr>`}
   </tbody></table></div>`;
@@ -4786,7 +4769,7 @@ function leadTable() {
   return `<div class="table-wrap"><table><thead><tr><th>${t('date')}</th><th>${t('source')}</th><th>${t('leadType')}</th><th>${t('customer')}</th><th>${t('service')}</th><th>${t('customerService')}</th><th>${t('leadStatus')}</th><th>${t('quote')}</th>${canSeeCommission() ? `<th>${t('soldAmount')}</th>` : ''}<th>${t('note')}</th><th></th></tr></thead><tbody>
   ${rows.map(lead => {
     const rep = (state.customerServiceReps || []).find(x => x.id === lead.repId);
-    return `<tr><td>${escapeHtml(lead.date || '')}</td><td>${escapeHtml(lead.source || '')}</td><td>${leadTypeName(lead.leadType)}</td><td><div class="customer-number-line">${escapeHtml(lead.customer || '')}${customerNumberBadge(lead)}</div><span class="note">${escapeHtml(lead.phone || '')}</span></td><td>${serviceNames[lead.service] || escapeHtml(lead.service || '')}</td><td>${rep ? escapeHtml(rep.name) : t('unassigned')}</td><td>${leadStatusPill(lead.status)}</td><td>${currency.format(Number(lead.quote || 0))}</td>${canSeeCommission() ? `<td>${currency.format(Number(lead.soldAmount || 0))}</td>` : ''}<td>${escapeHtml(lead.note || '')}</td>${actionCell('Lead','leads',lead.id)}</tr>`;
+    return `<tr><td>${escapeHtml(lead.date || '')}</td><td>${escapeHtml(lead.source || '')}</td><td>${leadTypeName(lead.leadType)}</td><td>${escapeHtml(lead.customer || '')}<br><span class="note">${escapeHtml(lead.phone || '')}</span></td><td>${serviceNames[lead.service] || escapeHtml(lead.service || '')}</td><td>${rep ? escapeHtml(rep.name) : t('unassigned')}</td><td>${leadStatusPill(lead.status)}</td><td>${currency.format(Number(lead.quote || 0))}</td>${canSeeCommission() ? `<td>${currency.format(Number(lead.soldAmount || 0))}</td>` : ''}<td>${escapeHtml(lead.note || '')}</td>${actionCell('Lead','leads',lead.id)}</tr>`;
   }).join('')}
   ${rows.length ? '' : `<tr><td colspan="${canSeeCommission() ? 11 : 10}" class="note">${lang === 'zh' ? '还没有客资记录。' : 'No leads yet.'}</td></tr>`}
   </tbody></table></div>`;
