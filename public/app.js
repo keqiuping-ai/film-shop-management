@@ -4021,12 +4021,16 @@ function prospectHasGeneratedJob(item) {
   const phoneKey = customerPhoneMatchKey(item.phone);
   const prospectDate = String(item.date || item.appointmentDate || '').slice(0, 10);
   const nameKey = normalizeCustomerLookupText(item.customer || '');
+  const vehicleKey = normalizeCustomerLookupText(item.vehicle || '');
   return (state.jobs || []).some(job => {
     if (job.sourceProspectId === item.id) return true;
     const jobPhoneKey = customerPhoneMatchKey(job.phone);
-    const identityMatches = phoneKey
-      ? jobPhoneKey === phoneKey
-      : Boolean(nameKey && normalizeCustomerLookupText(job.customer || '') === nameKey);
+    const phoneMatches = Boolean(phoneKey && jobPhoneKey && jobPhoneKey === phoneKey);
+    const jobNameKey = normalizeCustomerLookupText(job.customer || '');
+    const jobVehicleKey = normalizeCustomerLookupText(job.vehicle || '');
+    const nameMatches = Boolean(nameKey && jobNameKey && nameKey === jobNameKey);
+    const vehicleMatches = Boolean(vehicleKey && jobVehicleKey && (vehicleKey.includes(jobVehicleKey) || jobVehicleKey.includes(vehicleKey)));
+    const identityMatches = phoneMatches || (nameMatches && (!vehicleKey || !jobVehicleKey || vehicleMatches));
     if (!identityMatches) return false;
     const jobDate = String(job.date || job.scheduleDate || job.createdAt || '').slice(0, 10);
     return !prospectDate || !jobDate || jobDate >= prospectDate;
