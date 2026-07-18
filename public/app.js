@@ -4245,7 +4245,7 @@ function customerCenterRows() {
   return allCustomerCenterRows().filter(item => {
     const status = String(item.status || '');
     if (customerCenterShowInvalid) return status === '无效';
-    return status !== '无效' && !movedStatuses.has(status);
+    return status !== '无效' && !movedStatuses.has(status) && !prospectHasGeneratedJob(item);
   });
 }
 
