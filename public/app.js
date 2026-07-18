@@ -62,6 +62,7 @@ let replyTemplateCategoryFilter = 'all';
 let preserveProspectWorkspaceRender = false;
 let prospectReplyRevision = 0;
 let customerCenterSearch = '';
+let customerCenterPendingOnly = false;
 let prospectSearch = '';
 const prospectWorkspaceDrafts = new Map();
 let messageRecorder = null;
@@ -4027,7 +4028,35 @@ function customerCenterRows() {
     .filter(item => !item.promotedProspectId || !promotedIds.has(item.promotedProspectId))
     .map(item => ({ ...item, _collection: 'customerConversations', _highIntent: false }));
   const highIntent = (state.prospects || []).map(item => ({ ...item, _collection: 'prospects', _highIntent: true }));
-  return [...regular, ...highIntent].sort((a, b) => new Date(prospectActivityTime(b)).getTime() - new Date(prospectActivityTime(a)).getTime());
+  return [...regular, ...highIntent].sort((a, b) => {
+    const pendingDifference = Number(customerAwaitingReply(b)) - Number(customerAwaitingReply(a));
+    return pendingDifference || new Date(prospectActivityTime(b)).getTime() - new Date(prospectActivityTime(a)).getTime();
+  });
+}
+
+function customerReplyState(item) {
+  const messages = (Array.isArray(item?.conversationMessages) ? item.conversationMessages : [])
+    .map((message, index) => ({
+      message,
+      index,
+      role: String(message.direction || '').toLowerCase() === 'inbound'
+        ? 'customer'
+        : String(message.direction || '').toLowerCase() === 'outbound'
+          ? 'shop'
+          : prospectSpeakerRole(message.speaker || message.role || message.senderType, message.speakerName || message.name || ''),
+      at: new Date(message.timestamp || message.time || message.createdAt || 0).getTime()
+    }))
+    .filter(row => row.role === 'customer' || row.role === 'shop')
+    .sort((a, b) => (Number.isFinite(a.at) && Number.isFinite(b.at) && a.at !== b.at) ? a.at - b.at : a.index - b.index);
+  const latest = messages[messages.length - 1];
+  if (!latest || latest.role !== 'customer') return { pending: false, count: 0, latest: null };
+  let count = 0;
+  for (let index = messages.length - 1; index >= 0 && messages[index].role === 'customer'; index -= 1) count += 1;
+  return { pending: true, count, latest: latest.message };
+}
+
+function customerAwaitingReply(item) {
+  return customerReplyState(item).pending;
 }
 
 function customerCenterSearchText(item) {
@@ -4045,7 +4074,7 @@ function normalizeCustomerLookupText(value) {
 }
 
 function searchedCustomerCenterRows() {
-  const rows = customerCenterRows();
+  const rows = customerCenterRows().filter(item => !customerCenterPendingOnly || customerAwaitingReply(item));
   const query = normalizeCustomerLookupText(customerCenterSearch);
   return query ? rows.filter(item => customerCenterSearchText(item).includes(query)) : rows;
 }
@@ -4053,15 +4082,22 @@ function searchedCustomerCenterRows() {
 function customerCenterSearchCountText() {
   const total = customerCenterRows().length;
   const matched = searchedCustomerCenterRows().length;
-  return lang === 'zh' ? `找到 ${matched} / ${total} 位客户` : `Found ${matched} / ${total} customers`;
+  const pending = customerCenterRows().filter(customerAwaitingReply).length;
+  return lang === 'zh' ? `找到 ${matched} / ${total} 位客户 · ${pending} 位待回复` : `Found ${matched} / ${total} customers · ${pending} awaiting reply`;
 }
 
 function customerCenterSearchBox() {
   return `<div class="search-row customer-center-search" role="search" aria-label="${lang === 'zh' ? '搜索客户' : 'Search customers'}">
     <input id="customerCenterSearchInput" value="${escapeHtml(customerCenterSearch)}" placeholder="${lang === 'zh' ? '搜索客户姓名、电话、车型、需求、平台、跟进人员…' : 'Search name, phone, vehicle, request, platform, or owner…'}" oninput="setCustomerCenterSearch(this.value)" autocomplete="off" />
     <button class="btn" onclick="setCustomerCenterSearch('')">${t('clearSearch')}</button>
+    <button class="btn customer-pending-filter ${customerCenterPendingOnly ? 'active' : ''}" onclick="toggleCustomerPendingOnly()">${lang === 'zh' ? (customerCenterPendingOnly ? '显示全部' : '只看待回复') : (customerCenterPendingOnly ? 'Show all' : 'Awaiting reply')}</button>
     <span id="customerCenterSearchCount" class="note">${customerCenterSearchCountText()}</span>
   </div>`;
+}
+
+function toggleCustomerPendingOnly() {
+  customerCenterPendingOnly = !customerCenterPendingOnly;
+  render();
 }
 
 function customerCenterTable(rows = searchedCustomerCenterRows()) {
@@ -4070,7 +4106,10 @@ function customerCenterTable(rows = searchedCustomerCenterRows()) {
     ${rows.map(item => {
       const rep = (state.customerServiceReps || []).find(row => row.id === item.ownerId);
       const appointment = item.appointmentDate || item.appointmentTime ? `${escapeHtml(item.appointmentDate || '')}<br><span class="note">${escapeHtml(item.appointmentTime || '')}</span>` : '';
-      return `<tr class="click-row" onclick="openProspectWorkspace('${item._collection}','${item.id}')"><td class="prospect-nowrap">${escapeHtml(item.date || '')}</td><td class="prospect-time">${prospectTimeCell(item)}</td><td><div class="prospect-clamp prospect-clamp-2">${escapeHtml(item.source || '')}</div></td><td><div class="prospect-clamp prospect-clamp-2">${escapeHtml(item.customer || (lang === 'zh' ? '未命名客户' : 'Unnamed'))}</div><span class="note prospect-nowrap">${escapeHtml(item.phone || '')}</span></td><td><div class="prospect-clamp prospect-clamp-2">${escapeHtml(item.vehicle || '')}</div><div class="note prospect-clamp prospect-clamp-2">${escapeHtml(item.need || '')}</div></td><td class="prospect-time">${appointment}</td><td><div class="prospect-clamp prospect-clamp-2">${rep ? escapeHtml(rep.name) : escapeHtml(item.ownerName || '') || t('unassigned')}</div></td><td class="customer-center-status-col">${prospectStatusPill(item.status)}</td><td class="customer-center-intent-col">${prospectIntentPill(item.intentLevel)}</td></tr>`;
+      const replyState = customerReplyState(item);
+      const latestText = replyState.latest ? cleanConversationText(replyState.latest.text || replyState.latest.message || replyState.latest.content || '') : '';
+      const pendingBadge = replyState.pending ? `<span class="customer-pending-badge" title="${escapeHtml(latestText)}"><i></i>${lang === 'zh' ? '待回复' : 'Reply'}${replyState.count > 1 ? ` ${replyState.count}` : ''}</span>` : '';
+      return `<tr class="click-row ${replyState.pending ? 'customer-pending-row' : ''}" onclick="openProspectWorkspace('${item._collection}','${item.id}')"><td class="prospect-nowrap">${escapeHtml(item.date || '')}</td><td class="prospect-time">${prospectTimeCell(item)}</td><td><div class="prospect-clamp prospect-clamp-2">${escapeHtml(item.source || '')}</div></td><td><div class="customer-name-with-alert"><div class="prospect-clamp prospect-clamp-2">${escapeHtml(item.customer || (lang === 'zh' ? '未命名客户' : 'Unnamed'))}</div>${pendingBadge}</div><span class="note prospect-nowrap">${escapeHtml(item.phone || '')}</span>${replyState.pending && latestText ? `<div class="customer-pending-preview" title="${escapeHtml(latestText)}">${escapeHtml(shortText(latestText, 28))}</div>` : ''}</td><td><div class="prospect-clamp prospect-clamp-2">${escapeHtml(item.vehicle || '')}</div><div class="note prospect-clamp prospect-clamp-2">${escapeHtml(item.need || '')}</div></td><td class="prospect-time">${appointment}</td><td><div class="prospect-clamp prospect-clamp-2">${rep ? escapeHtml(rep.name) : escapeHtml(item.ownerName || '') || t('unassigned')}</div></td><td class="customer-center-status-col">${prospectStatusPill(item.status)}</td><td class="customer-center-intent-col">${prospectIntentPill(item.intentLevel)}</td></tr>`;
     }).join('')}
     ${rows.length ? '' : `<tr><td colspan="9" class="note">${lang === 'zh' ? '还没有客户交流记录。' : 'No customer conversations yet.'}</td></tr>`}
   </tbody></table></div>`;

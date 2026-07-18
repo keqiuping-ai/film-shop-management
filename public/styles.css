@@ -862,6 +862,15 @@ tr:hover td { background: #fbfcfd; }
 .customer-center-table .note { font-size: 12px; line-height: 1.25; }
 .customer-center-table .pill { min-height: 20px; padding: 0 7px; font-size: 11px; }
 .customer-center-table tr.click-row:hover td { background: #eef8fa; }
+.customer-pending-filter.active { color:#fff; border-color:#bd3e3e; background:#bd3e3e; }
+.customer-center-table tr.customer-pending-row td { background:#fff8f7; }
+.customer-center-table tr.customer-pending-row:hover td { background:#ffefed; }
+.customer-center-table tr.customer-pending-row td:first-child { box-shadow:inset 4px 0 #db3f3f; }
+.customer-name-with-alert { display:flex; align-items:center; gap:6px; min-width:0; }
+.customer-name-with-alert>div { min-width:0; flex:1; }
+.customer-pending-badge { display:inline-flex; align-items:center; gap:4px; flex:none; padding:3px 7px; border-radius:999px; color:#b62d2d; background:#ffe3e0; font-size:11px; font-weight:850; white-space:nowrap; }
+.customer-pending-badge i { width:7px; height:7px; border-radius:50%; background:#df2f2f; box-shadow:0 0 0 3px rgba(223,47,47,.13); }
+.customer-pending-preview { max-width:100%; margin-top:3px; overflow:hidden; color:#b23a34; font-size:11px; line-height:1.25; text-overflow:ellipsis; white-space:nowrap; }
 .prospect-workspace {
   position: fixed;
   inset: 0;
