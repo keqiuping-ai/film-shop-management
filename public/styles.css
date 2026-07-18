@@ -845,18 +845,20 @@ tr:hover td { background: #fbfcfd; }
   font-size: 13px;
 }
 .prospect-row:hover td { background: #f3f9fb; }
-.customer-center-table table { min-width: 1040px; table-layout: fixed; font-size: 13px; }
+.customer-center-table table { min-width: 900px; table-layout: fixed; font-size: 13px; }
 .customer-center-table th,
 .customer-center-table td { padding: 7px 8px; line-height: 1.28; vertical-align: middle; }
 .customer-center-table th:nth-child(1) { width: 8%; }
 .customer-center-table th:nth-child(2) { width: 12%; }
-.customer-center-table th:nth-child(3) { width: 9%; }
-.customer-center-table th:nth-child(4) { width: 16%; }
-.customer-center-table th:nth-child(5) { width: 22%; }
+.customer-center-table th:nth-child(3) { width: 8%; }
+.customer-center-table th:nth-child(4) { width: 15%; }
+.customer-center-table th:nth-child(5) { width: 21%; }
 .customer-center-table th:nth-child(6) { width: 10%; }
 .customer-center-table th:nth-child(7) { width: 9%; }
-.customer-center-table th:nth-child(8) { width: 7%; }
-.customer-center-table th:nth-child(9) { width: 7%; }
+.customer-center-table th:nth-child(8) { width: 8%; }
+.customer-center-table th:nth-child(9) { width: 9%; }
+.customer-center-table .customer-center-intent-col,
+.customer-center-table .customer-center-status-col { text-align: center; white-space: nowrap; }
 .customer-center-table .note { font-size: 12px; line-height: 1.25; }
 .customer-center-table .pill { min-height: 20px; padding: 0 7px; font-size: 11px; }
 .customer-center-table tr.click-row:hover td { background: #eef8fa; }
