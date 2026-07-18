@@ -3481,6 +3481,53 @@ function jobCardClass(status) {
   return 'scheduled';
 }
 
+function jobCustomerChatTarget(job) {
+  if (!job) return null;
+  const candidates = [
+    ...(state.prospects || []).map(item => ({ collection: 'prospects', item })),
+    ...(state.customerConversations || []).map(item => ({ collection: 'customerConversations', item }))
+  ];
+  const direct = candidates.find(({ item }) => item.id === job.sourceProspectId || item.convertedJobId === job.id);
+  if (direct) return direct;
+  const phoneKey = customerPhoneMatchKey(job.phone);
+  if (phoneKey) {
+    const phoneMatch = candidates.find(({ item }) => customerPhoneMatchKey(item.phone) === phoneKey);
+    if (phoneMatch) return phoneMatch;
+  }
+  const nameKey = normalizeCustomerLookupText(job.customer || '');
+  const vehicleKey = normalizeCustomerLookupText(job.vehicle || '');
+  return candidates.find(({ item }) => {
+    const itemNameKey = normalizeCustomerLookupText(item.customer || '');
+    if (!nameKey || !itemNameKey || nameKey !== itemNameKey) return false;
+    const itemVehicleKey = normalizeCustomerLookupText(item.vehicle || '');
+    return !vehicleKey || !itemVehicleKey || vehicleKey.includes(itemVehicleKey) || itemVehicleKey.includes(vehicleKey);
+  }) || null;
+}
+
+async function openJobCustomerChat(jobId) {
+  const job = (state.jobs || []).find(item => item.id === jobId);
+  if (!job) return alert(lang === 'zh' ? '找不到这张施工单。' : 'Job order not found.');
+  let target = jobCustomerChatTarget(job);
+  if (target) return openProspectWorkspace(target.collection, target.item.id);
+  try {
+    state = await api('/api/customerConversations', {
+      method: 'POST',
+      body: JSON.stringify({
+        date: job.date || today(), source: job.source || 'Other', customer: job.customer || '', phone: job.phone || '',
+        vehicle: job.vehicle || '', need: [serviceLabelList(job), job.package, job.notes].filter(Boolean).join(' · '),
+        status: '已转施工单', convertedJobId: job.id, conversationMessages: [],
+        note: lang === 'zh' ? '由施工单客户聊天入口自动建立，用于施工沟通和完工回访。' : 'Created from the job chat entry for service communication and follow-up.'
+      })
+    });
+    broadcastDataChange();
+    target = jobCustomerChatTarget(job);
+    if (!target) throw new Error(lang === 'zh' ? '聊天档案建立失败。' : 'Unable to create chat record.');
+    openProspectWorkspace(target.collection, target.item.id);
+  } catch (error) {
+    alert(error.message || String(error));
+  }
+}
+
 function compareActiveJobsBySchedule(a, b) {
   const aDate = String(a.scheduleDate || '9999-12-31').slice(0, 10);
   const bDate = String(b.scheduleDate || '9999-12-31').slice(0, 10);
@@ -3515,6 +3562,7 @@ function jobActiveCards(rows) {
           <div><dt>${lang === 'zh' ? '负责人' : 'Owner'}</dt><dd>${escapeHtml(ownerText)}</dd></div>
         </dl>
         <footer><span>${lang === 'zh' ? '填表人' : 'Prepared by'}：${escapeHtml(job.preparedBy || '—')}</span><div>
+          <button class="btn job-chat-button" onclick="event.stopPropagation();openJobCustomerChat('${job.id}')">💬 ${lang === 'zh' ? '客户聊天' : 'Customer chat'}</button>
           ${canOpen ? `<button class="btn primary" onclick="event.stopPropagation();openJob('${job.id}')">${lang === 'zh' ? '查看施工单' : 'View job'}</button>` : ''}
           ${hasPerm('jobsDelete') ? `<button class="btn danger" onclick="event.stopPropagation();removeItem('jobs','${job.id}')">${t('delete')}</button>` : ''}
         </div></footer>
@@ -3527,11 +3575,11 @@ function jobActiveCards(rows) {
 function jobArchiveTable(rows) {
   const canOpen = hasPerm('jobsEdit');
   const showFinance = canSeeFinance();
-  const colSpan = 8 + (showFinance ? 1 : 0) + (hasPerm('jobsDelete') ? 1 : 0);
-  return `<div class="table-wrap job-archive-table"><table><thead><tr><th>${t('scheduleDate')}</th><th>${t('customer')}</th><th>${t('vehicle')}</th><th>${t('service')}</th><th>${t('tech')}</th><th>${t('status')}</th><th>${t('quote')}</th><th>${t('paymentStatus')}</th>${showFinance ? `<th>${t('gross')}</th>` : ''}${hasPerm('jobsDelete') ? '<th></th>' : ''}</tr></thead><tbody>
+  const colSpan = 9 + (showFinance ? 1 : 0) + (hasPerm('jobsDelete') ? 1 : 0);
+  return `<div class="table-wrap job-archive-table"><table><thead><tr><th>${t('scheduleDate')}</th><th>${t('customer')}</th><th>${t('vehicle')}</th><th>${t('service')}</th><th>${t('tech')}</th><th>${t('status')}</th><th>${t('quote')}</th><th>${t('paymentStatus')}</th>${showFinance ? `<th>${t('gross')}</th>` : ''}<th>${lang === 'zh' ? '客户沟通' : 'Customer contact'}</th>${hasPerm('jobsDelete') ? '<th></th>' : ''}</tr></thead><tbody>
     ${rows.map(job => {
       const calc = jobCalc(job);
-      return `<tr ${canOpen ? `onclick="openJob('${job.id}')" class="click-row"` : ''}><td>${escapeHtml(job.scheduleDate || job.date || '')}</td><td>${escapeHtml(job.customer || '')}<br><span class="note">${escapeHtml(job.phone || '')}</span></td><td>${escapeHtml(job.vehicle || '')}</td><td>${escapeHtml([serviceLabelList(job), job.package].filter(Boolean).join(' · '))}</td><td>${escapeHtml(jobInstallerNames(job))}</td><td>${statusPill(job.status)}</td><td>${currency.format(calc.price)}</td><td>${paymentStatusPill(job)}</td>${showFinance ? `<td>${currency.format(calc.gross)}</td>` : ''}${hasPerm('jobsDelete') ? `<td><button class="icon-btn" title="${t('delete')}" onclick="event.stopPropagation();removeItem('jobs','${job.id}')">×</button></td>` : ''}</tr>`;
+      return `<tr ${canOpen ? `onclick="openJob('${job.id}')" class="click-row"` : ''}><td>${escapeHtml(job.scheduleDate || job.date || '')}</td><td>${escapeHtml(job.customer || '')}<br><span class="note">${escapeHtml(job.phone || '')}</span></td><td>${escapeHtml(job.vehicle || '')}</td><td>${escapeHtml([serviceLabelList(job), job.package].filter(Boolean).join(' · '))}</td><td>${escapeHtml(jobInstallerNames(job))}</td><td>${statusPill(job.status)}</td><td>${currency.format(calc.price)}</td><td>${paymentStatusPill(job)}</td>${showFinance ? `<td>${currency.format(calc.gross)}</td>` : ''}<td><button class="btn job-chat-button" onclick="event.stopPropagation();openJobCustomerChat('${job.id}')">💬 ${lang === 'zh' ? '回访聊天' : 'Follow-up chat'}</button></td>${hasPerm('jobsDelete') ? `<td><button class="icon-btn" title="${t('delete')}" onclick="event.stopPropagation();removeItem('jobs','${job.id}')">×</button></td>` : ''}</tr>`;
     }).join('')}
     ${rows.length ? '' : `<tr><td colspan="${colSpan}" class="note">${lang === 'zh' ? '还没有已交车或历史订单。' : 'No delivered or historical jobs.'}</td></tr>`}
   </tbody></table></div>`;
