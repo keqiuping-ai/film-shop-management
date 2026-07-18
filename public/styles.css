@@ -906,6 +906,8 @@ tr:hover td { background: #fbfcfd; }
 .customer-center-table .pill { min-height: 20px; padding: 0 7px; font-size: 11px; }
 .customer-center-table tr.click-row:hover td { background: #eef8fa; }
 .customer-pending-filter.active { color:#fff; border-color:#bd3e3e; background:#bd3e3e; }
+.customer-invalid-filter { border-color:#d7b8b8; color:#9a3535; background:#fff8f8; }
+.customer-invalid-filter.active { color:#fff; border-color:#8b4242; background:#8b4242; }
 .customer-center-table tr.customer-pending-row td { background:#fff8f7; }
 .customer-center-table tr.customer-pending-row:hover td { background:#ffefed; }
 .customer-center-table tr.customer-pending-row td:first-child { box-shadow:inset 4px 0 #db3f3f; }

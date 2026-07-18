@@ -63,6 +63,7 @@ let preserveProspectWorkspaceRender = false;
 let prospectReplyRevision = 0;
 let customerCenterSearch = '';
 let customerCenterPendingOnly = false;
+let customerCenterShowInvalid = false;
 let prospectSearch = '';
 const prospectWorkspaceDrafts = new Map();
 let messageRecorder = null;
@@ -2946,7 +2947,7 @@ const views = {
     return panel(t('inventoryAlerts'), hasPerm('inventoryEdit') ? `<button class="btn" onclick="setPage('inventory')">${t('processInventory')}</button>` : '', inventorySearchBox(alertRows) + `<div id="inventorySearchResults">${inventoryAlertTable(true, null, true)}</div>` + `<p class="note">${lang === 'zh' ? '在库存商品里设置“预警库存/最低数量”。当当前库存小于或等于这个数量时，这里会自动生成补货报警。' : 'Set the reorder level on each SKU. When current stock is less than or equal to that number, the item appears here for replenishment.'}</p>`);
   },
   customerCenter() {
-    return panel(t('customerCenter'), hasPerm('prospectsEdit') ? `<button class="btn primary" onclick="openProspect(null,'customerConversations')">${lang === 'zh' ? '新增客户交流' : 'New conversation'}</button>` : '', customerCenterSearchBox() + `<div id="customerCenterSearchResults">${customerCenterTable(searchedCustomerCenterRows())}</div>` + `<p class="note">${lang === 'zh' ? '这里集中查看所有客户交流。只有跟进状态为“已预约”或“已到店”时，客户才会自动转入预约到店客户。' : 'All customer conversations appear here. Customers are promoted only after an appointment is set or they arrive.'}</p>`);
+    return panel(t('customerCenter'), hasPerm('prospectsEdit') ? `<button class="btn primary" onclick="openProspect(null,'customerConversations')">${lang === 'zh' ? '新增客户交流' : 'New conversation'}</button>` : '', customerCenterSearchBox() + `<div id="customerCenterSearchResults">${customerCenterTable(searchedCustomerCenterRows())}</div>` + `<p class="note">${lang === 'zh' ? '这里只保留仍需客服跟进的客户。已预约和已到店客户自动进入“预约到店客户”，已转施工单客户进入“施工订单”，无效客户默认隐藏并可通过上方按钮单独复查。' : 'Only customers needing follow-up remain here. Appointments move to the appointment board, converted customers move to jobs, and invalid customers are hidden for separate review.'}</p>`);
   },
   replyLibrary() {
     return panel(t('replyLibrary'), hasPerm('prospectsEdit') ? `<button class="btn primary" onclick="openReplyTemplateEditor('text')">${lang === 'zh' ? '新增回复素材' : 'New reply'}</button>` : '', replyLibraryPageHtml());
@@ -4151,7 +4152,7 @@ function openAppointmentAlertCustomer(id) {
   openProspectWorkspace('prospects', id);
 }
 
-function customerCenterRows() {
+function allCustomerCenterRows() {
   const promotedIds = new Set((state.prospects || []).map(item => item.id));
   const regular = (state.customerConversations || [])
     .filter(item => !item.promotedProspectId || !promotedIds.has(item.promotedProspectId))
@@ -4162,6 +4163,19 @@ function customerCenterRows() {
     const pendingDifference = Number(customerAwaitingReply(b)) - Number(customerAwaitingReply(a));
     return newDifference || pendingDifference || new Date(prospectActivityTime(b)).getTime() - new Date(prospectActivityTime(a)).getTime();
   });
+}
+
+function customerCenterRows() {
+  const movedStatuses = new Set(['已预约', '已到店', '已转施工单']);
+  return allCustomerCenterRows().filter(item => {
+    const status = String(item.status || '');
+    if (customerCenterShowInvalid) return status === '无效';
+    return status !== '无效' && !movedStatuses.has(status);
+  });
+}
+
+function invalidCustomerCenterCount() {
+  return allCustomerCenterRows().filter(item => String(item.status || '') === '无效').length;
 }
 
 function customerReplyState(item) {
@@ -4214,20 +4228,30 @@ function customerCenterSearchCountText() {
   const matched = searchedCustomerCenterRows().length;
   const pending = customerCenterRows().filter(customerAwaitingReply).length;
   const fresh = customerCenterRows().filter(item => item.newCustomer).length;
-  return lang === 'zh' ? `找到 ${matched} / ${total} 位客户 · ${fresh} 位新客户 · ${pending} 位待回复` : `Found ${matched} / ${total} customers · ${fresh} new · ${pending} awaiting reply`;
+  if (customerCenterShowInvalid) return lang === 'zh' ? `无效客户 ${matched} / ${total} 位 · 可点击客户重新修改状态` : `${matched} / ${total} invalid customers · Open one to restore its status`;
+  return lang === 'zh' ? `待跟进 ${matched} / ${total} 位客户 · ${fresh} 位新客户 · ${pending} 位待回复` : `Active ${matched} / ${total} customers · ${fresh} new · ${pending} awaiting reply`;
 }
 
 function customerCenterSearchBox() {
+  const invalidCount = invalidCustomerCenterCount();
   return `<div class="search-row customer-center-search" role="search" aria-label="${lang === 'zh' ? '搜索客户' : 'Search customers'}">
     <input id="customerCenterSearchInput" value="${escapeHtml(customerCenterSearch)}" placeholder="${lang === 'zh' ? '搜索客户姓名、电话、车型、需求、平台、跟进人员…' : 'Search name, phone, vehicle, request, platform, or owner…'}" oninput="setCustomerCenterSearch(this.value)" autocomplete="off" />
     <button class="btn" onclick="setCustomerCenterSearch('')">${t('clearSearch')}</button>
     <button class="btn customer-pending-filter ${customerCenterPendingOnly ? 'active' : ''}" onclick="toggleCustomerPendingOnly()">${lang === 'zh' ? (customerCenterPendingOnly ? '显示全部' : '只看待回复') : (customerCenterPendingOnly ? 'Show all' : 'Awaiting reply')}</button>
+    <button class="btn customer-invalid-filter ${customerCenterShowInvalid ? 'active' : ''}" onclick="toggleInvalidCustomers()">${lang === 'zh' ? (customerCenterShowInvalid ? '返回待跟进客户' : `查看无效客户 (${invalidCount})`) : (customerCenterShowInvalid ? 'Back to active' : `Invalid (${invalidCount})`)}</button>
     <span id="customerCenterSearchCount" class="note">${customerCenterSearchCountText()}</span>
   </div>`;
 }
 
 function toggleCustomerPendingOnly() {
   customerCenterPendingOnly = !customerCenterPendingOnly;
+  render();
+}
+
+function toggleInvalidCustomers() {
+  customerCenterShowInvalid = !customerCenterShowInvalid;
+  customerCenterPendingOnly = false;
+  customerCenterSearch = '';
   render();
 }
 
@@ -4243,7 +4267,7 @@ function customerCenterTable(rows = searchedCustomerCenterRows()) {
       const newBadge = item.newCustomer ? `<span class="customer-new-badge"><i></i>${lang === 'zh' ? '新客户' : 'New'}</span>` : '';
       return `<tr class="click-row ${replyState.pending ? 'customer-pending-row' : ''} ${item.newCustomer ? 'customer-new-row' : ''}" onclick="openProspectWorkspace('${item._collection}','${item.id}')"><td class="prospect-nowrap">${escapeHtml(item.date || '')}</td><td class="prospect-time">${prospectTimeCell(item)}</td><td><div class="prospect-clamp prospect-clamp-2">${escapeHtml(item.source || '')}</div>${newBadge}</td><td><div class="customer-name-with-alert"><div class="prospect-clamp prospect-clamp-2">${escapeHtml(item.customer || (lang === 'zh' ? '未命名客户' : 'Unnamed'))}</div>${pendingBadge}</div><span class="note prospect-nowrap">${escapeHtml(item.phone || '')}</span>${replyState.pending && latestText ? `<div class="customer-pending-preview" title="${escapeHtml(latestText)}">${escapeHtml(shortText(latestText, 28))}</div>` : ''}</td><td><div class="prospect-clamp prospect-clamp-2">${escapeHtml(item.vehicle || '')}</div><div class="note prospect-clamp prospect-clamp-2">${escapeHtml(item.need || '')}</div></td><td class="prospect-time">${appointment}</td><td><div class="prospect-clamp prospect-clamp-2">${rep ? escapeHtml(rep.name) : escapeHtml(item.ownerName || '') || t('unassigned')}</div></td><td class="customer-center-status-col">${prospectStatusPill(item.status)}</td><td class="customer-center-intent-col">${prospectIntentPill(item.intentLevel)}</td></tr>`;
     }).join('')}
-    ${rows.length ? '' : `<tr><td colspan="9" class="note">${lang === 'zh' ? '还没有客户交流记录。' : 'No customer conversations yet.'}</td></tr>`}
+    ${rows.length ? '' : `<tr><td colspan="9" class="note">${lang === 'zh' ? (customerCenterShowInvalid ? '目前没有无效客户。' : '目前没有需要继续跟进的客户。') : (customerCenterShowInvalid ? 'No invalid customers.' : 'No customers need follow-up.')}</td></tr>`}
   </tbody></table></div>`;
 }
 
