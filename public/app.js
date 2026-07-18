@@ -138,6 +138,8 @@ const dict = {
     leadsSub: '互联网客资、到店率、成交率和客服提成',
     orders: '零售批发',
     ordersSub: '客户订单、出货、收款和物流',
+    portalCustomers: '客户管理中心',
+    portalCustomersSub: '客户账号、联系方式和每个型号的专属价格',
     shipments: '在途货物',
     shipmentsSub: '中国海运、空运到拉斯维加斯的货物跟踪',
     schedules: '员工调休',
@@ -384,6 +386,8 @@ const dict = {
     leadsSub: 'Internet leads, arrival rate, close rate, and staff commissions',
     orders: 'Retail / Wholesale',
     ordersSub: 'Customer orders, shipping, payment, and balance',
+    portalCustomers: 'Customer Accounts',
+    portalCustomersSub: 'Customer logins, contacts, and customer-specific SKU pricing',
     shipments: 'Inbound Shipments',
     shipmentsSub: 'China ocean and air freight tracking to Las Vegas',
     schedules: 'Staff Schedule',
@@ -608,6 +612,7 @@ const pages = [
   ['prospects', 'prospects', 'prospectsSub'],
   ['leads', 'leads', 'leadsSub'],
   ['orders', 'orders', 'ordersSub'],
+  ['portalCustomers', 'portalCustomers', 'portalCustomersSub'],
   ['shipments', 'shipments', 'shipmentsSub'],
   ['schedules', 'schedules', 'schedulesSub'],
   ['workTime', 'workTime', 'workTimeSub'],
@@ -633,6 +638,7 @@ const pagePermissions = {
   prospects: 'prospectsView',
   leads: 'leadsView',
   orders: 'ordersView',
+  portalCustomers: 'ordersView',
   shipments: 'shipmentsView',
   schedules: 'schedulesView',
   workTime: ['reportsView', 'usersManage'],
@@ -657,6 +663,7 @@ const writePermissions = {
   prospects: 'prospectsEdit',
   leads: 'leadsEdit',
   orders: 'ordersEdit',
+  portalCustomers: 'ordersEdit',
   shipments: 'shipmentsEdit',
   schedules: 'schedulesEdit',
   expenses: 'expensesEdit',
@@ -1848,7 +1855,7 @@ function updateVoiceButton(recording) {
 }
 
 function navIcon(id) {
-  return { modules:'▦', dashboard:'⌂', jobs:'▣', installers:'◉', pricing:'$', inventory:'▤', workshopInventory:'▥', inventoryAlerts:'!', customerCenter:'💬', replyLibrary:'☁', prospects:'★', leads:'☎', orders:'⇄', shipments:'✈', schedules:'◫', workTime:'◴', expenses:'◇', reimbursements:'🧾', reports:'◌', audit:'◷', users:'◎', personalNotes:'📝', settings:'⚙' }[id] || '□';
+  return { modules:'▦', dashboard:'⌂', jobs:'▣', installers:'◉', pricing:'$', inventory:'▤', workshopInventory:'▥', inventoryAlerts:'!', customerCenter:'💬', replyLibrary:'☁', prospects:'★', leads:'☎', orders:'⇄', portalCustomers:'👤', shipments:'✈', schedules:'◫', workTime:'◴', expenses:'◇', reimbursements:'🧾', reports:'◌', audit:'◷', users:'◎', personalNotes:'📝', settings:'⚙' }[id] || '□';
 }
 
 function moduleGrid(availablePages) {
@@ -1856,7 +1863,7 @@ function moduleGrid(availablePages) {
     ${availablePages.map(([id, name, sub]) => `
       <button class="module-tile" data-module="${id}" onclick="setPage('${id}')">
         <span class="module-icon">${navIcon(id)}</span>
-        <strong>${t(name)}</strong>
+        <strong>${t(name)}${id === 'orders' && (state.salesOrders || []).some(order => order.portalNew || order.portalCustomerUnread) ? '<i class="portal-new-count">新</i>' : ''}</strong>
         <small>${t(sub)}</small>
       </button>
     `).join('')}
@@ -2245,7 +2252,7 @@ function salesOrderTotalQty(order) {
 }
 
 function isCustomPrintedFilmSku(sku) {
-  return String(sku || '') === CUSTOM_PRINTED_FILM_SKU;
+  return [CUSTOM_PRINTED_FILM_SKU, 'CUSTOM-CUSTOMER-REQUEST'].includes(String(sku || ''));
 }
 
 function customPrintedFilmLabel() {
@@ -2257,12 +2264,14 @@ function salesOrderItemOptions() {
 }
 
 function salesOrderItemLabel(sku) {
+  if (sku === 'CUSTOM-CUSTOMER-REQUEST') return lang === 'zh' ? '客户特殊需求' : 'Customer Special Request';
   return isCustomPrintedFilmSku(sku) ? customPrintedFilmLabel() : sku;
 }
 
 function salesOrderSkuSearchOptions() {
   return [
     salesOrderVirtualProduct(CUSTOM_PRINTED_FILM_SKU),
+    salesOrderVirtualProduct('CUSTOM-CUSTOMER-REQUEST'),
     ...state.products
   ].filter(Boolean);
 }
@@ -2419,8 +2428,8 @@ function setupWorkshopSkuSearch() {
 function salesOrderVirtualProduct(sku) {
   if (!isCustomPrintedFilmSku(sku)) return null;
   return {
-    sku: CUSTOM_PRINTED_FILM_SKU,
-    name: customPrintedFilmLabel(),
+    sku,
+    name: salesOrderItemLabel(sku),
     unit: 'roll',
     cost: 0,
     price: 0,
@@ -2957,6 +2966,9 @@ const views = {
   },
   orders() {
     return panel(t('orders'), hasPerm('ordersEdit') ? `<button class="btn primary" onclick="openSalesOrder()">${t('addNew')}</button>` : '', salesOrderTable());
+  },
+  portalCustomers() {
+    return panel(t('portalCustomers'), hasPerm('ordersEdit') ? `<button class="btn primary" onclick="openPortalCustomer()">${lang === 'zh' ? '新增客户账号' : 'New customer'}</button>` : '', portalCustomerTable() + `<p class="note">${lang === 'zh' ? '客户登录地址：' : 'Customer login: '}<a href="/customer.html" target="_blank">${location.origin}/customer.html</a></p>`);
   },
   shipments() {
     const actions = hasPerm('shipmentsEdit') ? `<div class="mini-actions">
@@ -3559,8 +3571,32 @@ function workshopMovementTable() {
 function salesOrderTable() {
   const rows = sortByDateDesc(state.salesOrders || []);
   return `<div class="table-wrap"><table><thead><tr><th>${t('date')}</th><th>${t('type')}</th><th>${t('customer')}</th><th>${t('orderSalesRep')}</th><th>${t('preparedBy')}</th><th>${t('item')}</th><th>${t('qty')}</th><th>${lang === 'zh' ? '总额' : 'Total'}</th><th>${t('paid')}</th><th>${t('paymentMethod')}</th><th>${t('orderTrackingNo')}</th><th>${t('balance')}</th><th>${t('status')}</th><th></th></tr></thead><tbody>
-  ${rows.map(o => { const c = orderCalc(o); return `<tr><td>${o.date}</td><td>${salesOrderTypeName(o.type)}</td><td>${escapeHtml(o.customer)}</td><td>${escapeHtml(o.salesRep || '')}</td><td>${escapeHtml(o.preparedBy || '')}</td><td class="sales-order-items-cell">${escapeHtml(salesOrderItemsSummary(o))}</td><td>${salesOrderTotalQty(o)}</td><td>${currency.format(c.total)}</td><td>${currency.format(Number(o.paid || 0))}</td><td>${escapeHtml(paymentMethodName(o.paymentMethod || ''))}</td><td>${escapeHtml(o.trackingNo || '')}</td><td>${currency.format(c.balance)}</td><td>${statusPill(o.status)}</td>${actionCell('SalesOrder','salesOrders',o.id)}</tr>`; }).join('')}
+  ${rows.map(o => { const c = orderCalc(o); return `<tr class="${o.portalNew || o.portalCustomerUnread ? 'portal-new-order' : ''}"><td>${o.date}${o.portalNew ? '<span class="portal-new-badge">客户新单</span>' : o.portalCustomerUnread ? '<span class="portal-new-badge">新留言</span>' : o.portalSource ? '<span class="pill info">客户客户端</span>' : ''}</td><td>${salesOrderTypeName(o.type)}</td><td>${escapeHtml(o.customer)}</td><td>${escapeHtml(o.salesRep || '')}</td><td>${escapeHtml(o.preparedBy || '')}</td><td class="sales-order-items-cell">${escapeHtml(salesOrderItemsSummary(o))}</td><td>${salesOrderTotalQty(o)}</td><td>${currency.format(c.total)}</td><td>${currency.format(Number(o.paid || 0))}</td><td>${escapeHtml(paymentMethodName(o.paymentMethod || ''))}</td><td>${escapeHtml(o.trackingNo || '')}</td><td>${currency.format(c.balance)}</td><td>${statusPill(o.status)}</td>${actionCell('SalesOrder','salesOrders',o.id)}</tr>`; }).join('')}
   </tbody></table></div>`;
+}
+
+function portalCustomerTable() {
+  const rows = state.portalCustomers || [];
+  return `<div class="table-wrap"><table><thead><tr><th>${lang === 'zh' ? '客户/公司' : 'Customer'}</th><th>${lang === 'zh' ? '联系人' : 'Contact'}</th><th>${lang === 'zh' ? '登录账号' : 'Login'}</th><th>${lang === 'zh' ? '地址' : 'Address'}</th><th>${lang === 'zh' ? '业务员' : 'Sales rep'}</th><th>${lang === 'zh' ? '协议价数量' : 'SKU prices'}</th><th>${t('status')}</th><th></th></tr></thead><tbody>${rows.map(c => `<tr><td><strong>${escapeHtml(c.businessName || '')}</strong><br><span class="note">${escapeHtml(c.note || '')}</span></td><td>${escapeHtml(c.contactName || '')}<br><span class="note">${escapeHtml(c.phone || '')}<br>${escapeHtml(c.email || '')}</span></td><td>${escapeHtml(c.account || '')}</td><td>${escapeHtml(c.address || '')}</td><td>${escapeHtml(c.salesRep || '')}</td><td>${Object.keys(c.prices || {}).length}</td><td>${statusPill(c.active === false ? '停用' : (c.status || '正常'))}</td><td><button class="btn" onclick="openPortalCustomer('${c.id}')">${t('edit')}</button></td></tr>`).join('')}${rows.length ? '' : `<tr><td colspan="8" class="note">${lang === 'zh' ? '还没有客户账号。' : 'No customer accounts.'}</td></tr>`}</tbody></table></div>`;
+}
+
+function portalPriceRows(customer) {
+  return (state.products || []).map(product => `<tr><td>${escapeHtml(product.sku)}</td><td>${escapeHtml(product.name || '')}</td><td>${currency.format(Number(product.price || 0))}</td><td>${currency.format(Number(product.wholesale || 0))}</td><td><input class="portal-price-input" data-sku="${escapeHtml(product.sku)}" type="number" min="0" step="0.01" value="${customer.prices?.[product.sku] ?? ''}" placeholder="${lang === 'zh' ? '未设置' : 'Not set'}"></td></tr>`).join('');
+}
+
+function openPortalCustomer(id = '') {
+  const customer = (state.portalCustomers || []).find(item => item.id === id) || { businessName: '', contactName: '', account: '', email: '', phone: '', address: '', salesRep: '', status: '正常', note: '', active: true, prices: {} };
+  const body = formHtml([
+    ['portalBusinessName', lang === 'zh' ? '客户/公司名称' : 'Business name', 'text', customer.businessName], ['portalContactName', lang === 'zh' ? '联系人' : 'Contact', 'text', customer.contactName], ['portalAccount', lang === 'zh' ? '登录账号' : 'Login account', 'text', customer.account],
+    ['portalEmail', t('email'), 'text', customer.email], ['portalPhone', lang === 'zh' ? '电话' : 'Phone', 'text', customer.phone], ['portalSalesRep', lang === 'zh' ? '负责业务员' : 'Sales rep', 'text', customer.salesRep],
+    ['portalAddress', lang === 'zh' ? '地址' : 'Address', 'text', customer.address], ['portalStatus', t('status'), 'select', customer.status || '正常', ['正常','暂停合作','重点客户']], ['portalPassword', id ? (lang === 'zh' ? '重设密码（不改请留空）' : 'Reset password (optional)') : (lang === 'zh' ? '初始密码（至少8位）' : 'Initial password (8+ chars)'), 'password', ''],
+    ['portalNote', t('note'), 'textarea', customer.note]
+  ]) + `<div class="wide portal-price-editor"><h4>${lang === 'zh' ? '客户专属型号价格' : 'Customer-specific SKU prices'}</h4><p class="note">${lang === 'zh' ? '客户只能看到这里填写的价格；没有设置价格的型号会显示“请联系业务员”。' : 'Only prices entered here are visible to this customer.'}</p><div class="table-wrap"><table><thead><tr><th>SKU</th><th>${t('productName')}</th><th>${t('retailPrice')}</th><th>${t('wholesalePrice')}</th><th>${lang === 'zh' ? '该客户价格' : 'Customer price'}</th></tr></thead><tbody>${portalPriceRows(customer)}</tbody></table></div></div>`;
+  openModal(id ? (lang === 'zh' ? '编辑客户账号' : 'Edit customer') : (lang === 'zh' ? '新增客户账号' : 'New customer'), body, async () => {
+    const prices = {}; document.querySelectorAll('.portal-price-input').forEach(input => { if (input.value !== '') prices[input.dataset.sku] = Number(input.value); });
+    const payload = { businessName: document.getElementById('portalBusinessName').value, contactName: document.getElementById('portalContactName').value, account: document.getElementById('portalAccount').value, email: document.getElementById('portalEmail').value, phone: document.getElementById('portalPhone').value, salesRep: document.getElementById('portalSalesRep').value, address: document.getElementById('portalAddress').value, status: document.getElementById('portalStatus').value, password: document.getElementById('portalPassword').value, note: document.getElementById('portalNote').value, prices, active: customer.active !== false };
+    try { const result = await api(`/api/portal-customers${id ? `/${id}` : ''}`, { method: id ? 'PUT' : 'POST', body: JSON.stringify(payload) }); state = result.data; closeModal(); render(); broadcastDataChange(); } catch (err) { alert(err.message); }
+  });
 }
 
 function shipmentTable() {
@@ -5381,16 +5417,18 @@ function openPriceRule(id) {
 }
 
 function openProduct(id) {
-  const item = state.products.find(x => x.id === id) || { sku: '', name: '', category: '窗膜卷料', unit: 'm', cost: 0, price: 0, wholesale: 0, minPrice: 0, qty: 0, reorder: 0, location: '' };
+  const item = state.products.find(x => x.id === id) || { sku: '', name: '', category: '窗膜卷料', unit: 'm', cost: 0, price: 0, wholesale: 0, minPrice: 0, qty: 0, reorder: 0, location: '', portalVisible: true, portalDescription: '', portalImageUrl: '', portalVideoUrl: '', portalNewProduct: false };
   const fields = [
     ['sku','SKU','text',item.sku], ['name',t('productName'),'text',item.name], ['category',t('category'),'select',item.category, productCategories()],
     ['unit',lang === 'zh' ? '单位' : 'Unit','text',item.unit], ...(canSeeFinance() ? [['cost',`${t('cost')} $`,'number',item.cost]] : []), ['price',`${t('retailPrice')} $`,'number',item.price],
     ['wholesale',`${t('wholesalePrice')} $`,'number',item.wholesale],
     ['minPrice',`${t('minSalePrice')} $`,'number',item.minPrice || item.wholesale || 0],
-    ['qty',lang === 'zh' ? '当前库存' : 'Current Stock','number',item.qty], ['reorder',lang === 'zh' ? '预警库存' : 'Reorder Level','number',item.reorder], ['location',lang === 'zh' ? '仓位' : 'Location','text',item.location]
+    ['qty',lang === 'zh' ? '当前库存' : 'Current Stock','number',item.qty], ['reorder',lang === 'zh' ? '预警库存' : 'Reorder Level','number',item.reorder], ['location',lang === 'zh' ? '仓位' : 'Location','text',item.location],
+    ['portalDescription',lang === 'zh' ? '客户产品介绍' : 'Customer description','textarea',item.portalDescription || ''], ['portalImageUrl',lang === 'zh' ? '产品图片链接' : 'Product image URL','text',item.portalImageUrl || ''], ['portalVideoUrl',lang === 'zh' ? '产品视频链接' : 'Product video URL','text',item.portalVideoUrl || ''],
+    ['portalVisible',lang === 'zh' ? '客户客户端展示' : 'Show in customer portal','select',item.portalVisible === false ? 'false' : 'true',[['true',lang === 'zh' ? '展示' : 'Show'],['false',lang === 'zh' ? '隐藏' : 'Hide']]], ['portalNewProduct',lang === 'zh' ? '新品标签' : 'New product badge','select',item.portalNewProduct ? 'true' : 'false',[['false',lang === 'zh' ? '普通产品' : 'Regular'],['true',lang === 'zh' ? '新品' : 'New']]]
   ];
-  const ids = ['sku','name','category','unit', ...(canSeeFinance() ? ['cost'] : []), 'price','wholesale','minPrice','qty','reorder','location'];
-  openModal(id ? (lang === 'zh' ? '编辑库存商品' : 'Edit SKU') : (lang === 'zh' ? '新增库存商品' : 'New SKU'), formHtml(fields), () => saveRecord('products', id, numeric(readForm(ids), [...(canSeeFinance() ? ['cost'] : []), 'price','wholesale','minPrice','qty','reorder'])));
+  const ids = ['sku','name','category','unit', ...(canSeeFinance() ? ['cost'] : []), 'price','wholesale','minPrice','qty','reorder','location','portalDescription','portalImageUrl','portalVideoUrl','portalVisible','portalNewProduct'];
+  openModal(id ? (lang === 'zh' ? '编辑库存商品' : 'Edit SKU') : (lang === 'zh' ? '新增库存商品' : 'New SKU'), formHtml(fields), () => { const data = numeric(readForm(ids), [...(canSeeFinance() ? ['cost'] : []), 'price','wholesale','minPrice','qty','reorder']); data.portalVisible = data.portalVisible === 'true'; data.portalNewProduct = data.portalNewProduct === 'true'; return saveRecord('products', id, data); });
 }
 
 function openMovement(preset = {}) {
@@ -5680,6 +5718,7 @@ function updateSalesOrderLinesTotal() {
 
 function openSalesOrder(id) {
   const item = state.salesOrders.find(x => x.id === id) || { date: today(), type: 'retail-us', customer: '', salesRep: '', preparedBy: user?.name || '', item: '', qty: 1, unitPrice: 0, status: '待收款', shipping: '', trackingNo: '', paid: 0, paymentMethod: '' };
+  if (id && item.portalSource && (item.portalNew || item.portalCustomerUnread)) markPortalOrderRead(id);
   const lines = salesOrderLineItems(item);
   const shippingTracking = [...new Set([item.shipping, item.trackingNo].map(value => String(value || '').trim()).filter(Boolean))].join(' · ');
   const fields = [
@@ -5695,7 +5734,7 @@ function openSalesOrder(id) {
   </div>`;
   openModal(
     id ? (lang === 'zh' ? '编辑零售/批发订单' : 'Edit Sales Order') : (lang === 'zh' ? '新增零售/批发订单' : 'New Sales Order'),
-    formHtml(fields) + lineTable,
+    formHtml(fields) + lineTable + portalOrderConversationHtml(item),
     () => {
       const data = numeric(readForm(['date','type','customer','salesRep','status','paid','paymentMethod','shippingTracking','preparedBy']), ['paid']);
       data.shipping = String(data.shippingTracking || '').trim();
@@ -5740,6 +5779,22 @@ function openSalesOrder(id) {
     updateSalesOrderLinesTotal();
   });
   updateSalesOrderLinesTotal();
+}
+
+function portalOrderConversationHtml(order) {
+  if (!order.portalSource) return '';
+  const messages = (order.portalMessages || []).map(message => `<div class="portal-order-message ${message.sender === 'staff' ? 'staff' : 'customer'}"><strong>${escapeHtml(message.senderName || (message.sender === 'staff' ? '客服' : '客户'))}</strong><div>${escapeHtml(message.text || '')}</div>${message.attachment ? `<a href="${escapeHtml(message.attachment.url || '')}" target="_blank">📎 ${escapeHtml(message.attachment.name || '附件')}</a>` : ''}<small>${formatAppDateTime(message.createdAt)}</small></div>`).join('');
+  const receipts = (order.portalAttachments || []).map(file => `<a href="${escapeHtml(file.url || '')}" target="_blank">📎 ${escapeHtml(file.name || '客户附件')}</a>`).join(' ');
+  return `<div class="wide portal-order-conversation"><h4>${lang === 'zh' ? '客户客户端沟通' : 'Customer portal conversation'}</h4>${order.customerDemand ? `<p><strong>${lang === 'zh' ? '客户需求：' : 'Request: '}</strong>${escapeHtml(order.customerDemand)}</p>` : ''}${receipts ? `<p>${receipts}</p>` : ''}<div class="portal-order-messages">${messages || `<p class="note">${lang === 'zh' ? '暂无留言' : 'No messages'}</p>`}</div><div class="portal-order-reply"><input id="portalOrderReply" placeholder="${lang === 'zh' ? '回复客户…' : 'Reply to customer…'}"><button class="btn" type="button" onclick="sendPortalOrderReply('${order.id}')">${lang === 'zh' ? '发送回复' : 'Send'}</button></div></div>`;
+}
+
+async function markPortalOrderRead(id) {
+  try { state = await api(`/api/portal-orders/${id}/read`, { method: 'POST', body: '{}' }); } catch {}
+}
+
+async function sendPortalOrderReply(id) {
+  const input = document.getElementById('portalOrderReply'); const text = input?.value.trim(); if (!text) return;
+  try { state = await api(`/api/portal-orders/${id}/messages`, { method: 'POST', body: JSON.stringify({ text }) }); closeModal(); render(); openSalesOrder(id); } catch (err) { alert(err.message); }
 }
 
 function openShipment(id) {
@@ -6522,8 +6577,8 @@ function statusOptions() {
 }
 function salesStatusOptions() {
   return lang === 'zh'
-    ? ['待收款','待出库','已出库','已付款','已取消']
-    : [['待收款','Payment Pending'],['待出库','Ready to Ship'],['已出库','Shipped'],['已付款','Paid'],['已取消','Canceled']];
+    ? ['待客服确认','待收款','待出库','已出库','已付款','已取消']
+    : [['待客服确认','Customer Service Review'],['待收款','Payment Pending'],['待出库','Ready to Ship'],['已出库','Shipped'],['已付款','Paid'],['已取消','Canceled']];
 }
 function shipmentMethodOptions() {
   return [['ocean', lang === 'zh' ? '海运' : 'Ocean'], ['air', lang === 'zh' ? '空运' : 'Air']];

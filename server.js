@@ -157,6 +157,42 @@ function verifySessionToken(token, db) {
   return user;
 }
 
+function createCustomerSessionToken(customer) {
+  const payload = base64Url(JSON.stringify({ customerId: customer.id, issuedAt: Date.now(), expiresAt: Date.now() + 30 * 24 * 60 * 60 * 1000, passwordVersion: crypto.createHash('sha256').update(String(customer.passwordHash || '')).digest('hex').slice(0, 16) }));
+  return `c1.${payload}.${signSessionPayload(payload)}`;
+}
+
+function currentPortalCustomer(req, db) {
+  const token = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '');
+  const parts = token.split('.');
+  if (parts.length !== 3 || parts[0] !== 'c1') return null;
+  const expected = signSessionPayload(parts[1]);
+  if (parts[2].length !== expected.length || !crypto.timingSafeEqual(Buffer.from(parts[2]), Buffer.from(expected))) return null;
+  let payload;
+  try { payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8')); } catch { return null; }
+  if (!payload.expiresAt || Date.now() > payload.expiresAt) return null;
+  const customer = (db.portalCustomers || []).find(item => item.id === payload.customerId && item.active !== false);
+  if (!customer) return null;
+  const version = crypto.createHash('sha256').update(String(customer.passwordHash || '')).digest('hex').slice(0, 16);
+  return payload.passwordVersion === version ? customer : null;
+}
+
+function safePortalCustomer(customer) {
+  const { passwordHash, ...safe } = customer || {};
+  return safe;
+}
+
+function portalProductForCustomer(db, product, customer) {
+  const hasAgreedPrice = Object.prototype.hasOwnProperty.call(customer?.prices || {}, product.sku);
+  const previousLine = hasAgreedPrice ? null : (db.salesOrders || []).filter(order => order.portalCustomerId === customer.id || (!order.portalCustomerId && String(order.customer || '').trim().toLowerCase() === String(customer.businessName || '').trim().toLowerCase())).sort((a, b) => String(b.createdAt || b.date || '').localeCompare(String(a.createdAt || a.date || ''))).flatMap(salesOrderItems).find(line => line.item === product.sku);
+  const agreed = Number(hasAgreedPrice ? customer.prices[product.sku] : previousLine?.unitPrice);
+  return { sku: product.sku, name: product.name, category: product.category, unit: product.unit, availability: Number(product.qty || 0) <= 0 ? '需预订' : Number(product.reorder || 0) > 0 && Number(product.qty || 0) <= Number(product.reorder || 0) ? '库存紧张' : '有货', price: Number.isFinite(agreed) ? agreed : null, description: String(product.portalDescription || ''), imageUrl: String(product.portalImageUrl || ''), videoUrl: String(product.portalVideoUrl || ''), isNew: Boolean(product.portalNewProduct) };
+}
+
+function portalCustomerSnapshot(db, customer) {
+  return { customer: safePortalCustomer(customer), products: (db.products || []).filter(product => product.portalVisible !== false).map(product => portalProductForCustomer(db, product, customer)), orders: (db.salesOrders || []).filter(order => order.portalCustomerId === customer.id).sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || ''))).map(order => ({ id: order.id, date: order.date, status: order.status, items: salesOrderItems(order), customerDemand: order.customerDemand || '', shipping: order.shipping || '', trackingNo: order.trackingNo || '', paid: Number(order.paid || 0), paymentMethod: order.paymentMethod || '', createdAt: order.createdAt, portalMessages: order.portalMessages || [], attachments: order.portalAttachments || [] })) };
+}
+
 function seedDb() {
   return {
     settings: {
@@ -204,6 +240,7 @@ function seedDb() {
     scheduleReminderLogs: [],
     personalNotes: [],
     reimbursements: [],
+    portalCustomers: [],
     customerServiceReps: [
       { id: id(), name: '前台客服', role: '前台', invitePay: 20, closePay: 50, active: true }
     ],
@@ -257,6 +294,7 @@ function readDb() {
   if (!Array.isArray(db.scheduleReminderLogs)) db.scheduleReminderLogs = [];
   if (!Array.isArray(db.personalNotes)) db.personalNotes = [];
   if (!Array.isArray(db.reimbursements)) db.reimbursements = [];
+  if (!Array.isArray(db.portalCustomers)) db.portalCustomers = [];
   if (!Array.isArray(db.messages)) db.messages = [];
   if (!Array.isArray(db.clockRecords)) db.clockRecords = [];
   if (!Array.isArray(db.leaveRequests)) db.leaveRequests = [];
@@ -986,10 +1024,11 @@ function sanitizeDbForUser(db, user) {
     messages: messagesForUser(db, user),
     personalNotes: (db.personalNotes || []).filter(item => personalNoteVisibleTo(item, user)).map(item => personalNoteForUser(db, item, user)),
     installers: p.installerView || p.jobsView ? db.installers.map(installer => sanitizeInstaller(installer, p)) : [],
-    products: p.inventoryView ? sanitizeProducts(db.products, canSeeCosts) : [],
+    products: p.inventoryView || p.ordersEdit ? sanitizeProducts(db.products, canSeeCosts) : [],
     priceRules: p.pricingView ? db.priceRules.map(rule => canSeeCosts ? rule : { ...rule, materialCost: 0 }) : [],
     jobs: p.jobsView || p.jobsEdit || p.jobsDelete ? db.jobs.map(job => sanitizeJob(job, p, canSeeCosts)) : [],
     salesOrders: p.ordersView ? db.salesOrders.map(order => sanitizeSalesOrder(order, p)) : [],
+    portalCustomers: p.ordersView ? (db.portalCustomers || []).map(safePortalCustomer) : [],
     shipments: p.shipmentsView ? db.shipments : [],
     schedules: p.schedulesView ? (db.schedules || []) : [],
     scheduleReminderLogs: p.schedulesView ? (db.scheduleReminderLogs || []).slice(0, 200) : [],
@@ -1199,7 +1238,7 @@ function minimumSalePrice(product) {
 }
 
 function isCustomPrintedFilmSku(sku) {
-  return String(sku || '') === CUSTOM_PRINTED_FILM_SKU;
+  return [CUSTOM_PRINTED_FILM_SKU, 'CUSTOM-CUSTOMER-REQUEST'].includes(String(sku || ''));
 }
 
 function salesOrderItems(order) {
@@ -2562,6 +2601,71 @@ async function api(req, res) {
     return send(res, 200, { token, user: safeUser(user) });
   }
 
+  if (req.method === 'POST' && url.pathname === '/api/customer/login') {
+    const body = await readBody(req);
+    const login = String(body.login || '').trim().toLowerCase();
+    const customer = (db.portalCustomers || []).find(item => item.active !== false && [item.email, item.phone, item.account].some(value => String(value || '').trim().toLowerCase() === login));
+    if (!customer || !verifyPassword(body.password, customer.passwordHash)) return send(res, 401, { error: '账号或密码不正确' });
+    const token = createCustomerSessionToken(customer);
+    return send(res, 200, { token, customer: safePortalCustomer(customer) });
+  }
+
+  if (url.pathname.startsWith('/api/customer/')) {
+    const customer = currentPortalCustomer(req, db);
+    if (!customer) return send(res, 401, { error: '请先登录客户账号' });
+    if (req.method === 'GET' && url.pathname === '/api/customer/bootstrap') return send(res, 200, portalCustomerSnapshot(db, customer), undefined, req);
+    if (req.method === 'POST' && url.pathname === '/api/customer/logout') return send(res, 200, { ok: true });
+    if (req.method === 'POST' && url.pathname === '/api/customer/media') {
+      const body = await readBody(req);
+      const name = String(body.name || '客户附件').trim().slice(0, 160);
+      const match = String(body.dataUrl || '').match(/^data:([^;,]+);base64,(.+)$/s);
+      if (!match) return send(res, 400, { error: '附件格式不正确' });
+      const type = String(match[1] || 'application/octet-stream').slice(0, 120);
+      const data = Buffer.from(match[2], 'base64');
+      if (!data.length || data.length > 5 * 1024 * 1024) return send(res, 400, { error: '附件必须小于 5MB' });
+      fs.mkdirSync(CUSTOMER_MEDIA_DIR, { recursive: true });
+      const fileName = `${crypto.randomBytes(6).toString('hex')}${safeCustomerMediaExtension(name, type)}`;
+      fs.writeFileSync(path.join(CUSTOMER_MEDIA_DIR, fileName), data);
+      const item = { name, type, size: data.length, url: `${requestPublicBaseUrl(req)}/customer-media/${fileName}` };
+      audit(db, { id: `customer-${customer.id}`, name: customer.businessName || customer.contactName }, 'customer-portal-upload', `客户上传附件 ${name}`);
+      writeDb(db);
+      return send(res, 200, item);
+    }
+    if (req.method === 'POST' && url.pathname === '/api/customer/orders') {
+      const body = await readBody(req);
+      const requestId = String(body.requestId || '').slice(0, 120);
+      const duplicate = requestId && (db.salesOrders || []).find(order => order.portalCustomerId === customer.id && order.portalRequestId === requestId);
+      if (duplicate) return send(res, 200, portalCustomerSnapshot(db, customer));
+      const requested = (Array.isArray(body.items) ? body.items : []).slice(0, 50);
+      const items = requested.map(line => {
+        const product = db.products.find(row => row.sku === String(line.sku || ''));
+        const price = product ? portalProductForCustomer(db, product, customer).price : null;
+        const qty = Number(line.qty || 0);
+        return product && price !== null && Number.isFinite(Number(price)) && qty > 0 ? { item: product.sku, qty, unitPrice: Number(price) } : null;
+      }).filter(Boolean);
+      const customerDemand = String(body.customerDemand || '').trim().slice(0, 3000);
+      if (!items.length && !customerDemand) return send(res, 400, { error: '请选择商品或填写特殊需求' });
+      if (!items.length) items.push({ item: 'CUSTOM-CUSTOMER-REQUEST', qty: 1, unitPrice: 0 });
+      const now = new Date().toISOString();
+      const order = { id: id(), date: dateInTimezone(db.settings?.timezone || 'America/Los_Angeles', 0), type: 'wholesale-us', customer: customer.businessName || customer.contactName, salesRep: customer.salesRep || '', preparedBy: '客户客户端', items, item: items[0].item, qty: items[0].qty, unitPrice: items[0].unitPrice, status: '待客服确认', shipping: '', trackingNo: '', paid: 0, paymentMethod: '', note: customerDemand, customerDemand, portalCustomerId: customer.id, portalRequestId: requestId, portalSource: true, portalNew: true, portalAttachments: Array.isArray(body.attachments) ? body.attachments.slice(0, 10) : [], portalMessages: [{ id: id(), sender: 'customer', senderName: customer.contactName || customer.businessName, text: customerDemand || '客户提交了新订单', createdAt: now }], createdAt: now };
+      db.salesOrders.push(order);
+      audit(db, { id: `customer-${customer.id}`, name: customer.businessName || customer.contactName }, 'create-customer-portal-order', { collection: 'salesOrders', recordId: order.id, recordLabel: order.customer, detail: `客户客户端提交新订单 ${order.customer}` });
+      writeDb(db); notifyDataChanged('customer-portal-order', order.id);
+      return send(res, 201, portalCustomerSnapshot(db, customer));
+    }
+    const messageMatch = url.pathname.match(/^\/api\/customer\/orders\/([^/]+)\/messages$/);
+    if (req.method === 'POST' && messageMatch) {
+      const order = (db.salesOrders || []).find(item => item.id === messageMatch[1] && item.portalCustomerId === customer.id);
+      if (!order) return send(res, 404, { error: '找不到订单' });
+      const body = await readBody(req); const text = String(body.text || '').trim().slice(0, 4000); const attachment = body.attachment && String(body.attachment.url || '').includes('/customer-media/') ? body.attachment : null;
+      if (!text && !attachment) return send(res, 400, { error: '请输入消息或上传附件' });
+      order.portalMessages = [...(order.portalMessages || []), { id: id(), sender: 'customer', senderName: customer.contactName || customer.businessName, text, attachment, createdAt: new Date().toISOString() }];
+      order.portalCustomerUnread = true; order.updatedAt = new Date().toISOString(); writeDb(db); notifyDataChanged('customer-portal-message', order.id);
+      return send(res, 200, portalCustomerSnapshot(db, customer));
+    }
+    return send(res, 404, { error: 'Not found' });
+  }
+
   if (req.method === 'GET' && url.pathname === '/api/health') {
     return send(res, 200, {
       ok: true,
@@ -2738,6 +2842,49 @@ async function api(req, res) {
 
   if (req.method === 'GET' && url.pathname === '/api/bootstrap') {
     return send(res, 200, { user: safeUser(user), data: sanitizeDbForUser(db, user), revision: databaseRevision() }, undefined, req);
+  }
+
+  const portalCustomerMatch = url.pathname.match(/^\/api\/portal-customers(?:\/([^/]+))?$/);
+  if (portalCustomerMatch) {
+    if (!canAccess(user, req.method === 'GET' ? 'ordersView' : 'ordersEdit')) return send(res, 403, { error: '没有客户管理权限' });
+    const customerId = portalCustomerMatch[1] || '';
+    if (req.method === 'GET') return send(res, 200, (db.portalCustomers || []).map(safePortalCustomer));
+    const body = await readBody(req);
+    const existingIndex = customerId ? db.portalCustomers.findIndex(item => item.id === customerId) : -1;
+    if (customerId && existingIndex < 0) return send(res, 404, { error: '找不到客户' });
+    const before = existingIndex >= 0 ? db.portalCustomers[existingIndex] : {};
+    const email = String(body.email ?? before.email ?? '').trim().toLowerCase();
+    const phone = String(body.phone ?? before.phone ?? '').trim();
+    const account = String(body.account ?? before.account ?? email ?? phone).trim();
+    if (!String(body.businessName ?? before.businessName ?? '').trim()) return send(res, 400, { error: '请填写客户或公司名称' });
+    if (!email && !phone && !account) return send(res, 400, { error: '请填写登录账号、邮箱或电话' });
+    if (db.portalCustomers.some(item => item.id !== customerId && [item.email, item.phone, item.account].some(value => [email, phone, account].filter(Boolean).includes(String(value || '').trim().toLowerCase())))) return send(res, 400, { error: '客户登录账号、邮箱或电话已存在' });
+    if (existingIndex < 0 && String(body.password || '').length < 8) return send(res, 400, { error: '新客户必须设置至少 8 位密码' });
+    const prices = {};
+    Object.entries(body.prices && typeof body.prices === 'object' ? body.prices : before.prices || {}).forEach(([sku, value]) => { const price = Number(value); if (Number.isFinite(price) && price >= 0) prices[String(sku)] = price; });
+    const item = { ...before, id: customerId || id(), businessName: String(body.businessName ?? before.businessName ?? '').trim().slice(0, 160), contactName: String(body.contactName ?? before.contactName ?? '').trim().slice(0, 120), account: account.toLowerCase(), email, phone, address: String(body.address ?? before.address ?? '').trim().slice(0, 500), salesRep: String(body.salesRep ?? before.salesRep ?? '').trim().slice(0, 120), status: String(body.status ?? before.status ?? '正常').trim().slice(0, 50), note: String(body.note ?? before.note ?? '').trim().slice(0, 2000), active: body.active !== false, prices, createdAt: before.createdAt || new Date().toISOString(), updatedAt: new Date().toISOString() };
+    item.passwordHash = body.password ? hashPassword(body.password) : before.passwordHash;
+    if (existingIndex >= 0) db.portalCustomers[existingIndex] = item; else db.portalCustomers.push(item);
+    audit(db, user, existingIndex >= 0 ? 'update-portal-customer' : 'create-portal-customer', { collection: 'portalCustomers', recordId: item.id, recordLabel: item.businessName, detail: `${existingIndex >= 0 ? '修改' : '新增'}客户账号 ${item.businessName}` });
+    writeDb(db); notifyDataChanged('portal-customer', item.id);
+    return send(res, existingIndex >= 0 ? 200 : 201, { item: safePortalCustomer(item), data: sanitizeDbForUser(db, user) });
+  }
+
+  const portalOrderReadMatch = url.pathname.match(/^\/api\/portal-orders\/([^/]+)\/read$/);
+  if (req.method === 'POST' && portalOrderReadMatch) {
+    if (!canAccess(user, 'ordersView')) return send(res, 403, { error: '没有订单权限' });
+    const order = db.salesOrders.find(item => item.id === portalOrderReadMatch[1]); if (!order) return send(res, 404, { error: '找不到订单' });
+    order.portalNew = false; order.portalCustomerUnread = false; order.portalReadAt = new Date().toISOString(); order.portalReadBy = user.name || user.email; writeDb(db); notifyDataChanged('portal-order-read', order.id);
+    return send(res, 200, sanitizeDbForUser(db, user));
+  }
+
+  const portalStaffMessageMatch = url.pathname.match(/^\/api\/portal-orders\/([^/]+)\/messages$/);
+  if (req.method === 'POST' && portalStaffMessageMatch) {
+    if (!canAccess(user, 'ordersEdit')) return send(res, 403, { error: '没有订单编辑权限' });
+    const order = db.salesOrders.find(item => item.id === portalStaffMessageMatch[1]); if (!order?.portalCustomerId) return send(res, 404, { error: '找不到客户订单' });
+    const body = await readBody(req); const text = String(body.text || '').trim().slice(0, 4000); if (!text) return send(res, 400, { error: '请输入回复内容' });
+    order.portalMessages = [...(order.portalMessages || []), { id: id(), sender: 'staff', senderName: user.name || user.email, text, createdAt: new Date().toISOString() }]; order.updatedAt = new Date().toISOString(); writeDb(db); notifyDataChanged('portal-staff-message', order.id);
+    return send(res, 200, sanitizeDbForUser(db, user));
   }
 
   if (req.method === 'GET' && url.pathname === '/api/sync-status') {
@@ -3856,7 +4003,7 @@ function staticFile(req, res) {
     const textAsset = /html|json|javascript|css|svg|manifest/.test(type);
     const headers = {
       'Content-Type': type,
-      'Cache-Control': fileName === 'index.html' || fileName === 'mobile.html'
+      'Cache-Control': fileName === 'index.html' || fileName === 'mobile.html' || fileName === 'customer.html'
         ? 'no-cache'
         : (textAsset || ['.png', '.icns'].includes(ext) ? 'public, max-age=300' : 'no-store')
     };
