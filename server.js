@@ -1289,6 +1289,59 @@ function normalizePhone(value) {
   return String(value || '').replace(/\D/g, '');
 }
 
+const CUSTOMER_NUMBER_COLLECTIONS = ['customerConversations', 'prospects', 'leads', 'jobs', 'portalCustomers', 'salesOrders'];
+
+function customerNumberValue(value) {
+  const number = Number(String(value || '').replace(/\D/g, ''));
+  return Number.isInteger(number) && number > 0 ? number : 0;
+}
+
+function customerNumberPhone(value) {
+  const digits = normalizePhone(value);
+  return digits.length > 10 ? digits.slice(-10) : digits;
+}
+
+function customerNumberLinkedRecord(db, item, collection) {
+  if (collection === 'jobs' && item.sourceProspectId) return (db.prospects || []).find(row => row.id === item.sourceProspectId);
+  if (collection === 'salesOrders' && item.portalCustomerId) return (db.portalCustomers || []).find(row => row.id === item.portalCustomerId);
+  if (collection === 'prospects' && item.promotedFromConversationId) return (db.customerConversations || []).find(row => row.id === item.promotedFromConversationId);
+  if (collection === 'customerConversations' && item.promotedProspectId) return (db.prospects || []).find(row => row.id === item.promotedProspectId);
+  return null;
+}
+
+function existingCustomerNumberByPhone(db, phone, excludeItem = null) {
+  const key = customerNumberPhone(phone);
+  if (!key || key.length < 7) return 0;
+  for (const collection of CUSTOMER_NUMBER_COLLECTIONS) {
+    const match = (db[collection] || []).find(row => row !== excludeItem && customerNumberPhone(row.phone) === key && customerNumberValue(row.customerNumber));
+    if (match) return customerNumberValue(match.customerNumber);
+  }
+  return 0;
+}
+
+function nextCustomerNumber(db) {
+  let next = customerNumberValue(db.nextCustomerNumber);
+  if (!next) {
+    const highest = CUSTOMER_NUMBER_COLLECTIONS.flatMap(collection => db[collection] || []).reduce((max, row) => Math.max(max, customerNumberValue(row.customerNumber)), 0);
+    next = highest + 1;
+  }
+  db.nextCustomerNumber = next + 1;
+  return next;
+}
+
+function assignCustomerNumber(db, item, collection) {
+  const current = customerNumberValue(item?.customerNumber);
+  if (current) {
+    item.customerNumber = current;
+    db.nextCustomerNumber = Math.max(customerNumberValue(db.nextCustomerNumber) || 1, current + 1);
+    return current;
+  }
+  const linked = customerNumberLinkedRecord(db, item || {}, collection);
+  const number = customerNumberValue(linked?.customerNumber) || existingCustomerNumberByPhone(db, item?.phone, item) || nextCustomerNumber(db);
+  item.customerNumber = number;
+  return number;
+}
+
 function prospectTextKey(value) {
   return String(value || '').trim().toLowerCase().replace(/\s+/g, ' ');
 }
@@ -1638,6 +1691,7 @@ function importCustomerRecords(db, user, body, collection = 'prospects') {
       createdBy: user.name || user.email,
       createdByUserId: user.id
     };
+    assignCustomerNumber(db, item, collection);
     db[collection].push(item);
     result.imported += 1;
     result.items.push({ id: item.id, status: 'new', customer: item.customer, source: item.source });
@@ -1950,6 +2004,38 @@ function applyImportedCustomerEncodingMigration() {
   });
   writeDb(db);
   console.log(`Imported customer encoding repaired: ${repaired}.`);
+}
+
+function applyCustomerNumberMigration() {
+  const migrationVersion = 'permanent-customer-number-2026-07-18-v1';
+  const db = readDb();
+  if (db.customerNumberMigrationVersion === migrationVersion) return;
+  const backupDir = path.join(DATA_DIR, 'backups');
+  fs.mkdirSync(backupDir, { recursive: true });
+  const backupName = `db-before-customer-number-${new Date().toISOString().replace(/[:.]/g, '-')}.json`;
+  fs.writeFileSync(path.join(backupDir, backupName), JSON.stringify(db, null, 2));
+
+  const rows = CUSTOMER_NUMBER_COLLECTIONS.flatMap(collection => (db[collection] || []).map(item => ({ collection, item })));
+  rows.sort((a, b) => {
+    const time = row => String(row.item.createdAt || row.item.importedAt || row.item.date || row.item.scheduleDate || '9999-12-31');
+    return time(a).localeCompare(time(b)) || String(a.item.id || '').localeCompare(String(b.item.id || ''));
+  });
+
+  let changed = 0;
+  let highest = rows.reduce((max, row) => Math.max(max, customerNumberValue(row.item.customerNumber)), 0);
+  db.nextCustomerNumber = Math.max(customerNumberValue(db.nextCustomerNumber) || 1, highest + 1);
+  for (const row of rows) {
+    if (customerNumberValue(row.item.customerNumber)) continue;
+    const before = row.item.customerNumber;
+    assignCustomerNumber(db, row.item, row.collection);
+    if (row.item.customerNumber !== before) changed += 1;
+  }
+  db.customerNumberMigrationVersion = migrationVersion;
+  db.customerNumberMigrationAt = new Date().toISOString();
+  db.customerNumberMigrationBackup = backupName;
+  audit(db, { id: 'system', name: 'System' }, 'migrate-customer-numbers', `Assigned permanent customer numbers to ${changed} records; backup ${backupName}`);
+  writeDb(db);
+  console.log(`Customer number migration assigned ${changed} records. Backup saved as ${backupName}.`);
 }
 
 async function reconcileRecentTwilioInboundMessages() {
@@ -2649,6 +2735,7 @@ async function api(req, res) {
       if (!items.length) items.push({ item: 'CUSTOM-CUSTOMER-REQUEST', qty: 1, unitPrice: 0 });
       const now = new Date().toISOString();
       const order = { id: id(), date: dateInTimezone(db.settings?.timezone || 'America/Los_Angeles', 0), type: 'wholesale-us', customer: customer.businessName || customer.contactName, salesRep: customer.salesRep || '', preparedBy: '客户客户端', items, item: items[0].item, qty: items[0].qty, unitPrice: items[0].unitPrice, status: '待客服确认', shipping: '', trackingNo: '', paid: 0, paymentMethod: '', note: customerDemand, customerDemand, portalCustomerId: customer.id, portalRequestId: requestId, portalSource: true, portalNew: true, portalAttachments: Array.isArray(body.attachments) ? body.attachments.slice(0, 10) : [], portalMessages: [{ id: id(), sender: 'customer', senderName: customer.contactName || customer.businessName, text: customerDemand || '客户提交了新订单', createdAt: now }], createdAt: now };
+      assignCustomerNumber(db, order, 'salesOrders');
       db.salesOrders.push(order);
       audit(db, { id: `customer-${customer.id}`, name: customer.businessName || customer.contactName }, 'create-customer-portal-order', { collection: 'salesOrders', recordId: order.id, recordLabel: order.customer, detail: `客户客户端提交新订单 ${order.customer}` });
       writeDb(db); notifyDataChanged('customer-portal-order', order.id);
@@ -2728,6 +2815,7 @@ async function api(req, res) {
           createdByUserId: 'twilio-webhook',
           conversationMessages: []
         };
+        assignCustomerNumber(db, item, 'customerConversations');
         db.customerConversations.unshift(item);
         match = { collection: 'customerConversations', item };
       }
@@ -2881,6 +2969,7 @@ async function api(req, res) {
     const prices = {};
     Object.entries(body.prices && typeof body.prices === 'object' ? body.prices : before.prices || {}).forEach(([sku, value]) => { const price = Number(value); if (Number.isFinite(price) && price >= 0) prices[String(sku)] = price; });
     const item = { ...before, id: customerId || id(), businessName: String(body.businessName ?? before.businessName ?? '').trim().slice(0, 160), contactName: String(body.contactName ?? before.contactName ?? '').trim().slice(0, 120), account: account.toLowerCase(), email, phone, address: String(body.address ?? before.address ?? '').trim().slice(0, 500), salesRep: String(body.salesRep ?? before.salesRep ?? '').trim().slice(0, 120), status: String(body.status ?? before.status ?? '正常').trim().slice(0, 50), note: String(body.note ?? before.note ?? '').trim().slice(0, 2000), active: body.active !== false, prices, createdAt: before.createdAt || new Date().toISOString(), updatedAt: new Date().toISOString() };
+    assignCustomerNumber(db, item, 'portalCustomers');
     item.passwordHash = body.password ? hashPassword(body.password) : before.passwordHash;
     if (existingIndex >= 0) db.portalCustomers[existingIndex] = item; else db.portalCustomers.push(item);
     audit(db, user, existingIndex >= 0 ? 'update-portal-customer' : 'create-portal-customer', { collection: 'portalCustomers', recordId: item.id, recordLabel: item.businessName, detail: `${existingIndex >= 0 ? '修改' : '新增'}客户账号 ${item.businessName}` });
@@ -3666,6 +3755,7 @@ async function api(req, res) {
       item.createdBy = user.name || user.email;
       item.createdByUserId = user.id;
     }
+    if (CUSTOMER_NUMBER_COLLECTIONS.includes(collection)) assignCustomerNumber(db, item, collection);
     if (collection === 'replyTemplates') {
       const type = ['text', 'image', 'video'].includes(String(item.type)) ? String(item.type) : '';
       const allowedCategories = new Set(['uncategorized', 'auto-window-film', 'color-wrap', 'ppf', 'architectural-film', 'shop-display', 'brand-display']);
@@ -3827,6 +3917,7 @@ async function api(req, res) {
       next.updatedByUserId = user.id;
       next.updatedAt = now;
     }
+    if (CUSTOMER_NUMBER_COLLECTIONS.includes(collection)) assignCustomerNumber(db, next, collection);
     if (collection === 'replyTemplates') {
       const type = ['text', 'image', 'video'].includes(String(next.type)) ? String(next.type) : '';
       const allowedCategories = new Set(['uncategorized', 'auto-window-film', 'color-wrap', 'ppf', 'architectural-film', 'shop-display', 'brand-display']);
@@ -4090,6 +4181,7 @@ applyCustomPrintedFilmSalesOrderMigration();
 applyPromotedConversationMerge();
 applyCustomerConversationPromotionEligibilityMigration();
 applyImportedCustomerEncodingMigration();
+applyCustomerNumberMigration();
 http.createServer((req, res) => {
   if (req.url.startsWith('/customer-media/')) {
     serveCustomerMedia(req, res);

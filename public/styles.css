@@ -877,6 +877,8 @@ tr:hover td { background: #fbfcfd; }
 .customer-center-table tr.customer-new-row td:first-child { box-shadow:inset 4px 0 #e12626; }
 .customer-new-badge { display:inline-flex;align-items:center;gap:4px;margin-top:5px;padding:3px 7px;border-radius:999px;background:#dc2626;color:#fff;font-size:11px;font-weight:900;white-space:nowrap; }
 .customer-new-badge i { width:7px;height:7px;border-radius:50%;background:#fff;box-shadow:0 0 0 3px rgba(255,255,255,.2); }
+.customer-number-line { display:flex;align-items:center;gap:7px;min-width:0; }
+.customer-number-badge { display:inline-flex;align-items:center;flex:none;padding:2px 7px;border:1px solid #f0b7b7;border-radius:999px;background:#fff1f1;color:#c62828;font-size:11px;font-weight:900;letter-spacing:.25px;white-space:nowrap; }
 .prospect-workspace {
   position: fixed;
   inset: 0;
