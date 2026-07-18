@@ -1699,20 +1699,34 @@ body.modal-lock .prospect-workspace { pointer-events: none; }
 .reimbursement-file-icon { display:grid; place-items:center; min-height:92px; border-radius:8px; background:#eef3f6; font-size:34px; }
 .reimbursement-approval { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:10px; padding:13px 14px; border:1px solid #b9dfe7; border-radius:13px; background:#eef9fb; }
 .reimbursement-approval-actions { display:flex; flex-wrap:wrap; gap:8px; }
-.personal-note-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:14px; }
-.personal-note-card {
-  min-height:180px; padding:16px; border:1px solid var(--line); border-radius:14px;
-  background:linear-gradient(145deg,#fffef5,#fff9cf); box-shadow:0 8px 20px rgba(30,50,60,.07);
-}
-.personal-note-card.task { background:linear-gradient(145deg,#fff,#ecf8fb); border-color:#b9dfe7; }
-.personal-note-card.completed { opacity:.66; }
-.personal-note-card.completed h3, .personal-note-card.completed p { text-decoration:line-through; }
-.personal-note-card-head { display:flex; align-items:center; justify-content:space-between; gap:10px; }
+.personal-note-browser { display:grid; grid-template-columns:minmax(260px,32%) minmax(0,1fr); min-height:560px; overflow:hidden; border:1px solid var(--line); border-radius:16px; background:#fff; }
+.personal-note-list-panel { position:static; height:auto; min-width:0; padding:0; overflow:hidden; border-right:1px solid var(--line); background:#f8fafb; color:inherit; }
+.personal-note-search { padding:14px; border-bottom:1px solid var(--line); background:#fff; }
+.personal-note-search input { width:100%; }
+.personal-note-search small { display:block; margin-top:8px; color:var(--muted); }
+.personal-note-list { max-height:650px; overflow:auto; }
+.personal-note-list-item { display:block; width:100%; padding:15px 16px; border:0; border-bottom:1px solid var(--line); border-radius:0; background:transparent; color:var(--text); text-align:left; cursor:pointer; }
+.personal-note-list-item:hover { background:#f0f6f8; }
+.personal-note-list-item.active { background:#f7cf55; }
+.personal-note-list-item strong,.personal-note-list-item span,.personal-note-list-item small { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.personal-note-list-item strong { font-size:16px; }
+.personal-note-list-item span { margin-top:5px; color:#536170; }
+.personal-note-list-item small { margin-top:6px; color:var(--muted); }
+.personal-note-list-item.completed { opacity:.66; }
+.personal-note-list-item.completed strong { text-decoration:line-through; }
+.personal-note-detail-panel { min-width:0; padding:26px 30px; overflow:auto; background:#fff; }
+.personal-note-detail { min-height:100%; }
+.personal-note-detail-head { display:flex; align-items:flex-start; justify-content:space-between; gap:14px; padding-bottom:16px; border-bottom:1px solid var(--line); }
+.personal-note-detail-head>div:first-child { display:flex; flex-direction:column; gap:5px; }
+.personal-note-detail-head time { color:var(--muted); font-size:13px; }
+.personal-note-detail h2 { margin:26px 0 10px; font-size:28px; overflow-wrap:anywhere; }
+.personal-note-detail.completed h2,.personal-note-detail.completed .personal-note-content { text-decoration:line-through; opacity:.68; }
+.personal-note-remind-at { display:block; margin:0 0 20px; color:#b4640d; font-weight:700; }
+.personal-note-content { min-height:300px; color:#344250; font-size:17px; line-height:1.75; overflow-wrap:anywhere; }
+.personal-note-content>span { color:var(--muted); }
+.personal-note-detail-empty { display:grid; min-height:450px; place-items:center; color:var(--muted); }
 .personal-note-kind { font-size:13px; font-weight:700; color:#0f7388; }
 .personal-note-actions { display:flex; gap:6px; align-items:center; }
-.personal-note-card h3 { margin:14px 0 8px; font-size:18px; }
-.personal-note-card p { margin:0 0 14px; color:#42505d; line-height:1.55; overflow-wrap:anywhere; }
-.personal-note-card time { color:#b4640d; font-weight:700; font-size:13px; }
 .empty-state { grid-column:1/-1; padding:60px 20px; text-align:center; color:var(--muted); border:1px dashed var(--line); border-radius:14px; }
 .personal-reminder-overlay { position:fixed; inset:0; z-index:100; display:none; place-items:center; padding:20px; background:rgba(7,18,24,.55); }
 .personal-reminder-overlay.open { display:grid; }
@@ -1760,7 +1774,10 @@ body.modal-lock .prospect-workspace { pointer-events: none; }
   .message-people { max-height: 180px; }
   .message-thread { max-height: none; }
   .message-bubble { max-width: 88%; }
-  .personal-note-grid { grid-template-columns:1fr; }
+  .personal-note-browser { grid-template-columns:1fr; }
+  .personal-note-list-panel { border-right:0; border-bottom:1px solid var(--line); }
+  .personal-note-list { max-height:300px; }
+  .personal-note-detail-panel { padding:20px; }
   .reimbursement-stats { grid-template-columns:repeat(2,minmax(0,1fr)); }
   .reimbursement-upload { grid-template-columns:1fr; }
   .reimbursement-upload>* { grid-column:1!important; }

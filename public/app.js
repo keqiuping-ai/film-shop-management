@@ -75,6 +75,7 @@ let personalReminderTimer = null;
 let personalReminderSoundTimer = null;
 let activePersonalReminderId = '';
 let activeAppointmentReminderId = '';
+let activePersonalNoteId = '';
 let personalNoteSaving = false;
 const personalNoteUpdatingIds = new Set();
 const AUTO_SYNC_MS = 5 * 60 * 1000;
@@ -2589,29 +2590,60 @@ function personalNoteShareText(item) {
   return lang === 'zh' ? '🔒 仅自己可见' : '🔒 Private';
 }
 
+function selectPersonalNote(noteId) {
+  activePersonalNoteId = noteId || '';
+  render();
+}
+
+function filterPersonalNoteList(value = '') {
+  const keyword = normalizeSearchText(value);
+  document.querySelectorAll('.personal-note-list-item').forEach(button => {
+    button.hidden = Boolean(keyword) && !normalizeSearchText(button.dataset.search || '').includes(keyword);
+  });
+  const visible = [...document.querySelectorAll('.personal-note-list-item')].filter(button => !button.hidden).length;
+  const count = document.getElementById('personalNoteVisibleCount');
+  if (count) count.textContent = lang === 'zh' ? `${visible} 条记事` : `${visible} notes`;
+}
+
 function personalNotesView() {
   const rows = personalNotesList();
   const pending = rows.filter(item => personalNoteCanEdit(item) && item.type === 'task' && item.status !== 'completed').length;
-  const cards = rows.map(item => `
-    <article class="personal-note-card ${item.type === 'task' ? 'task' : 'memo'} ${item.status === 'completed' ? 'completed' : ''}">
-      <div class="personal-note-card-head">
-        <span class="personal-note-kind">${escapeHtml(personalNoteStatus(item))}</span>
-        <div class="personal-note-actions">${personalNoteCanEdit(item) ? `
-          ${item.type === 'task' && item.status !== 'completed' ? `<button class="btn compact" onclick="completePersonalNote('${item.id}')">${lang === 'zh' ? '办完了' : 'Done'}</button>` : ''}
-          <button class="icon-btn" title="${lang === 'zh' ? '编辑' : 'Edit'}" onclick="openPersonalNote('${item.id}')">✎</button>
-          <button class="icon-btn danger" title="${lang === 'zh' ? '删除' : 'Delete'}" onclick="deletePersonalNote('${item.id}')">×</button>
-        ` : `<span class="personal-note-readonly">${lang === 'zh' ? '只读' : 'Read only'}</span>`}</div>
-      </div>
-      <h3>${escapeHtml(item.title || (lang === 'zh' ? '未命名' : 'Untitled'))}</h3>
-      ${item.content ? `<p>${escapeHtml(item.content).replace(/\n/g, '<br>')}</p>` : ''}
-      ${item.type === 'task' && item.remindAt ? `<time>⏰ ${formatAppDateTime(item.snoozedUntil || item.remindAt)}${item.snoozedUntil ? (lang === 'zh' ? '（稍后提醒）' : ' (snoozed)') : ''}</time>` : ''}
-      <div class="personal-note-share">${!personalNoteCanEdit(item) ? `${lang === 'zh' ? '来自' : 'From'} ${escapeHtml(item.ownerName || '')} · ` : ''}${escapeHtml(personalNoteShareText(item))}</div>
-    </article>`).join('');
+  if (!rows.some(item => item.id === activePersonalNoteId)) activePersonalNoteId = rows[0]?.id || '';
+  const selected = rows.find(item => item.id === activePersonalNoteId);
+  const list = rows.map(item => {
+    const preview = String(item.content || '').replace(/\s+/g, ' ').trim();
+    const search = [item.title, item.content, item.ownerName, personalNoteStatus(item)].filter(Boolean).join(' ');
+    return `<button type="button" class="personal-note-list-item ${item.id === activePersonalNoteId ? 'active' : ''} ${item.status === 'completed' ? 'completed' : ''}" data-search="${escapeHtml(search)}" onclick="selectPersonalNote('${item.id}')">
+      <strong>${escapeHtml(item.title || (lang === 'zh' ? '未命名' : 'Untitled'))}</strong>
+      <span>${escapeHtml(preview || personalNoteStatus(item))}</span>
+      <small>${escapeHtml(personalNoteStatus(item))} · ${formatAppDateTime(item.updatedAt || item.createdAt || item.remindAt)}</small>
+    </button>`;
+  }).join('');
+  const detail = selected ? `<article class="personal-note-detail ${selected.type === 'task' ? 'task' : 'memo'} ${selected.status === 'completed' ? 'completed' : ''}">
+    <div class="personal-note-detail-head">
+      <div><span class="personal-note-kind">${escapeHtml(personalNoteStatus(selected))}</span><time>${formatAppDateTime(selected.updatedAt || selected.createdAt || selected.remindAt)}</time></div>
+      <div class="personal-note-actions">${personalNoteCanEdit(selected) ? `
+        ${selected.type === 'task' && selected.status !== 'completed' ? `<button class="btn compact" onclick="completePersonalNote('${selected.id}')">${lang === 'zh' ? '办完了' : 'Done'}</button>` : ''}
+        <button class="icon-btn" title="${lang === 'zh' ? '编辑' : 'Edit'}" onclick="openPersonalNote('${selected.id}')">✎</button>
+        <button class="icon-btn danger" title="${lang === 'zh' ? '删除' : 'Delete'}" onclick="deletePersonalNote('${selected.id}')">×</button>
+      ` : `<span class="personal-note-readonly">${lang === 'zh' ? '只读' : 'Read only'}</span>`}</div>
+    </div>
+    <h2>${escapeHtml(selected.title || (lang === 'zh' ? '未命名' : 'Untitled'))}</h2>
+    ${selected.type === 'task' && selected.remindAt ? `<time class="personal-note-remind-at">⏰ ${formatAppDateTime(selected.snoozedUntil || selected.remindAt)}${selected.snoozedUntil ? (lang === 'zh' ? '（稍后提醒）' : ' (snoozed)') : ''}</time>` : ''}
+    <div class="personal-note-content">${selected.content ? escapeHtml(selected.content).replace(/\n/g, '<br>') : `<span>${lang === 'zh' ? '没有更多内容' : 'No additional details'}</span>`}</div>
+    <div class="personal-note-share">${!personalNoteCanEdit(selected) ? `${lang === 'zh' ? '来自' : 'From'} ${escapeHtml(selected.ownerName || '')} · ` : ''}${escapeHtml(personalNoteShareText(selected))}</div>
+  </article>` : `<div class="personal-note-detail-empty">${lang === 'zh' ? '从左侧选择一条记事查看内容' : 'Select a note to view its details'}</div>`;
   return panel(t('personalNotes'), `
     <button class="btn" onclick="openPersonalNote('', 'memo')">${lang === 'zh' ? '＋ 新建备忘录' : '+ New memo'}</button>
     <button class="btn primary" onclick="openPersonalNote('', 'task')">${lang === 'zh' ? '＋ 新建待办' : '+ New task'}</button>`, `
     <div class="personal-note-summary"><strong>${lang === 'zh' ? `我的待办 ${pending} 项` : `${pending} pending`}</strong><span>${lang === 'zh' ? '包含自己的记事和别人分享给你的内容；只有原作者能修改' : 'Includes your notes and notes shared with you; only authors can edit'}</span></div>
-    <div class="personal-note-grid">${cards || `<div class="empty-state">${lang === 'zh' ? '还没有记事，点击右上角开始记录。' : 'No notes yet.'}</div>`}</div>`);
+    ${rows.length ? `<div class="personal-note-browser">
+      <aside class="personal-note-list-panel">
+        <div class="personal-note-search"><input type="search" placeholder="${lang === 'zh' ? '搜索题目或内容…' : 'Search title or content…'}" oninput="filterPersonalNoteList(this.value)"><small id="personalNoteVisibleCount">${lang === 'zh' ? `${rows.length} 条记事` : `${rows.length} notes`}</small></div>
+        <div class="personal-note-list">${list}</div>
+      </aside>
+      <section class="personal-note-detail-panel">${detail}</section>
+    </div>` : `<div class="empty-state">${lang === 'zh' ? '还没有记事，点击右上角开始记录。' : 'No notes yet.'}</div>`}`);
 }
 
 function openPersonalNote(noteId = '', forcedType = '') {
