@@ -73,6 +73,7 @@ let messageAudioContext = null;
 let personalReminderTimer = null;
 let personalReminderSoundTimer = null;
 let activePersonalReminderId = '';
+let activeAppointmentReminderId = '';
 let personalNoteSaving = false;
 const personalNoteUpdatingIds = new Set();
 const AUTO_SYNC_MS = 5 * 60 * 1000;
@@ -829,6 +830,7 @@ async function sync(options = {}) {
     lastSyncAt = new Date();
     renderAuth();
     render();
+    checkNewAppointmentAlerts();
     if (internalMessageModalOpen && !internalMessageInputActive()) {
       renderMessageModal();
       const refreshedInternalInput = document.getElementById('messageText');
@@ -2950,7 +2952,7 @@ const views = {
     return panel(t('replyLibrary'), hasPerm('prospectsEdit') ? `<button class="btn primary" onclick="openReplyTemplateEditor('text')">${lang === 'zh' ? '新增回复素材' : 'New reply'}</button>` : '', replyLibraryPageHtml());
   },
   prospects() {
-    return panel(t('prospects'), hasPerm('prospectsEdit') ? `<button class="btn primary" onclick="openProspect()">${t('addNew')}</button>` : '', prospectSearchBox() + `<div id="prospectSearchResults">${prospectTable(searchedProspectRows())}</div>` + `<p class="note">${lang === 'zh' ? '这里记录 Mat、Yelp、Meta、Google 等平台上已经预约或已经到店的客户。聊天上下文会随客户一起带入，方便店长和接待人员跟进。' : 'Use this area for customers from Mat, Yelp, Meta, Google, and other channels who have appointments or have arrived.'}</p>`);
+    return panel(t('prospects'), hasPerm('prospectsEdit') ? `<button class="btn primary" onclick="openProspect()">${t('addNew')}</button>` : '', prospectSearchBox() + `<div id="prospectSearchResults">${prospectTable(searchedProspectRows())}</div>` + `<p class="note">${lang === 'zh' ? '店长工作台只显示已预约、已到店、排期和施工中的客户；已交车、已取消及普通旧客资不会显示。点击卡片即可查看完整资料、历史聊天并继续给客户发短信。' : 'The manager board shows only appointed, arrived, scheduled, and active workshop customers. Open a card for details, history, and SMS follow-up.'}</p>`);
   },
   leads() {
     const actions = hasPerm('leadsEdit') ? `<button class="btn primary" onclick="openLead()">${t('addNew')}</button>` : '';
@@ -4009,7 +4011,32 @@ function prospectTimeCell(item) {
 }
 
 function sortedProspectRows() {
-  return [...(state.prospects || [])].sort((a, b) => {
+  const activeJobs = (state.jobs || []).filter(job => ['排期', '施工中', '待质检', '返工'].includes(String(job.status || '')));
+  const activeJobIds = new Set(activeJobs.map(job => job.id));
+  const activeSourceIds = new Set(activeJobs.map(job => job.sourceProspectId).filter(Boolean));
+  const prospects = (state.prospects || [])
+    .filter(item => ['已预约', '已到店', '已转施工单'].includes(String(item.status || '')))
+    .filter(item => !activeSourceIds.has(item.id) && (!item.convertedJobId || activeJobIds.has(item.convertedJobId)))
+    .map(item => ({ ...item, _kind: 'prospect' }));
+  const jobs = activeJobs.map(job => {
+    const prospect = (state.prospects || []).find(item => item.id === job.sourceProspectId);
+    return {
+      ...job,
+      _kind: 'job',
+      _prospect: prospect || null,
+      appointmentDate: job.scheduleDate || prospect?.appointmentDate || '',
+      appointmentTime: prospect?.appointmentTime || '',
+      need: prospect?.need || job.notes || '',
+      ownerId: prospect?.ownerId || job.leadRepId || job.receptionRepId || '',
+      ownerName: prospect?.ownerName || '',
+      createdAt: job.createdAt || job.date || '',
+      updatedAt: job.updatedAt || job.createdAt || job.date || ''
+    };
+  });
+  return [...prospects, ...jobs].sort((a, b) => {
+    const appointmentDiff = new Date(`${a.appointmentDate || '9999-12-31'}T${a.appointmentTime || '23:59'}`).getTime()
+      - new Date(`${b.appointmentDate || '9999-12-31'}T${b.appointmentTime || '23:59'}`).getTime();
+    if (Number.isFinite(appointmentDiff) && appointmentDiff) return appointmentDiff;
     const activityDiff = new Date(prospectActivityTime(b)).getTime() - new Date(prospectActivityTime(a)).getTime();
     if (Number.isFinite(activityDiff) && activityDiff) return activityDiff;
     return String(b.date || '').localeCompare(String(a.date || ''));
@@ -4021,8 +4048,8 @@ function prospectSearchText(item) {
   return [
     item.date, item.source, item.customer, item.phone, item.vehicle, item.need,
     item.appointmentDate, item.appointmentTime, rep?.name, item.ownerName,
-    item.intentLevel, item.status, item.callNote, item.note,
-    prospectConversationSummary(item)
+    item.intentLevel, item.status, item.callNote, item.note, item.notes, item.package,
+    prospectConversationSummary(item._prospect || item)
   ].map(normalizeCustomerLookupText).join('|');
 }
 
@@ -4033,7 +4060,7 @@ function searchedProspectRows() {
 }
 
 function prospectSearchCountText() {
-  const total = (state.prospects || []).length;
+  const total = sortedProspectRows().length;
   const matched = searchedProspectRows().length;
   return lang === 'zh' ? `找到 ${matched} / ${total} 位客户` : `Found ${matched} / ${total} customers`;
 }
@@ -4047,15 +4074,81 @@ function prospectSearchBox() {
 }
 
 function prospectTable(rows = searchedProspectRows()) {
-  const addedLabel = lang === 'zh' ? '加入/更新' : 'Added / Updated';
-  return `<div class="table-wrap prospect-table-wrap"><table class="prospect-table"><thead><tr><th>${t('date')}</th><th>${addedLabel}</th><th>${t('source')}</th><th>${t('customer')}</th><th>${t('vehicleNeed')}</th><th>${t('appointmentAt')}</th><th>${t('contactOwner')}</th><th>${t('intentLevel')}</th><th>${t('prospectStatus')}</th><th>${t('chatContext')}</th><th>${t('note')}</th><th></th></tr></thead><tbody>
+  return `<div class="appointment-board">
   ${rows.map(item => {
     const rep = (state.customerServiceReps || []).find(x => x.id === item.ownerId);
-    const appointment = item.appointmentDate || item.appointmentTime ? `${escapeHtml(item.appointmentDate || '')}<br><span class="note">${escapeHtml(item.appointmentTime || '')}</span>` : '';
-    return `<tr><td class="prospect-nowrap">${escapeHtml(item.date || '')}</td><td class="prospect-time">${prospectTimeCell(item)}</td><td><div class="prospect-clamp prospect-clamp-2">${escapeHtml(item.source || '')}</div></td><td><div class="prospect-clamp">${escapeHtml(item.customer || '')}</div><span class="note prospect-nowrap">${escapeHtml(item.phone || '')}</span></td><td><div class="prospect-clamp">${escapeHtml(item.vehicle || '')}</div><div class="note prospect-clamp prospect-clamp-2">${escapeHtml(item.need || '')}</div></td><td class="prospect-time">${appointment}</td><td><div class="prospect-clamp prospect-clamp-2">${rep ? escapeHtml(rep.name) : escapeHtml(item.ownerName || '') || t('unassigned')}</div></td><td>${prospectIntentPill(item.intentLevel)}</td><td>${prospectStatusPill(item.status)}</td><td><div class="prospect-clamp prospect-clamp-2" title="${escapeHtml(prospectConversationSummary(item))}">${escapeHtml(shortText(prospectConversationSummary(item), 48))}</div></td><td><div class="prospect-clamp prospect-clamp-2" title="${escapeHtml(item.note || '')}">${escapeHtml(shortText(item.note || '', 48))}</div></td>${actionCell('Prospect','prospects',item.id)}</tr>`;
+    const isJob = item._kind === 'job';
+    const stage = isJob && ['施工中', '待质检', '返工'].includes(item.status) ? 'workshop' : item.status === '已到店' ? 'arrived' : 'appointment';
+    const stageLabel = isJob ? item.status : (item.status === '已到店' ? (lang === 'zh' ? '已经到店' : 'Arrived') : (lang === 'zh' ? '预约待到店' : 'Appointment'));
+    const chatItem = item._prospect || item;
+    const openAction = isJob && !item._prospect ? `openJob('${item.id}')` : `openProspectWorkspace('prospects','${chatItem.id}')`;
+    const serviceText = isJob ? serviceLabelList(item) : (serviceNames[item.service] || item.service || '');
+    const needText = item.need || item.notes || item.note || '';
+    const appointmentText = [item.appointmentDate, item.appointmentTime].filter(Boolean).join(' ');
+    return `<article class="appointment-card ${stage}" onclick="${openAction}">
+      <header><span class="appointment-stage">${escapeHtml(stageLabel)}</span><span class="appointment-source">${escapeHtml(item.source || '')}</span></header>
+      <div class="appointment-time"><span>⏰</span><div><small>${lang === 'zh' ? '预约时间' : 'Appointment'}</small><strong>${escapeHtml(appointmentText || (lang === 'zh' ? '待确认时间' : 'Time pending'))}</strong></div></div>
+      <h3>${escapeHtml(item.customer || (lang === 'zh' ? '未命名客户' : 'Unnamed customer'))}</h3>
+      <div class="appointment-phone">${escapeHtml(item.phone || '')}</div>
+      <dl>
+        <div><dt>${lang === 'zh' ? '车辆' : 'Vehicle'}</dt><dd>${escapeHtml(item.vehicle || '—')}</dd></div>
+        <div><dt>${lang === 'zh' ? '贴膜项目' : 'Service'}</dt><dd>${escapeHtml(serviceText || item.package || '—')}</dd></div>
+        <div class="appointment-need"><dt>${lang === 'zh' ? '客户需求 / 沟通重点' : 'Customer request'}</dt><dd>${escapeHtml(shortText(needText, 150) || '—')}</dd></div>
+        ${Number(item.price || 0) > 0 ? `<div><dt>${lang === 'zh' ? '谈定价格' : 'Agreed price'}</dt><dd class="appointment-price">${currency.format(Number(item.price || 0))}</dd></div>` : ''}
+      </dl>
+      <footer><span>${lang === 'zh' ? '负责人' : 'Owner'}：${rep ? escapeHtml(rep.name) : escapeHtml(item.ownerName || '') || t('unassigned')}</span><div>
+        ${!isJob && hasPerm('prospectsEdit') ? `<button class="btn appointment-card-secondary" onclick="event.stopPropagation();openJobFromProspect('${item.id}')">${lang === 'zh' ? '生成施工单' : 'Create job'}</button>` : ''}
+        <button class="btn primary" onclick="event.stopPropagation();${openAction}">${isJob && !item._prospect ? (lang === 'zh' ? '查看施工单' : 'View job') : (lang === 'zh' ? '资料与聊天' : 'Details & chat')}</button>
+      </div></footer>
+    </article>`;
   }).join('')}
-  ${rows.length ? '' : `<tr><td colspan="12" class="note">${lang === 'zh' ? '还没有预约到店客户。' : 'No appointment / arrival customers yet.'}</td></tr>`}
-  </tbody></table></div>`;
+  ${rows.length ? '' : `<div class="empty-state">${lang === 'zh' ? '目前没有已预约、排期或施工中的客户。' : 'No appointment, scheduled, or active workshop customers.'}</div>`}
+  </div>`;
+}
+
+function appointmentAlertStorageKey() {
+  return `filmShopCloud.appointmentAlertCutoff.${user?.id || user?.email || 'user'}`;
+}
+
+function checkNewAppointmentAlerts() {
+  if (!state || !user || !['manager', 'owner'].includes(user.role)) return;
+  const key = appointmentAlertStorageKey();
+  const previous = Number(localStorage.getItem(key) || 0);
+  const now = Date.now();
+  localStorage.setItem(key, String(now));
+  if (!previous) return;
+  const incoming = (state.prospects || []).filter(item => {
+    const created = new Date(item.createdAt || item.updatedAt || 0).getTime();
+    return ['已预约', '已到店'].includes(String(item.status || '')) && Number.isFinite(created) && created > previous && created <= now;
+  });
+  if (!incoming.length) return;
+  showAppointmentAlert(incoming[0], incoming.length);
+}
+
+function showAppointmentAlert(item, count = 1) {
+  activeAppointmentReminderId = item.id;
+  let overlay = document.getElementById('appointmentReminderOverlay');
+  if (!overlay) {
+    overlay = document.createElement('div');
+    overlay.id = 'appointmentReminderOverlay';
+    overlay.className = 'appointment-reminder-overlay';
+    document.body.appendChild(overlay);
+  }
+  const appointment = [item.appointmentDate, item.appointmentTime].filter(Boolean).join(' ') || (lang === 'zh' ? '时间待确认' : 'Time pending');
+  overlay.innerHTML = `<div class="appointment-reminder-box"><div class="appointment-reminder-bell">⭐</div><div><small>${lang === 'zh' ? `店长提醒 · 新增 ${count} 位预约客户` : `${count} new appointment customer(s)`}</small><h2>${escapeHtml(item.customer || item.phone || (lang === 'zh' ? '新预约客户' : 'New appointment'))}</h2><p><strong>${lang === 'zh' ? '预约时间' : 'Appointment'}：</strong>${escapeHtml(appointment)}<br><strong>${lang === 'zh' ? '车辆 / 需求' : 'Vehicle / request'}：</strong>${escapeHtml([item.vehicle, item.need].filter(Boolean).join(' · ') || '—')}</p><div class="personal-reminder-buttons"><button class="btn" onclick="closeAppointmentAlert()">${lang === 'zh' ? '稍后查看' : 'Later'}</button><button class="btn primary" onclick="openAppointmentAlertCustomer('${item.id}')">${lang === 'zh' ? '立即查看并跟进' : 'View and follow up'}</button></div></div></div>`;
+  overlay.classList.add('open');
+  playPersonalReminderSound();
+}
+
+function closeAppointmentAlert() {
+  document.getElementById('appointmentReminderOverlay')?.classList.remove('open');
+  activeAppointmentReminderId = '';
+}
+
+function openAppointmentAlertCustomer(id) {
+  closeAppointmentAlert();
+  setPage('prospects');
+  openProspectWorkspace('prospects', id);
 }
 
 function customerCenterRows() {
