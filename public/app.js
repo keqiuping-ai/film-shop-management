@@ -1091,8 +1091,8 @@ function refreshJobPreview() {
   const count = document.getElementById('jobSearchCount');
   const stats = document.getElementById('jobSourceStats');
   if (results && current === 'jobs') {
-    const baseJobs = filteredJobs(false);
-    const visibleJobs = filteredJobs(true);
+    const baseJobs = sortByDateDesc(state.jobs || []);
+    const visibleJobs = searchedJobs(baseJobs);
     results.innerHTML = jobTable(visibleJobs, true);
     if (stats) stats.innerHTML = sourceStatsTable(baseJobs, jobFilterDateLabel());
     if (count) count.textContent = jobSearchCountText(baseJobs);
@@ -2888,7 +2888,8 @@ const views = {
     const k = kpis(dashboardJobs, dashboardOrders);
     return `
       ${jobFilterControls()}
-      <div class="grid stats">
+      <div id="jobSourceStats">${sourceStatsTable(dashboardJobs, jobFilterDateLabel())}</div>
+      <div class="grid stats" style="margin-top:14px">
         <div class="stat"><span>${t('jobRevenue')}</span><strong>${currency.format(k.jobRevenue)}</strong></div>
         <div class="stat"><span>${t('jobGross')}</span><strong>${canSeeFinance() ? currency.format(k.jobGross) : hiddenValue()}</strong></div>
         <div class="stat"><span>${t('salesRevenue')}</span><strong>${currency.format(k.orderRevenue)}</strong></div>
@@ -2913,10 +2914,10 @@ const views = {
   },
   jobs() {
     const canListJobs = hasAnyPerm(['jobsView', 'jobsEdit', 'jobsDelete']);
-    const baseJobs = filteredJobs(false);
-    const visibleJobs = filteredJobs(true);
+    const baseJobs = sortByDateDesc(state.jobs || []);
+    const visibleJobs = searchedJobs(baseJobs);
     const content = canListJobs
-      ? jobFilterControls() + `<div id="jobSourceStats">${sourceStatsTable(baseJobs, jobFilterDateLabel())}</div>` + `<div style="margin-top:14px">${jobSearchBox(baseJobs)}<div id="jobSearchResults">${jobTable(visibleJobs, true)}</div></div>`
+      ? `${jobSearchBox(baseJobs)}<div id="jobSearchResults">${jobTable(visibleJobs, true)}</div>`
       : `<p class="note">${lang === 'zh' ? '这个账号只有新增施工单权限，不能浏览已有施工订单。' : 'This account can create job orders but cannot browse existing job orders.'}</p>`;
     return panel(t('jobs'), hasPerm('jobsCreate') ? `<button class="btn primary" onclick="openJob()">${t('addNew')}</button>` : '', content);
   },
