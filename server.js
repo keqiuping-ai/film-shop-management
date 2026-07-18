@@ -1957,9 +1957,17 @@ function applyCustomerNumberRemoval() {
   const db = readDb();
   if (db.customerNumberRemovalVersion === migrationVersion) return;
   const backupDir = path.join(DATA_DIR, 'backups');
-  fs.mkdirSync(backupDir, { recursive: true });
   const backupName = `db-before-customer-number-removal-${new Date().toISOString().replace(/[:.]/g, '-')}.json`;
-  fs.writeFileSync(path.join(backupDir, backupName), JSON.stringify(db, null, 2));
+  try {
+    fs.mkdirSync(backupDir, { recursive: true });
+    fs.writeFileSync(path.join(backupDir, backupName), JSON.stringify(db, null, 2));
+  } catch (error) {
+    if (error?.code === 'ENOSPC') {
+      console.warn('Customer number data cleanup skipped because the data volume has no free space. Numbering remains disabled in the application and no customer data was changed.');
+      return;
+    }
+    throw error;
+  }
 
   let removed = 0;
   for (const collection of ['customerConversations', 'prospects', 'leads', 'jobs', 'portalCustomers', 'salesOrders']) {
