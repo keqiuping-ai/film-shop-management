@@ -1093,7 +1093,7 @@ function refreshJobPreview() {
   if (results && current === 'jobs') {
     const baseJobs = sortByDateDesc(state.jobs || []);
     const visibleJobs = searchedJobs(baseJobs);
-    results.innerHTML = jobTable(visibleJobs, true);
+    results.innerHTML = jobBoard(visibleJobs);
     if (stats) stats.innerHTML = sourceStatsTable(baseJobs, jobFilterDateLabel());
     if (count) count.textContent = jobSearchCountText(baseJobs);
     return;
@@ -2917,7 +2917,7 @@ const views = {
     const baseJobs = sortByDateDesc(state.jobs || []);
     const visibleJobs = searchedJobs(baseJobs);
     const content = canListJobs
-      ? `${jobSearchBox(baseJobs)}<div id="jobSearchResults">${jobTable(visibleJobs, true)}</div>`
+      ? `${jobSearchBox(baseJobs)}<div id="jobSearchResults">${jobBoard(visibleJobs)}</div>`
       : `<p class="note">${lang === 'zh' ? '这个账号只有新增施工单权限，不能浏览已有施工订单。' : 'This account can create job orders but cannot browse existing job orders.'}</p>`;
     return panel(t('jobs'), hasPerm('jobsCreate') ? `<button class="btn primary" onclick="openJob()">${t('addNew')}</button>` : '', content);
   },
@@ -3476,6 +3476,72 @@ function jobTable(rows, actions = false) {
   }).join('')}
   ${rows.length ? '' : `<tr><td colspan="${colSpan}" class="note">${lang === 'zh' ? '没有匹配的施工单。' : 'No matching job orders.'}</td></tr>`}
   </tbody></table></div>`;
+}
+
+function jobIsArchived(job) {
+  return ['已交车', '取消'].includes(String(job?.status || '').trim());
+}
+
+function jobCardClass(status) {
+  if (status === '返工') return 'rework';
+  if (['施工中', '待质检'].includes(status)) return 'workshop';
+  return 'scheduled';
+}
+
+function jobActiveCards(rows) {
+  return `<div class="job-card-board">
+    ${rows.map(job => {
+      const calc = jobCalc(job);
+      const status = String(job.status || '排期');
+      const canOpen = hasPerm('jobsEdit');
+      const scheduleText = job.scheduleDate || job.date || (lang === 'zh' ? '待安排' : 'Pending');
+      const serviceText = [serviceLabelList(job), job.package].filter(Boolean).join(' · ');
+      const ownerText = job.salesRep || repName(job.receptionRepId) || repName(job.leadRepId) || job.preparedBy || t('unassigned');
+      return `<article class="job-card ${jobCardClass(status)}" ${canOpen ? `onclick="openJob('${job.id}')" role="button" tabindex="0" onkeydown="if(event.key==='Enter')openJob('${job.id}')"` : ''}>
+        <header><span class="job-card-status">${escapeHtml(translateStatus(status))}</span><span class="job-card-source">${escapeHtml(job.source || '')}</span></header>
+        <div class="job-card-time"><span>🛠️</span><div><small>${lang === 'zh' ? '施工时间' : 'Job date'}</small><strong>${escapeHtml(scheduleText)}</strong></div></div>
+        <h3>${escapeHtml(job.customer || (lang === 'zh' ? '未命名客户' : 'Unnamed customer'))}</h3>
+        <div class="job-card-phone">${escapeHtml(job.phone || '')}</div>
+        <dl>
+          <div><dt>${lang === 'zh' ? '车辆' : 'Vehicle'}</dt><dd>${escapeHtml(job.vehicle || '—')}</dd></div>
+          <div><dt>${lang === 'zh' ? '贴膜项目' : 'Service'}</dt><dd>${escapeHtml(serviceText || '—')}</dd></div>
+          <div><dt>${lang === 'zh' ? '报价' : 'Quote'}</dt><dd class="job-card-price">${currency.format(calc.price)}</dd></div>
+          <div><dt>${lang === 'zh' ? '付款情况' : 'Payment'}</dt><dd>${paymentStatusPill(job)}</dd></div>
+          <div><dt>${lang === 'zh' ? '施工师傅' : 'Installer'}</dt><dd>${escapeHtml(jobInstallerNames(job))}</dd></div>
+          <div><dt>${lang === 'zh' ? '负责人' : 'Owner'}</dt><dd>${escapeHtml(ownerText)}</dd></div>
+        </dl>
+        <footer><span>${lang === 'zh' ? '填表人' : 'Prepared by'}：${escapeHtml(job.preparedBy || '—')}</span><div>
+          ${canOpen ? `<button class="btn primary" onclick="event.stopPropagation();openJob('${job.id}')">${lang === 'zh' ? '查看施工单' : 'View job'}</button>` : ''}
+          ${hasPerm('jobsDelete') ? `<button class="btn danger" onclick="event.stopPropagation();removeItem('jobs','${job.id}')">${t('delete')}</button>` : ''}
+        </div></footer>
+      </article>`;
+    }).join('')}
+    ${rows.length ? '' : `<div class="empty-state">${lang === 'zh' ? '目前没有排单或正在施工的订单。' : 'No scheduled or active jobs.'}</div>`}
+  </div>`;
+}
+
+function jobArchiveTable(rows) {
+  const canOpen = hasPerm('jobsEdit');
+  const showFinance = canSeeFinance();
+  const colSpan = 8 + (showFinance ? 1 : 0) + (hasPerm('jobsDelete') ? 1 : 0);
+  return `<div class="table-wrap job-archive-table"><table><thead><tr><th>${t('scheduleDate')}</th><th>${t('customer')}</th><th>${t('vehicle')}</th><th>${t('service')}</th><th>${t('tech')}</th><th>${t('status')}</th><th>${t('quote')}</th><th>${t('paymentStatus')}</th>${showFinance ? `<th>${t('gross')}</th>` : ''}${hasPerm('jobsDelete') ? '<th></th>' : ''}</tr></thead><tbody>
+    ${rows.map(job => {
+      const calc = jobCalc(job);
+      return `<tr ${canOpen ? `onclick="openJob('${job.id}')" class="click-row"` : ''}><td>${escapeHtml(job.scheduleDate || job.date || '')}</td><td>${escapeHtml(job.customer || '')}<br><span class="note">${escapeHtml(job.phone || '')}</span></td><td>${escapeHtml(job.vehicle || '')}</td><td>${escapeHtml([serviceLabelList(job), job.package].filter(Boolean).join(' · '))}</td><td>${escapeHtml(jobInstallerNames(job))}</td><td>${statusPill(job.status)}</td><td>${currency.format(calc.price)}</td><td>${paymentStatusPill(job)}</td>${showFinance ? `<td>${currency.format(calc.gross)}</td>` : ''}${hasPerm('jobsDelete') ? `<td><button class="icon-btn" title="${t('delete')}" onclick="event.stopPropagation();removeItem('jobs','${job.id}')">×</button></td>` : ''}</tr>`;
+    }).join('')}
+    ${rows.length ? '' : `<tr><td colspan="${colSpan}" class="note">${lang === 'zh' ? '还没有已交车或历史订单。' : 'No delivered or historical jobs.'}</td></tr>`}
+  </tbody></table></div>`;
+}
+
+function jobBoard(rows) {
+  const active = rows.filter(job => !jobIsArchived(job));
+  const archived = rows.filter(jobIsArchived);
+  return `<section class="job-board-section">
+    <div class="job-section-heading"><div><h4>${lang === 'zh' ? '排单与正在施工' : 'Scheduled & Active Jobs'}</h4><p>${lang === 'zh' ? '需要继续处理的施工单优先显示' : 'Jobs that still need attention'}</p></div><span>${active.length}</span></div>
+    ${jobActiveCards(active)}
+    <div class="job-section-heading archived"><div><h4>${lang === 'zh' ? '已成交与历史订单' : 'Completed & Historical Jobs'}</h4><p>${lang === 'zh' ? '已交车和取消订单以紧凑表格保留在下方' : 'Delivered and canceled jobs in a compact list'}</p></div><span>${archived.length}</span></div>
+    ${jobArchiveTable(archived)}
+  </section>`;
 }
 
 function installerTable() {
