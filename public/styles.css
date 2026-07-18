@@ -1117,8 +1117,8 @@ body.modal-lock .prospect-workspace { pointer-events: none; }
 .confirmation-selection-layout .confirmation-car-diagram { display:block; width:100%; height:190px; padding:5px; border:1px solid var(--line); border-radius:10px; background:#fff; }
 .confirmation-selection-layout .car-outline,.confirmation-selection-layout .car-panel,.confirmation-selection-layout .car-glass { fill:#fff; stroke:#263746; stroke-width:2; transition:.15s; }
 .confirmation-selection-layout .selected { fill:#79cbd4; }
-.confirmation-car-diagram.realistic .diagram-highlight,.confirmation-car-diagram.realistic .diagram-full-vehicle,.confirmation-car-diagram.realistic .diagram-selection-ring { fill:transparent; stroke:transparent; stroke-width:9; transition:fill .15s,stroke .15s; pointer-events:none; }
-.confirmation-car-diagram.realistic .diagram-highlight.selected { fill:rgba(255,196,0,.52); stroke:#d79a00; }
+.confirmation-car-diagram.realistic .diagram-highlight,.confirmation-car-diagram.realistic .diagram-full-vehicle,.confirmation-car-diagram.realistic .diagram-selection-ring { fill:transparent; stroke:transparent; stroke-width:4; stroke-linejoin:round; stroke-linecap:round; transition:fill .15s,stroke .15s; pointer-events:none; }
+.confirmation-car-diagram.realistic .diagram-highlight.selected { fill:rgba(255,196,0,.42); stroke:#d79a00; }
 .confirmation-car-diagram.realistic .diagram-full-vehicle.selected { fill:rgba(255,196,0,.22); stroke:#d79a00; }
 .confirmation-car-diagram.realistic .diagram-selection-ring.selected { fill:transparent; stroke:rgba(215,154,0,.55); stroke-width:5; }
 .confirmation-car-diagram.realistic .diagram-part .diagram-highlight { pointer-events:all; }

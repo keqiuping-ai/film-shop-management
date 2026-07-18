@@ -1,4 +1,4 @@
-const CACHE_NAME = 'film-shop-v41';
+const CACHE_NAME = 'film-shop-v42';
 const ASSETS = [
     '/',
     '/mobile.html',

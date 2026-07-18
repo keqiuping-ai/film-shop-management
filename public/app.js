@@ -5294,18 +5294,21 @@ function ppfVehicleDiagram(selected = [], interactive = false, printLanguage = '
   const click = value => interactive ? ` onclick="toggleConfirmationPart('confirmPpfPart','${value}')"` : '';
   return `<svg class="confirmation-car-diagram realistic" viewBox="0 0 1600 1024" role="img" aria-label="PPF locations" preserveAspectRatio="xMidYMid meet">
     <image class="vehicle-base" href="/assets/ppf-vehicle.png" x="0" y="0" width="1600" height="1024"/>
-    <path class="diagram-full-vehicle ${all ? 'selected' : ''}" d="M42 462 Q125 321 403 251 Q683 84 1120 151 Q1390 185 1493 361 L1518 632 Q1408 778 1160 776 Q978 797 848 857 Q628 931 448 836 Q238 815 73 687Z"/>
-    <g class="diagram-part"${click('frontBumper')}><path class="diagram-highlight ${on('frontBumper') ? 'selected' : ''}" d="M43 520 Q95 472 267 472 L474 523 L529 681 Q384 788 161 728 L46 652Z"/></g>
-    <g class="diagram-part"${click('hood')}><path class="diagram-highlight ${on('hood') ? 'selected' : ''}" d="M80 447 Q290 292 674 253 L807 368 Q587 483 277 505Z"/></g>
-    <g class="diagram-part"${click('leftFender')}><path class="diagram-highlight ${on('leftFender') ? 'selected' : ''}" d="M500 484 Q655 397 809 385 L860 566 Q771 542 665 575 L552 695 L493 611Z"/></g>
-    <g class="diagram-part"${click('rightFender')}><path class="diagram-highlight ${on('rightFender') ? 'selected' : ''}" d="M500 484 Q655 397 809 385 L860 566 Q771 542 665 575 L552 695 L493 611Z"/></g>
-    <g class="diagram-part"${click('mirrors')}><path class="diagram-highlight ${on('mirrors') ? 'selected' : ''}" d="M879 319 Q947 289 1018 323 L1002 377 Q943 400 886 367Z"/></g>
-    <g class="diagram-part"${click('doors')}><path class="diagram-highlight ${on('doors') ? 'selected' : ''}" d="M855 384 L1134 354 L1261 613 L1185 715 L858 672Z"/></g>
-    <g class="diagram-part"${click('rockers')}><path class="diagram-highlight ${on('rockers') ? 'selected' : ''}" d="M818 681 Q1014 720 1246 678 L1262 726 Q1031 788 790 735Z"/></g>
+    <path class="diagram-full-vehicle ${all ? 'selected' : ''}" d="M42 548 C58 442 171 363 392 323 C519 216 666 151 865 151 C1106 142 1292 178 1393 255 C1462 307 1492 391 1500 503 L1508 655 C1457 720 1384 753 1287 760 C1165 766 1047 746 931 724 C873 808 790 850 684 853 C588 854 511 817 463 755 C318 766 181 748 76 703 C47 664 34 606 42 548Z"/>
+    <g class="diagram-part"${click('frontBumper')}><path class="diagram-highlight ${on('frontBumper') ? 'selected' : ''}" d="M79 486 C64 505 51 535 45 568 L37 655 C35 683 39 705 55 722 C139 758 253 775 386 778 L520 793 C551 780 574 754 581 719 C589 653 610 606 641 574 L566 533 L299 529 C214 526 141 510 79 486Z"/></g>
+    <g class="diagram-part"${click('hood')}><path class="diagram-highlight ${on('hood') ? 'selected' : ''}" d="M80 483 C190 385 381 328 636 344 L806 378 L766 420 C609 462 451 498 299 528 C214 524 141 508 80 483Z"/></g>
+    <g class="diagram-part"${click('leftFender')}><path class="diagram-highlight ${on('leftFender') ? 'selected' : ''}" d="M566 533 C654 482 752 446 848 424 L864 576 L840 681 L822 705 L805 635 C786 577 738 548 683 553 C626 559 590 605 584 672 L580 719 L520 793 C550 775 573 749 581 717 C589 651 610 605 641 574Z"/></g>
+    <g class="diagram-part"${click('rightFender')}><path class="diagram-highlight ${on('rightFender') ? 'selected' : ''}" d="M299 529 C411 506 517 484 610 454 L566 533 L641 574 C622 589 607 611 597 639 L566 577 L475 550Z"/></g>
+    <g class="diagram-part"${click('mirrors')}><path class="diagram-highlight ${on('mirrors') ? 'selected' : ''}" d="M900 351 C925 318 974 311 1015 330 L1028 353 C1002 377 961 386 925 373Z"/></g>
+    <g class="diagram-part"${click('doors')}>
+      <path class="diagram-highlight ${on('doors') ? 'selected' : ''}" d="M868 382 L1095 347 C1110 418 1119 505 1124 604 L1127 636 L861 681 L870 572Z"/>
+      <path class="diagram-highlight ${on('doors') ? 'selected' : ''}" d="M1095 347 L1284 322 C1321 377 1341 462 1347 579 L1283 622 L1127 636 L1124 604 C1119 505 1110 418 1095 347Z"/>
+    </g>
+    <g class="diagram-part"${click('rockers')}><path class="diagram-highlight ${on('rockers') ? 'selected' : ''}" d="M826 687 L1128 640 L1283 626 L1280 676 C1131 716 976 742 824 744Z"/></g>
     <g class="diagram-part"${click('roof')}><path class="diagram-highlight ${on('roof') ? 'selected' : ''}" d="M613 150 Q888 101 1135 170 L1094 213 Q854 198 625 220Z"/></g>
-    <g class="diagram-part"${click('rearQuarters')}><path class="diagram-highlight ${on('rearQuarters') ? 'selected' : ''}" d="M1243 333 Q1395 315 1468 407 L1486 582 Q1406 627 1299 618 L1251 490Z"/></g>
-    <g class="diagram-part"${click('trunk')}><path class="diagram-highlight ${on('trunk') ? 'selected' : ''}" d="M1338 236 Q1455 276 1491 372 L1456 416 Q1393 347 1296 333Z"/></g>
-    <g class="diagram-part"${click('rearBumper')}><path class="diagram-highlight ${on('rearBumper') ? 'selected' : ''}" d="M1405 588 L1513 552 L1514 650 Q1457 736 1334 754 L1300 700Z"/></g>
+    <g class="diagram-part"${click('rearQuarters')}><path class="diagram-highlight ${on('rearQuarters') ? 'selected' : ''}" d="M1284 322 C1370 309 1431 342 1465 411 L1487 564 L1441 601 L1360 594 C1337 560 1320 520 1314 474 C1308 413 1297 362 1284 322Z"/></g>
+    <g class="diagram-part"${click('trunk')}><path class="diagram-highlight ${on('trunk') ? 'selected' : ''}" d="M1322 242 C1412 275 1463 324 1486 392 L1465 411 C1429 342 1368 309 1284 322Z"/></g>
+    <g class="diagram-part"${click('rearBumper')}><path class="diagram-highlight ${on('rearBumper') ? 'selected' : ''}" d="M1441 601 L1496 566 L1509 649 C1477 704 1423 736 1347 752 L1284 716 L1281 676 L1360 594Z"/></g>
   </svg>`;
 }
 
