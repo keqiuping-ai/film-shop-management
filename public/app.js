@@ -4065,8 +4065,9 @@ function customerCenterRows() {
     .map(item => ({ ...item, _collection: 'customerConversations', _highIntent: false }));
   const highIntent = (state.prospects || []).map(item => ({ ...item, _collection: 'prospects', _highIntent: true }));
   return [...regular, ...highIntent].sort((a, b) => {
+    const newDifference = Number(Boolean(b.newCustomer)) - Number(Boolean(a.newCustomer));
     const pendingDifference = Number(customerAwaitingReply(b)) - Number(customerAwaitingReply(a));
-    return pendingDifference || new Date(prospectActivityTime(b)).getTime() - new Date(prospectActivityTime(a)).getTime();
+    return newDifference || pendingDifference || new Date(prospectActivityTime(b)).getTime() - new Date(prospectActivityTime(a)).getTime();
   });
 }
 
@@ -4119,7 +4120,8 @@ function customerCenterSearchCountText() {
   const total = customerCenterRows().length;
   const matched = searchedCustomerCenterRows().length;
   const pending = customerCenterRows().filter(customerAwaitingReply).length;
-  return lang === 'zh' ? `找到 ${matched} / ${total} 位客户 · ${pending} 位待回复` : `Found ${matched} / ${total} customers · ${pending} awaiting reply`;
+  const fresh = customerCenterRows().filter(item => item.newCustomer).length;
+  return lang === 'zh' ? `找到 ${matched} / ${total} 位客户 · ${fresh} 位新客户 · ${pending} 位待回复` : `Found ${matched} / ${total} customers · ${fresh} new · ${pending} awaiting reply`;
 }
 
 function customerCenterSearchBox() {
@@ -4145,7 +4147,8 @@ function customerCenterTable(rows = searchedCustomerCenterRows()) {
       const replyState = customerReplyState(item);
       const latestText = replyState.latest ? cleanConversationText(replyState.latest.text || replyState.latest.message || replyState.latest.content || '') : '';
       const pendingBadge = replyState.pending ? `<span class="customer-pending-badge" title="${escapeHtml(latestText)}"><i></i>${lang === 'zh' ? '待回复' : 'Reply'}${replyState.count > 1 ? ` ${replyState.count}` : ''}</span>` : '';
-      return `<tr class="click-row ${replyState.pending ? 'customer-pending-row' : ''}" onclick="openProspectWorkspace('${item._collection}','${item.id}')"><td class="prospect-nowrap">${escapeHtml(item.date || '')}</td><td class="prospect-time">${prospectTimeCell(item)}</td><td><div class="prospect-clamp prospect-clamp-2">${escapeHtml(item.source || '')}</div></td><td><div class="customer-name-with-alert"><div class="prospect-clamp prospect-clamp-2">${escapeHtml(item.customer || (lang === 'zh' ? '未命名客户' : 'Unnamed'))}</div>${pendingBadge}</div><span class="note prospect-nowrap">${escapeHtml(item.phone || '')}</span>${replyState.pending && latestText ? `<div class="customer-pending-preview" title="${escapeHtml(latestText)}">${escapeHtml(shortText(latestText, 28))}</div>` : ''}</td><td><div class="prospect-clamp prospect-clamp-2">${escapeHtml(item.vehicle || '')}</div><div class="note prospect-clamp prospect-clamp-2">${escapeHtml(item.need || '')}</div></td><td class="prospect-time">${appointment}</td><td><div class="prospect-clamp prospect-clamp-2">${rep ? escapeHtml(rep.name) : escapeHtml(item.ownerName || '') || t('unassigned')}</div></td><td class="customer-center-status-col">${prospectStatusPill(item.status)}</td><td class="customer-center-intent-col">${prospectIntentPill(item.intentLevel)}</td></tr>`;
+      const newBadge = item.newCustomer ? `<span class="customer-new-badge"><i></i>${lang === 'zh' ? '新客户' : 'New'}</span>` : '';
+      return `<tr class="click-row ${replyState.pending ? 'customer-pending-row' : ''} ${item.newCustomer ? 'customer-new-row' : ''}" onclick="openProspectWorkspace('${item._collection}','${item.id}')"><td class="prospect-nowrap">${escapeHtml(item.date || '')}</td><td class="prospect-time">${prospectTimeCell(item)}</td><td><div class="prospect-clamp prospect-clamp-2">${escapeHtml(item.source || '')}</div>${newBadge}</td><td><div class="customer-name-with-alert"><div class="prospect-clamp prospect-clamp-2">${escapeHtml(item.customer || (lang === 'zh' ? '未命名客户' : 'Unnamed'))}</div>${pendingBadge}</div><span class="note prospect-nowrap">${escapeHtml(item.phone || '')}</span>${replyState.pending && latestText ? `<div class="customer-pending-preview" title="${escapeHtml(latestText)}">${escapeHtml(shortText(latestText, 28))}</div>` : ''}</td><td><div class="prospect-clamp prospect-clamp-2">${escapeHtml(item.vehicle || '')}</div><div class="note prospect-clamp prospect-clamp-2">${escapeHtml(item.need || '')}</div></td><td class="prospect-time">${appointment}</td><td><div class="prospect-clamp prospect-clamp-2">${rep ? escapeHtml(rep.name) : escapeHtml(item.ownerName || '') || t('unassigned')}</div></td><td class="customer-center-status-col">${prospectStatusPill(item.status)}</td><td class="customer-center-intent-col">${prospectIntentPill(item.intentLevel)}</td></tr>`;
     }).join('')}
     ${rows.length ? '' : `<tr><td colspan="9" class="note">${lang === 'zh' ? '还没有客户交流记录。' : 'No customer conversations yet.'}</td></tr>`}
   </tbody></table></div>`;
@@ -4167,10 +4170,19 @@ function activeCustomerWorkspaceItem() {
 }
 
 function openProspectWorkspace(collection, id) {
+  const item = (state[collection] || []).find(row => row.id === id);
+  if (item?.newCustomer) {
+    item.newCustomer = false;
+    markCustomerRecordSeen(collection, id);
+  }
   activeProspectWorkspaceId = `${collection}:${id}`;
   document.body.classList.add('prospect-workspace-open');
   renderProspectWorkspace();
   startProspectWorkspaceSync();
+}
+
+async function markCustomerRecordSeen(collection, id) {
+  try { state = await api(`/api/customer-records/${encodeURIComponent(collection)}/${encodeURIComponent(id)}/seen`, { method: 'POST', body: '{}' }); } catch {}
 }
 
 const prospectWorkspaceFieldIds = [
@@ -4205,6 +4217,7 @@ function closeProspectWorkspace() {
   document.body.classList.remove('prospect-workspace-open');
   const workspace = document.getElementById('prospectWorkspace');
   if (workspace) workspace.classList.remove('open');
+  if (current === 'customerCenter') render();
 }
 
 function cancelProspectWorkspaceChanges() {

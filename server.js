@@ -1631,6 +1631,7 @@ function importCustomerRecords(db, user, body, collection = 'prospects') {
       ...candidate,
       id: id(),
       duplicateStatus: 'new',
+      newCustomer: true,
       createdAt: candidate.createdAt || now,
       importedAt: candidate.importedAt || now,
       updatedAt: candidate.updatedAt || candidate.importedAt || now,
@@ -2842,6 +2843,23 @@ async function api(req, res) {
 
   if (req.method === 'GET' && url.pathname === '/api/bootstrap') {
     return send(res, 200, { user: safeUser(user), data: sanitizeDbForUser(db, user), revision: databaseRevision() }, undefined, req);
+  }
+
+  const customerSeenMatch = url.pathname.match(/^\/api\/customer-records\/(customerConversations|prospects)\/([^/]+)\/seen$/);
+  if (req.method === 'POST' && customerSeenMatch) {
+    if (!canAccess(user, 'prospectsView')) return send(res, 403, { error: '没有查看客户的权限' });
+    const [, collection, recordId] = customerSeenMatch;
+    const item = (db[collection] || []).find(row => row.id === recordId);
+    if (!item) return send(res, 404, { error: '找不到客户' });
+    if (item.newCustomer) {
+      item.newCustomer = false;
+      item.newCustomerSeenAt = new Date().toISOString();
+      item.newCustomerSeenBy = user.name || user.email;
+      item.newCustomerSeenByUserId = user.id;
+      writeDb(db);
+      notifyDataChanged('customer-record-seen', { collection, recordId });
+    }
+    return send(res, 200, sanitizeDbForUser(db, user));
   }
 
   const portalCustomerMatch = url.pathname.match(/^\/api\/portal-customers(?:\/([^/]+))?$/);

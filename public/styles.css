@@ -872,6 +872,11 @@ tr:hover td { background: #fbfcfd; }
 .customer-pending-badge { display:inline-flex; align-items:center; gap:4px; flex:none; padding:3px 7px; border-radius:999px; color:#b62d2d; background:#ffe3e0; font-size:11px; font-weight:850; white-space:nowrap; }
 .customer-pending-badge i { width:7px; height:7px; border-radius:50%; background:#df2f2f; box-shadow:0 0 0 3px rgba(223,47,47,.13); }
 .customer-pending-preview { max-width:100%; margin-top:3px; overflow:hidden; color:#b23a34; font-size:11px; line-height:1.25; text-overflow:ellipsis; white-space:nowrap; }
+.customer-center-table tr.customer-new-row td { background:#fff5f4; }
+.customer-center-table tr.customer-new-row:hover td { background:#ffeceb; }
+.customer-center-table tr.customer-new-row td:first-child { box-shadow:inset 4px 0 #e12626; }
+.customer-new-badge { display:inline-flex;align-items:center;gap:4px;margin-top:5px;padding:3px 7px;border-radius:999px;background:#dc2626;color:#fff;font-size:11px;font-weight:900;white-space:nowrap; }
+.customer-new-badge i { width:7px;height:7px;border-radius:50%;background:#fff;box-shadow:0 0 0 3px rgba(255,255,255,.2); }
 .prospect-workspace {
   position: fixed;
   inset: 0;
