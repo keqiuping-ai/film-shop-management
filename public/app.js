@@ -4217,10 +4217,16 @@ function prospectHasGeneratedJob(item) {
 }
 
 function sortedProspectRows() {
-  return (state.prospects || [])
-    .filter(item => ['已预约', '已到店'].includes(String(item.status || '')))
-    .filter(item => !prospectHasGeneratedJob(item))
-    .map(item => ({ ...item, _kind: 'prospect' }))
+  const grouped = new Map();
+  for (const item of (state.prospects || []).filter(row => ['已预约', '已到店'].includes(String(row.status || '')))) {
+    const phoneKey = customerPhoneMatchKey(item.phone);
+    const key = phoneKey ? `phone:${phoneKey}` : `id:${item.id}`;
+    if (!grouped.has(key)) grouped.set(key, []);
+    grouped.get(key).push(item);
+  }
+  return [...grouped.values()]
+    .filter(group => !group.some(item => prospectHasGeneratedJob(item)))
+    .map(mergeAppointmentProspectGroup)
     .sort((a, b) => {
       const appointmentDiff = new Date(`${a.appointmentDate || '9999-12-31'}T${a.appointmentTime || '23:59'}`).getTime()
         - new Date(`${b.appointmentDate || '9999-12-31'}T${b.appointmentTime || '23:59'}`).getTime();
@@ -4229,6 +4235,38 @@ function sortedProspectRows() {
       if (Number.isFinite(activityDiff) && activityDiff) return activityDiff;
       return String(b.date || '').localeCompare(String(a.date || ''));
     });
+}
+
+function mergeAppointmentProspectGroup(group) {
+  const rows = [...group].sort((a, b) => {
+    const statusDiff = Number(b.status === '已到店') - Number(a.status === '已到店');
+    const appointmentDiff = Number(Boolean(b.appointmentDate || b.appointmentTime)) - Number(Boolean(a.appointmentDate || a.appointmentTime));
+    const completenessDiff = [b.customer, b.phone, b.vehicle, b.need, b.service, b.ownerId].filter(Boolean).length - [a.customer, a.phone, a.vehicle, a.need, a.service, a.ownerId].filter(Boolean).length;
+    return statusDiff || appointmentDiff || completenessDiff || new Date(prospectActivityTime(b)).getTime() - new Date(prospectActivityTime(a)).getTime();
+  });
+  const merged = { ...rows[0], _kind: 'prospect', _duplicateProspectIds: rows.map(item => item.id) };
+  const fillFields = ['customer', 'phone', 'vehicle', 'service', 'package', 'source', 'appointmentDate', 'appointmentTime', 'ownerId', 'ownerName', 'intentLevel', 'callNote', 'note', 'notes', 'price'];
+  for (const field of fillFields) {
+    if (merged[field]) continue;
+    const value = rows.map(item => item[field]).find(Boolean);
+    if (value !== undefined) merged[field] = value;
+  }
+  const needs = [...new Set(rows.map(item => String(item.need || '').trim()).filter(Boolean))].sort((a, b) => b.length - a.length);
+  if (needs.length) merged.need = needs[0];
+  if (rows.some(item => item.status === '已到店')) merged.status = '已到店';
+  const messages = [];
+  const messageKeys = new Set();
+  for (const item of rows) {
+    for (const message of (item.conversationMessages || [])) {
+      const key = String(message.providerSid || message.id || `${message.timestamp || message.createdAt}|${message.direction}|${message.text}`);
+      if (messageKeys.has(key)) continue;
+      messageKeys.add(key);
+      messages.push(message);
+    }
+  }
+  messages.sort((a, b) => String(a.timestamp || a.createdAt || '').localeCompare(String(b.timestamp || b.createdAt || '')));
+  merged.conversationMessages = messages;
+  return merged;
 }
 
 function prospectSearchText(item) {
