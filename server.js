@@ -997,11 +997,14 @@ function personalNoteVisibleTo(item, user) {
 
 function personalNoteForUser(db, item, user) {
   const owner = (db.users || []).find(row => row.id === item.ownerUserId);
+  const creationLog = !owner && !item.ownerName
+    ? (db.auditLogs || []).find(row => row.recordId === item.id && row.action === 'create-personal-note')
+    : null;
   return {
     ...item,
     shareScope: ['all', 'users'].includes(item.shareScope) ? item.shareScope : 'private',
     sharedUserIds: Array.isArray(item.sharedUserIds) ? item.sharedUserIds : [],
-    ownerName: owner?.name || owner?.email || '',
+    ownerName: item.ownerName || owner?.name || owner?.email || creationLog?.userName || '已停用员工',
     canEdit: item.ownerUserId === user.id
   };
 }
@@ -3075,7 +3078,7 @@ async function api(req, res) {
       if (duplicate) return send(res, 200, { item: personalNoteForUser(db, duplicate, user), data: sanitizeDbForUser(db, user) });
       const now = new Date().toISOString();
       const sharing = normalizePersonalNoteSharing(db, user, body);
-      const item = { id: id(), ownerUserId: user.id, requestId, type, title, content, remindAt, snoozedUntil: '', status: 'pending', createdAt: now, updatedAt: now, completedAt: '', ...sharing };
+      const item = { id: id(), ownerUserId: user.id, ownerName: user.name || user.email || '员工', requestId, type, title, content, remindAt, snoozedUntil: '', status: 'pending', createdAt: now, updatedAt: now, completedAt: '', ...sharing };
       db.personalNotes.push(item);
       audit(db, user, 'create-personal-note', { collection: 'personalNotes', recordId: item.id, recordLabel: '个人记事', detail: sharing.shareScope === 'private' ? '新增私人记事' : '新增并分享记事' });
       writeDb(db);
@@ -4056,6 +4059,20 @@ async function api(req, res) {
     if (collection === 'users') {
       const existing = db.users.find(x => x.id === recordId);
       if (existing?.role === 'owner') return send(res, 400, { error: '老板账号不能删除' });
+      if (!existing) return send(res, 404, { error: 'Record not found' });
+      existing.active = false;
+      existing.deactivatedAt = new Date().toISOString();
+      existing.deactivatedBy = user.name || user.email || '';
+      audit(db, user, 'deactivate-user', {
+        collection: 'users',
+        recordId,
+        recordLabel: recordLabel(existing),
+        snapshot: { ...existing },
+        detail: `停用员工账号 ${recordLabel(existing) || recordId}；历史记事和业务记录保留`
+      });
+      writeDb(db);
+      notifyDataChanged('deactivate-user', recordId);
+      return send(res, 200, sanitizeDbForUser(db, user));
     }
     if (collection === 'reimbursements') {
       const existingReimbursement = db.reimbursements.find(x => x.id === recordId);
