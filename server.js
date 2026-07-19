@@ -16,9 +16,13 @@ const CUSTOMER_MEDIA_DIR = path.join(DATA_DIR, 'customer-media');
 const SESSION_SECRET_FILE = path.join(DATA_DIR, 'session-secret');
 const CONFIG_FILE = path.join(ROOT, 'server-config.json');
 const VERSION_FILE = path.join(ROOT, 'version.json');
-const MAX_MESSAGE_ATTACHMENT_BYTES = 8 * 1024 * 1024;
+const MAX_MESSAGE_ATTACHMENT_BYTES = 20 * 1024 * 1024;
 const MAX_AVATAR_DATA_URL_BYTES = 2 * 1024 * 1024;
-const MAX_CUSTOMER_VIDEO_SOURCE_BYTES = 50 * 1024 * 1024;
+const MAX_CUSTOMER_VIDEO_SOURCE_BYTES = 200 * 1024 * 1024;
+const MAX_CLOUD_IMAGE_BYTES = 20 * 1024 * 1024;
+const MAX_CLOUD_FILE_BYTES = 20 * 1024 * 1024;
+const MAX_CLOUD_VIDEO_SECONDS = 5 * 60;
+const MAX_TWILIO_IMAGE_BYTES = 4.5 * 1024 * 1024;
 const CUSTOM_PRINTED_FILM_SKU = 'CUSTOM-PRINTED-FILM';
 const sessions = new Map();
 const eventClients = new Set();
@@ -1147,7 +1151,7 @@ function sanitizeMessageAttachment(input) {
   const storedMediaUrl = url.startsWith('/customer-media/') || /^https?:\/\/[^/]+\/customer-media\/[a-z0-9._-]+$/i.test(url);
   if (!dataUrl.startsWith('data:') && !storedMediaUrl) return { error: '附件内容格式不正确' };
   if (!Number.isFinite(size) || size <= 0) return { error: '附件大小不正确' };
-  if (size > (kind === 'video' ? MAX_CUSTOMER_VIDEO_SOURCE_BYTES : MAX_MESSAGE_ATTACHMENT_BYTES)) return { error: kind === 'video' ? '视频不能超过 50MB' : '附件不能超过 8MB' };
+  if (size > (kind === 'video' ? MAX_CUSTOMER_VIDEO_SOURCE_BYTES : MAX_MESSAGE_ATTACHMENT_BYTES)) return { error: kind === 'video' ? '视频不能超过 200MB' : '附件不能超过 20MB' };
   if (dataUrl && dataUrl.length > 12_000_000) return { error: '附件内容太大' };
   if (kind === 'image' && !type.startsWith('image/')) return { error: '请选择图片文件' };
   if (kind === 'video' && !type.startsWith('video/')) return { error: '请选择视频文件' };
@@ -1722,6 +1726,26 @@ function readRawBody(req, limit = 1_000_000) {
   });
 }
 
+function readBinaryBody(req, limit) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    let size = 0;
+    let failed = false;
+    req.on('data', chunk => {
+      if (failed) return;
+      size += chunk.length;
+      if (size > limit) {
+        failed = true;
+        reject(new Error('Body too large'));
+        return;
+      }
+      chunks.push(chunk);
+    });
+    req.on('end', () => { if (!failed) resolve(Buffer.concat(chunks)); });
+    req.on('error', reject);
+  });
+}
+
 function twilioConfig() {
   return {
     accountSid: String(process.env.TWILIO_ACCOUNT_SID || '').trim(),
@@ -2131,6 +2155,42 @@ async function optimizeCustomerMmsVideo(data, contentType) {
   } finally {
     try { fs.unlinkSync(inputPath); } catch {}
     try { fs.unlinkSync(outputPath); } catch {}
+  }
+}
+
+async function cloudVideoDurationSeconds(filePath) {
+  const { stdout } = await execFileAsync('ffprobe', [
+    '-v', 'error', '-show_entries', 'format=duration',
+    '-of', 'default=noprint_wrappers=1:nokey=1', filePath
+  ], { maxBuffer: 1024 * 1024 });
+  const duration = Number(String(stdout || '').trim());
+  if (!Number.isFinite(duration) || duration <= 0) throw new Error('无法读取视频，请改用 MP4、MOV 或 WebM 视频');
+  return duration;
+}
+
+async function twilioMediaForAttachment(attachment, publicBaseUrl) {
+  const url = String(attachment?.url || '');
+  const type = String(attachment?.type || '');
+  const name = String(attachment?.name || '附件');
+  const kind = type.startsWith('video/') ? 'video' : type.startsWith('image/') ? 'image' : 'file';
+  const linkText = `${kind === 'video' ? '视频' : kind === 'image' ? '图片' : '文件'}：${name} ${url}`;
+  if (!url.startsWith(`${publicBaseUrl}/customer-media/`)) return { mediaUrl: '', linkText };
+  if (kind === 'image') {
+    return Number(attachment?.size || 0) <= MAX_TWILIO_IMAGE_BYTES
+      ? { mediaUrl: url, linkText: '' }
+      : { mediaUrl: '', linkText };
+  }
+  if (kind !== 'video') return { mediaUrl: '', linkText };
+  try {
+    const fileName = path.basename(new URL(url).pathname);
+    const sourcePath = path.join(CUSTOMER_MEDIA_DIR, fileName);
+    const source = fs.readFileSync(sourcePath);
+    const optimized = await optimizeCustomerMmsVideo(source, type);
+    const mmsName = `${crypto.randomBytes(6).toString('hex')}.mp4`;
+    fs.writeFileSync(path.join(CUSTOMER_MEDIA_DIR, mmsName), optimized);
+    return { mediaUrl: `${publicBaseUrl}/customer-media/${mmsName}`, linkText: '' };
+  } catch {
+    return { mediaUrl: '', linkText };
   }
 }
 
@@ -3285,36 +3345,47 @@ async function api(req, res) {
     if (url.pathname === '/api/customer-media/upload' && !canAccess(user, 'prospectsEdit')) return send(res, 403, { error: '没有发送客户附件的权限' });
     if (url.pathname === '/api/job-media/upload' && !canAccess(user, 'jobsEdit') && !canAccess(user, 'jobsCreate')) return send(res, 403, { error: '没有修改施工单的权限' });
     if (url.pathname === '/api/reimbursement-media/upload' && !canAccess(user, 'reimbursementsCreate')) return send(res, 403, { error: '没有提交报销凭证的权限' });
-    const body = await readBody(req);
-    const name = String(body.name || '附件').trim().slice(0, 160);
-    let contentType = String(body.type || 'application/octet-stream').trim().slice(0, 120);
-    const match = String(body.dataUrl || '').match(/^data:([^;,]+);base64,(.+)$/s);
-    if (!match) return send(res, 400, { error: '附件格式不正确' });
-    contentType = String(match[1] || contentType).trim().slice(0, 120);
-    let data = Buffer.from(match[2], 'base64');
+    const requestType = String(req.headers['content-type'] || 'application/octet-stream').split(';')[0].trim().toLowerCase();
+    let name = '附件';
+    let contentType = requestType;
+    let data;
+    if (requestType === 'application/json') {
+      const body = await readBody(req);
+      name = String(body.name || '附件').trim().slice(0, 160);
+      contentType = String(body.type || 'application/octet-stream').trim().slice(0, 120);
+      const match = String(body.dataUrl || '').match(/^data:([^;,]+);base64,(.+)$/s);
+      if (!match) return send(res, 400, { error: '附件格式不正确' });
+      contentType = String(match[1] || contentType).trim().slice(0, 120);
+      data = Buffer.from(match[2], 'base64');
+    } else {
+      try { name = decodeURIComponent(String(req.headers['x-file-name'] || '附件')).trim().slice(0, 160) || '附件'; } catch { name = '附件'; }
+      const limit = contentType.startsWith('video/') ? MAX_CUSTOMER_VIDEO_SOURCE_BYTES : contentType.startsWith('image/') ? MAX_CLOUD_IMAGE_BYTES : MAX_CLOUD_FILE_BYTES;
+      try { data = await readBinaryBody(req, limit); } catch { return send(res, 413, { error: contentType.startsWith('video/') ? '视频不能超过 200MB' : '附件不能超过 20MB' }); }
+    }
     if (!data.length) return send(res, 400, { error: '附件为空' });
     if (contentType.startsWith('video/')) {
-      if (data.length > MAX_CUSTOMER_VIDEO_SOURCE_BYTES) return send(res, 400, { error: '原始视频不能超过 50MB，请先缩短视频后重试' });
-    } else if (data.length > 5 * 1024 * 1024) {
-      return send(res, 400, { error: '非视频附件不能超过 5MB' });
+      if (data.length > MAX_CUSTOMER_VIDEO_SOURCE_BYTES) return send(res, 400, { error: '视频不能超过 200MB' });
+    } else if (contentType.startsWith('image/') ? data.length > MAX_CLOUD_IMAGE_BYTES : data.length > MAX_CLOUD_FILE_BYTES) {
+      return send(res, 400, { error: '附件不能超过 20MB' });
     }
-    if (contentType.startsWith('image/') && data.length > 900 * 1024 && url.pathname !== '/api/reimbursement-media/upload') return send(res, 400, { error: '图片压缩后仍超过 900KB，请换一张图片重试' });
     fs.mkdirSync(CUSTOMER_MEDIA_DIR, { recursive: true });
+    const fileName = `${crypto.randomBytes(6).toString('hex')}${safeCustomerMediaExtension(name, contentType)}`;
+    const filePath = path.join(CUSTOMER_MEDIA_DIR, fileName);
+    fs.writeFileSync(filePath, data);
+    let durationSeconds = 0;
     if (contentType.startsWith('video/')) {
       try {
-        data = await optimizeCustomerMmsVideo(data, contentType);
+        durationSeconds = await cloudVideoDurationSeconds(filePath);
+        if (durationSeconds > MAX_CLOUD_VIDEO_SECONDS) throw new Error('云端视频最长5分钟，请先剪短后重试');
       } catch (err) {
-        return send(res, 400, { error: err.message || '视频压缩失败，请换一个短视频重试' });
+        try { fs.unlinkSync(filePath); } catch {}
+        return send(res, 400, { error: err.message || '视频格式无法读取' });
       }
-      contentType = 'video/mp4';
     }
-    const storedName = contentType === 'video/mp4' ? 'video.mp4' : name;
-    const fileName = `${crypto.randomBytes(6).toString('hex')}${safeCustomerMediaExtension(storedName, contentType)}`;
-    fs.writeFileSync(path.join(CUSTOMER_MEDIA_DIR, fileName), data);
     const mediaUrl = `${requestPublicBaseUrl(req)}/customer-media/${fileName}`;
     audit(db, user, 'upload-customer-media', `上传客户附件 ${name}`);
     writeDb(db);
-    return send(res, 200, { ok: true, name, type: contentType, size: data.length, url: mediaUrl });
+    return send(res, 200, { ok: true, name, type: contentType, size: data.length, durationSeconds, url: mediaUrl });
   }
 
   if (req.method === 'DELETE' && url.pathname.startsWith('/api/customer-messages/')) {
@@ -3361,18 +3432,15 @@ async function api(req, res) {
       return send(res, 400, { error: '附件链接不正确，请重新选择文件' });
     }
     const attachmentType = String(attachment?.type || '');
-    const canSendAsMms = /^(image\/|video\/mp4$)/i.test(attachmentType);
     const attachmentKind = attachmentType.startsWith('video/') ? 'video' : attachmentType.startsWith('image/') ? 'image' : 'file';
-    if (attachment?.url && !canSendAsMms) {
-      const label = attachmentKind === 'video' ? '视频' : attachmentKind === 'image' ? '图片' : '文件';
-      text = [text, `${label}：${attachment.name || '查看附件'} ${attachment.url}`].filter(Boolean).join('\n');
-    }
+    const twilioMedia = attachment?.url ? await twilioMediaForAttachment(attachment, requestPublicBaseUrl(req)) : { mediaUrl: '', linkText: '' };
+    if (twilioMedia.linkText) text = [text, twilioMedia.linkText].filter(Boolean).join('\n');
     if (text.length > 1600) return send(res, 400, { error: '短信内容不能超过 1600 个字符' });
     const to = `+1${phoneDigits}`;
     const sent = await sendTwilioSms({
       to,
       body: text,
-      mediaUrl: canSendAsMms ? String(attachment.url || '') : '',
+      mediaUrl: twilioMedia.mediaUrl,
       statusCallback: `${requestPublicBaseUrl(req)}/api/twilio/status`
     });
     const now = new Date().toISOString();

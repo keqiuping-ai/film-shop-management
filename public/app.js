@@ -80,7 +80,9 @@ let personalNoteSaving = false;
 const personalNoteUpdatingIds = new Set();
 const AUTO_SYNC_MS = 5 * 60 * 1000;
 const DATA_REVISION_POLL_MS = 15 * 1000;
-const MAX_MESSAGE_ATTACHMENT_BYTES = 8 * 1024 * 1024;
+const MAX_MESSAGE_ATTACHMENT_BYTES = 20 * 1024 * 1024;
+const MAX_CLOUD_VIDEO_BYTES = 200 * 1024 * 1024;
+const MAX_CLOUD_IMAGE_BYTES = 20 * 1024 * 1024;
 const GROUP_CHAT_ID = '__all_staff__';
 const replyTemplateCategories = [
   { id: 'uncategorized', zh: '未分类', en: 'Uncategorized' },
@@ -1772,8 +1774,8 @@ async function sendMessageFile(file, kind) {
     return;
   }
   if (kind === 'image') {
-    if (file.size > 25 * 1024 * 1024) {
-      alert(lang === 'zh' ? '原图不能超过 25MB。' : 'The original image must be 25MB or smaller.');
+    if (file.size > MAX_CLOUD_IMAGE_BYTES) {
+      alert(lang === 'zh' ? '原图不能超过 20MB。' : 'The original image must be 20MB or smaller.');
       return;
     }
     file = await optimizeProspectImage(file);
@@ -1782,18 +1784,15 @@ async function sendMessageFile(file, kind) {
     alert(lang === 'zh' ? '请选择视频文件。' : 'Please choose a video file.');
     return;
   }
-  const maxBytes = kind === 'video' ? 50 * 1024 * 1024 : kind === 'image' ? MAX_MESSAGE_ATTACHMENT_BYTES : 5 * 1024 * 1024;
+  const maxBytes = kind === 'video' ? MAX_CLOUD_VIDEO_BYTES : kind === 'image' ? MAX_CLOUD_IMAGE_BYTES : MAX_MESSAGE_ATTACHMENT_BYTES;
   if (file.size > maxBytes) {
     alert(lang === 'zh'
-      ? (kind === 'image' ? '照片自动压缩后仍超过 8MB，请换一张照片。' : kind === 'video' ? '原始视频不能超过 50MB。' : '附件不能超过 5MB。')
-      : (kind === 'image' ? 'The compressed image is still over 8MB. Please choose another image.' : kind === 'video' ? 'The source video must be 50MB or smaller.' : 'Attachment must be 5MB or smaller.'));
+      ? (kind === 'image' ? '照片自动处理后仍超过20MB，请换一张照片。' : kind === 'video' ? '视频不能超过200MB，且最长5分钟。' : '附件不能超过20MB。')
+      : (kind === 'image' ? 'The processed image is still over 20MB.' : kind === 'video' ? 'Videos must be 200MB or smaller and no longer than 5 minutes.' : 'Attachments must be 20MB or smaller.'));
     return;
   }
   try {
-    const uploaded = await api('/api/message-media/upload', {
-      method: 'POST',
-      body: JSON.stringify({ name: file.name, type: file.type || 'application/octet-stream', dataUrl: await readFileAsDataUrl(file) })
-    });
+    const uploaded = await uploadCloudMedia('/api/message-media/upload', file);
     await postInternalMessage({ attachment: {
       kind,
       name: uploaded.name || file.name || (kind === 'image' ? 'image' : 'file'),
@@ -4695,21 +4694,32 @@ function fileAsDataUrl(file) {
   return readBlobAsDataUrl(file);
 }
 
+async function uploadCloudMedia(path, file) {
+  return api(path, {
+    method: 'POST',
+    headers: {
+      'Content-Type': file.type || 'application/octet-stream',
+      'X-File-Name': encodeURIComponent(file.name || 'attachment')
+    },
+    body: file
+  });
+}
+
 async function optimizeProspectImage(file) {
   if (!file || !String(file.type || '').startsWith('image/') || file.type === 'image/gif') return file;
   try {
     const bitmap = await createImageBitmap(file);
-    const maxSide = 1280;
+    const maxSide = 2560;
     const scale = Math.min(1, maxSide / Math.max(bitmap.width, bitmap.height));
     const canvas = document.createElement('canvas');
     canvas.width = Math.max(1, Math.round(bitmap.width * scale));
     canvas.height = Math.max(1, Math.round(bitmap.height * scale));
     canvas.getContext('2d').drawImage(bitmap, 0, 0, canvas.width, canvas.height);
     bitmap.close?.();
-    let quality = .82;
+    let quality = .9;
     let blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', quality));
-    while (blob && blob.size > 700 * 1024 && quality > .42) {
-      quality -= .1;
+    while (blob && blob.size > 4 * 1024 * 1024 && quality > .62) {
+      quality -= .08;
       blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', quality));
     }
     if (!blob) return file;
@@ -4722,17 +4732,16 @@ async function optimizeProspectImage(file) {
 
 async function uploadProspectAttachment(file) {
   if (!file) return;
+  const originalIsImage = String(file.type || '').startsWith('image/');
+  if (originalIsImage && file.size > MAX_CLOUD_IMAGE_BYTES) return alert(lang === 'zh' ? '原图不能超过20MB。' : 'Images must be 20MB or smaller.');
   file = await optimizeProspectImage(file);
   const isVideo = String(file.type || '').startsWith('video/');
-  const maxBytes = isVideo ? 50 * 1024 * 1024 : 5 * 1024 * 1024;
-  if (file.size > maxBytes) return alert(isVideo ? (lang === 'zh' ? '原始视频不能超过 50MB，请先缩短视频。' : 'Source video must be 50MB or smaller.') : (lang === 'zh' ? '附件不能超过 5MB。' : 'Attachments must be 5MB or smaller.'));
+  const maxBytes = isVideo ? MAX_CLOUD_VIDEO_BYTES : MAX_MESSAGE_ATTACHMENT_BYTES;
+  if (file.size > maxBytes) return alert(isVideo ? (lang === 'zh' ? '视频不能超过200MB，且最长5分钟。' : 'Videos must be 200MB or smaller and no longer than 5 minutes.') : (lang === 'zh' ? '附件不能超过20MB。' : 'Attachments must be 20MB or smaller.'));
   const preview = document.getElementById('prospectAttachmentPreview');
-  if (preview) preview.textContent = isVideo && file.size > 5 * 1024 * 1024 ? (lang === 'zh' ? '正在上传并自动压缩视频…' : 'Uploading and compressing video…') : (lang === 'zh' ? '正在上传…' : 'Uploading…');
+  if (preview) preview.textContent = isVideo ? (lang === 'zh' ? '正在上传高清原视频…' : 'Uploading original-quality video…') : (lang === 'zh' ? '正在上传高清图片…' : 'Uploading high-quality image…');
   try {
-    const uploaded = await api('/api/customer-media/upload', {
-      method: 'POST',
-      body: JSON.stringify({ name: file.name, type: file.type || 'application/octet-stream', dataUrl: await fileAsDataUrl(file) })
-    });
+    const uploaded = await uploadCloudMedia('/api/customer-media/upload', file);
     prospectPendingAttachment = { name: uploaded.name, type: uploaded.type, size: uploaded.size, url: uploaded.url };
     renderProspectWorkspace();
   } catch (err) {
@@ -4955,14 +4964,15 @@ function openReplyTemplateEditor(type = 'text', id = '', returnToPicker = false)
 
 async function uploadReplyTemplateMedia(file) {
   if (!file) return;
+  if (String(file.type || '').startsWith('image/') && file.size > MAX_CLOUD_IMAGE_BYTES) return alert(lang === 'zh' ? '原图不能超过20MB。' : 'Images must be 20MB or smaller.');
   file = await optimizeProspectImage(file);
   const isVideo = String(file.type || '').startsWith('video/');
-  const maxBytes = isVideo ? 50 * 1024 * 1024 : 5 * 1024 * 1024;
-  if (file.size > maxBytes) return alert(isVideo ? (lang === 'zh' ? '原始视频不能超过 50MB，请先缩短视频。' : 'Source video must be 50MB or smaller.') : (lang === 'zh' ? '素材不能超过 5MB。' : 'File must be 5MB or smaller.'));
+  const maxBytes = isVideo ? MAX_CLOUD_VIDEO_BYTES : MAX_CLOUD_IMAGE_BYTES;
+  if (file.size > maxBytes) return alert(isVideo ? (lang === 'zh' ? '视频不能超过200MB，且最长5分钟。' : 'Videos must be 200MB or smaller and no longer than 5 minutes.') : (lang === 'zh' ? '素材不能超过20MB。' : 'Files must be 20MB or smaller.'));
   const status = document.getElementById('replyTemplateUploadStatus');
-  if (status) status.textContent = isVideo && file.size > 5 * 1024 * 1024 ? (lang === 'zh' ? '视频超过 5MB，正在上传并自动压缩…' : 'Video exceeds 5MB. Uploading and compressing…') : (lang === 'zh' ? '正在上传并处理…' : 'Uploading…');
+  if (status) status.textContent = isVideo ? (lang === 'zh' ? '正在上传高清原视频…' : 'Uploading original-quality video…') : (lang === 'zh' ? '正在上传高清图片…' : 'Uploading high-quality image…');
   try {
-    const uploaded = await api('/api/customer-media/upload', { method: 'POST', body: JSON.stringify({ name: file.name, type: file.type || 'application/octet-stream', dataUrl: await fileAsDataUrl(file) }) });
+    const uploaded = await uploadCloudMedia('/api/customer-media/upload', file);
     replyTemplatePendingAttachment = { name: uploaded.name, type: uploaded.type, size: uploaded.size, url: uploaded.url, kind: uploaded.type?.startsWith('image/') ? 'image' : 'video' };
     if (status) status.innerHTML = replyTemplatePreviewHtml(replyTemplatePendingAttachment.kind, replyTemplatePendingAttachment);
   } catch (err) {
@@ -5482,7 +5492,7 @@ async function uploadJobDamagePhotos(event) {
   try {
     for (const original of files) {
       const file = await optimizeProspectImage(original);
-      const uploaded = await api('/api/job-media/upload', { method: 'POST', body: JSON.stringify({ name: file.name, type: file.type || 'image/jpeg', dataUrl: await fileAsDataUrl(file) }) });
+      const uploaded = await uploadCloudMedia('/api/job-media/upload', file);
       jobConfirmationPhotoDraft.push({ name: uploaded.name, type: uploaded.type, size: uploaded.size, url: uploaded.url });
       renderJobDamagePhotos();
     }
