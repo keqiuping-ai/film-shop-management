@@ -2667,14 +2667,15 @@ function openPersonalNote(noteId = '', forcedType = '') {
   const staffOptions = staff.map(row => `<label class="personal-note-share-user"><input type="checkbox" name="personalNoteSharedUser" value="${escapeHtml(row.id)}" ${(item.sharedUserIds || []).includes(row.id) ? 'checked' : ''}><span>${escapeHtml(row.name || row.email)}</span></label>`).join('');
   const localDateTime = item.remindAt ? new Date(new Date(item.remindAt).getTime() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16) : '';
   openModal(noteId ? (lang === 'zh' ? '编辑记事' : 'Edit note') : (lang === 'zh' ? '新建记事' : 'New note'), `
-    <div class="form-grid">
+    <div class="form-grid personal-note-editor-grid">
       <label>${lang === 'zh' ? '类型' : 'Type'}<select id="personalNoteType" onchange="togglePersonalReminderField()"><option value="memo" ${type === 'memo' ? 'selected' : ''}>${lang === 'zh' ? '普通备忘录（不提醒）' : 'Memo (no reminder)'}</option><option value="task" ${type === 'task' ? 'selected' : ''}>${lang === 'zh' ? '待办事项（定时提醒）' : 'Task (scheduled reminder)'}</option></select></label>
       <label>${lang === 'zh' ? '标题' : 'Title'}<input id="personalNoteTitle" value="${escapeHtml(item.title || '')}" placeholder="${lang === 'zh' ? '例如：明天给张三发货' : 'e.g. Ship order tomorrow'}"></label>
       <label id="personalReminderField" class="${type === 'task' ? '' : 'hidden'}">${lang === 'zh' ? '提醒日期和时间' : 'Reminder date and time'}<input id="personalNoteRemindAt" type="datetime-local" value="${localDateTime}"></label>
       <label>${lang === 'zh' ? '分享范围' : 'Sharing'}<select id="personalNoteShareScope" onchange="togglePersonalNoteShareUsers()"><option value="private" ${shareScope === 'private' ? 'selected' : ''}>${lang === 'zh' ? '🔒 仅自己可见' : '🔒 Private'}</option><option value="all" ${shareScope === 'all' ? 'selected' : ''}>${lang === 'zh' ? '👥 分享给全体员工' : '👥 All staff'}</option><option value="users" ${shareScope === 'users' ? 'selected' : ''}>${lang === 'zh' ? '↗ 分享给指定员工' : '↗ Selected staff'}</option></select></label>
       <div id="personalNoteShareUsers" class="span-2 personal-note-share-users ${shareScope === 'users' ? '' : 'hidden'}"><strong>${lang === 'zh' ? '选择接收人' : 'Choose recipients'}</strong><div>${staffOptions || `<span>${lang === 'zh' ? '暂无其他员工账号' : 'No other staff accounts'}</span>`}</div></div>
-      <label class="span-2">${lang === 'zh' ? '内容' : 'Details'}<textarea id="personalNoteContent" rows="8" placeholder="${lang === 'zh' ? '记录详细内容、电话、地址或要办的事情……' : 'Write details...'}">${escapeHtml(item.content || '')}</textarea></label>
+      <label class="personal-note-content-field">${lang === 'zh' ? '内容' : 'Details'}<textarea id="personalNoteContent" rows="14" placeholder="${lang === 'zh' ? '记录详细内容、电话、地址或要办的事情……' : 'Write details...'}">${escapeHtml(item.content || '')}</textarea></label>
     </div>`, () => savePersonalNote(noteId));
+  document.getElementById('modal').classList.add('personal-note-modal-open');
 }
 
 function togglePersonalReminderField() {
@@ -6864,7 +6865,7 @@ function roleDefaultPermissions(role) {
 }
 
 function openModal(title, html, onSave) {
-  document.getElementById('modal').classList.remove('message-modal-open', 'confirmation-modal-open');
+  document.getElementById('modal').classList.remove('message-modal-open', 'confirmation-modal-open', 'personal-note-modal-open');
   document.body.classList.add('modal-lock');
   const workspace = document.getElementById('prospectWorkspace');
   if (workspace) workspace.style.pointerEvents = 'none';
@@ -6887,7 +6888,7 @@ function openModal(title, html, onSave) {
 function closeModal() {
   closeReplyTemplateVideoPreview();
   if (messageRecorder && messageRecorder.state === 'recording') messageRecorder.stop();
-  document.getElementById('modal').classList.remove('open', 'message-modal-open', 'confirmation-modal-open');
+  document.getElementById('modal').classList.remove('open', 'message-modal-open', 'confirmation-modal-open', 'personal-note-modal-open');
   document.getElementById('modal').classList.remove('reply-library-open');
   document.body.classList.remove('modal-lock');
   const workspace = document.getElementById('prospectWorkspace');

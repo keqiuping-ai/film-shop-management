@@ -1687,6 +1687,9 @@ body.modal-lock .prospect-workspace { pointer-events: none; }
 .personal-note-share-users > div { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:8px; margin-top:10px; max-height:160px; overflow:auto; }
 .personal-note-share-user { display:flex !important; flex-direction:row !important; align-items:center; gap:8px; padding:8px 10px; border:1px solid var(--line); border-radius:10px; background:white; }
 .personal-note-share-user input { width:auto; margin:0; }
+.personal-note-modal-open .dialog { width:min(1180px, calc(100vw - 36px)); }
+.personal-note-editor-grid .personal-note-content-field { grid-column:1 / -1; margin-bottom:0; font-size:14px; font-weight:700; }
+.personal-note-editor-grid #personalNoteContent { width:100%; min-height:390px; box-sizing:border-box; padding:16px 18px; color:var(--text); font-size:18px; line-height:1.65; font-weight:500; }
 .reimbursement-stats { grid-template-columns:repeat(4,minmax(0,1fr)); margin-bottom:14px; }
 .reimbursement-table .reimbursement-purpose { max-width:230px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .reimbursement-form { display:flex; flex-direction:column; gap:14px; }
@@ -1785,6 +1788,8 @@ body.modal-lock .prospect-workspace { pointer-events: none; }
   .personal-note-list-panel { border-right:0; border-bottom:1px solid var(--line); }
   .personal-note-list { max-height:300px; }
   .personal-note-detail-panel { padding:20px; }
+  .personal-note-modal-open .dialog { width:100%; }
+  .personal-note-editor-grid #personalNoteContent { min-height:320px; font-size:17px; }
   .reimbursement-stats { grid-template-columns:repeat(2,minmax(0,1fr)); }
   .reimbursement-upload { grid-template-columns:1fr; }
   .reimbursement-upload>* { grid-column:1!important; }
