@@ -13,6 +13,7 @@ const DATA_DIR = process.env.DATA_DIR || path.join(ROOT, 'data');
 const DB_FILE = path.join(DATA_DIR, 'db.json');
 const BACKUP_DIR = path.join(DATA_DIR, 'backups');
 const CUSTOMER_MEDIA_DIR = path.join(DATA_DIR, 'customer-media');
+const MEDIA_UPLOAD_PARTS_DIR = path.join(DATA_DIR, 'media-upload-parts');
 const SESSION_SECRET_FILE = path.join(DATA_DIR, 'session-secret');
 const CONFIG_FILE = path.join(ROOT, 'server-config.json');
 const VERSION_FILE = path.join(ROOT, 'version.json');
@@ -25,6 +26,7 @@ const MAX_CLOUD_VIDEO_SECONDS = 5 * 60;
 const MAX_INTERNAL_MESSAGE_VIDEO_SECONDS = 30;
 const INTERNAL_MESSAGE_VIDEO_RETENTION_MS = 5 * 24 * 60 * 60 * 1000;
 const MAX_TWILIO_IMAGE_BYTES = 4.5 * 1024 * 1024;
+const MEDIA_UPLOAD_CHUNK_BYTES = 4 * 1024 * 1024;
 const CUSTOM_PRINTED_FILM_SKU = 'CUSTOM-PRINTED-FILM';
 const sessions = new Map();
 const eventClients = new Set();
@@ -1100,6 +1102,15 @@ function expireInternalMessageVideos() {
     changed = true;
   }
   if (changed) writeDb(db);
+}
+
+function cleanupStaleMediaUploadParts() {
+  if (!fs.existsSync(MEDIA_UPLOAD_PARTS_DIR)) return;
+  const cutoff = Date.now() - 24 * 60 * 60 * 1000;
+  for (const fileName of fs.readdirSync(MEDIA_UPLOAD_PARTS_DIR)) {
+    const filePath = path.join(MEDIA_UPLOAD_PARTS_DIR, path.basename(fileName));
+    try { if (fs.statSync(filePath).mtimeMs < cutoff) fs.unlinkSync(filePath); } catch {}
+  }
 }
 
 function mapUrlForLatLng(lat, lng) {
@@ -3380,6 +3391,62 @@ async function api(req, res) {
     if (url.pathname === '/api/job-media/upload' && !canAccess(user, 'jobsEdit') && !canAccess(user, 'jobsCreate')) return send(res, 403, { error: '没有修改施工单的权限' });
     if (url.pathname === '/api/reimbursement-media/upload' && !canAccess(user, 'reimbursementsCreate')) return send(res, 403, { error: '没有提交报销凭证的权限' });
     const requestType = String(req.headers['content-type'] || 'application/octet-stream').split(';')[0].trim().toLowerCase();
+    const uploadId = String(req.headers['x-upload-id'] || '').trim();
+    if (uploadId) {
+      if (!/^[a-zA-Z0-9-]{10,80}$/.test(uploadId)) return send(res, 400, { error: '分片上传编号不正确' });
+      const chunkIndex = Number(req.headers['x-chunk-index']);
+      const chunkCount = Number(req.headers['x-chunk-count']);
+      const declaredSize = Number(req.headers['x-file-size']);
+      const maxSize = requestType.startsWith('video/') ? MAX_CUSTOMER_VIDEO_SOURCE_BYTES : requestType.startsWith('image/') ? MAX_CLOUD_IMAGE_BYTES : MAX_CLOUD_FILE_BYTES;
+      if (!Number.isInteger(chunkIndex) || !Number.isInteger(chunkCount) || chunkIndex < 0 || chunkIndex >= chunkCount || chunkCount < 2 || chunkCount > 100) return send(res, 400, { error: '分片顺序不正确' });
+      if (!Number.isFinite(declaredSize) || declaredSize <= 0 || declaredSize > maxSize) return send(res, 413, { error: requestType.startsWith('video/') ? '视频不能超过 200MB' : '附件不能超过 20MB' });
+      let chunk;
+      try { chunk = await readBinaryBody(req, MEDIA_UPLOAD_CHUNK_BYTES + 1024); } catch { return send(res, 413, { error: '单个上传分片过大' }); }
+      if (!chunk.length || chunk.length > MEDIA_UPLOAD_CHUNK_BYTES) return send(res, 400, { error: '上传分片为空或过大' });
+      fs.mkdirSync(MEDIA_UPLOAD_PARTS_DIR, { recursive: true });
+      const partPrefix = `${String(user.id).replace(/[^a-zA-Z0-9_-]/g, '')}-${uploadId}`;
+      const partPath = path.join(MEDIA_UPLOAD_PARTS_DIR, `${partPrefix}-${chunkIndex}.part`);
+      fs.writeFileSync(partPath, chunk);
+      if (chunkIndex < chunkCount - 1) return send(res, 200, { ok: true, partial: true, chunkIndex, chunkCount });
+      let name = '附件';
+      try { name = decodeURIComponent(String(req.headers['x-file-name'] || '附件')).trim().slice(0, 160) || '附件'; } catch {}
+      const partPaths = Array.from({ length: chunkCount }, (_, index) => path.join(MEDIA_UPLOAD_PARTS_DIR, `${partPrefix}-${index}.part`));
+      if (partPaths.some(item => !fs.existsSync(item))) return send(res, 409, { error: '上传分片不完整，请重新上传' });
+      const actualSize = partPaths.reduce((sum, item) => sum + fs.statSync(item).size, 0);
+      if (actualSize !== declaredSize || actualSize > maxSize) {
+        partPaths.forEach(item => { try { fs.unlinkSync(item); } catch {} });
+        return send(res, 400, { error: '上传文件大小校验失败' });
+      }
+      fs.mkdirSync(CUSTOMER_MEDIA_DIR, { recursive: true });
+      const fileName = `${crypto.randomBytes(6).toString('hex')}${safeCustomerMediaExtension(name, requestType)}`;
+      const filePath = path.join(CUSTOMER_MEDIA_DIR, fileName);
+      const output = fs.openSync(filePath, 'w');
+      try {
+        for (const item of partPaths) {
+          const buffer = fs.readFileSync(item);
+          let offset = 0;
+          while (offset < buffer.length) offset += fs.writeSync(output, buffer, offset, buffer.length - offset);
+        }
+      } finally {
+        fs.closeSync(output);
+        partPaths.forEach(item => { try { fs.unlinkSync(item); } catch {} });
+      }
+      let durationSeconds = 0;
+      if (requestType.startsWith('video/')) {
+        try {
+          durationSeconds = await cloudVideoDurationSeconds(filePath);
+          const maxDuration = url.pathname === '/api/message-media/upload' ? MAX_INTERNAL_MESSAGE_VIDEO_SECONDS : MAX_CLOUD_VIDEO_SECONDS;
+          if (durationSeconds > maxDuration) throw new Error(url.pathname === '/api/message-media/upload' ? '站内留言视频最长30秒，请先剪短后重试' : '云端视频最长5分钟，请先剪短后重试');
+        } catch (err) {
+          try { fs.unlinkSync(filePath); } catch {}
+          return send(res, 400, { error: err.message || '视频格式无法读取' });
+        }
+      }
+      const mediaUrl = `${requestPublicBaseUrl(req)}/customer-media/${fileName}`;
+      audit(db, user, 'upload-customer-media', `分片上传客户附件 ${name}`);
+      writeDb(db);
+      return send(res, 200, { ok: true, name, type: requestType, size: actualSize, durationSeconds, url: mediaUrl });
+    }
     let name = '附件';
     let contentType = requestType;
     let data;
@@ -4294,6 +4361,7 @@ applyCustomerConversationPromotionEligibilityMigration();
 applyImportedCustomerEncodingMigration();
 applyCustomerNumberRemoval();
 expireInternalMessageVideos();
+cleanupStaleMediaUploadParts();
 http.createServer((req, res) => {
   if (req.url.startsWith('/customer-media/')) {
     serveCustomerMedia(req, res);
@@ -4311,4 +4379,5 @@ http.createServer((req, res) => {
   startScheduleReminderWorker();
   startTwilioReconciliationWorker();
   setInterval(expireInternalMessageVideos, 6 * 60 * 60 * 1000);
+  setInterval(cleanupStaleMediaUploadParts, 6 * 60 * 60 * 1000);
 });

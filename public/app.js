@@ -4696,6 +4696,28 @@ function fileAsDataUrl(file) {
 }
 
 async function uploadCloudMedia(path, file) {
+  const chunkBytes = 4 * 1024 * 1024;
+  if (file.size > chunkBytes) {
+    const uploadId = (globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`).replace(/[^a-zA-Z0-9-]/g, '');
+    const chunkCount = Math.ceil(file.size / chunkBytes);
+    let result = null;
+    for (let chunkIndex = 0; chunkIndex < chunkCount; chunkIndex += 1) {
+      const chunk = file.slice(chunkIndex * chunkBytes, Math.min(file.size, (chunkIndex + 1) * chunkBytes), file.type || 'application/octet-stream');
+      result = await api(path, {
+        method: 'POST',
+        headers: {
+          'Content-Type': file.type || 'application/octet-stream',
+          'X-File-Name': encodeURIComponent(file.name || 'attachment'),
+          'X-Upload-Id': uploadId,
+          'X-Chunk-Index': String(chunkIndex),
+          'X-Chunk-Count': String(chunkCount),
+          'X-File-Size': String(file.size)
+        },
+        body: chunk
+      });
+    }
+    return result;
+  }
   return api(path, {
     method: 'POST',
     headers: {
