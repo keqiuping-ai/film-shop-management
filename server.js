@@ -3602,6 +3602,57 @@ async function api(req, res) {
     });
   }
 
+  if (url.pathname === '/api/workshop-movements/batch' && req.method === 'POST') {
+    if (!canAccess(user, 'inventoryEdit')) return send(res, 403, { error: '没有此功能权限' });
+    const body = await readBody(req);
+    const rawItems = Array.isArray(body.items) ? body.items : [];
+    if (!rawItems.length) return send(res, 400, { error: '请至少填写一行贴膜明细' });
+    if (rawItems.length > 30) return send(res, 400, { error: '一张贴膜间单最多填写 30 行' });
+
+    const groupedItems = new Map();
+    for (const rawItem of rawItems) {
+      const sku = String(rawItem?.sku || '').trim();
+      const qty = Number(rawItem?.qty || 0);
+      if (!sku) return send(res, 400, { error: '每一行都必须选择 SKU' });
+      if (!Number.isFinite(qty) || qty <= 0) return send(res, 400, { error: `${sku} 的数量必须大于 0` });
+      groupedItems.set(sku, Number(groupedItems.get(sku) || 0) + qty);
+    }
+
+    const common = {
+      date: String(body.date || '').trim(),
+      type: body.type === 'transfer' ? 'transfer' : 'consume',
+      operator: String(body.operator || '').trim(),
+      jobCustomer: String(body.jobCustomer || '').trim(),
+      note: String(body.note || '').trim()
+    };
+    const batchId = id();
+    const createdAt = new Date().toISOString();
+    const movements = [...groupedItems].map(([sku, qty]) => ({
+      ...common, sku, qty, id: id(), batchId, createdAt,
+      createdBy: user.name || '', createdByUserId: user.id
+    }));
+
+    for (const movement of movements) {
+      const dateError = validateEntryDate(db, movement, 'workshopMovements');
+      if (dateError) return send(res, 400, { error: dateError });
+      const movementError = validateWorkshopMovement(db, movement);
+      if (movementError) return send(res, 400, { error: movementError });
+    }
+
+    for (const movement of movements) {
+      db.workshopMovements.push(movement);
+      applyWorkshopMovement(db, movement);
+      audit(db, user, 'create-workshopMovements-batch', {
+        collection: 'workshopMovements', recordId: movement.id,
+        recordLabel: recordLabel(movement), after: movement,
+        detail: `批量新增贴膜间流水 ${movement.sku} ${movement.qty}`
+      });
+    }
+    writeDb(db);
+    notifyDataChanged('create-workshopMovements-batch', batchId);
+    return send(res, 200, sanitizeDbForUser(db, user));
+  }
+
   const match = url.pathname.match(/^\/api\/([a-zA-Z]+)(?:\/([^/]+))?$/);
   if (!match) return send(res, 404, { error: 'Not found' });
   const [, collection, recordId] = match;

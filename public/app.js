@@ -5783,6 +5783,7 @@ function openMovementForSku(sku, type = 'in', qty = 1) {
 
 function openWorkshopMovement(type = 'transfer') {
   const movementType = type === 'consume' ? 'consume' : 'transfer';
+  if (movementType === 'consume') return openWorkshopConsumeBatch();
   openModal(
     movementType === 'transfer' ? t('workshopTransfer') : t('workshopConsume'),
     formHtml([
@@ -5813,6 +5814,114 @@ function openWorkshopMovement(type = 'transfer') {
   );
   setupWorkshopSkuSearch();
   setupWorkshopStockGuard();
+}
+
+function workshopConsumeLineRowHtml(line = {}) {
+  return `<tr class="workshop-consume-line">
+    <td><div class="sku-search workshop-line-sku-search">
+      <input class="workshop-line-sku" type="hidden" value="${escapeHtml(line.sku || '')}" />
+      <input class="workshop-line-sku-search-input" type="text" value="${escapeHtml(workshopSkuSearchLabel(line.sku || ''))}" autocomplete="off" placeholder="${lang === 'zh' ? '输入 SKU / 名称 / 关键词搜索' : 'Search SKU / name / keyword'}" oninput="renderWorkshopConsumeLineSkuResults(this)" onfocus="renderWorkshopConsumeLineSkuResults(this)" />
+      <div class="sku-search-results workshop-line-sku-results"></div>
+    </div></td>
+    <td><input class="workshop-line-qty" type="number" min="0.1" step="0.1" value="${escapeHtml(line.qty ?? 0)}" oninput="updateWorkshopConsumeLines()" /></td>
+    <td class="workshop-line-stock">—</td>
+    <td><button class="btn sales-line-remove" type="button" onclick="removeWorkshopConsumeLine(this)" title="${lang === 'zh' ? '删除这行' : 'Remove line'}">×</button></td>
+  </tr>`;
+}
+
+function renderWorkshopConsumeLineSkuResults(input) {
+  const wrapper = input?.closest('.workshop-line-sku-search');
+  const results = wrapper?.querySelector('.workshop-line-sku-results');
+  if (!results) return;
+  const query = String(input.value || '').trim().toLowerCase();
+  const options = (state.products || []).filter(product => !isCustomPrintedFilmSku(product.sku)).filter(product => !query || salesOrderSkuSearchText(product).includes(query)).slice(0, 40);
+  results.innerHTML = options.length ? options.map(product => `<button type="button" class="sku-result" data-workshop-line-sku="${escapeHtml(product.sku)}" onmousedown="event.preventDefault(); selectWorkshopConsumeLineSku(this)"><strong>${escapeHtml(product.sku)}</strong><span>${escapeHtml(product.name || '')}</span><small>${escapeHtml(product.category || product.unit || '')}</small></button>`).join('') : `<div class="sku-result-empty">${lang === 'zh' ? '没有找到匹配商品' : 'No matching item'}</div>`;
+  const rect = input.getBoundingClientRect();
+  const desiredHeight = Math.min(270, Math.max(92, options.length * 48));
+  const roomBelow = window.innerHeight - rect.bottom - 12;
+  const showAbove = roomBelow < Math.min(150, desiredHeight) && rect.top > roomBelow;
+  results.style.position = 'fixed';
+  results.style.left = `${Math.max(8, rect.left)}px`;
+  results.style.right = 'auto';
+  results.style.width = `${Math.min(rect.width, window.innerWidth - Math.max(8, rect.left) - 8)}px`;
+  results.style.top = showAbove ? `${Math.max(8, rect.top - desiredHeight - 5)}px` : `${rect.bottom + 5}px`;
+  results.style.maxHeight = `${showAbove ? Math.min(desiredHeight, rect.top - 13) : Math.min(desiredHeight, roomBelow)}px`;
+  results.style.zIndex = '160';
+  results.classList.add('open');
+}
+
+function selectWorkshopConsumeLineSku(button) {
+  const wrapper = button.closest('.workshop-line-sku-search');
+  const sku = button.dataset.workshopLineSku || '';
+  const hidden = wrapper?.querySelector('.workshop-line-sku');
+  const search = wrapper?.querySelector('.workshop-line-sku-search-input');
+  if (hidden) hidden.value = sku;
+  if (search) search.value = workshopSkuSearchLabel(sku);
+  wrapper?.querySelector('.workshop-line-sku-results')?.classList.remove('open');
+  updateWorkshopConsumeLines();
+}
+
+function addWorkshopConsumeLine(line = {}) {
+  document.getElementById('workshopConsumeLines')?.insertAdjacentHTML('beforeend', workshopConsumeLineRowHtml(line));
+  updateWorkshopConsumeLines();
+}
+
+function removeWorkshopConsumeLine(button) {
+  const body = document.getElementById('workshopConsumeLines');
+  if (!body) return;
+  if (body.querySelectorAll('.workshop-consume-line').length <= 1) return alert(lang === 'zh' ? '消耗单至少保留一行膜料。' : 'Keep at least one film line.');
+  button.closest('.workshop-consume-line')?.remove();
+  updateWorkshopConsumeLines();
+}
+
+function readWorkshopConsumeLines() {
+  return [...document.querySelectorAll('#workshopConsumeLines .workshop-consume-line')].map(row => ({ sku: row.querySelector('.workshop-line-sku')?.value || '', qty: Number(row.querySelector('.workshop-line-qty')?.value || 0) }));
+}
+
+function updateWorkshopConsumeLines() {
+  const type = document.getElementById('type')?.value || 'consume';
+  const totals = new Map();
+  readWorkshopConsumeLines().forEach(line => totals.set(line.sku, Number(totals.get(line.sku) || 0) + line.qty));
+  document.querySelectorAll('#workshopConsumeLines .workshop-consume-line').forEach(row => {
+    const sku = row.querySelector('.workshop-line-sku')?.value || '';
+    const product = state.products.find(item => item.sku === sku);
+    const available = type === 'transfer' ? Number(product?.qty || 0) : workshopStockQty(sku);
+    const requested = Number(totals.get(sku) || 0);
+    const output = row.querySelector('.workshop-line-stock');
+    if (output) output.innerHTML = sku ? `${available.toLocaleString()} ${type === 'transfer' ? escapeHtml(product?.unit || '') : t('meter')}${requested > available ? `<small class="workshop-line-over">${lang === 'zh' ? `本单共 ${requested}` : `Order total ${requested}`}</small>` : ''}` : '—';
+  });
+}
+
+async function saveWorkshopMovementBatch(data) {
+  try {
+    state = await api('/api/workshop-movements/batch', { method: 'POST', body: JSON.stringify(data) });
+    broadcastDataChange(); closeModal(); render();
+  } catch (err) { alert(err.message); }
+}
+
+function openWorkshopConsumeBatch() {
+  const fields = [['date',t('date'),'date',today()], ['type',t('type'),'select','consume',[['consume',t('workshopConsume')],['transfer',t('workshopTransfer')]]], ['operator',t('operator'),'text',user?.name || ''], ['jobCustomer',t('workshopUsage'),'text',''], ['note',t('note'),'textarea','', null, 'wide']];
+  const lines = `<div class="sales-order-lines workshop-consume-lines wide"><div class="sales-order-lines-head"><strong>${lang === 'zh' ? '膜料明细' : 'Film details'}</strong><button class="btn" type="button" onclick="addWorkshopConsumeLine()">+ ${lang === 'zh' ? '新增一行' : 'Add line'}</button></div><div class="table-wrap"><table class="sales-lines-table workshop-consume-table"><thead><tr><th>SKU</th><th>${t('qtyMeters')}</th><th>${lang === 'zh' ? '可用库存' : 'Available'}</th><th></th></tr></thead><tbody id="workshopConsumeLines">${workshopConsumeLineRowHtml()}</tbody></table></div><div class="stock-hint">${lang === 'zh' ? '同一个 SKU 填写多行时会自动合并数量；任意一行库存不足，整张单都不会保存。' : 'Duplicate SKUs are combined. If any item lacks stock, the whole batch is rejected.'}</div></div>`;
+  openModal(t('workshopConsume'), formHtml(fields) + lines, () => {
+    const data = readForm(['date','type','operator','jobCustomer','note']);
+    data.items = readWorkshopConsumeLines();
+    const dateError = validateTodayEntryDate(data.date);
+    if (dateError) return alert(dateError);
+    if (!data.items.length || data.items.some(line => !line.sku)) return alert(lang === 'zh' ? '每一行都必须选择 SKU。' : 'Choose a SKU for every line.');
+    if (data.items.some(line => line.qty <= 0)) return alert(lang === 'zh' ? '每一行数量都必须大于 0。' : 'Every quantity must be greater than 0.');
+    const totals = new Map();
+    data.items.forEach(line => totals.set(line.sku, Number(totals.get(line.sku) || 0) + line.qty));
+    for (const [sku, qty] of totals) {
+      const product = state.products.find(item => item.sku === sku);
+      if (!product) return alert(lang === 'zh' ? `找不到 SKU：${sku}` : `Cannot find SKU: ${sku}`);
+      const available = data.type === 'transfer' ? Number(product.qty || 0) : workshopStockQty(sku);
+      if (qty > available) return alert(`${sku}：${data.type === 'transfer' ? t('mainWarehouseStock') : t('workshopCurrentStock')} ${available}，${lang === 'zh' ? '本单数量' : 'Batch quantity'} ${qty}`);
+    }
+    return saveWorkshopMovementBatch(data);
+  });
+  document.getElementById('type')?.addEventListener('change', updateWorkshopConsumeLines);
+  document.getElementById('workshopConsumeLines')?.addEventListener('focusout', event => { if (event.target.matches('.workshop-line-sku-search-input')) setTimeout(() => event.target.closest('.workshop-line-sku-search')?.querySelector('.workshop-line-sku-results')?.classList.remove('open'), 120); });
+  updateWorkshopConsumeLines();
 }
 
 function openProspect(id, collection = 'prospects') {
