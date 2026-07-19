@@ -3625,9 +3625,10 @@ async function api(req, res) {
       if (attachment?.error) return send(res, 400, { error: attachment.error });
       const recipient = isGroup ? null : db.users.find(item => item.id === toUserId && item.active !== false);
       if (!isGroup && !recipient) return send(res, 400, { error: '收件人不存在或未启用' });
-      if (!isGroup && recipient.id === user.id) return send(res, 400, { error: '不能给自己留言' });
       if (!text && !attachment) return send(res, 400, { error: '留言内容不能为空' });
       if (text.length > 2000) return send(res, 400, { error: '留言内容不能超过 2000 个字' });
+      const createdAt = new Date().toISOString();
+      const isSelfMessage = !isGroup && recipient.id === user.id;
       const message = {
         id: id(),
         scope: isGroup ? 'group' : 'direct',
@@ -3638,8 +3639,8 @@ async function api(req, res) {
         toName: isGroup ? '全体员工' : (recipient.name || recipient.email),
         text,
         attachment,
-        createdAt: new Date().toISOString(),
-        readAt: '',
+        createdAt,
+        readAt: isSelfMessage ? createdAt : '',
         readByUserIds: isGroup ? [user.id] : []
       };
       db.messages.push(message);
