@@ -22,6 +22,8 @@ const MAX_CUSTOMER_VIDEO_SOURCE_BYTES = 200 * 1024 * 1024;
 const MAX_CLOUD_IMAGE_BYTES = 20 * 1024 * 1024;
 const MAX_CLOUD_FILE_BYTES = 20 * 1024 * 1024;
 const MAX_CLOUD_VIDEO_SECONDS = 5 * 60;
+const MAX_INTERNAL_MESSAGE_VIDEO_SECONDS = 30;
+const INTERNAL_MESSAGE_VIDEO_RETENTION_MS = 5 * 24 * 60 * 60 * 1000;
 const MAX_TWILIO_IMAGE_BYTES = 4.5 * 1024 * 1024;
 const CUSTOM_PRINTED_FILM_SKU = 'CUSTOM-PRINTED-FILM';
 const sessions = new Map();
@@ -1066,6 +1068,35 @@ function unreadMessageCount(db, user) {
     if (message.scope === 'group') return !(message.readByUserIds || []).includes(userId);
     return message.toUserId === userId && !message.readAt;
   }).length;
+}
+
+function expireInternalMessageVideos() {
+  const db = readDb();
+  const cutoff = Date.now() - INTERNAL_MESSAGE_VIDEO_RETENTION_MS;
+  const serializedDb = JSON.stringify(db);
+  let changed = false;
+  for (const message of db.messages || []) {
+    const attachment = message?.attachment;
+    if (attachment?.kind !== 'video' || attachment.expired || !attachment.url) continue;
+    const createdAt = Date.parse(message.createdAt || '');
+    if (!Number.isFinite(createdAt) || createdAt > cutoff) continue;
+    const url = String(attachment.url);
+    const referenceCount = serializedDb.split(url).length - 1;
+    if (url.includes('/customer-media/') && referenceCount <= 1) {
+      const fileName = path.basename(url.split('?')[0]);
+      try { fs.unlinkSync(path.join(CUSTOMER_MEDIA_DIR, fileName)); } catch {}
+    }
+    message.attachment = {
+      kind: 'video',
+      name: String(attachment.name || '站内视频'),
+      type: String(attachment.type || 'video/mp4'),
+      size: Number(attachment.size || 0),
+      expired: true,
+      expiredAt: new Date().toISOString()
+    };
+    changed = true;
+  }
+  if (changed) writeDb(db);
 }
 
 function mapUrlForLatLng(lat, lng) {
@@ -3376,7 +3407,8 @@ async function api(req, res) {
     if (contentType.startsWith('video/')) {
       try {
         durationSeconds = await cloudVideoDurationSeconds(filePath);
-        if (durationSeconds > MAX_CLOUD_VIDEO_SECONDS) throw new Error('云端视频最长5分钟，请先剪短后重试');
+        const maxDuration = url.pathname === '/api/message-media/upload' ? MAX_INTERNAL_MESSAGE_VIDEO_SECONDS : MAX_CLOUD_VIDEO_SECONDS;
+        if (durationSeconds > maxDuration) throw new Error(url.pathname === '/api/message-media/upload' ? '站内留言视频最长30秒，请先剪短后重试' : '云端视频最长5分钟，请先剪短后重试');
       } catch (err) {
         try { fs.unlinkSync(filePath); } catch {}
         return send(res, 400, { error: err.message || '视频格式无法读取' });
@@ -4244,6 +4276,7 @@ applyPromotedConversationMerge();
 applyCustomerConversationPromotionEligibilityMigration();
 applyImportedCustomerEncodingMigration();
 applyCustomerNumberRemoval();
+expireInternalMessageVideos();
 http.createServer((req, res) => {
   if (req.url.startsWith('/customer-media/')) {
     serveCustomerMedia(req, res);
@@ -4260,4 +4293,5 @@ http.createServer((req, res) => {
   startDailyBackupWorker();
   startScheduleReminderWorker();
   startTwilioReconciliationWorker();
+  setInterval(expireInternalMessageVideos, 6 * 60 * 60 * 1000);
 });

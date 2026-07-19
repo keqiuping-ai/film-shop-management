@@ -1640,6 +1640,7 @@ function messageBubbleHtml(message) {
 }
 
 function messageAttachmentHtml(attachment) {
+  if (attachment?.expired) return `<div class="message-file">🕒 ${lang === 'zh' ? '视频已按5天保留规则自动过期' : 'Video expired after the 5-day retention period'}</div>`;
   const source = attachment?.url || attachment?.dataUrl || '';
   if (!source) return '';
   const name = escapeHtml(attachment.name || 'attachment');
@@ -1787,8 +1788,8 @@ async function sendMessageFile(file, kind) {
   const maxBytes = kind === 'video' ? MAX_CLOUD_VIDEO_BYTES : kind === 'image' ? MAX_CLOUD_IMAGE_BYTES : MAX_MESSAGE_ATTACHMENT_BYTES;
   if (file.size > maxBytes) {
     alert(lang === 'zh'
-      ? (kind === 'image' ? '照片自动处理后仍超过20MB，请换一张照片。' : kind === 'video' ? '视频不能超过200MB，且最长5分钟。' : '附件不能超过20MB。')
-      : (kind === 'image' ? 'The processed image is still over 20MB.' : kind === 'video' ? 'Videos must be 200MB or smaller and no longer than 5 minutes.' : 'Attachments must be 20MB or smaller.'));
+      ? (kind === 'image' ? '照片自动处理后仍超过20MB，请换一张照片。' : kind === 'video' ? '站内视频不能超过200MB，且最长30秒；上传后保留5天。' : '附件不能超过20MB。')
+      : (kind === 'image' ? 'The processed image is still over 20MB.' : kind === 'video' ? 'Internal videos must be 200MB or smaller and no longer than 30 seconds; they are retained for 5 days.' : 'Attachments must be 20MB or smaller.'));
     return;
   }
   try {
