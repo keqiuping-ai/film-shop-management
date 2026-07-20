@@ -1206,6 +1206,9 @@ body.modal-lock .prospect-workspace { pointer-events: none; }
 .confirmation-editor-grid .span-3 { grid-column:span 3; }
 .confirmation-editor-section { margin-top:14px; padding:14px; border:1px solid var(--line); border-radius:12px; }
 .confirmation-editor-section h4 { margin:0 0 10px; color:var(--primary); }
+.confirmation-legal-notice { margin-top:12px; padding:12px 14px; border:1px solid #e6b84b; border-left:5px solid #d79a00; border-radius:10px; background:#fff9df; color:#4b3a08; }
+.confirmation-legal-notice strong { display:block; margin-bottom:6px; color:#7a5200; }
+.confirmation-legal-notice p { margin:5px 0 0; font-size:12.5px; line-height:1.45; }
 .confirmation-check-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; }
 .confirmation-check-grid label { display:flex; align-items:center; gap:7px; min-height:38px; padding:7px 9px; border:1px solid var(--line); border-radius:9px; font-size:13px; }
 .confirmation-check-grid input { width:auto; }
@@ -1284,6 +1287,7 @@ body.modal-lock .prospect-workspace { pointer-events: none; }
 .confirmation-preview-sheet .confirmation-terms { margin-top:2.5mm; border:1px solid #333; }
 .confirmation-preview-sheet .confirmation-terms h2 { margin:0; }
 .confirmation-preview-sheet .confirmation-terms ol { margin:1.5mm 2mm 1.5mm 6mm; padding-left:3mm; font-size:7.1pt; line-height:1.22; }
+.confirmation-preview-sheet .confirmation-terms .confirmation-tint-liability { margin-top:1mm; padding:1mm; border:1px solid #777; background:#f6f6f6; }
 .confirmation-preview-sheet .confirmation-signatures { display:grid; grid-template-columns:1.5fr .7fr 1fr; gap:5mm; margin-top:4mm; font-weight:700; }
 .confirmation-preview-sheet .confirmation-signatures div { white-space:nowrap; }
 .confirmation-preview-sheet .confirmation-signatures span { display:inline-block; min-width:30mm; padding:0 1mm 1mm; border-bottom:1px solid #111; }
@@ -1323,6 +1327,7 @@ body.modal-lock .prospect-workspace { pointer-events: none; }
   .confirmation-terms { margin-top:2.5mm; border:1px solid #333; }
   .confirmation-terms h2 { margin:0; }
   .confirmation-terms ol { margin:1.5mm 2mm 1.5mm 6mm; padding-left:3mm; font-size:7.1pt; line-height:1.22; }
+  .confirmation-terms .confirmation-tint-liability { margin-top:1mm; padding:1mm; border:1px solid #777; background:#f6f6f6 !important; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
   .confirmation-signatures { display:grid; grid-template-columns:1.5fr .7fr 1fr; gap:5mm; margin-top:4mm; font-weight:700; }
   .confirmation-signatures div { white-space:nowrap; }
   .confirmation-signatures span { display:inline-block; min-width:30mm; padding:0 1mm 1mm; border-bottom:1px solid #111; }
