@@ -65,6 +65,7 @@ let prospectReplyRevision = 0;
 let customerCenterSearch = '';
 let customerCenterPendingOnly = false;
 let customerCenterShowInvalid = false;
+let customerTaskFilter = 'all';
 let prospectSearch = '';
 let warrantySearch = '';
 let warrantyDraftPhotos = [];
@@ -142,6 +143,8 @@ const dict = {
     prospectsSub: '已预约或已到店客户及其到店时间',
     customerCenter: '客户交流中心',
     customerCenterSub: '集中查看所有客户聊天，已预约或已到店后加入预约到店客户',
+    customerTasks: '客服任务中心',
+    customerTasksSub: '统一处理待回复、新客户首聊和到期跟进',
     replyLibrary: '云端回复素材库',
     replyLibrarySub: '统一上传和维护客服常用文字、图片和短视频',
     leads: '客资提成',
@@ -392,6 +395,8 @@ const dict = {
     prospectsSub: 'Mat, Yelp, and other appointment-ready customer leads',
     customerCenter: 'Customer Communication Center',
     customerCenterSub: 'Manage all customer conversations and promote qualified customers to high intent',
+    customerTasks: 'Customer Service Tasks',
+    customerTasksSub: 'Handle replies, first contact, and scheduled follow-ups in one queue',
     replyLibrary: 'Cloud Reply Library',
     replyLibrarySub: 'Manage shared reply text, images, and short videos',
     leads: 'Lead Commissions',
@@ -620,6 +625,7 @@ const pages = [
   ['inventory', 'inventory', 'inventorySub'],
   ['workshopInventory', 'workshopInventory', 'workshopInventorySub'],
   ['inventoryAlerts', 'inventoryAlerts', 'inventoryAlertsSub'],
+  ['customerTasks', 'customerTasks', 'customerTasksSub'],
   ['customerCenter', 'customerCenter', 'customerCenterSub'],
   ['replyLibrary', 'replyLibrary', 'replyLibrarySub'],
   ['prospects', 'prospects', 'prospectsSub'],
@@ -647,6 +653,7 @@ const pagePermissions = {
   inventory: 'inventoryView',
   workshopInventory: 'inventoryView',
   inventoryAlerts: 'inventoryView',
+  customerTasks: 'prospectsView',
   customerCenter: 'prospectsView',
   replyLibrary: 'prospectsView',
   prospects: 'prospectsView',
@@ -673,6 +680,7 @@ const writePermissions = {
   pricing: 'pricingEdit',
   inventory: 'inventoryEdit',
   workshopInventory: 'inventoryEdit',
+  customerTasks: 'prospectsEdit',
   customerCenter: 'prospectsEdit',
   replyLibrary: 'prospectsEdit',
   prospects: 'prospectsEdit',
@@ -1003,6 +1011,10 @@ document.addEventListener('visibilitychange', () => {
 
 function setPage(page) {
   current = page;
+  const url = new URL(window.location.href);
+  if (page === 'customerTasks') url.searchParams.set('page', 'customerTasks');
+  else url.searchParams.delete('page');
+  window.history.replaceState({}, '', url);
   render();
 }
 
@@ -1884,7 +1896,7 @@ function updateVoiceButton(recording) {
 }
 
 function navIcon(id) {
-  return { modules:'▦', dashboard:'⌂', jobs:'▣', warranties:'◆', installers:'◉', pricing:'$', inventory:'▤', workshopInventory:'▥', inventoryAlerts:'!', customerCenter:'💬', replyLibrary:'☁', prospects:'★', leads:'☎', orders:'⇄', portalCustomers:'👤', shipments:'✈', schedules:'◫', workTime:'◴', expenses:'◇', reimbursements:'🧾', reports:'◌', audit:'◷', users:'◎', personalNotes:'📝', settings:'⚙' }[id] || '□';
+  return { modules:'▦', dashboard:'⌂', jobs:'▣', warranties:'◆', installers:'◉', pricing:'$', inventory:'▤', workshopInventory:'▥', inventoryAlerts:'!', customerTasks:'🎧', customerCenter:'💬', replyLibrary:'☁', prospects:'★', leads:'☎', orders:'⇄', portalCustomers:'👤', shipments:'✈', schedules:'◫', workTime:'◴', expenses:'◇', reimbursements:'🧾', reports:'◌', audit:'◷', users:'◎', personalNotes:'📝', settings:'⚙' }[id] || '□';
 }
 
 function moduleGrid(availablePages) {
@@ -3283,6 +3295,9 @@ const views = {
   inventoryAlerts() {
     const alertRows = stockAlertProducts();
     return panel(t('inventoryAlerts'), hasPerm('inventoryEdit') ? `<button class="btn" onclick="setPage('inventory')">${t('processInventory')}</button>` : '', inventorySearchBox(alertRows) + `<div id="inventorySearchResults">${inventoryAlertTable(true, null, true)}</div>` + `<p class="note">${lang === 'zh' ? '在库存商品里设置“预警库存/最低数量”。当当前库存小于或等于这个数量时，这里会自动生成补货报警。' : 'Set the reorder level on each SKU. When current stock is less than or equal to that number, the item appears here for replenishment.'}</p>`);
+  },
+  customerTasks() {
+    return customerTaskCenterView();
   },
   customerCenter() {
     return panel(t('customerCenter'), hasPerm('prospectsEdit') ? `<button class="btn primary" onclick="openProspect(null,'customerConversations')">${lang === 'zh' ? '新增客户交流' : 'New conversation'}</button>` : '', customerCenterSearchBox() + `<div id="customerCenterSearchResults">${customerCenterTable(searchedCustomerCenterRows())}</div>` + `<p class="note">${lang === 'zh' ? '这里只保留仍需客服跟进的客户。已预约和已到店客户自动进入“预约到店客户”，已转施工单客户进入“施工订单”，无效客户默认隐藏并可通过上方按钮单独复查。' : 'Only customers needing follow-up remain here. Appointments move to the appointment board, converted customers move to jobs, and invalid customers are hidden for separate review.'}</p>`);
@@ -4755,6 +4770,122 @@ function customerAwaitingReply(item) {
   return customerReplyState(item).pending;
 }
 
+function customerHasOutboundSms(item) {
+  return (Array.isArray(item?.conversationMessages) ? item.conversationMessages : []).some(message =>
+    String(message.direction || '').toLowerCase() === 'outbound' && String(message.channel || '').toLowerCase() === 'sms'
+  );
+}
+
+function appNowMinuteKey() {
+  const parts = Object.fromEntries(new Intl.DateTimeFormat('en-US', {
+    timeZone: APP_TIMEZONE, year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', hour12: false
+  }).formatToParts(new Date()).map(part => [part.type, part.value]));
+  return `${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}`;
+}
+
+function customerFollowUpKey(item) {
+  if (!item?.followUpDate) return '';
+  return `${item.followUpDate}T${item.followUpTime || '09:00'}`;
+}
+
+function customerTaskType(item) {
+  if (customerAwaitingReply(item)) return 'reply';
+  const followUpKey = customerFollowUpKey(item);
+  if (followUpKey && followUpKey <= appNowMinuteKey()) return 'followup';
+  if (followUpKey) return 'future';
+  if (!customerHasOutboundSms(item)) return 'first';
+  return '';
+}
+
+function customerTaskRows() {
+  const priority = { reply: 0, followup: 1, first: 2, future: 3 };
+  return customerCenterRows().map(item => ({ ...item, _taskType: customerTaskType(item) }))
+    .filter(item => item._taskType && (customerTaskFilter === 'all' || item._taskType === customerTaskFilter))
+    .sort((a, b) => {
+      const typeDiff = priority[a._taskType] - priority[b._taskType];
+      if (typeDiff) return typeDiff;
+      if (a._taskType === 'followup' || a._taskType === 'future') return customerFollowUpKey(a).localeCompare(customerFollowUpKey(b));
+      return new Date(prospectActivityTime(a)).getTime() - new Date(prospectActivityTime(b)).getTime();
+    });
+}
+
+function customerTaskCounts() {
+  const counts = { reply: 0, first: 0, followup: 0, future: 0 };
+  customerCenterRows().forEach(item => { const type = customerTaskType(item); if (counts[type] !== undefined) counts[type] += 1; });
+  return counts;
+}
+
+function customerTaskTypeLabel(type) {
+  return {
+    reply: lang === 'zh' ? '客户待回复' : 'Reply needed',
+    first: lang === 'zh' ? '新客户首聊' : 'First contact',
+    followup: lang === 'zh' ? '到期跟进' : 'Follow-up due',
+    future: lang === 'zh' ? '未来跟进' : 'Upcoming'
+  }[type] || '';
+}
+
+function setCustomerTaskFilter(type) {
+  customerTaskFilter = type || 'all';
+  render();
+}
+
+function customerTaskCenterView() {
+  const counts = customerTaskCounts();
+  const rows = customerTaskRows();
+  const filters = [
+    ['all', lang === 'zh' ? '全部任务' : 'All tasks', counts.reply + counts.first + counts.followup + counts.future],
+    ['reply', lang === 'zh' ? '待回复' : 'Replies', counts.reply],
+    ['first', lang === 'zh' ? '新客户首聊' : 'First contact', counts.first],
+    ['followup', lang === 'zh' ? '到期跟进' : 'Due follow-ups', counts.followup],
+    ['future', lang === 'zh' ? '未来跟进' : 'Upcoming', counts.future]
+  ];
+  const filterHtml = `<div class="customer-task-filters">${filters.map(([id, label, count]) => `<button class="customer-task-filter ${customerTaskFilter === id ? 'active' : ''}" onclick="setCustomerTaskFilter('${id}')"><span>${escapeHtml(label)}</span><strong>${count}</strong></button>`).join('')}</div>`;
+  const cards = `<div class="customer-task-grid">${rows.map(customerTaskCard).join('')}${rows.length ? '' : `<div class="customer-task-empty"><strong>${lang === 'zh' ? '当前队列已经处理完成' : 'This queue is clear'}</strong><span>${lang === 'zh' ? '系统会继续实时接收新客户和客户短信。' : 'New customers and messages will continue to appear automatically.'}</span></div>`}</div>`;
+  return panel(t('customerTasks'), `<button class="btn" onclick="sync()">${lang === 'zh' ? '立即刷新' : 'Refresh now'}</button>`, `${filterHtml}<div class="customer-task-guide">${lang === 'zh' ? '处理顺序：客户待回复 → 到期跟进 → 新客户首聊。发送成功后系统自动重新判断；未来跟进到点后自动进入待办。' : 'Priority: replies, due follow-ups, then first contact. The queue refreshes after a successful send.'}</div>${cards}`);
+}
+
+function customerTaskCard(item) {
+  const replyState = customerReplyState(item);
+  const latestText = replyState.latest ? cleanConversationText(replyState.latest.text || replyState.latest.message || replyState.latest.content || '') : '';
+  const claimedByOther = item.taskClaimedByUserId && item.taskClaimedByUserId !== user?.id && Date.now() - new Date(item.taskClaimedAt || 0).getTime() < 15 * 60 * 1000;
+  const claimedByMe = item.taskClaimedByUserId === user?.id && Date.now() - new Date(item.taskClaimedAt || 0).getTime() < 15 * 60 * 1000;
+  const schedule = customerFollowUpKey(item) ? `${item.followUpDate} ${item.followUpTime || '09:00'}` : '';
+  return `<article class="customer-task-card ${item._taskType}">
+    <header><span class="customer-task-kind">${customerTaskTypeLabel(item._taskType)}</span><span class="customer-task-source">${escapeHtml(item.source || '')}</span></header>
+    <h3>${escapeHtml(item.customer || (lang === 'zh' ? '未命名客户' : 'Unnamed customer'))}</h3>
+    <div class="customer-task-phone">${escapeHtml(item.phone || (lang === 'zh' ? '未填写电话' : 'No phone'))}</div>
+    <dl><div><dt>${lang === 'zh' ? '车辆' : 'Vehicle'}</dt><dd>${escapeHtml(item.vehicle || '—')}</dd></div><div><dt>${lang === 'zh' ? '需求' : 'Request'}</dt><dd>${escapeHtml(shortText(item.need || '—', 90))}</dd></div></dl>
+    ${latestText ? `<div class="customer-task-message"><small>${lang === 'zh' ? '客户最新消息' : 'Latest customer message'}</small>${escapeHtml(shortText(latestText, 150))}</div>` : ''}
+    ${schedule ? `<div class="customer-task-schedule"><strong>⏰ ${escapeHtml(schedule)}</strong><span>${escapeHtml(item.followUpReason || (lang === 'zh' ? '定时跟进' : 'Scheduled follow-up'))}</span></div>` : ''}
+    <footer><span>${claimedByOther ? `${lang === 'zh' ? '正在处理：' : 'In progress: '}${escapeHtml(item.taskClaimedByName || '')}` : claimedByMe ? (lang === 'zh' ? '已由我领取' : 'Claimed by me') : (lang === 'zh' ? '尚未领取' : 'Unclaimed')}</span><div><button class="btn" onclick="scheduleCustomerFollowUp('${item._collection}','${item.id}')">${lang === 'zh' ? '设置跟进' : 'Schedule'}</button><button class="btn primary" ${claimedByOther ? 'disabled' : ''} onclick="claimAndOpenCustomerTask('${item._collection}','${item.id}')">${claimedByMe ? (lang === 'zh' ? '继续处理' : 'Continue') : (lang === 'zh' ? '领取并打开' : 'Claim & open')}</button></div></footer>
+  </article>`;
+}
+
+async function claimAndOpenCustomerTask(collection, id) {
+  try {
+    const result = await api(`/api/customer-tasks/${collection}/${id}/claim`, { method: 'POST', body: '{}' });
+    state = result.data;
+    broadcastDataChange();
+    openProspectWorkspace(collection, id);
+  } catch (err) { alert(err.message); }
+}
+
+function scheduleCustomerFollowUp(collection, id) {
+  const item = (state[collection] || []).find(row => row.id === id);
+  if (!item) return;
+  const body = formHtml([
+    ['taskFollowUpDate', lang === 'zh' ? '下次跟进日期' : 'Follow-up date', 'date', item.followUpDate || today()],
+    ['taskFollowUpTime', lang === 'zh' ? '跟进时间' : 'Time', 'time', item.followUpTime || '10:00'],
+    ['taskFollowUpReason', lang === 'zh' ? '跟进原因' : 'Reason', 'textarea', item.followUpReason || '']
+  ]);
+  openModal(lang === 'zh' ? '设置客户跟进' : 'Schedule follow-up', body, async () => {
+    const payload = { ...item, followUpDate: document.getElementById('taskFollowUpDate').value, followUpTime: document.getElementById('taskFollowUpTime').value, followUpReason: document.getElementById('taskFollowUpReason').value.trim(), followUpCompletedAt: '' };
+    if (!payload.followUpDate) return alert(lang === 'zh' ? '请选择跟进日期。' : 'Choose a follow-up date.');
+    try { state = await api(`/api/${collection}/${id}`, { method: 'PUT', body: JSON.stringify(payload) }); closeModal(); broadcastDataChange(); render(); } catch (err) { alert(err.message); }
+  });
+}
+
 function customerCenterSearchText(item) {
   const rep = (state.customerServiceReps || []).find(row => row.id === item.ownerId);
   return [
@@ -4857,7 +4988,8 @@ async function markCustomerRecordSeen(collection, id) {
 const prospectWorkspaceFieldIds = [
   'workspaceDate', 'workspaceSource', 'workspaceCustomer', 'workspacePhone', 'workspaceVehicle',
   'workspaceNeed', 'workspaceService', 'workspaceAppointmentDate', 'workspaceAppointmentTime',
-  'workspaceOwnerId', 'workspaceIntentLevel', 'workspaceStatus', 'workspaceCallNote'
+  'workspaceOwnerId', 'workspaceIntentLevel', 'workspaceStatus', 'workspaceCallNote',
+  'workspaceFollowUpDate', 'workspaceFollowUpTime', 'workspaceFollowUpReason'
 ];
 
 function captureProspectWorkspaceDraft(markDirty = false) {
@@ -4886,7 +5018,7 @@ function closeProspectWorkspace() {
   document.body.classList.remove('prospect-workspace-open');
   const workspace = document.getElementById('prospectWorkspace');
   if (workspace) workspace.classList.remove('open');
-  if (current === 'customerCenter') render();
+  if (current === 'customerCenter' || current === 'customerTasks') render();
 }
 
 function cancelProspectWorkspaceChanges() {
@@ -4959,6 +5091,14 @@ function renderProspectWorkspace() {
         ${field(t('intentLevel'), select('workspaceIntentLevel', normalizeProspectIntentValue(item.intentLevel || '高意向'), intents))}
         ${field(t('prospectStatus'), select('workspaceStatus', item.status || '新意向', statuses))}
         <label class="prospect-sidebar-field prospect-call-note"><span>${lang === 'zh' ? '电话沟通备注' : 'Call notes'}</span><textarea id="workspaceCallNote" placeholder="${lang === 'zh' ? '例如：已电话沟通、客户关注价格、周五方便到店……' : 'Example: Called customer, discussed price, available Friday…'}" ${hasPerm('prospectsEdit') ? '' : 'disabled'}>${escapeHtml(item.callNote || '')}</textarea></label>
+        <div class="prospect-follow-up-box">
+          <strong>${lang === 'zh' ? '⏰ 下次跟进' : '⏰ Next follow-up'}</strong>
+          <div class="prospect-sidebar-pair">
+            ${field(lang === 'zh' ? '日期' : 'Date', `<input id="workspaceFollowUpDate" type="date" value="${escapeHtml(item.followUpDate || '')}" ${hasPerm('prospectsEdit') ? '' : 'disabled'}>`)}
+            ${field(lang === 'zh' ? '时间' : 'Time', `<input id="workspaceFollowUpTime" type="time" value="${escapeHtml(item.followUpTime || '')}" ${hasPerm('prospectsEdit') ? '' : 'disabled'}>`)}
+          </div>
+          ${field(lang === 'zh' ? '跟进原因' : 'Reason', `<textarea id="workspaceFollowUpReason" placeholder="${lang === 'zh' ? '例如：客户说 8 月中旬车辆回来，请准时联系' : 'Example: Customer expects the vehicle back in mid-August'}" ${hasPerm('prospectsEdit') ? '' : 'disabled'}>${escapeHtml(item.followUpReason || '')}</textarea>`)}
+        </div>
         ${hasPerm('prospectsEdit') ? `<div class="prospect-sidebar-actions"><button type="button" class="btn" onclick="cancelProspectWorkspaceChanges()">${lang === 'zh' ? '取消修改' : 'Cancel'}</button><button id="workspaceSaveDetailsButton" class="btn primary prospect-sidebar-save" onclick="saveProspectWorkspaceDetails()">${lang === 'zh' ? '保存客户资料' : 'Save customer details'}</button></div>` : ''}
       </aside>
       <section class="prospect-workspace-conversation">
@@ -5440,7 +5580,8 @@ async function saveProspectWorkspaceDetails() {
     service: value('workspaceService'), appointmentDate: value('workspaceAppointmentDate'),
     appointmentTime: value('workspaceAppointmentTime'), ownerId, ownerName: rep?.name || '',
     intentLevel: value('workspaceIntentLevel'), status: value('workspaceStatus'),
-    callNote: value('workspaceCallNote')
+    callNote: value('workspaceCallNote'), followUpDate: value('workspaceFollowUpDate'),
+    followUpTime: value('workspaceFollowUpTime'), followUpReason: value('workspaceFollowUpReason')
   };
   if (!updated.customer && !updated.phone) return alert(lang === 'zh' ? '客户姓名或电话至少填写一个。' : 'Please enter at least a customer name or phone.');
   if (button) { button.disabled = true; button.textContent = lang === 'zh' ? '保存中…' : 'Saving…'; }
@@ -7579,6 +7720,7 @@ function escapeJs(value) {
 }
 
 document.documentElement.lang = lang === 'en' ? 'en' : 'zh-CN';
+if (new URLSearchParams(window.location.search).get('page') === 'customerTasks') current = 'customerTasks';
 document.getElementById('email').value = localStorage.getItem('filmShopCloud.lastEmail') || document.getElementById('email').value;
 applyStaticTranslations();
 document.addEventListener('keydown', event => {
