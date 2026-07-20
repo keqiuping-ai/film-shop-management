@@ -3043,24 +3043,67 @@ async function uploadWarrantyPhotos(input) {
   }
 }
 
-function openWarranty(id = '') {
+function warrantyDateAfterYears(dateValue, years = 10) {
+  const match = String(dateValue || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return '';
+  return `${Number(match[1]) + Number(years)}-${match[2]}-${match[3]}`;
+}
+
+function updateWarrantyUntilFromInstallDate() {
+  const installDate = document.getElementById('warrantyInstallDate')?.value;
+  const warrantyUntil = document.getElementById('warrantyUntil');
+  if (warrantyUntil) warrantyUntil.value = warrantyDateAfterYears(installDate, 10);
+}
+
+function openWarrantyFromJob(jobId) {
+  const job = (state.jobs || []).find(item => item.id === jobId);
+  if (!job) return alert(lang === 'zh' ? '找不到这张施工单。' : 'Job order not found.');
+  const jobPhone = customerPhoneMatchKey(job.phone || '');
+  const existing = (state.warranties || []).find(item => {
+    if (!jobPhone || customerPhoneMatchKey(item.phone || '') !== jobPhone) return false;
+    return (job.scheduleDate && item.installDate === job.scheduleDate)
+      || (job.vehicle && String(item.vehicle || '').trim().toLowerCase() === String(job.vehicle).trim().toLowerCase());
+  });
+  if (existing) {
+    alert(lang === 'zh' ? '这个客户的本次施工已经有质保单，现在为你打开现有质保单。' : 'A warranty already exists for this job. Opening it now.');
+    return openWarranty(existing.id);
+  }
+  const installDate = job.scheduleDate || job.date || today();
+  const services = jobServices(job);
+  const warrantyType = services.includes('wrap') ? '改色膜' : (services.includes('ppf') ? 'PPF' : '');
+  const serviceSummary = [serviceLabelList(job), job.package, job.notes].filter(Boolean).join(' · ');
+  openWarranty('', {
+    customerName: job.customer || '', phone: job.phone || '', vehicle: job.vehicle || '',
+    installDate, warrantyUntil: warrantyDateAfterYears(installDate, 10), product: warrantyType,
+    areas: serviceSummary, internalNote: `${lang === 'zh' ? '由施工单自动生成' : 'Created from job'}：${job.id}`
+  });
+}
+
+function openWarranty(id = '', preset = {}) {
   const existing = (state.warranties || []).find(item => item.id === id);
-  const item = existing || { customerName:'', phone:'', email:'', licensePlate:'', vehicle:'', installDate:today(), product:'', areas:'', warrantyUntil:'', warrantyContent:'', internalNote:'', photos:[] };
+  const defaultInstallDate = preset.installDate || today();
+  const defaultCoverage = lang === 'zh'
+    ? 'QUAD FILM 产品材料及制造缺陷有限质保。具体质保范围、适用条件、除外情况和申请方式，以客户质保详情页面所列政策为准。'
+    : 'QUAD FILM limited warranty for defects in materials and manufacture. Coverage, eligibility, exclusions, and claim procedures follow the customer warranty detail policy.';
+  const item = existing || { customerName:'', phone:'', email:'', licensePlate:'', vehicle:'', installDate:defaultInstallDate, product:'', areas:'', warrantyUntil:warrantyDateAfterYears(defaultInstallDate, 10), warrantyContent:defaultCoverage, internalNote:'', photos:[], ...preset };
+  const knownProduct = ['PPF', '改色膜'].includes(item.product) ? '' : `<option value="${escapeHtml(item.product)}" selected>${escapeHtml(item.product)}</option>`;
   warrantyDraftPhotos = [...(item.photos || [])];
   openModal(existing ? (lang === 'zh' ? '编辑客户质保' : 'Edit Warranty') : (lang === 'zh' ? '新增客户质保' : 'New Warranty'), `
     <div class="form-grid warranty-editor-grid">
       <label>${lang === 'zh' ? '客户姓名 *' : 'Customer name *'}<input id="warrantyCustomerName" value="${escapeHtml(item.customerName)}" /></label>
       <label>${lang === 'zh' ? '手机号 *' : 'Phone *'}<input id="warrantyPhone" value="${escapeHtml(item.phone)}" inputmode="tel" /></label>
-      <label>${lang === 'zh' ? '邮箱' : 'Email'}<input id="warrantyEmail" value="${escapeHtml(item.email)}" type="email" /></label>
       <label>${lang === 'zh' ? '车牌' : 'License plate'}<input id="warrantyLicensePlate" value="${escapeHtml(item.licensePlate)}" /></label>
       <label>${lang === 'zh' ? '车辆信息' : 'Vehicle'}<input id="warrantyVehicle" value="${escapeHtml(item.vehicle)}" placeholder="例如：2026 Tesla Model Y" /></label>
-      <label>${lang === 'zh' ? '施工日期 *' : 'Install date *'}<input id="warrantyInstallDate" value="${escapeHtml(item.installDate)}" type="date" /></label>
-      <label>${lang === 'zh' ? '施工产品 *' : 'Product *'}<input id="warrantyProduct" value="${escapeHtml(item.product)}" placeholder="品牌、系列、膜型号" /></label>
+      <label>${lang === 'zh' ? '施工日期 *' : 'Install date *'}<input id="warrantyInstallDate" value="${escapeHtml(item.installDate)}" type="date" onchange="updateWarrantyUntilFromInstallDate()" /></label>
+      <label>${lang === 'zh' ? '质保类型 *' : 'Warranty type *'}<select id="warrantyProduct"><option value="" ${item.product ? '' : 'selected'}>${lang === 'zh' ? '请选择质保类型' : 'Select warranty type'}</option>${knownProduct}<option value="PPF" ${item.product === 'PPF' ? 'selected' : ''}>PPF</option><option value="改色膜" ${item.product === '改色膜' ? 'selected' : ''}>${lang === 'zh' ? '改色膜' : 'Color wrap'}</option></select></label>
       <label>${lang === 'zh' ? '质保到期日期' : 'Warranty until'}<input id="warrantyUntil" value="${escapeHtml(item.warrantyUntil)}" type="date" /></label>
       <label class="full">${lang === 'zh' ? '贴膜部位 *' : 'Installed areas *'}<textarea id="warrantyAreas" rows="3" placeholder="例如：前保险杠、引擎盖、左右叶子板">${escapeHtml(item.areas)}</textarea></label>
-      <label class="full">${lang === 'zh' ? '质保内容 *' : 'Warranty coverage *'}<textarea id="warrantyContent" rows="6" placeholder="填写质保期限、覆盖范围、除外情况和申请方式">${escapeHtml(item.warrantyContent)}</textarea></label>
-      <label class="full">${lang === 'zh' ? '内部备注（客户不可见）' : 'Internal note (not visible to customer)'}<textarea id="warrantyInternalNote" rows="3">${escapeHtml(item.internalNote)}</textarea></label>
       <div class="full warranty-photo-editor"><div><strong>${lang === 'zh' ? '车辆施工照片' : 'Vehicle photos'}</strong><span id="warrantyPhotoStatus" class="note"></span></div><label class="btn warranty-upload-button">${lang === 'zh' ? '上传照片' : 'Upload photos'}<input type="file" accept="image/*" multiple onchange="uploadWarrantyPhotos(this)" /></label><div id="warrantyPhotoDraft" class="warranty-photo-drafts"></div></div>
+      <details class="full warranty-advanced"><summary>${lang === 'zh' ? '更多资料与质保说明' : 'More details and warranty terms'}</summary><div class="form-grid">
+        <label>${lang === 'zh' ? '邮箱' : 'Email'}<input id="warrantyEmail" value="${escapeHtml(item.email)}" type="email" /></label>
+        <label class="full">${lang === 'zh' ? '质保内容 *' : 'Warranty coverage *'}<textarea id="warrantyContent" rows="5">${escapeHtml(item.warrantyContent)}</textarea></label>
+        <label class="full">${lang === 'zh' ? '内部备注（客户不可见）' : 'Internal note (not visible to customer)'}<textarea id="warrantyInternalNote" rows="2">${escapeHtml(item.internalNote)}</textarea></label>
+      </div></details>
     </div>`, () => saveWarranty(id));
   document.getElementById('modal').classList.add('warranty-modal-open');
   renderWarrantyPhotoDraft();
@@ -3784,6 +3827,7 @@ function jobActiveCards(rows) {
         </dl>
         <footer><span>${lang === 'zh' ? '填表人' : 'Prepared by'}：${escapeHtml(job.preparedBy || '—')}</span><div>
           <button class="btn job-chat-button" onclick="event.stopPropagation();openJobCustomerChat('${job.id}')">💬 ${lang === 'zh' ? '客户聊天' : 'Customer chat'}</button>
+          ${hasPerm('jobsCreate') ? `<button class="btn job-warranty-button" onclick="event.stopPropagation();openWarrantyFromJob('${job.id}')">◆ ${lang === 'zh' ? '生成质保单' : 'Create warranty'}</button>` : ''}
           ${canOpen ? `<button class="btn primary" onclick="event.stopPropagation();openJob('${job.id}')">${lang === 'zh' ? '查看施工单' : 'View job'}</button>` : ''}
           ${hasPerm('jobsDelete') ? `<button class="btn danger" onclick="event.stopPropagation();removeItem('jobs','${job.id}')">${t('delete')}</button>` : ''}
         </div></footer>
@@ -3796,11 +3840,11 @@ function jobActiveCards(rows) {
 function jobArchiveTable(rows) {
   const canOpen = hasPerm('jobsEdit');
   const showFinance = canSeeFinance();
-  const colSpan = 9 + (showFinance ? 1 : 0) + (hasPerm('jobsDelete') ? 1 : 0);
-  return `<div class="table-wrap job-archive-table"><table><thead><tr><th>${t('scheduleDate')}</th><th>${t('customer')}</th><th>${t('vehicle')}</th><th>${t('service')}</th><th>${t('tech')}</th><th>${t('status')}</th><th>${t('quote')}</th><th>${t('paymentStatus')}</th>${showFinance ? `<th>${t('gross')}</th>` : ''}<th>${lang === 'zh' ? '客户沟通' : 'Customer contact'}</th>${hasPerm('jobsDelete') ? '<th></th>' : ''}</tr></thead><tbody>
+  const colSpan = 10 + (showFinance ? 1 : 0) + (hasPerm('jobsDelete') ? 1 : 0);
+  return `<div class="table-wrap job-archive-table"><table><thead><tr><th>${t('scheduleDate')}</th><th>${t('customer')}</th><th>${t('vehicle')}</th><th>${t('service')}</th><th>${t('tech')}</th><th>${t('status')}</th><th>${t('quote')}</th><th>${t('paymentStatus')}</th>${showFinance ? `<th>${t('gross')}</th>` : ''}<th>${lang === 'zh' ? '客户沟通' : 'Customer contact'}</th><th>${lang === 'zh' ? '质保' : 'Warranty'}</th>${hasPerm('jobsDelete') ? '<th></th>' : ''}</tr></thead><tbody>
     ${rows.map(job => {
       const calc = jobCalc(job);
-      return `<tr ${canOpen ? `onclick="openJob('${job.id}')" class="click-row"` : ''}><td>${escapeHtml(job.scheduleDate || job.date || '')}</td><td>${escapeHtml(job.customer || '')}<br><span class="note">${escapeHtml(job.phone || '')}</span></td><td>${escapeHtml(job.vehicle || '')}</td><td>${escapeHtml([serviceLabelList(job), job.package].filter(Boolean).join(' · '))}</td><td>${escapeHtml(jobInstallerNames(job))}</td><td>${statusPill(job.status)}</td><td>${currency.format(calc.price)}</td><td>${paymentStatusPill(job)}</td>${showFinance ? `<td>${currency.format(calc.gross)}</td>` : ''}<td><button class="btn job-chat-button" onclick="event.stopPropagation();openJobCustomerChat('${job.id}')">💬 ${lang === 'zh' ? '回访聊天' : 'Follow-up chat'}</button></td>${hasPerm('jobsDelete') ? `<td><button class="icon-btn" title="${t('delete')}" onclick="event.stopPropagation();removeItem('jobs','${job.id}')">×</button></td>` : ''}</tr>`;
+      return `<tr ${canOpen ? `onclick="openJob('${job.id}')" class="click-row"` : ''}><td>${escapeHtml(job.scheduleDate || job.date || '')}</td><td>${escapeHtml(job.customer || '')}<br><span class="note">${escapeHtml(job.phone || '')}</span></td><td>${escapeHtml(job.vehicle || '')}</td><td>${escapeHtml([serviceLabelList(job), job.package].filter(Boolean).join(' · '))}</td><td>${escapeHtml(jobInstallerNames(job))}</td><td>${statusPill(job.status)}</td><td>${currency.format(calc.price)}</td><td>${paymentStatusPill(job)}</td>${showFinance ? `<td>${currency.format(calc.gross)}</td>` : ''}<td><button class="btn job-chat-button" onclick="event.stopPropagation();openJobCustomerChat('${job.id}')">💬 ${lang === 'zh' ? '回访聊天' : 'Follow-up chat'}</button></td><td>${hasPerm('jobsCreate') ? `<button class="btn job-warranty-button" onclick="event.stopPropagation();openWarrantyFromJob('${job.id}')">◆ ${lang === 'zh' ? '生成质保单' : 'Create warranty'}</button>` : '—'}</td>${hasPerm('jobsDelete') ? `<td><button class="icon-btn" title="${t('delete')}" onclick="event.stopPropagation();removeItem('jobs','${job.id}')">×</button></td>` : ''}</tr>`;
     }).join('')}
     ${rows.length ? '' : `<tr><td colspan="${colSpan}" class="note">${lang === 'zh' ? '还没有已交车或历史订单。' : 'No delivered or historical jobs.'}</td></tr>`}
   </tbody></table></div>`;

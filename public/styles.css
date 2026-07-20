@@ -1858,4 +1858,9 @@ body.modal-lock .prospect-workspace { pointer-events: none; }
 .warranty-photo-draft img { width:100%; height:100%; object-fit:cover; }
 .warranty-photo-draft button { position:absolute; top:5px; right:5px; width:27px; height:27px; border:0; border-radius:50%; background:rgba(20,28,35,.78); color:#fff; font-size:20px; cursor:pointer; }
 .warranty-modal-open .dialog { width:min(1080px,calc(100vw - 28px)); }
+.warranty-advanced { padding:12px 14px; border:1px solid var(--line); border-radius:12px; background:#f8fafb; }
+.warranty-advanced summary { cursor:pointer; color:var(--primary); font-weight:800; }
+.warranty-advanced[open] summary { margin-bottom:14px; }
+.job-warranty-button { white-space:nowrap; border-color:#d2b354; background:#fff9dc; color:#725700; }
+.job-warranty-button:hover { background:#fff1af; }
 @media(max-width:900px){.warranty-grid{grid-template-columns:1fr}.warranty-facts{grid-template-columns:1fr}.warranty-card footer{align-items:flex-start;flex-direction:column}.warranty-photo-editor{grid-template-columns:1fr}.warranty-photo-drafts{grid-column:1}}
