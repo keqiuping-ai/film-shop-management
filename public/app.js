@@ -4895,6 +4895,7 @@ function renderProspectWorkspace() {
             <button type="button" onclick="document.getElementById('prospectVideoInput').click()">🎬 ${lang === 'zh' ? '视频' : 'Video'}</button>
             <button type="button" onclick="document.getElementById('prospectFileInput').click()">📎 ${lang === 'zh' ? '文件' : 'File'}</button>
             <button type="button" onclick="insertProspectAddress()">📍 ${lang === 'zh' ? '地址' : 'Address'}</button>
+            <button type="button" onclick="insertProspectWebsite()">🌐 ${lang === 'zh' ? '公司网站' : 'Website'}</button>
             <span class="prospect-tool-divider"></span>
             <button class="reply-reference-button" type="button" onclick="openReplyReferenceLibrary('text')">💬 ${lang === 'zh' ? '回复文字' : 'Reply text'}</button>
             <button class="reply-reference-button" type="button" onclick="openReplyReferenceLibrary('image')">🖼 ${lang === 'zh' ? '回复图片' : 'Reply image'}</button>
@@ -4905,7 +4906,7 @@ function renderProspectWorkspace() {
             <input class="hidden" id="prospectFileInput" type="file" onchange="uploadProspectAttachment(this.files[0]); this.value=''">
           </div>
           <div class="prospect-compose-row">
-            <textarea id="prospectReplyInput" oninput="prospectReplyRevision += 1" placeholder="${lang === 'zh' ? '输入给该客户的回复内容…' : 'Write a reply…'}"></textarea>
+            <textarea id="prospectReplyInput" oninput="prospectReplyRevision += 1" onpaste="handleProspectReplyPaste(event)" placeholder="${lang === 'zh' ? '输入或粘贴文字、截图、图片…' : 'Write or paste text, screenshots, or images…'}"></textarea>
             <button id="prospectSendSmsButton" class="btn primary" onclick="sendProspectSms()" ${hasPerm('prospectsEdit') ? '' : 'disabled'}>${lang === 'zh' ? '发送短信' : 'Send SMS'}</button>
           </div>
         </footer>
@@ -5037,6 +5038,7 @@ async function optimizeProspectImage(file) {
 
 async function uploadProspectAttachment(file) {
   if (!file) return;
+  const replyDraft = String(document.getElementById('prospectReplyInput')?.value || '');
   const originalIsImage = String(file.type || '').startsWith('image/');
   if (originalIsImage && file.size > MAX_CLOUD_IMAGE_BYTES) return alert(lang === 'zh' ? '原图不能超过20MB。' : 'Images must be 20MB or smaller.');
   file = await optimizeProspectImage(file);
@@ -5049,10 +5051,14 @@ async function uploadProspectAttachment(file) {
     const uploaded = await uploadCloudMedia('/api/customer-media/upload', file);
     prospectPendingAttachment = { name: uploaded.name, type: uploaded.type, size: uploaded.size, url: uploaded.url };
     renderProspectWorkspace();
+    const input = document.getElementById('prospectReplyInput');
+    if (input) input.value = replyDraft;
   } catch (err) {
     prospectPendingAttachment = null;
     alert(err.message);
     renderProspectWorkspace();
+    const input = document.getElementById('prospectReplyInput');
+    if (input) input.value = replyDraft;
   }
 }
 
@@ -5062,13 +5068,34 @@ function clearProspectAttachment() {
 }
 
 function insertProspectAddress() {
-  const address = prompt(lang === 'zh' ? '输入要发给客户的地址：' : 'Enter the address to send:', '3359 W Oquendo Rd, Las Vegas, NV');
-  if (!address?.trim()) return;
+  insertProspectReplyText('📍 3359 W Oquendo Rd, Las Vegas, NV 89118');
+}
+
+function insertProspectWebsite() {
+  insertProspectReplyText('https://quadfilmus.com/');
+}
+
+function insertProspectReplyText(text) {
   const input = document.getElementById('prospectReplyInput');
   if (!input) return;
-  const mapUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address.trim())}`;
-  input.value = [input.value.trim(), `📍 ${address.trim()}\n${mapUrl}`].filter(Boolean).join('\n');
+  input.value = [input.value.trim(), String(text || '').trim()].filter(Boolean).join('\n');
+  input.dispatchEvent(new Event('input', { bubbles: true }));
   input.focus();
+}
+
+async function handleProspectReplyPaste(event) {
+  const imageItem = Array.from(event.clipboardData?.items || [])
+    .find(item => item.kind === 'file' && String(item.type || '').startsWith('image/'));
+  if (!imageItem) return;
+  const pastedImage = imageItem.getAsFile();
+  if (!pastedImage) return;
+  event.preventDefault();
+  const extension = String(pastedImage.type || '').split('/')[1]?.replace('jpeg', 'jpg') || 'png';
+  const file = new File([pastedImage], `pasted-image-${Date.now()}.${extension}`, {
+    type: pastedImage.type || 'image/png',
+    lastModified: Date.now()
+  });
+  await uploadProspectAttachment(file);
 }
 
 function replyTypeLabel(type) {
