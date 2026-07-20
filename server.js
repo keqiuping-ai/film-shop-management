@@ -2823,11 +2823,11 @@ async function api(req, res) {
   }
 
   if (req.method === 'POST' && url.pathname === '/api/warranty/lookup') {
-    if (!allowWarrantyLookup(req)) return send(res, 429, { error: '查询次数过多，请稍后再试' });
+    if (!allowWarrantyLookup(req)) return send(res, 429, { error: 'Too many lookup attempts. Please try again later.' });
     const body = await readBody(req);
     const name = normalizedWarrantyName(body.name);
     const phone = normalizedWarrantyPhone(body.phone);
-    if (name.length < 2 || phone.length < 7) return send(res, 400, { error: '请输入完整姓名和手机号' });
+    if (name.length < 2 || phone.length < 7) return send(res, 400, { error: 'Please enter the full registered name and phone number.' });
     const matches = (db.warranties || [])
       .filter(item => normalizedWarrantyName(item.customerName) === name && normalizedWarrantyPhone(item.phone) === phone)
       .sort((a, b) => String(b.installDate || '').localeCompare(String(a.installDate || '')))
