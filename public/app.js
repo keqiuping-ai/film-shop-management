@@ -37,6 +37,7 @@ let jobStartDate = '';
 let jobEndDate = '';
 let jobSourceFilter = '';
 let jobPersonFilter = '';
+let showDeletedJobs = false;
 let scheduleMonth = today().slice(0, 7);
 let jobMonth = today().slice(0, 7);
 let auditDate = today();
@@ -1103,7 +1104,7 @@ function refreshJobPreview() {
   const count = document.getElementById('jobSearchCount');
   const stats = document.getElementById('jobSourceStats');
   if (results && current === 'jobs') {
-    const baseJobs = sortByDateDesc(state.jobs || []);
+    const baseJobs = sortByDateDesc((state.jobs || []).filter(job => !job.deletedAt));
     const visibleJobs = searchedJobs(baseJobs);
     results.innerHTML = jobBoard(visibleJobs);
     if (stats) stats.innerHTML = sourceStatsTable(baseJobs, jobFilterDateLabel());
@@ -1281,6 +1282,7 @@ function jobMatchesPerson(job) {
 
 function filteredJobs(includeSearch = true) {
   const rows = sortByDateDesc(state.jobs || [])
+    .filter(job => !job.deletedAt)
     .filter(jobMatchesDate)
     .filter(jobMatchesSource)
     .filter(jobMatchesPerson);
@@ -1334,6 +1336,7 @@ function dateFallsInRange(value, range = activeJobDateRange()) {
 
 function filteredAccountingJobs(range = activeJobDateRange()) {
   return (state.jobs || [])
+    .filter(job => !job.deletedAt)
     .filter(job => dateFallsInRange(job.deliveredAt || job.date, range))
     .filter(jobMatchesSource)
     .filter(jobMatchesPerson);
@@ -1347,6 +1350,7 @@ function filteredAccountingSalesOrders(range = activeJobDateRange()) {
 
 function accountingBalanceJobs(range = activeJobDateRange()) {
   return (state.jobs || [])
+    .filter(job => !job.deletedAt)
     .filter(job => !range.end || String(job.deliveredAt || job.date || '').slice(0, 10) <= range.end)
     .filter(jobMatchesSource)
     .filter(jobMatchesPerson);
@@ -1933,7 +1937,7 @@ function isStartedRevenueJob(job) {
 }
 
 function revenueJobs(jobs = []) {
-  return (jobs || []).filter(isStartedRevenueJob);
+  return (jobs || []).filter(job => !job.deletedAt).filter(isStartedRevenueJob);
 }
 
 function isRecognizedJobRevenue(job) {
@@ -2154,7 +2158,7 @@ function repName(id) {
 }
 
 function isCommissionableJob(job) {
-  return !['取消', '无效'].includes(job.status) && Number(job.price || 0) !== 0;
+  return !job.deletedAt && !['取消', '无效'].includes(job.status) && Number(job.price || 0) !== 0;
 }
 
 function jobCommissionLead(job) {
@@ -2502,7 +2506,7 @@ function validateSalesOrderFormData(data) {
   return '';
 }
 
-function kpis(jobs = state.jobs.filter(j => isDateInMonth(j.date, currentMonth())), salesOrders = state.salesOrders.filter(o => isDateInMonth(o.date, currentMonth()))) {
+function kpis(jobs = state.jobs.filter(j => !j.deletedAt && isDateInMonth(j.date, currentMonth())), salesOrders = state.salesOrders.filter(o => isDateInMonth(o.date, currentMonth()))) {
   const incomeJobs = revenueJobs(jobs);
   const jobRevenue = incomeJobs.reduce((a, j) => a + jobCalc(j).price, 0);
   const jobMaterial = incomeJobs.reduce((a, j) => a + jobCalc(j).material, 0);
@@ -3179,12 +3183,14 @@ const views = {
   },
   jobs() {
     const canListJobs = hasAnyPerm(['jobsView', 'jobsEdit', 'jobsDelete']);
-    const baseJobs = sortByDateDesc(state.jobs || []);
+    const baseJobs = sortByDateDesc((state.jobs || []).filter(job => !job.deletedAt));
+    const deletedJobs = sortByDateDesc((state.jobs || []).filter(job => job.deletedAt));
     const visibleJobs = searchedJobs(baseJobs);
     const content = canListJobs
-      ? `${jobSearchBox(baseJobs)}<div id="jobSearchResults">${jobBoard(visibleJobs)}</div>`
+      ? `${jobSearchBox(baseJobs)}<div id="jobSearchResults">${jobBoard(visibleJobs)}</div>${showDeletedJobs ? deletedJobSection(deletedJobs) : ''}`
       : `<p class="note">${lang === 'zh' ? '这个账号只有新增施工单权限，不能浏览已有施工订单。' : 'This account can create job orders but cannot browse existing job orders.'}</p>`;
-    return panel(t('jobs'), hasPerm('jobsCreate') ? `<button class="btn primary" onclick="openJob()">${t('addNew')}</button>` : '', content);
+    const actions = `${hasPerm('jobsDelete') ? `<button class="btn" onclick="toggleDeletedJobs()">${showDeletedJobs ? (lang === 'zh' ? '隐藏已删除' : 'Hide deleted') : (lang === 'zh' ? `已删除施工单 (${deletedJobs.length})` : `Deleted jobs (${deletedJobs.length})`)}</button>` : ''}${hasPerm('jobsCreate') ? `<button class="btn primary" onclick="openJob()">${t('addNew')}</button>` : ''}`;
+    return panel(t('jobs'), actions, content);
   },
   warranties() {
     return warrantyView();
@@ -3840,7 +3846,6 @@ function jobActiveCards(rows) {
           <button class="btn job-chat-button" onclick="event.stopPropagation();openJobCustomerChat('${job.id}')">💬 ${lang === 'zh' ? '客户聊天' : 'Customer chat'}</button>
           ${hasPerm('jobsCreate') ? `<button class="btn job-warranty-button" onclick="event.stopPropagation();openWarrantyFromJob('${job.id}')">◆ ${lang === 'zh' ? '生成质保单' : 'Create warranty'}</button>` : ''}
           ${canOpen ? `<button class="btn primary" onclick="event.stopPropagation();openJob('${job.id}')">${lang === 'zh' ? '查看施工单' : 'View job'}</button>` : ''}
-          ${hasPerm('jobsDelete') ? `<button class="btn danger" onclick="event.stopPropagation();removeItem('jobs','${job.id}')">${t('delete')}</button>` : ''}
         </div></footer>
       </article>`;
     }).join('')}
@@ -3851,11 +3856,11 @@ function jobActiveCards(rows) {
 function jobArchiveTable(rows) {
   const canOpen = hasPerm('jobsEdit');
   const showFinance = canSeeFinance();
-  const colSpan = 10 + (showFinance ? 1 : 0) + (hasPerm('jobsDelete') ? 1 : 0);
-  return `<div class="table-wrap job-archive-table"><table><thead><tr><th>${t('scheduleDate')}</th><th>${t('customer')}</th><th>${t('vehicle')}</th><th>${t('service')}</th><th>${t('tech')}</th><th>${t('status')}</th><th>${t('quote')}</th><th>${t('paymentStatus')}</th>${showFinance ? `<th>${t('gross')}</th>` : ''}<th>${lang === 'zh' ? '客户沟通' : 'Customer contact'}</th><th>${lang === 'zh' ? '质保' : 'Warranty'}</th>${hasPerm('jobsDelete') ? '<th></th>' : ''}</tr></thead><tbody>
+  const colSpan = 10 + (showFinance ? 1 : 0);
+  return `<div class="table-wrap job-archive-table"><table><thead><tr><th>${t('scheduleDate')}</th><th>${t('customer')}</th><th>${t('vehicle')}</th><th>${t('service')}</th><th>${t('tech')}</th><th>${t('status')}</th><th>${t('quote')}</th><th>${t('paymentStatus')}</th>${showFinance ? `<th>${t('gross')}</th>` : ''}<th>${lang === 'zh' ? '客户沟通' : 'Customer contact'}</th><th>${lang === 'zh' ? '质保' : 'Warranty'}</th></tr></thead><tbody>
     ${rows.map(job => {
       const calc = jobCalc(job);
-      return `<tr ${canOpen ? `onclick="openJob('${job.id}')" class="click-row"` : ''}><td>${escapeHtml(job.scheduleDate || job.date || '')}</td><td>${escapeHtml(job.customer || '')}<br><span class="note">${escapeHtml(job.phone || '')}</span></td><td>${escapeHtml(job.vehicle || '')}</td><td>${escapeHtml([serviceLabelList(job), job.package].filter(Boolean).join(' · '))}</td><td>${escapeHtml(jobInstallerNames(job))}</td><td>${statusPill(job.status)}</td><td>${currency.format(calc.price)}</td><td>${paymentStatusPill(job)}</td>${showFinance ? `<td>${currency.format(calc.gross)}</td>` : ''}<td><button class="btn job-chat-button" onclick="event.stopPropagation();openJobCustomerChat('${job.id}')">💬 ${lang === 'zh' ? '回访聊天' : 'Follow-up chat'}</button></td><td>${hasPerm('jobsCreate') ? `<button class="btn job-warranty-button" onclick="event.stopPropagation();openWarrantyFromJob('${job.id}')">◆ ${lang === 'zh' ? '生成质保单' : 'Create warranty'}</button>` : '—'}</td>${hasPerm('jobsDelete') ? `<td><button class="icon-btn" title="${t('delete')}" onclick="event.stopPropagation();removeItem('jobs','${job.id}')">×</button></td>` : ''}</tr>`;
+      return `<tr ${canOpen ? `onclick="openJob('${job.id}')" class="click-row"` : ''}><td>${escapeHtml(job.scheduleDate || job.date || '')}</td><td>${escapeHtml(job.customer || '')}<br><span class="note">${escapeHtml(job.phone || '')}</span></td><td>${escapeHtml(job.vehicle || '')}</td><td>${escapeHtml([serviceLabelList(job), job.package].filter(Boolean).join(' · '))}</td><td>${escapeHtml(jobInstallerNames(job))}</td><td>${statusPill(job.status)}</td><td>${currency.format(calc.price)}</td><td>${paymentStatusPill(job)}</td>${showFinance ? `<td>${currency.format(calc.gross)}</td>` : ''}<td><button class="btn job-chat-button" onclick="event.stopPropagation();openJobCustomerChat('${job.id}')">💬 ${lang === 'zh' ? '回访聊天' : 'Follow-up chat'}</button></td><td>${hasPerm('jobsCreate') ? `<button class="btn job-warranty-button" onclick="event.stopPropagation();openWarrantyFromJob('${job.id}')">◆ ${lang === 'zh' ? '生成质保单' : 'Create warranty'}</button>` : '—'}</td></tr>`;
     }).join('')}
     ${rows.length ? '' : `<tr><td colspan="${colSpan}" class="note">${lang === 'zh' ? '还没有已交车或历史订单。' : 'No delivered or historical jobs.'}</td></tr>`}
   </tbody></table></div>`;
@@ -3869,6 +3874,21 @@ function jobBoard(rows) {
     ${jobActiveCards(active)}
     <div class="job-section-heading archived"><div><h4>${lang === 'zh' ? '已成交与历史订单' : 'Completed & Historical Jobs'}</h4><p>${lang === 'zh' ? '已交车和取消订单以紧凑表格保留在下方' : 'Delivered and canceled jobs in a compact list'}</p></div><span>${archived.length}</span></div>
     ${jobArchiveTable(archived)}
+  </section>`;
+}
+
+function toggleDeletedJobs() {
+  showDeletedJobs = !showDeletedJobs;
+  render();
+}
+
+function deletedJobSection(rows) {
+  return `<section class="job-board-section deleted-job-section">
+    <div class="job-section-heading archived"><div><h4>${lang === 'zh' ? '已删除施工单' : 'Deleted Jobs'}</h4><p>${lang === 'zh' ? '这些施工单仍保存在系统中，可以查看或恢复。' : 'These jobs remain stored and can be viewed or restored.'}</p></div><span>${rows.length}</span></div>
+    <div class="table-wrap job-archive-table"><table><thead><tr><th>${t('scheduleDate')}</th><th>${t('customer')}</th><th>${t('vehicle')}</th><th>${t('status')}</th><th>${lang === 'zh' ? '删除时间' : 'Deleted at'}</th><th>${lang === 'zh' ? '删除人' : 'Deleted by'}</th><th></th></tr></thead><tbody>
+      ${rows.map(job => `<tr><td>${escapeHtml(job.scheduleDate || job.date || '')}</td><td>${escapeHtml(job.customer || '')}<br><span class="note">${escapeHtml(job.phone || '')}</span></td><td>${escapeHtml(job.vehicle || '')}</td><td>${statusPill(job.status)}</td><td>${escapeHtml(formatAppDateTime(job.deletedAt || ''))}</td><td>${escapeHtml(job.deletedBy || '')}</td><td><button class="btn" onclick="openJob('${job.id}')">${lang === 'zh' ? '查看' : 'View'}</button> <button class="btn primary" onclick="restoreDeletedJob('${job.id}')">${lang === 'zh' ? '恢复' : 'Restore'}</button></td></tr>`).join('')}
+      ${rows.length ? '' : `<tr><td colspan="7" class="note">${lang === 'zh' ? '没有已删除的施工单。' : 'No deleted jobs.'}</td></tr>`}
+    </tbody></table></div>
   </section>`;
 }
 
@@ -4218,7 +4238,7 @@ function leadKpiCards() {
     <div class="stat"><span>${t('totalCommission')}</span><strong>${canSeeCommission() ? currency.format(leadReportRows().reduce((sum, row) => sum + row.commission, 0)) : hiddenValue()}</strong></div>`;
 }
 
-function leadReportRows(jobsSource = state.jobs || []) {
+function leadReportRows(jobsSource = (state.jobs || []).filter(job => !job.deletedAt)) {
   return (state.customerServiceReps || []).map(rep => {
     const jobs = (jobsSource || []).filter(job => job.leadRepId === rep.id || job.receptionRepId === rep.id);
     const closedJobs = jobs.filter(isCommissionableJob);
@@ -4232,7 +4252,7 @@ function leadReportRows(jobsSource = state.jobs || []) {
   });
 }
 
-function leadReportTable(jobsSource = state.jobs || []) {
+function leadReportTable(jobsSource = (state.jobs || []).filter(job => !job.deletedAt)) {
   const rows = leadReportRows(jobsSource);
   const payHead = canSeeCommission() ? `<th>${t('leadGroupRep')}</th><th>${t('receptionRep')}</th><th>${t('totalCommission')}</th>` : '';
   const total = rows.reduce((sum, row) => ({
@@ -5428,7 +5448,7 @@ function userTable() {
   </tbody></table></div>`;
 }
 
-function laborReport(jobsSource = state.jobs || [], range = null) {
+function laborReport(jobsSource = (state.jobs || []).filter(job => !job.deletedAt), range = null) {
   const rows = state.installers.map(i => installerPaySummary(i, jobsSource, range));
   const grand = rows.reduce((sum, row) => ({
     count: sum.count + row.count,
@@ -5718,6 +5738,56 @@ function openJob(id, preset = {}) {
       action.textContent = lang === 'zh' ? '客户确认单 / 打印' : 'Customer confirmation / Print';
       action.onclick = () => openJobConfirmation(id);
     }
+    const deleteButton = document.getElementById('modalDelete');
+    if (deleteButton && hasPerm('jobsDelete')) {
+      deleteButton.hidden = false;
+      if (item.deletedAt) {
+        deleteButton.className = 'btn';
+        deleteButton.textContent = lang === 'zh' ? '恢复施工单' : 'Restore Job';
+        deleteButton.onclick = () => restoreDeletedJob(id);
+      } else {
+        deleteButton.className = 'btn danger';
+        deleteButton.textContent = lang === 'zh' ? '移到已删除施工单' : 'Move to Deleted Jobs';
+        deleteButton.onclick = () => softDeleteJob(id);
+      }
+    }
+  }
+}
+
+async function softDeleteJob(jobId) {
+  const job = (state.jobs || []).find(item => item.id === jobId);
+  if (!job || job.deletedAt) return;
+  const message = lang === 'zh'
+    ? `确定把“${job.customer || '这张施工单'}”移到已删除施工单吗？之后仍可查看和恢复。`
+    : `Move “${job.customer || 'this job'}” to Deleted Jobs? It can still be viewed and restored.`;
+  if (!confirm(message)) return;
+  try {
+    state = await api(`/api/jobs/${jobId}`, { method: 'DELETE' });
+    broadcastDataChange();
+    closeModal();
+    render();
+  } catch (err) {
+    alert(err.message);
+  }
+}
+
+async function restoreDeletedJob(jobId) {
+  const job = (state.jobs || []).find(item => item.id === jobId);
+  if (!job || !job.deletedAt) return;
+  const message = lang === 'zh'
+    ? `确定恢复“${job.customer || '这张施工单'}”吗？`
+    : `Restore “${job.customer || 'this job'}”?`;
+  if (!confirm(message)) return;
+  try {
+    state = await api(`/api/jobs/${jobId}`, {
+      method: 'PUT',
+      body: JSON.stringify({ deletedAt: '', deletedBy: '', restoredAt: new Date().toISOString(), restoredBy: user?.name || user?.email || '' })
+    });
+    broadcastDataChange();
+    closeModal();
+    render();
+  } catch (err) {
+    alert(err.message);
   }
 }
 
@@ -7135,12 +7205,19 @@ function openModal(title, html, onSave) {
     headerAction.textContent = '';
     headerAction.onclick = null;
   }
+  const deleteButton = document.getElementById('modalDelete');
+  if (deleteButton) {
+    deleteButton.hidden = true;
+    deleteButton.className = 'btn danger';
+    deleteButton.textContent = lang === 'zh' ? '删除' : 'Delete';
+    deleteButton.onclick = null;
+  }
   document.getElementById('modalBody').innerHTML = html;
   document.getElementById('modalSave').onclick = onSave;
   document.getElementById('modalSave').hidden = false;
   document.getElementById('modalSave').disabled = false;
   document.getElementById('modalSave').textContent = t('save');
-  const cancel = document.querySelector('.dialog footer .btn');
+  const cancel = document.querySelector('.dialog footer .btn[onclick="closeModal()"]');
   if (cancel) cancel.textContent = t('cancel');
   document.getElementById('modal').classList.add('open');
 }

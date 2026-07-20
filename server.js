@@ -4258,6 +4258,24 @@ async function api(req, res) {
       notifyDataChanged('deactivate-user', recordId);
       return send(res, 200, sanitizeDbForUser(db, user));
     }
+    if (collection === 'jobs') {
+      const existingJob = db.jobs.find(x => x.id === recordId);
+      if (!existingJob) return send(res, 404, { error: 'Record not found' });
+      if (!existingJob.deletedAt) {
+        existingJob.deletedAt = new Date().toISOString();
+        existingJob.deletedBy = user.name || user.email || '';
+      }
+      audit(db, user, 'archive-job', {
+        collection: 'jobs',
+        recordId,
+        recordLabel: recordLabel(existingJob),
+        snapshot: { ...existingJob },
+        detail: `施工单移到已删除列表 ${recordLabel(existingJob) || recordId}`
+      });
+      writeDb(db);
+      notifyDataChanged('archive-job', recordId);
+      return send(res, 200, sanitizeDbForUser(db, user));
+    }
     if (collection === 'reimbursements') {
       const existingReimbursement = db.reimbursements.find(x => x.id === recordId);
       if (!existingReimbursement) return send(res, 404, { error: 'Record not found' });

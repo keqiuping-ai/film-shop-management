@@ -290,6 +290,7 @@ button, input, select, textarea { font: inherit; }
 }
 .btn.primary { background: var(--brand); border-color: var(--brand); color: white; }
 .btn.danger { color: var(--bad); }
+#modalDelete { margin-right: auto; }
 
 .grid { display: grid; gap: 14px; }
 .stats { grid-template-columns: repeat(4, minmax(160px, 1fr)); }
