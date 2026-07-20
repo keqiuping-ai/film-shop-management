@@ -30,6 +30,7 @@ const MEDIA_UPLOAD_CHUNK_BYTES = 4 * 1024 * 1024;
 const CUSTOM_PRINTED_FILM_SKU = 'CUSTOM-PRINTED-FILM';
 const sessions = new Map();
 const eventClients = new Set();
+const warrantyLookupAttempts = new Map();
 
 const mime = {
   '.html': 'text/html; charset=utf-8',
@@ -249,6 +250,7 @@ function seedDb() {
     personalNotes: [],
     reimbursements: [],
     portalCustomers: [],
+    warranties: [],
     customerServiceReps: [
       { id: id(), name: '前台客服', role: '前台', invitePay: 20, closePay: 50, active: true }
     ],
@@ -303,6 +305,7 @@ function readDb() {
   if (!Array.isArray(db.personalNotes)) db.personalNotes = [];
   if (!Array.isArray(db.reimbursements)) db.reimbursements = [];
   if (!Array.isArray(db.portalCustomers)) db.portalCustomers = [];
+  if (!Array.isArray(db.warranties)) db.warranties = [];
   if (!Array.isArray(db.messages)) db.messages = [];
   if (!Array.isArray(db.clockRecords)) db.clockRecords = [];
   if (!Array.isArray(db.leaveRequests)) db.leaveRequests = [];
@@ -1040,6 +1043,7 @@ function sanitizeDbForUser(db, user) {
     jobs: p.jobsView || p.jobsEdit || p.jobsDelete ? db.jobs.map(job => sanitizeJob(job, p, canSeeCosts)) : [],
     salesOrders: p.ordersView ? db.salesOrders.map(order => sanitizeSalesOrder(order, p)) : [],
     portalCustomers: p.ordersView ? (db.portalCustomers || []).map(safePortalCustomer) : [],
+    warranties: p.jobsView || p.jobsCreate || p.jobsEdit || p.jobsDelete ? (db.warranties || []) : [],
     shipments: p.shipmentsView ? db.shipments : [],
     schedules: p.schedulesView ? (db.schedules || []) : [],
     scheduleReminderLogs: p.schedulesView ? (db.scheduleReminderLogs || []).slice(0, 200) : [],
@@ -2533,6 +2537,7 @@ async function sendScheduleReminders(db, targetDate, actor = { id: 'system', nam
 function collectionPermission(collection, method) {
   const map = {
     jobs: { GET: 'jobsView', POST: 'jobsCreate', PUT: 'jobsEdit', DELETE: 'jobsDelete' },
+    warranties: { GET: 'jobsView', POST: 'jobsCreate', PUT: 'jobsEdit', DELETE: 'jobsDelete' },
     installers: { GET: 'installerView', POST: 'installerEdit', PUT: 'installerEdit', DELETE: 'installerEdit' },
     products: { GET: 'inventoryView', POST: 'inventoryEdit', PUT: 'inventoryEdit', DELETE: 'inventoryEdit' },
     movements: { GET: 'inventoryView', POST: 'inventoryEdit', PUT: 'inventoryEdit', DELETE: 'inventoryEdit' },
@@ -2728,6 +2733,82 @@ async function parseShipmentImportRows(body) {
   return rows;
 }
 
+function normalizedWarrantyName(value) {
+  return String(value || '').trim().toLocaleLowerCase().replace(/[\s·._-]+/g, '');
+}
+
+function normalizedWarrantyPhone(value) {
+  const digits = String(value || '').replace(/\D/g, '');
+  return digits.length > 10 && digits.startsWith('1') ? digits.slice(-10) : digits;
+}
+
+function normalizeWarrantyRecord(item) {
+  item.customerName = String(item.customerName || '').trim().slice(0, 120);
+  item.phone = String(item.phone || '').trim().slice(0, 40);
+  item.email = String(item.email || '').trim().slice(0, 160);
+  item.licensePlate = String(item.licensePlate || '').trim().toUpperCase().slice(0, 30);
+  item.vehicle = String(item.vehicle || '').trim().slice(0, 160);
+  item.installDate = String(item.installDate || '').trim().slice(0, 10);
+  item.product = String(item.product || '').trim().slice(0, 200);
+  item.areas = String(item.areas || '').trim().slice(0, 1000);
+  item.warrantyUntil = String(item.warrantyUntil || '').trim().slice(0, 10);
+  item.warrantyContent = String(item.warrantyContent || '').trim().slice(0, 5000);
+  item.internalNote = String(item.internalNote || '').trim().slice(0, 2000);
+  item.photos = (Array.isArray(item.photos) ? item.photos : [])
+    .filter(photo => String(photo?.url || '').includes('/customer-media/') && String(photo?.type || '').startsWith('image/'))
+    .slice(0, 20)
+    .map(photo => ({
+      url: String(photo.url),
+      name: String(photo.name || '车辆照片').slice(0, 160),
+      type: String(photo.type || 'image/jpeg').slice(0, 100),
+      size: Math.max(0, Number(photo.size || 0))
+    }));
+}
+
+function validateWarrantyRecord(item) {
+  if (!item.customerName) return '请填写客户姓名';
+  if (normalizedWarrantyPhone(item.phone).length < 7) return '请填写有效的客户手机号';
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(item.installDate)) return '请选择施工日期';
+  if (!item.vehicle && !item.licensePlate) return '请至少填写车辆信息或车牌';
+  if (!item.product) return '请填写施工产品';
+  if (!item.areas) return '请填写贴膜部位';
+  if (!item.warrantyContent) return '请填写质保内容';
+  if (item.warrantyUntil && !/^\d{4}-\d{2}-\d{2}$/.test(item.warrantyUntil)) return '质保到期日期格式不正确';
+  return '';
+}
+
+function publicWarrantyRecord(item) {
+  const phone = normalizedWarrantyPhone(item.phone);
+  return {
+    id: item.id,
+    customerName: item.customerName,
+    phone: phone ? `***-***-${phone.slice(-4)}` : '',
+    licensePlate: item.licensePlate,
+    vehicle: item.vehicle,
+    installDate: item.installDate,
+    product: item.product,
+    areas: item.areas,
+    warrantyUntil: item.warrantyUntil,
+    warrantyContent: item.warrantyContent,
+    photos: item.photos || []
+  };
+}
+
+function allowWarrantyLookup(req) {
+  const key = String(req.headers['x-forwarded-for'] || req.socket?.remoteAddress || 'unknown').split(',')[0].trim();
+  const now = Date.now();
+  const recent = (warrantyLookupAttempts.get(key) || []).filter(at => now - at < 60 * 1000);
+  if (recent.length >= 20) return false;
+  recent.push(now);
+  warrantyLookupAttempts.set(key, recent);
+  if (warrantyLookupAttempts.size > 1000) {
+    for (const [ip, attempts] of warrantyLookupAttempts) {
+      if (!attempts.some(at => now - at < 60 * 1000)) warrantyLookupAttempts.delete(ip);
+    }
+  }
+  return true;
+}
+
 async function api(req, res) {
   const db = readDb();
   const url = new URL(req.url, `http://${req.headers.host}`);
@@ -2739,6 +2820,19 @@ async function api(req, res) {
     const token = createSessionToken(user);
     sessions.set(token, { userId: user.id, at: Date.now() });
     return send(res, 200, { token, user: safeUser(user) });
+  }
+
+  if (req.method === 'POST' && url.pathname === '/api/warranty/lookup') {
+    if (!allowWarrantyLookup(req)) return send(res, 429, { error: '查询次数过多，请稍后再试' });
+    const body = await readBody(req);
+    const name = normalizedWarrantyName(body.name);
+    const phone = normalizedWarrantyPhone(body.phone);
+    if (name.length < 2 || phone.length < 7) return send(res, 400, { error: '请输入完整姓名和手机号' });
+    const matches = (db.warranties || [])
+      .filter(item => normalizedWarrantyName(item.customerName) === name && normalizedWarrantyPhone(item.phone) === phone)
+      .sort((a, b) => String(b.installDate || '').localeCompare(String(a.installDate || '')))
+      .map(publicWarrantyRecord);
+    return send(res, 200, { warranties: matches });
   }
 
   if (req.method === 'POST' && url.pathname === '/api/customer/login') {
@@ -3386,9 +3480,10 @@ async function api(req, res) {
     });
   }
 
-  if (req.method === 'POST' && ['/api/customer-media/upload', '/api/message-media/upload', '/api/job-media/upload', '/api/reimbursement-media/upload'].includes(url.pathname)) {
+  if (req.method === 'POST' && ['/api/customer-media/upload', '/api/message-media/upload', '/api/job-media/upload', '/api/warranty-media/upload', '/api/reimbursement-media/upload'].includes(url.pathname)) {
     if (url.pathname === '/api/customer-media/upload' && !canAccess(user, 'prospectsEdit')) return send(res, 403, { error: '没有发送客户附件的权限' });
     if (url.pathname === '/api/job-media/upload' && !canAccess(user, 'jobsEdit') && !canAccess(user, 'jobsCreate')) return send(res, 403, { error: '没有修改施工单的权限' });
+    if (url.pathname === '/api/warranty-media/upload' && !canAccess(user, 'jobsEdit') && !canAccess(user, 'jobsCreate')) return send(res, 403, { error: '没有修改客户质保的权限' });
     if (url.pathname === '/api/reimbursement-media/upload' && !canAccess(user, 'reimbursementsCreate')) return send(res, 403, { error: '没有提交报销凭证的权限' });
     const requestType = String(req.headers['content-type'] || 'application/octet-stream').split(';')[0].trim().toLowerCase();
     const uploadId = String(req.headers['x-upload-id'] || '').trim();
@@ -3827,7 +3922,7 @@ async function api(req, res) {
   const match = url.pathname.match(/^\/api\/([a-zA-Z]+)(?:\/([^/]+))?$/);
   if (!match) return send(res, 404, { error: 'Not found' });
   const [, collection, recordId] = match;
-  const allowed = ['jobs', 'installers', 'products', 'priceRules', 'salesOrders', 'shipments', 'schedules', 'movements', 'workshopMovements', 'expenses', 'reimbursements', 'leads', 'prospects', 'customerConversations', 'replyTemplates', 'customerServiceReps', 'users'];
+  const allowed = ['jobs', 'warranties', 'installers', 'products', 'priceRules', 'salesOrders', 'shipments', 'schedules', 'movements', 'workshopMovements', 'expenses', 'reimbursements', 'leads', 'prospects', 'customerConversations', 'replyTemplates', 'customerServiceReps', 'users'];
   if (!allowed.includes(collection)) return send(res, 404, { error: 'Unknown collection' });
 
   const permission = collectionPermission(collection, req.method);
@@ -3879,6 +3974,16 @@ async function api(req, res) {
       item.createdAt = new Date().toISOString();
       if (String(item.status || '').trim() === '已交车') item.deliveredAt = item.deliveredAt || item.createdAt;
       if (!canSeeCosts) item.materialCost = 0;
+    }
+    if (collection === 'warranties') {
+      normalizeWarrantyRecord(item);
+      const error = validateWarrantyRecord(item);
+      if (error) return send(res, 400, { error });
+      const now = new Date().toISOString();
+      item.createdAt = now;
+      item.updatedAt = now;
+      item.createdBy = user.name || user.email;
+      item.createdByUserId = user.id;
     }
     if (collection === 'products' && !canSeeCosts) {
       item.cost = 0;
@@ -4015,6 +4120,17 @@ async function api(req, res) {
       next.updatedAt = new Date().toISOString();
       if (String(next.status || '').trim() === '已交车' && previousStatus !== '已交车') next.deliveredAt = next.updatedAt;
       if (!canSeeCosts) next.materialCost = db[collection][idx].materialCost || 0;
+    }
+    if (collection === 'warranties') {
+      normalizeWarrantyRecord(next);
+      const error = validateWarrantyRecord(next);
+      if (error) return send(res, 400, { error });
+      next.createdAt = db[collection][idx].createdAt || new Date().toISOString();
+      next.createdBy = db[collection][idx].createdBy || user.name || user.email;
+      next.createdByUserId = db[collection][idx].createdByUserId || user.id;
+      next.updatedAt = new Date().toISOString();
+      next.updatedBy = user.name || user.email;
+      next.updatedByUserId = user.id;
     }
     if (collection === 'products' && !canSeeCosts) {
       next.cost = db[collection][idx].cost || 0;
@@ -4291,7 +4407,7 @@ function staticFile(req, res) {
     const textAsset = /html|json|javascript|css|svg|manifest/.test(type);
     const headers = {
       'Content-Type': type,
-      'Cache-Control': fileName === 'index.html' || fileName === 'mobile.html' || fileName === 'customer.html'
+      'Cache-Control': fileName === 'index.html' || fileName === 'mobile.html' || fileName === 'customer.html' || fileName === 'warranty.html'
         ? 'no-cache'
         : (textAsset || ['.png', '.icns'].includes(ext) ? 'public, max-age=300' : 'no-store')
     };

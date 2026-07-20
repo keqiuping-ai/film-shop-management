@@ -65,6 +65,8 @@ let customerCenterSearch = '';
 let customerCenterPendingOnly = false;
 let customerCenterShowInvalid = false;
 let prospectSearch = '';
+let warrantySearch = '';
+let warrantyDraftPhotos = [];
 const prospectWorkspaceDrafts = new Map();
 let messageRecorder = null;
 let messageAudioChunks = [];
@@ -123,6 +125,8 @@ const dict = {
     dashboardSub: '收入、来源渠道和批发客户销售情况',
     jobs: '施工订单',
     jobsSub: '窗膜、TPU改色、PPF、建筑膜',
+    warranties: '客户质保',
+    warrantiesSub: '登记车辆施工、质保内容和客户查询资料',
     installers: '师傅工费',
     installersSub: '不同师傅、不同项目的工费公式',
     pricing: '车型定价',
@@ -371,6 +375,8 @@ const dict = {
     dashboardSub: 'Revenue, source channels, and wholesale customer sales',
     jobs: 'Job Orders',
     jobsSub: 'Window tint, TPU color change, PPF, and architectural film',
+    warranties: 'Customer Warranty',
+    warrantiesSub: 'Register vehicle installation, coverage, and customer lookup details',
     installers: 'Installer Pay',
     installersSub: 'Different pay formulas by installer and service',
     pricing: 'Vehicle Pricing',
@@ -607,6 +613,7 @@ const roleNames = new Proxy({}, { get: (_, key) => t(key) });
 const pages = [
   ['dashboard', 'dashboard', 'dashboardSub'],
   ['jobs', 'jobs', 'jobsSub'],
+  ['warranties', 'warranties', 'warrantiesSub'],
   ['installers', 'installers', 'installersSub'],
   ['pricing', 'pricing', 'pricingSub'],
   ['inventory', 'inventory', 'inventorySub'],
@@ -633,6 +640,7 @@ const pages = [
 const pagePermissions = {
   dashboard: 'jobsView',
   jobs: ['jobsView', 'jobsCreate', 'jobsEdit', 'jobsDelete'],
+  warranties: ['jobsView', 'jobsCreate', 'jobsEdit', 'jobsDelete'],
   installers: 'installerView',
   pricing: 'pricingView',
   inventory: 'inventoryView',
@@ -659,6 +667,7 @@ const pagePermissions = {
 const writePermissions = {
   dashboard: 'jobsCreate',
   jobs: 'jobsCreate',
+  warranties: 'jobsCreate',
   installers: 'installerEdit',
   pricing: 'pricingEdit',
   inventory: 'inventoryEdit',
@@ -1871,7 +1880,7 @@ function updateVoiceButton(recording) {
 }
 
 function navIcon(id) {
-  return { modules:'▦', dashboard:'⌂', jobs:'▣', installers:'◉', pricing:'$', inventory:'▤', workshopInventory:'▥', inventoryAlerts:'!', customerCenter:'💬', replyLibrary:'☁', prospects:'★', leads:'☎', orders:'⇄', portalCustomers:'👤', shipments:'✈', schedules:'◫', workTime:'◴', expenses:'◇', reimbursements:'🧾', reports:'◌', audit:'◷', users:'◎', personalNotes:'📝', settings:'⚙' }[id] || '□';
+  return { modules:'▦', dashboard:'⌂', jobs:'▣', warranties:'◆', installers:'◉', pricing:'$', inventory:'▤', workshopInventory:'▥', inventoryAlerts:'!', customerCenter:'💬', replyLibrary:'☁', prospects:'★', leads:'☎', orders:'⇄', portalCustomers:'👤', shipments:'✈', schedules:'◫', workTime:'◴', expenses:'◇', reimbursements:'🧾', reports:'◌', audit:'◷', users:'◎', personalNotes:'📝', settings:'⚙' }[id] || '□';
 }
 
 function moduleGrid(availablePages) {
@@ -2925,6 +2934,170 @@ function accountingExpenseSchedule(statement) {
   </tbody></table></div><p class="note">${lang === 'zh' ? '跨日期广告费用按活动覆盖天数分摊；标记“每月固定”的费用从登记月份起按月计提，避免漏算或重复全额计算。' : 'Advertising expenses spanning multiple dates are allocated by covered days. Expenses marked monthly recurring accrue each month from their recorded month.'}</p>`;
 }
 
+function warrantyQueryUrl() {
+  return `${location.origin}/warranty.html`;
+}
+
+function warrantySearchText(item) {
+  return [item.customerName, item.phone, item.email, item.licensePlate, item.vehicle, item.product, item.areas, item.warrantyContent]
+    .map(value => String(value || '').toLocaleLowerCase()).join(' ');
+}
+
+function searchedWarranties() {
+  const query = String(warrantySearch || '').trim().toLocaleLowerCase();
+  return [...(state.warranties || [])]
+    .filter(item => !query || warrantySearchText(item).includes(query))
+    .sort((a, b) => String(b.installDate || '').localeCompare(String(a.installDate || '')) || String(b.updatedAt || '').localeCompare(String(a.updatedAt || '')));
+}
+
+function setWarrantySearch(value) {
+  warrantySearch = value || '';
+  const results = document.getElementById('warrantyResults');
+  const count = document.getElementById('warrantyCount');
+  if (results) results.innerHTML = warrantyCards(searchedWarranties());
+  if (count) count.textContent = lang === 'zh' ? `${searchedWarranties().length} 份质保` : `${searchedWarranties().length} warranties`;
+}
+
+async function copyWarrantyLink() {
+  const url = warrantyQueryUrl();
+  try {
+    await navigator.clipboard.writeText(url);
+    alert(lang === 'zh' ? '客户质保查询链接已复制' : 'Warranty lookup link copied');
+  } catch {
+    prompt(lang === 'zh' ? '请复制客户质保查询链接' : 'Copy the warranty lookup link', url);
+  }
+}
+
+function warrantyCards(rows = searchedWarranties()) {
+  if (!rows.length) return `<div class="empty-state">${lang === 'zh' ? '还没有符合条件的客户质保记录。' : 'No matching warranty records.'}</div>`;
+  return `<div class="warranty-grid">${rows.map(item => {
+    const expired = item.warrantyUntil && item.warrantyUntil < today();
+    return `<article class="warranty-card ${expired ? 'expired' : ''}">
+      <div class="warranty-card-head"><div><span class="warranty-kicker">${expired ? (lang === 'zh' ? '质保已到期' : 'Expired') : (lang === 'zh' ? '质保有效' : 'Warranty active')}</span><h3>${escapeHtml(item.customerName)}</h3></div><span class="warranty-date">${escapeHtml(item.installDate || '')}</span></div>
+      <div class="warranty-facts">
+        <div><span>${lang === 'zh' ? '电话' : 'Phone'}</span><strong>${escapeHtml(item.phone || '-')}</strong></div>
+        <div><span>${lang === 'zh' ? '车牌' : 'Plate'}</span><strong>${escapeHtml(item.licensePlate || '-')}</strong></div>
+        <div><span>${lang === 'zh' ? '车辆' : 'Vehicle'}</span><strong>${escapeHtml(item.vehicle || '-')}</strong></div>
+        <div><span>${lang === 'zh' ? '产品' : 'Product'}</span><strong>${escapeHtml(item.product || '-')}</strong></div>
+      </div>
+      <div class="warranty-copy"><span>${lang === 'zh' ? '贴膜部位' : 'Installed areas'}</span><p>${escapeHtml(item.areas || '-')}</p></div>
+      <div class="warranty-copy"><span>${lang === 'zh' ? '质保内容' : 'Coverage'}</span><p>${escapeHtml(item.warrantyContent || '-')}</p></div>
+      ${(item.photos || []).length ? `<div class="warranty-photo-strip">${item.photos.slice(0, 4).map(photo => `<a href="${escapeHtml(photo.url)}" target="_blank" rel="noopener"><img src="${escapeHtml(photo.url)}" alt="${escapeHtml(photo.name || '车辆照片')}" /></a>`).join('')}</div>` : ''}
+      <footer><span class="note">${item.warrantyUntil ? `${lang === 'zh' ? '质保至' : 'Until'} ${escapeHtml(item.warrantyUntil)}` : (lang === 'zh' ? '期限见质保内容' : 'Term per coverage')}</span><div class="warranty-actions">${hasPerm('jobsEdit') ? `<button class="btn" onclick="openWarranty('${escapeJs(item.id)}')">${lang === 'zh' ? '编辑' : 'Edit'}</button>` : ''}${hasPerm('jobsDelete') ? `<button class="btn danger" onclick="deleteWarranty('${escapeJs(item.id)}')">${lang === 'zh' ? '删除' : 'Delete'}</button>` : ''}</div></footer>
+    </article>`;
+  }).join('')}</div>`;
+}
+
+function warrantyView() {
+  const rows = searchedWarranties();
+  const actions = `${hasPerm('jobsCreate') ? `<button class="btn primary" onclick="openWarranty()">${t('addNew')}</button>` : ''}`;
+  return panel(t('warranties'), actions, `
+    <div class="warranty-toolbar">
+      <input value="${escapeHtml(warrantySearch)}" placeholder="${lang === 'zh' ? '搜索姓名、电话、车牌、车辆、产品或部位…' : 'Search name, phone, plate, vehicle, product, or area…'}" oninput="setWarrantySearch(this.value)" />
+      <button class="btn" onclick="copyWarrantyLink()">${lang === 'zh' ? '复制客户查询链接' : 'Copy customer link'}</button>
+      <a class="btn" href="/warranty.html" target="_blank" rel="noopener">${lang === 'zh' ? '打开查询页' : 'Open lookup'}</a>
+      <span id="warrantyCount" class="note">${lang === 'zh' ? `${rows.length} 份质保` : `${rows.length} warranties`}</span>
+    </div>
+    <div class="warranty-share-note">${lang === 'zh' ? '把查询链接发给客户。客户必须同时输入与登记完全一致的姓名和手机号，系统才会显示其质保资料与车辆照片。' : 'Send this link to the customer. The registered name and phone must both match before warranty details and photos are shown.'}</div>
+    <div id="warrantyResults">${warrantyCards(rows)}</div>`);
+}
+
+function renderWarrantyPhotoDraft() {
+  const root = document.getElementById('warrantyPhotoDraft');
+  if (!root) return;
+  root.innerHTML = warrantyDraftPhotos.length ? warrantyDraftPhotos.map((photo, index) => `<div class="warranty-photo-draft"><img src="${escapeHtml(photo.url)}" alt="${escapeHtml(photo.name || '')}" /><button type="button" onclick="removeWarrantyPhoto(${index})">×</button></div>`).join('') : `<span class="note">${lang === 'zh' ? '还没有车辆照片' : 'No vehicle photos yet'}</span>`;
+}
+
+function removeWarrantyPhoto(index) {
+  warrantyDraftPhotos.splice(index, 1);
+  renderWarrantyPhotoDraft();
+}
+
+async function uploadWarrantyPhotos(input) {
+  const files = [...(input.files || [])];
+  if (!files.length) return;
+  if (warrantyDraftPhotos.length + files.length > 20) {
+    alert(lang === 'zh' ? '每份质保最多保存20张照片' : 'A warranty can contain up to 20 photos');
+    input.value = '';
+    return;
+  }
+  const status = document.getElementById('warrantyPhotoStatus');
+  input.disabled = true;
+  try {
+    for (let index = 0; index < files.length; index += 1) {
+      const file = files[index];
+      if (!String(file.type || '').startsWith('image/')) throw new Error(lang === 'zh' ? '质保附件只接受照片' : 'Warranty attachments must be images');
+      if (status) status.textContent = `${lang === 'zh' ? '正在上传' : 'Uploading'} ${index + 1}/${files.length}…`;
+      const optimized = await optimizeProspectImage(file);
+      const uploaded = await uploadCloudMedia('/api/warranty-media/upload', optimized);
+      warrantyDraftPhotos.push({ url: uploaded.url, name: uploaded.name || file.name, type: uploaded.type || file.type, size: uploaded.size || optimized.size });
+      renderWarrantyPhotoDraft();
+    }
+    if (status) status.textContent = lang === 'zh' ? '照片上传完成' : 'Photos uploaded';
+  } catch (err) {
+    if (status) status.textContent = '';
+    alert(err.message);
+  } finally {
+    input.disabled = false;
+    input.value = '';
+  }
+}
+
+function openWarranty(id = '') {
+  const existing = (state.warranties || []).find(item => item.id === id);
+  const item = existing || { customerName:'', phone:'', email:'', licensePlate:'', vehicle:'', installDate:today(), product:'', areas:'', warrantyUntil:'', warrantyContent:'', internalNote:'', photos:[] };
+  warrantyDraftPhotos = [...(item.photos || [])];
+  openModal(existing ? (lang === 'zh' ? '编辑客户质保' : 'Edit Warranty') : (lang === 'zh' ? '新增客户质保' : 'New Warranty'), `
+    <div class="form-grid warranty-editor-grid">
+      <label>${lang === 'zh' ? '客户姓名 *' : 'Customer name *'}<input id="warrantyCustomerName" value="${escapeHtml(item.customerName)}" /></label>
+      <label>${lang === 'zh' ? '手机号 *' : 'Phone *'}<input id="warrantyPhone" value="${escapeHtml(item.phone)}" inputmode="tel" /></label>
+      <label>${lang === 'zh' ? '邮箱' : 'Email'}<input id="warrantyEmail" value="${escapeHtml(item.email)}" type="email" /></label>
+      <label>${lang === 'zh' ? '车牌' : 'License plate'}<input id="warrantyLicensePlate" value="${escapeHtml(item.licensePlate)}" /></label>
+      <label>${lang === 'zh' ? '车辆信息' : 'Vehicle'}<input id="warrantyVehicle" value="${escapeHtml(item.vehicle)}" placeholder="例如：2026 Tesla Model Y" /></label>
+      <label>${lang === 'zh' ? '施工日期 *' : 'Install date *'}<input id="warrantyInstallDate" value="${escapeHtml(item.installDate)}" type="date" /></label>
+      <label>${lang === 'zh' ? '施工产品 *' : 'Product *'}<input id="warrantyProduct" value="${escapeHtml(item.product)}" placeholder="品牌、系列、膜型号" /></label>
+      <label>${lang === 'zh' ? '质保到期日期' : 'Warranty until'}<input id="warrantyUntil" value="${escapeHtml(item.warrantyUntil)}" type="date" /></label>
+      <label class="full">${lang === 'zh' ? '贴膜部位 *' : 'Installed areas *'}<textarea id="warrantyAreas" rows="3" placeholder="例如：前保险杠、引擎盖、左右叶子板">${escapeHtml(item.areas)}</textarea></label>
+      <label class="full">${lang === 'zh' ? '质保内容 *' : 'Warranty coverage *'}<textarea id="warrantyContent" rows="6" placeholder="填写质保期限、覆盖范围、除外情况和申请方式">${escapeHtml(item.warrantyContent)}</textarea></label>
+      <label class="full">${lang === 'zh' ? '内部备注（客户不可见）' : 'Internal note (not visible to customer)'}<textarea id="warrantyInternalNote" rows="3">${escapeHtml(item.internalNote)}</textarea></label>
+      <div class="full warranty-photo-editor"><div><strong>${lang === 'zh' ? '车辆施工照片' : 'Vehicle photos'}</strong><span id="warrantyPhotoStatus" class="note"></span></div><label class="btn warranty-upload-button">${lang === 'zh' ? '上传照片' : 'Upload photos'}<input type="file" accept="image/*" multiple onchange="uploadWarrantyPhotos(this)" /></label><div id="warrantyPhotoDraft" class="warranty-photo-drafts"></div></div>
+    </div>`, () => saveWarranty(id));
+  document.getElementById('modal').classList.add('warranty-modal-open');
+  renderWarrantyPhotoDraft();
+}
+
+async function saveWarranty(id = '') {
+  const payload = {
+    customerName: document.getElementById('warrantyCustomerName').value,
+    phone: document.getElementById('warrantyPhone').value,
+    email: document.getElementById('warrantyEmail').value,
+    licensePlate: document.getElementById('warrantyLicensePlate').value,
+    vehicle: document.getElementById('warrantyVehicle').value,
+    installDate: document.getElementById('warrantyInstallDate').value,
+    product: document.getElementById('warrantyProduct').value,
+    areas: document.getElementById('warrantyAreas').value,
+    warrantyUntil: document.getElementById('warrantyUntil').value,
+    warrantyContent: document.getElementById('warrantyContent').value,
+    internalNote: document.getElementById('warrantyInternalNote').value,
+    photos: warrantyDraftPhotos
+  };
+  try {
+    state = await api(id ? `/api/warranties/${encodeURIComponent(id)}` : '/api/warranties', { method: id ? 'PUT' : 'POST', body: JSON.stringify(payload) });
+    closeModal();
+    broadcastDataChange();
+    render();
+  } catch (err) { alert(err.message); }
+}
+
+async function deleteWarranty(id) {
+  if (!confirm(lang === 'zh' ? '确定删除这份客户质保记录吗？此操作不会删除客户、施工单或财务数据。' : 'Delete this warranty record? Customer, job, and financial data will not be deleted.')) return;
+  try {
+    state = await api(`/api/warranties/${encodeURIComponent(id)}`, { method:'DELETE' });
+    broadcastDataChange();
+    render();
+  } catch (err) { alert(err.message); }
+}
+
 const views = {
   personalNotes() { return personalNotesView(); },
   dashboard() {
@@ -2958,6 +3131,9 @@ const views = {
       ? `${jobSearchBox(baseJobs)}<div id="jobSearchResults">${jobBoard(visibleJobs)}</div>`
       : `<p class="note">${lang === 'zh' ? '这个账号只有新增施工单权限，不能浏览已有施工订单。' : 'This account can create job orders but cannot browse existing job orders.'}</p>`;
     return panel(t('jobs'), hasPerm('jobsCreate') ? `<button class="btn primary" onclick="openJob()">${t('addNew')}</button>` : '', content);
+  },
+  warranties() {
+    return warrantyView();
   },
   installers() {
     return panel(t('installers'), hasPerm('installerEdit') ? `<button class="btn primary" onclick="openInstaller()">${t('addNew')}</button>` : '', installerTable() + `<p class="note">${lang === 'zh' ? '百分比适合分包师傅，固定金额适合单项计件。底薪加超产会按月计算任务积分：默认窗膜 1 分，TPU改色/PPF 3 分；达到月任务积分后，超出部分才按对应项目金额计算超产提成。' : 'Percentage works for subcontractors and fixed pay works for piece-rate jobs. Base plus bonus is calculated monthly by quota points: tint defaults to 1 point, TPU color change and PPF default to 3 points, and bonus pay starts only after the monthly quota is reached.'}</p>`);
@@ -6865,7 +7041,7 @@ function roleDefaultPermissions(role) {
 }
 
 function openModal(title, html, onSave) {
-  document.getElementById('modal').classList.remove('message-modal-open', 'confirmation-modal-open', 'personal-note-modal-open');
+  document.getElementById('modal').classList.remove('message-modal-open', 'confirmation-modal-open', 'personal-note-modal-open', 'warranty-modal-open');
   document.body.classList.add('modal-lock');
   const workspace = document.getElementById('prospectWorkspace');
   if (workspace) workspace.style.pointerEvents = 'none';
@@ -6888,7 +7064,7 @@ function openModal(title, html, onSave) {
 function closeModal() {
   closeReplyTemplateVideoPreview();
   if (messageRecorder && messageRecorder.state === 'recording') messageRecorder.stop();
-  document.getElementById('modal').classList.remove('open', 'message-modal-open', 'confirmation-modal-open', 'personal-note-modal-open');
+  document.getElementById('modal').classList.remove('open', 'message-modal-open', 'confirmation-modal-open', 'personal-note-modal-open', 'warranty-modal-open');
   document.getElementById('modal').classList.remove('reply-library-open');
   document.body.classList.remove('modal-lock');
   const workspace = document.getElementById('prospectWorkspace');

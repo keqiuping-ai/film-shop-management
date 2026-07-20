@@ -1,7 +1,10 @@
-const CACHE_NAME = 'film-shop-v64';
+const CACHE_NAME = 'film-shop-v65';
 const ASSETS = [
     '/',
     '/mobile.html',
+    '/warranty.html',
+    '/warranty.css',
+    '/warranty.js',
     '/styles.css',
     '/app.js',
     '/mobile.css',
