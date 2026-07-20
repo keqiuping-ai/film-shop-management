@@ -6263,15 +6263,34 @@ function showJobConfirmationPrintPreview(job) {
   }
   const documentHtml = document.getElementById('printRoot')?.innerHTML || '';
   overlay.innerHTML = `<div class="confirmation-preview-dialog">
-    <header><div><h2>${lang === 'zh' ? 'A4 打印预览' : 'A4 Print Preview'}</h2><p>${printLanguage === 'zh' ? '中文文件' : 'English document'} · Brother HL-L2465DW · A4 · 100%</p></div><div class="confirmation-preview-actions"><span class="confirmation-print-fallback">${lang === 'zh' ? '窗口未打开请按 ⌘P' : 'If blocked, press ⌘P'}</span><button type="button" class="btn" data-confirmation-action="back">${lang === 'zh' ? '返回修改' : 'Back'}</button><button type="button" class="btn primary" data-confirmation-action="print">${lang === 'zh' ? '确认并打印' : 'Confirm & Print'}</button></div></header>
+    <header><div><h2>${lang === 'zh' ? 'A4 打印预览' : 'A4 Print Preview'}</h2><p>${printLanguage === 'zh' ? '中文文件' : 'English document'} · Brother HL-L2465DW · A4 · 100%</p></div><div class="confirmation-preview-actions"><span class="confirmation-print-fallback">${lang === 'zh' ? '正在准备 Safari 打印页…' : 'Preparing Safari print page…'}</span><button type="button" class="btn" data-confirmation-action="back">${lang === 'zh' ? '返回修改' : 'Back'}</button><button type="button" class="btn primary" data-confirmation-action="print" disabled>${lang === 'zh' ? '正在准备…' : 'Preparing…'}</button></div></header>
     <div class="confirmation-preview-scroll"><div class="confirmation-preview-sheet">${documentHtml}</div></div>
+    <iframe class="confirmation-print-frame" title="A4 print document"></iframe>
   </div>`;
   overlay.querySelector('[data-confirmation-action="back"]')
     ?.addEventListener('click', closeJobConfirmationPrintPreview);
   overlay.querySelector('[data-confirmation-action="print"]')
     ?.addEventListener('click', printJobConfirmationFromPreview);
+  prepareJobConfirmationPrintFrame(overlay, documentHtml, printLanguage);
   overlay.classList.add('open');
   document.body.classList.add('modal-lock');
+}
+
+function prepareJobConfirmationPrintFrame(overlay, documentHtml, printLanguage) {
+  const frame = overlay.querySelector('.confirmation-print-frame');
+  const button = overlay.querySelector('[data-confirmation-action="print"]');
+  const status = overlay.querySelector('.confirmation-print-fallback');
+  if (!frame || !button) return;
+  frame.dataset.ready = 'false';
+  frame.addEventListener('load', () => {
+    if (!frame.contentDocument?.querySelector('.confirmation-print-page')) return;
+    frame.dataset.ready = 'true';
+    button.disabled = false;
+    button.textContent = lang === 'zh' ? '确认并打印' : 'Confirm & Print';
+    if (status) status.textContent = lang === 'zh' ? '打印页已准备好' : 'Print page ready';
+  });
+  const title = printLanguage === 'zh' ? '客户施工确认单' : 'Installation Agreement';
+  frame.srcdoc = `<!doctype html><html><head><meta charset="utf-8"><base href="${escapeHtml(location.origin)}/"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${title}</title><link rel="stylesheet" href="/styles.css?v=66"></head><body><div class="print-root">${documentHtml}</div></body></html>`;
 }
 
 function closeJobConfirmationPrintPreview() {
@@ -6280,14 +6299,15 @@ function closeJobConfirmationPrintPreview() {
 }
 
 function printJobConfirmationFromPreview() {
-  const printRoot = document.getElementById('printRoot');
-  if (!printRoot?.innerHTML.trim()) {
+  const overlay = document.getElementById('confirmationPrintPreview');
+  const frame = overlay?.querySelector('.confirmation-print-frame');
+  if (!frame?.contentWindow || frame.dataset.ready !== 'true') {
     return alert(lang === 'zh' ? '打印内容尚未生成，请返回后重新打开打印预览。' : 'Print content is not ready. Please go back and reopen the preview.');
   }
   try {
-    // Safari 要求 window.print() 直接同步运行在真实点击事件里。
-    // 在此之前不要打开窗口、等待、禁用按钮或修改焦点，否则可能丢失用户激活状态。
-    window.print();
+    // Safari 只打印预先加载完成的独立 A4 文档，避免扫描整个管理系统里的图片和视频。
+    // 必须直接同步运行在真实点击事件里，不能在调用前等待或改变焦点。
+    frame.contentWindow.print();
   } catch (error) {
     console.error('Unable to open system print dialog:', error);
     return alert(lang === 'zh'

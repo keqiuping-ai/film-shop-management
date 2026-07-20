@@ -1285,6 +1285,7 @@ body.modal-lock .prospect-workspace { pointer-events: none; }
 .print-root { display:none; }
 .confirmation-print-preview { position:fixed; inset:0; z-index:260; display:none; background:rgba(15,23,42,.78); }
 .confirmation-print-preview.open { display:block; }
+.confirmation-print-frame { position:fixed; left:-10px; bottom:-10px; width:1px; height:1px; border:0; opacity:.01; pointer-events:none; }
 .confirmation-preview-dialog { height:100%; display:grid; grid-template-rows:auto minmax(0,1fr); background:#e8edf1; }
 .confirmation-preview-dialog > header { display:flex; align-items:center; justify-content:space-between; gap:16px; padding:12px 20px; background:#fff; border-bottom:1px solid #cbd5e1; box-shadow:0 2px 8px rgba(15,23,42,.12); z-index:1; }
 .confirmation-preview-dialog h2 { margin:0; font-size:20px; }
