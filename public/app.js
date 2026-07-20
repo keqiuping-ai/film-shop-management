@@ -3055,6 +3055,17 @@ function updateWarrantyUntilFromInstallDate() {
   if (warrantyUntil) warrantyUntil.value = warrantyDateAfterYears(installDate, 10);
 }
 
+function warrantyAreasFromJobConfirmation(job) {
+  const confirmation = job.confirmation || {};
+  const groups = [];
+  const tintAreas = confirmationSelectedLabels(confirmation.tintParts, tintConfirmationParts, 'en');
+  const ppfAreas = confirmationSelectedLabels(confirmation.ppfParts, ppfConfirmationParts, 'en');
+  if (tintAreas !== '—') groups.push(`Window Tint: ${tintAreas}`);
+  if (ppfAreas !== '—') groups.push(`Paint Protection Film: ${ppfAreas}`);
+  if (groups.length) return groups.join(' | ');
+  return [serviceLabelList(job), job.package].filter(Boolean).join(' · ');
+}
+
 function openWarrantyFromJob(jobId) {
   const job = (state.jobs || []).find(item => item.id === jobId);
   if (!job) return alert(lang === 'zh' ? '找不到这张施工单。' : 'Job order not found.');
@@ -3071,11 +3082,11 @@ function openWarrantyFromJob(jobId) {
   const installDate = job.scheduleDate || job.date || today();
   const services = jobServices(job);
   const warrantyType = services.includes('wrap') ? '改色膜' : (services.includes('ppf') ? 'PPF' : '');
-  const serviceSummary = [serviceLabelList(job), job.package, job.notes].filter(Boolean).join(' · ');
+  const installedAreas = warrantyAreasFromJobConfirmation(job);
   openWarranty('', {
     customerName: job.customer || '', phone: job.phone || '', vehicle: job.vehicle || '',
     installDate, warrantyUntil: warrantyDateAfterYears(installDate, 10), product: warrantyType,
-    areas: serviceSummary, internalNote: `${lang === 'zh' ? '由施工单自动生成' : 'Created from job'}：${job.id}`
+    areas: installedAreas, internalNote: `${lang === 'zh' ? '由施工单自动生成' : 'Created from job'}：${job.id}`
   });
 }
 
