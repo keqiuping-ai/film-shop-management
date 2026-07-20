@@ -2839,24 +2839,24 @@ async function api(req, res) {
     const body = await readBody(req);
     const login = String(body.login || '').trim().toLowerCase();
     const customer = (db.portalCustomers || []).find(item => item.active !== false && [item.email, item.phone, item.account].some(value => String(value || '').trim().toLowerCase() === login));
-    if (!customer || !verifyPassword(body.password, customer.passwordHash)) return send(res, 401, { error: '账号或密码不正确' });
+    if (!customer || !verifyPassword(body.password, customer.passwordHash)) return send(res, 401, { error: 'The account or password is incorrect.' });
     const token = createCustomerSessionToken(customer);
     return send(res, 200, { token, customer: safePortalCustomer(customer) });
   }
 
   if (url.pathname.startsWith('/api/customer/')) {
     const customer = currentPortalCustomer(req, db);
-    if (!customer) return send(res, 401, { error: '请先登录客户账号' });
+    if (!customer) return send(res, 401, { error: 'Please log in to your customer account.' });
     if (req.method === 'GET' && url.pathname === '/api/customer/bootstrap') return send(res, 200, portalCustomerSnapshot(db, customer), undefined, req);
     if (req.method === 'POST' && url.pathname === '/api/customer/logout') return send(res, 200, { ok: true });
     if (req.method === 'POST' && url.pathname === '/api/customer/media') {
       const body = await readBody(req);
-      const name = String(body.name || '客户附件').trim().slice(0, 160);
+      const name = String(body.name || 'Customer attachment').trim().slice(0, 160);
       const match = String(body.dataUrl || '').match(/^data:([^;,]+);base64,(.+)$/s);
-      if (!match) return send(res, 400, { error: '附件格式不正确' });
+      if (!match) return send(res, 400, { error: 'The attachment format is invalid.' });
       const type = String(match[1] || 'application/octet-stream').slice(0, 120);
       const data = Buffer.from(match[2], 'base64');
-      if (!data.length || data.length > 5 * 1024 * 1024) return send(res, 400, { error: '附件必须小于 5MB' });
+      if (!data.length || data.length > 5 * 1024 * 1024) return send(res, 400, { error: 'The attachment must be smaller than 5 MB.' });
       fs.mkdirSync(CUSTOMER_MEDIA_DIR, { recursive: true });
       const fileName = `${crypto.randomBytes(6).toString('hex')}${safeCustomerMediaExtension(name, type)}`;
       fs.writeFileSync(path.join(CUSTOMER_MEDIA_DIR, fileName), data);
@@ -2878,10 +2878,10 @@ async function api(req, res) {
         return product && price !== null && Number.isFinite(Number(price)) && qty > 0 ? { item: product.sku, qty, unitPrice: Number(price) } : null;
       }).filter(Boolean);
       const customerDemand = String(body.customerDemand || '').trim().slice(0, 3000);
-      if (!items.length && !customerDemand) return send(res, 400, { error: '请选择商品或填写特殊需求' });
+      if (!items.length && !customerDemand) return send(res, 400, { error: 'Select a product or enter a special request.' });
       if (!items.length) items.push({ item: 'CUSTOM-CUSTOMER-REQUEST', qty: 1, unitPrice: 0 });
       const now = new Date().toISOString();
-      const order = { id: id(), date: dateInTimezone(db.settings?.timezone || 'America/Los_Angeles', 0), type: 'wholesale-us', customer: customer.businessName || customer.contactName, salesRep: customer.salesRep || '', preparedBy: '客户客户端', items, item: items[0].item, qty: items[0].qty, unitPrice: items[0].unitPrice, status: '待客服确认', shipping: '', trackingNo: '', paid: 0, paymentMethod: '', note: customerDemand, customerDemand, portalCustomerId: customer.id, portalRequestId: requestId, portalSource: true, portalNew: true, portalAttachments: Array.isArray(body.attachments) ? body.attachments.slice(0, 10) : [], portalMessages: [{ id: id(), sender: 'customer', senderName: customer.contactName || customer.businessName, text: customerDemand || '客户提交了新订单', createdAt: now }], createdAt: now };
+      const order = { id: id(), date: dateInTimezone(db.settings?.timezone || 'America/Los_Angeles', 0), type: 'wholesale-us', customer: customer.businessName || customer.contactName, salesRep: customer.salesRep || '', preparedBy: '客户客户端', items, item: items[0].item, qty: items[0].qty, unitPrice: items[0].unitPrice, status: '待客服确认', shipping: '', trackingNo: '', paid: 0, paymentMethod: '', note: customerDemand, customerDemand, portalCustomerId: customer.id, portalRequestId: requestId, portalSource: true, portalNew: true, portalAttachments: Array.isArray(body.attachments) ? body.attachments.slice(0, 10) : [], portalMessages: [{ id: id(), sender: 'customer', senderName: customer.contactName || customer.businessName, text: customerDemand || 'The customer submitted a new order.', createdAt: now }], createdAt: now };
       db.salesOrders.push(order);
       audit(db, { id: `customer-${customer.id}`, name: customer.businessName || customer.contactName }, 'create-customer-portal-order', { collection: 'salesOrders', recordId: order.id, recordLabel: order.customer, detail: `客户客户端提交新订单 ${order.customer}` });
       writeDb(db); notifyDataChanged('customer-portal-order', order.id);
@@ -2890,9 +2890,9 @@ async function api(req, res) {
     const messageMatch = url.pathname.match(/^\/api\/customer\/orders\/([^/]+)\/messages$/);
     if (req.method === 'POST' && messageMatch) {
       const order = (db.salesOrders || []).find(item => item.id === messageMatch[1] && item.portalCustomerId === customer.id);
-      if (!order) return send(res, 404, { error: '找不到订单' });
+      if (!order) return send(res, 404, { error: 'Order not found.' });
       const body = await readBody(req); const text = String(body.text || '').trim().slice(0, 4000); const attachment = body.attachment && String(body.attachment.url || '').includes('/customer-media/') ? body.attachment : null;
-      if (!text && !attachment) return send(res, 400, { error: '请输入消息或上传附件' });
+      if (!text && !attachment) return send(res, 400, { error: 'Enter a message or upload an attachment.' });
       order.portalMessages = [...(order.portalMessages || []), { id: id(), sender: 'customer', senderName: customer.contactName || customer.businessName, text, attachment, createdAt: new Date().toISOString() }];
       order.portalCustomerUnread = true; order.updatedAt = new Date().toISOString(); writeDb(db); notifyDataChanged('customer-portal-message', order.id);
       return send(res, 200, portalCustomerSnapshot(db, customer));
