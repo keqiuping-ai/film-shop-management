@@ -2943,7 +2943,7 @@ function warrantyQueryUrl() {
 }
 
 function warrantySearchText(item) {
-  return [item.customerName, item.phone, item.email, item.licensePlate, item.vehicle, item.product, item.areas, item.warrantyContent]
+  return [item.customerName, item.phone, item.email, item.licensePlate, item.vehicle, item.product, item.productSeries, item.vehicleVin, item.projectName, item.projectAddress, item.areas, item.warrantyContent]
     .map(value => String(value || '').toLocaleLowerCase()).join(' ');
 }
 
@@ -3070,6 +3070,23 @@ function warrantyAreasFromJobConfirmation(job) {
   return [serviceLabelList(job), job.package].filter(Boolean).join(' · ');
 }
 
+function warrantyCategoryValue(item = {}) {
+  if (['ppf', 'automotiveWindowFilm', 'vehicleColorChange', 'architecturalGlassFilm'].includes(item.productCategory)) return item.productCategory;
+  const text = `${item.product || ''} ${item.productSeries || ''}`.toLowerCase();
+  if (/architect|building|建筑/.test(text)) return 'architecturalGlassFilm';
+  if (/window|tint|窗膜/.test(text)) return 'automotiveWindowFilm';
+  if (/wrap|color change|改色/.test(text)) return 'vehicleColorChange';
+  return 'ppf';
+}
+
+function updateWarrantyCategoryFields() {
+  const category = document.getElementById('warrantyProductCategory')?.value || 'ppf';
+  document.querySelectorAll('[data-warranty-category]').forEach(element => {
+    const categories = String(element.dataset.warrantyCategory || '').split(' ');
+    element.hidden = !categories.includes(category);
+  });
+}
+
 function openWarrantyFromJob(jobId) {
   const job = (state.jobs || []).find(item => item.id === jobId);
   if (!job) return alert(lang === 'zh' ? '找不到这张施工单。' : 'Job order not found.');
@@ -3085,11 +3102,14 @@ function openWarrantyFromJob(jobId) {
   }
   const installDate = job.scheduleDate || job.date || today();
   const services = jobServices(job);
-  const warrantyType = services.includes('wrap') ? '改色膜' : (services.includes('ppf') ? 'PPF' : '');
+  const productCategory = services.includes('wrap') ? 'vehicleColorChange' : (services.includes('ppf') ? 'ppf' : (services.includes('tint') ? 'automotiveWindowFilm' : 'ppf'));
+  const warrantyType = productCategory === 'vehicleColorChange' ? 'PVC Color Change Film' : (productCategory === 'automotiveWindowFilm' ? 'Automotive Window Film' : 'PPF');
   const installedAreas = warrantyAreasFromJobConfirmation(job);
   openWarranty('', {
     customerName: job.customer || '', phone: job.phone || '', vehicle: job.vehicle || '',
-    installDate, warrantyUntil: warrantyDateAfterYears(installDate, 10), product: warrantyType,
+    installDate, warrantyUntil: warrantyDateAfterYears(installDate, 10), product: warrantyType, productCategory,
+    colorChangeSubtype: productCategory === 'vehicleColorChange' ? 'pvc' : '', vehicleVin: job.vin || '',
+    installedWindows: productCategory === 'automotiveWindowFilm' ? installedAreas : '', installedPanels: ['ppf', 'vehicleColorChange'].includes(productCategory) ? installedAreas : '',
     areas: installedAreas, internalNote: `${lang === 'zh' ? '由施工单自动生成' : 'Created from job'}：${job.id}`
   });
 }
@@ -3101,7 +3121,7 @@ function openWarranty(id = '', preset = {}) {
     ? 'QUAD FILM 产品材料及制造缺陷有限质保。具体质保范围、适用条件、除外情况和申请方式，以客户质保详情页面所列政策为准。'
     : 'QUAD FILM limited warranty for defects in materials and manufacture. Coverage, eligibility, exclusions, and claim procedures follow the customer warranty detail policy.';
   const item = existing || { customerName:'', phone:'', email:'', licensePlate:'', vehicle:'', installDate:defaultInstallDate, product:'', areas:'', warrantyUntil:warrantyDateAfterYears(defaultInstallDate, 10), warrantyContent:defaultCoverage, internalNote:'', photos:[], ...preset };
-  const knownProduct = ['PPF', '改色膜'].includes(item.product) ? '' : `<option value="${escapeHtml(item.product)}" selected>${escapeHtml(item.product)}</option>`;
+  item.productCategory = warrantyCategoryValue(item);
   warrantyDraftPhotos = [...(item.photos || [])];
   openModal(existing ? (lang === 'zh' ? '编辑客户质保' : 'Edit Warranty') : (lang === 'zh' ? '新增客户质保' : 'New Warranty'), `
     <div class="form-grid warranty-editor-grid">
@@ -3110,18 +3130,40 @@ function openWarranty(id = '', preset = {}) {
       <label>${lang === 'zh' ? '车牌' : 'License plate'}<input id="warrantyLicensePlate" value="${escapeHtml(item.licensePlate)}" /></label>
       <label>${lang === 'zh' ? '车辆信息' : 'Vehicle'}<input id="warrantyVehicle" value="${escapeHtml(item.vehicle)}" placeholder="例如：2026 Tesla Model Y" /></label>
       <label>${lang === 'zh' ? '施工日期 *' : 'Install date *'}<input id="warrantyInstallDate" value="${escapeHtml(item.installDate)}" type="date" onchange="updateWarrantyUntilFromInstallDate()" /></label>
-      <label>${lang === 'zh' ? '质保类型 *' : 'Warranty type *'}<select id="warrantyProduct"><option value="" ${item.product ? '' : 'selected'}>${lang === 'zh' ? '请选择质保类型' : 'Select warranty type'}</option>${knownProduct}<option value="PPF" ${item.product === 'PPF' ? 'selected' : ''}>PPF</option><option value="改色膜" ${item.product === '改色膜' ? 'selected' : ''}>${lang === 'zh' ? '改色膜' : 'Color wrap'}</option></select></label>
+      <label>${lang === 'zh' ? '产品类别 *' : 'Product category *'}<select id="warrantyProductCategory" onchange="updateWarrantyCategoryFields()"><option value="ppf" ${item.productCategory === 'ppf' ? 'selected' : ''}>${lang === 'zh' ? '漆面保护膜 PPF' : 'Paint Protection Film (PPF)'}</option><option value="automotiveWindowFilm" ${item.productCategory === 'automotiveWindowFilm' ? 'selected' : ''}>${lang === 'zh' ? '汽车窗膜' : 'Automotive Window Film'}</option><option value="vehicleColorChange" ${item.productCategory === 'vehicleColorChange' ? 'selected' : ''}>${lang === 'zh' ? '车辆改色膜' : 'Vehicle Color Change Film'}</option><option value="architecturalGlassFilm" ${item.productCategory === 'architecturalGlassFilm' ? 'selected' : ''}>${lang === 'zh' ? '建筑玻璃膜' : 'Architectural Glass Film'}</option></select></label>
+      <label data-warranty-category="vehicleColorChange">${lang === 'zh' ? '改色膜子类型 *' : 'Color film subtype *'}<select id="warrantyColorChangeSubtype"><option value="pvc" ${item.colorChangeSubtype !== 'colorPpf' ? 'selected' : ''}>${lang === 'zh' ? 'PVC改色膜' : 'PVC Color Change Film'}</option><option value="colorPpf" ${item.colorChangeSubtype === 'colorPpf' ? 'selected' : ''}>${lang === 'zh' ? '彩色PPF' : 'Color PPF'}</option></select></label>
+      <label>${lang === 'zh' ? '质保产品 / 型号 *' : 'Warranty product / model *'}<input id="warrantyProduct" value="${escapeHtml(item.product)}" placeholder="${lang === 'zh' ? '品牌、系列、膜型号' : 'Brand, series, film model'}" /></label>
       <label>${lang === 'zh' ? '质保到期日期' : 'Warranty until'}<input id="warrantyUntil" value="${escapeHtml(item.warrantyUntil)}" type="date" /></label>
       <label class="full">${lang === 'zh' ? '贴膜部位 *' : 'Installed areas *'}<textarea id="warrantyAreas" rows="3" placeholder="例如：前保险杠、引擎盖、左右叶子板">${escapeHtml(item.areas)}</textarea></label>
       <div class="full warranty-photo-editor"><div><strong>${lang === 'zh' ? '车辆施工照片' : 'Vehicle photos'}</strong><span id="warrantyPhotoStatus" class="note"></span></div><label class="btn warranty-upload-button">${lang === 'zh' ? '上传照片' : 'Upload photos'}<input type="file" accept="image/*" multiple onchange="uploadWarrantyPhotos(this)" /></label><div id="warrantyPhotoDraft" class="warranty-photo-drafts"></div></div>
       <details class="full warranty-advanced"><summary>${lang === 'zh' ? '更多资料与质保说明' : 'More details and warranty terms'}</summary><div class="form-grid">
         <label>${lang === 'zh' ? '邮箱' : 'Email'}<input id="warrantyEmail" value="${escapeHtml(item.email)}" type="email" /></label>
+        <label>${lang === 'zh' ? '产品系列' : 'Product series'}<input id="warrantyProductSeries" value="${escapeHtml(item.productSeries || '')}" /></label>
+        <label data-warranty-category="ppf automotiveWindowFilm vehicleColorChange">${lang === 'zh' ? '车辆 VIN' : 'Vehicle VIN'}<input id="warrantyVehicleVin" value="${escapeHtml(item.vehicleVin || '')}" /></label>
+        <label>${lang === 'zh' ? '施工门店 / 单位' : 'Installing store / contractor'}<input id="warrantyInstallerName" value="${escapeHtml(item.installerName || '')}" placeholder="QUAD FILM" /></label>
+        <label data-warranty-category="automotiveWindowFilm">${lang === 'zh' ? '施工车窗' : 'Installed windows'}<input id="warrantyInstalledWindows" value="${escapeHtml(item.installedWindows || '')}" /></label>
+        <label data-warranty-category="automotiveWindowFilm">${lang === 'zh' ? '透光率 / 色号' : 'VLT / shade'}<input id="warrantyFilmVlt" value="${escapeHtml(item.filmVlt || '')}" /></label>
+        <label data-warranty-category="automotiveWindowFilm">${lang === 'zh' ? '转让政策' : 'Transfer policy'}<input id="warrantyTransferPolicy" value="${escapeHtml(item.transferPolicy || '')}" /></label>
+        <label data-warranty-category="vehicleColorChange">${lang === 'zh' ? '产品颜色 / 色号' : 'Color / code'}<input id="warrantyColorCode" value="${escapeHtml(item.colorCode || '')}" /></label>
+        <label data-warranty-category="vehicleColorChange">${lang === 'zh' ? '垂直面质保期限' : 'Vertical surface term'}<input id="warrantyVerticalWarrantyTerm" value="${escapeHtml(item.verticalWarrantyTerm || '')}" /></label>
+        <label data-warranty-category="vehicleColorChange">${lang === 'zh' ? '水平 / 高暴露面质保期限' : 'Horizontal / high-exposure term'}<input id="warrantyHorizontalWarrantyTerm" value="${escapeHtml(item.horizontalWarrantyTerm || '')}" /></label>
+        <label data-warranty-category="ppf vehicleColorChange">${lang === 'zh' ? '施工钣金件' : 'Installed panels'}<input id="warrantyInstalledPanels" value="${escapeHtml(item.installedPanels || '')}" /></label>
+        <label data-warranty-category="architecturalGlassFilm">${lang === 'zh' ? '项目名称' : 'Project name'}<input id="warrantyProjectName" value="${escapeHtml(item.projectName || '')}" /></label>
+        <label data-warranty-category="architecturalGlassFilm">${lang === 'zh' ? '项目地址' : 'Project address'}<input id="warrantyProjectAddress" value="${escapeHtml(item.projectAddress || '')}" /></label>
+        <label data-warranty-category="architecturalGlassFilm">${lang === 'zh' ? '物业类型' : 'Property type'}<input id="warrantyPropertyType" value="${escapeHtml(item.propertyType || '')}" /></label>
+        <label data-warranty-category="architecturalGlassFilm">${lang === 'zh' ? '产品用途' : 'Application type'}<input id="warrantyApplicationType" value="${escapeHtml(item.applicationType || '')}" /></label>
+        <label data-warranty-category="architecturalGlassFilm">${lang === 'zh' ? '安装面' : 'Installation side'}<input id="warrantyInstallationSide" value="${escapeHtml(item.installationSide || '')}" /></label>
+        <label data-warranty-category="architecturalGlassFilm">${lang === 'zh' ? '施工面积' : 'Installation area'}<input id="warrantyInstallationArea" value="${escapeHtml(item.installationArea || '')}" /></label>
+        <label data-warranty-category="architecturalGlassFilm">${lang === 'zh' ? '膜材质保期限' : 'Film warranty term'}<input id="warrantyFilmWarrantyTerm" value="${escapeHtml(item.filmWarrantyTerm || '')}" /></label>
+        <label data-warranty-category="architecturalGlassFilm">${lang === 'zh' ? '玻璃热应力破裂保障' : 'Thermal glass breakage coverage'}<select id="warrantyGlassBreakageCoverage"><option value="Not included" ${item.glassBreakageCoverage !== 'Included' ? 'selected' : ''}>${lang === 'zh' ? '未包含' : 'Not included'}</option><option value="Included" ${item.glassBreakageCoverage === 'Included' ? 'selected' : ''}>${lang === 'zh' ? '已包含' : 'Included'}</option></select></label>
+        <label data-warranty-category="architecturalGlassFilm">${lang === 'zh' ? '中空玻璃密封失效保障' : 'Insulated-glass seal failure coverage'}<select id="warrantySealFailureCoverage"><option value="Not included" ${item.sealFailureCoverage !== 'Included' ? 'selected' : ''}>${lang === 'zh' ? '未包含' : 'Not included'}</option><option value="Included" ${item.sealFailureCoverage === 'Included' ? 'selected' : ''}>${lang === 'zh' ? '已包含' : 'Included'}</option></select></label>
         <label class="full">${lang === 'zh' ? '质保内容 *' : 'Warranty coverage *'}<textarea id="warrantyContent" rows="5">${escapeHtml(item.warrantyContent)}</textarea></label>
         <label class="full">${lang === 'zh' ? '内部备注（客户不可见）' : 'Internal note (not visible to customer)'}<textarea id="warrantyInternalNote" rows="2">${escapeHtml(item.internalNote)}</textarea></label>
       </div></details>
     </div>`, () => saveWarranty(id));
   document.getElementById('modal').classList.add('warranty-modal-open');
   renderWarrantyPhotoDraft();
+  updateWarrantyCategoryFields();
 }
 
 async function saveWarranty(id = '') {
@@ -3133,6 +3175,27 @@ async function saveWarranty(id = '') {
     vehicle: document.getElementById('warrantyVehicle').value,
     installDate: document.getElementById('warrantyInstallDate').value,
     product: document.getElementById('warrantyProduct').value,
+    productCategory: document.getElementById('warrantyProductCategory').value,
+    colorChangeSubtype: document.getElementById('warrantyColorChangeSubtype')?.value || '',
+    productSeries: document.getElementById('warrantyProductSeries')?.value || '',
+    vehicleVin: document.getElementById('warrantyVehicleVin')?.value || '',
+    installerName: document.getElementById('warrantyInstallerName')?.value || '',
+    installedWindows: document.getElementById('warrantyInstalledWindows')?.value || '',
+    filmVlt: document.getElementById('warrantyFilmVlt')?.value || '',
+    transferPolicy: document.getElementById('warrantyTransferPolicy')?.value || '',
+    colorCode: document.getElementById('warrantyColorCode')?.value || '',
+    verticalWarrantyTerm: document.getElementById('warrantyVerticalWarrantyTerm')?.value || '',
+    horizontalWarrantyTerm: document.getElementById('warrantyHorizontalWarrantyTerm')?.value || '',
+    installedPanels: document.getElementById('warrantyInstalledPanels')?.value || '',
+    projectName: document.getElementById('warrantyProjectName')?.value || '',
+    projectAddress: document.getElementById('warrantyProjectAddress')?.value || '',
+    propertyType: document.getElementById('warrantyPropertyType')?.value || '',
+    applicationType: document.getElementById('warrantyApplicationType')?.value || '',
+    installationSide: document.getElementById('warrantyInstallationSide')?.value || '',
+    installationArea: document.getElementById('warrantyInstallationArea')?.value || '',
+    filmWarrantyTerm: document.getElementById('warrantyFilmWarrantyTerm')?.value || '',
+    glassBreakageCoverage: document.getElementById('warrantyGlassBreakageCoverage')?.value || '',
+    sealFailureCoverage: document.getElementById('warrantySealFailureCoverage')?.value || '',
     areas: document.getElementById('warrantyAreas').value,
     warrantyUntil: document.getElementById('warrantyUntil').value,
     warrantyContent: document.getElementById('warrantyContent').value,

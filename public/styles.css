@@ -1870,3 +1870,4 @@ body.modal-lock .prospect-workspace { pointer-events: none; }
 .job-warranty-button { white-space:nowrap; border-color:#d2b354; background:#fff9dc; color:#725700; }
 .job-warranty-button:hover { background:#fff1af; }
 @media(max-width:900px){.warranty-grid{grid-template-columns:1fr}.warranty-facts{grid-template-columns:1fr}.warranty-card footer{align-items:flex-start;flex-direction:column}.warranty-photo-editor{grid-template-columns:1fr}.warranty-photo-drafts{grid-column:1}}
+.form-grid [hidden] { display: none !important; }

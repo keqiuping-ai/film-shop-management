@@ -2742,6 +2742,16 @@ function normalizedWarrantyPhone(value) {
   return digits.length > 10 && digits.startsWith('1') ? digits.slice(-10) : digits;
 }
 
+function inferWarrantyCategory(item = {}) {
+  const explicit = String(item.productCategory || '').trim();
+  if (['ppf', 'automotiveWindowFilm', 'vehicleColorChange', 'architecturalGlassFilm'].includes(explicit)) return explicit;
+  const text = `${item.product || ''} ${item.productSeries || ''}`.toLowerCase();
+  if (/architect|building|建筑/.test(text)) return 'architecturalGlassFilm';
+  if (/window|tint|窗膜/.test(text)) return 'automotiveWindowFilm';
+  if (/wrap|color change|改色/.test(text)) return 'vehicleColorChange';
+  return 'ppf';
+}
+
 function normalizeWarrantyRecord(item) {
   item.customerName = String(item.customerName || '').trim().slice(0, 120);
   item.phone = String(item.phone || '').trim().slice(0, 40);
@@ -2750,6 +2760,27 @@ function normalizeWarrantyRecord(item) {
   item.vehicle = String(item.vehicle || '').trim().slice(0, 160);
   item.installDate = String(item.installDate || '').trim().slice(0, 10);
   item.product = String(item.product || '').trim().slice(0, 200);
+  item.productCategory = inferWarrantyCategory(item);
+  item.colorChangeSubtype = item.productCategory === 'vehicleColorChange' && String(item.colorChangeSubtype || '') === 'colorPpf' ? 'colorPpf' : (item.productCategory === 'vehicleColorChange' ? 'pvc' : '');
+  item.productSeries = String(item.productSeries || '').trim().slice(0, 200);
+  item.vehicleVin = String(item.vehicleVin || '').trim().toUpperCase().slice(0, 40);
+  item.installerName = String(item.installerName || '').trim().slice(0, 200);
+  item.installedWindows = String(item.installedWindows || '').trim().slice(0, 1000);
+  item.filmVlt = String(item.filmVlt || '').trim().slice(0, 120);
+  item.transferPolicy = String(item.transferPolicy || '').trim().slice(0, 200);
+  item.colorCode = String(item.colorCode || '').trim().slice(0, 160);
+  item.verticalWarrantyTerm = String(item.verticalWarrantyTerm || '').trim().slice(0, 160);
+  item.horizontalWarrantyTerm = String(item.horizontalWarrantyTerm || '').trim().slice(0, 160);
+  item.installedPanels = String(item.installedPanels || '').trim().slice(0, 1000);
+  item.projectName = String(item.projectName || '').trim().slice(0, 200);
+  item.projectAddress = String(item.projectAddress || '').trim().slice(0, 500);
+  item.propertyType = String(item.propertyType || '').trim().slice(0, 160);
+  item.applicationType = String(item.applicationType || '').trim().slice(0, 160);
+  item.installationSide = String(item.installationSide || '').trim().slice(0, 160);
+  item.installationArea = String(item.installationArea || '').trim().slice(0, 160);
+  item.filmWarrantyTerm = String(item.filmWarrantyTerm || '').trim().slice(0, 160);
+  item.glassBreakageCoverage = String(item.glassBreakageCoverage || '').trim().slice(0, 80);
+  item.sealFailureCoverage = String(item.sealFailureCoverage || '').trim().slice(0, 80);
   item.areas = String(item.areas || '').trim().slice(0, 1000);
   item.warrantyUntil = String(item.warrantyUntil || '').trim().slice(0, 10);
   item.warrantyContent = String(item.warrantyContent || '').trim().slice(0, 5000);
@@ -2769,7 +2800,9 @@ function validateWarrantyRecord(item) {
   if (!item.customerName) return '请填写客户姓名';
   if (normalizedWarrantyPhone(item.phone).length < 7) return '请填写有效的客户手机号';
   if (!/^\d{4}-\d{2}-\d{2}$/.test(item.installDate)) return '请选择施工日期';
-  if (!item.vehicle && !item.licensePlate) return '请至少填写车辆信息或车牌';
+  if (item.productCategory === 'architecturalGlassFilm') {
+    if (!item.projectName && !item.projectAddress) return '请至少填写项目名称或项目地址';
+  } else if (!item.vehicle && !item.licensePlate) return '请至少填写车辆信息或车牌';
   if (!item.product) return '请填写施工产品';
   if (!item.areas) return '请填写贴膜部位';
   if (!item.warrantyContent) return '请填写质保内容';
@@ -2787,6 +2820,27 @@ function publicWarrantyRecord(item) {
     vehicle: item.vehicle,
     installDate: item.installDate,
     product: item.product,
+    productCategory: inferWarrantyCategory(item),
+    colorChangeSubtype: item.colorChangeSubtype || '',
+    productSeries: item.productSeries || '',
+    vehicleVin: item.vehicleVin || '',
+    installerName: item.installerName || '',
+    installedWindows: item.installedWindows || '',
+    filmVlt: item.filmVlt || '',
+    transferPolicy: item.transferPolicy || '',
+    colorCode: item.colorCode || '',
+    verticalWarrantyTerm: item.verticalWarrantyTerm || '',
+    horizontalWarrantyTerm: item.horizontalWarrantyTerm || '',
+    installedPanels: item.installedPanels || '',
+    projectName: item.projectName || '',
+    projectAddress: item.projectAddress || '',
+    propertyType: item.propertyType || '',
+    applicationType: item.applicationType || '',
+    installationSide: item.installationSide || '',
+    installationArea: item.installationArea || '',
+    filmWarrantyTerm: item.filmWarrantyTerm || '',
+    glassBreakageCoverage: item.glassBreakageCoverage || '',
+    sealFailureCoverage: item.sealFailureCoverage || '',
     areas: item.areas,
     warrantyUntil: item.warrantyUntil,
     warrantyContent: item.warrantyContent,
