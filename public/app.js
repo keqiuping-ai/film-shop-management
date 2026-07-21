@@ -32,6 +32,7 @@ let user = null;
 let current = 'modules';
 let inventorySearch = '';
 let jobSearch = '';
+let salesOrderSearch = '';
 let jobDatePreset = 'month';
 let jobStartDate = '';
 let jobEndDate = '';
@@ -3322,7 +3323,8 @@ const views = {
     <div style="margin-top:14px">${panel(t('leads'), actions, leadTable())}</div>`;
   },
   orders() {
-    return panel(t('orders'), hasPerm('ordersEdit') ? `<button class="btn primary" onclick="openSalesOrder()">${t('addNew')}</button>` : '', salesOrderTable());
+    const search = ['owner', 'manager'].includes(user?.role) ? `<div class="sales-order-search"><input value="${escapeHtml(salesOrderSearch)}" oninput="updateSalesOrderSearch(this.value)" placeholder="${lang === 'zh' ? '搜索日期、客户、地址、联系方式、商品、付款、单号或状态…' : 'Search date, customer, address, contact, item, payment, tracking, or status…'}"></div>` : '';
+    return panel(t('orders'), hasPerm('ordersEdit') ? `<button class="btn primary" onclick="openSalesOrder()">${t('addNew')}</button>` : '', `${search}<div id="salesOrderTableContainer">${salesOrderTable()}</div>`);
   },
   portalCustomers() {
     return panel(t('portalCustomers'), hasPerm('ordersEdit') ? `<button class="btn primary" onclick="openPortalCustomer()">${lang === 'zh' ? '新增客户账号' : 'New customer'}</button>` : '', portalCustomerTable() + `<p class="note">${lang === 'zh' ? '客户登录地址：' : 'Customer login: '}<a href="/customer.html" target="_blank">${location.origin}/customer.html</a></p>`);
@@ -4066,10 +4068,22 @@ function workshopMovementTable() {
 }
 
 function salesOrderTable() {
-  const rows = sortByDateDesc(state.salesOrders || []);
+  const query = ['owner', 'manager'].includes(user?.role) ? normalizeSearchText(salesOrderSearch) : '';
+  const rows = sortByDateDesc(state.salesOrders || []).filter(order => !query || [
+    order.date, order.type, salesOrderTypeName(order.type), order.customer, order.customerAddress, order.customerContact,
+    order.salesRep, order.preparedBy, salesOrderItemsSummary(order), order.paymentMethod,
+    paymentMethodName(order.paymentMethod || ''), order.shipping, order.trackingNo, order.status
+  ].map(normalizeSearchText).join('|').includes(query));
   return `<div class="table-wrap"><table><thead><tr><th>${t('date')}</th><th>${t('type')}</th><th>${t('customer')}</th><th>${t('orderSalesRep')}</th><th>${t('preparedBy')}</th><th>${t('item')}</th><th>${t('qty')}</th><th>${lang === 'zh' ? '总额' : 'Total'}</th><th>${t('paid')}</th><th>${t('paymentMethod')}</th><th>${t('orderTrackingNo')}</th><th>${t('balance')}</th><th>${t('status')}</th><th></th></tr></thead><tbody>
   ${rows.map(o => { const c = orderCalc(o); return `<tr class="${o.portalNew || o.portalCustomerUnread ? 'portal-new-order' : ''}"><td>${o.date}${o.portalNew ? '<span class="portal-new-badge">客户新单</span>' : o.portalCustomerUnread ? '<span class="portal-new-badge">新留言</span>' : o.portalSource ? '<span class="pill info">客户客户端</span>' : ''}</td><td>${salesOrderTypeName(o.type)}</td><td>${escapeHtml(o.customer)}</td><td>${escapeHtml(o.salesRep || '')}</td><td>${escapeHtml(o.preparedBy || '')}</td><td class="sales-order-items-cell">${escapeHtml(salesOrderItemsSummary(o))}</td><td>${salesOrderTotalQty(o)}</td><td>${currency.format(c.total)}</td><td>${currency.format(Number(o.paid || 0))}</td><td>${escapeHtml(paymentMethodName(o.paymentMethod || ''))}</td><td>${escapeHtml(o.trackingNo || '')}</td><td>${currency.format(c.balance)}</td><td>${statusPill(o.status)}</td>${actionCell('SalesOrder','salesOrders',o.id)}</tr>`; }).join('')}
+  ${rows.length ? '' : `<tr><td colspan="14" class="note">${lang === 'zh' ? '没有找到匹配的零售批发订单。' : 'No matching retail / wholesale orders.'}</td></tr>`}
   </tbody></table></div>`;
+}
+
+function updateSalesOrderSearch(value) {
+  salesOrderSearch = String(value || '');
+  const container = document.getElementById('salesOrderTableContainer');
+  if (container) container.innerHTML = salesOrderTable();
 }
 
 function wholesaleCustomerSalesTable(orders = []) {
@@ -6864,12 +6878,14 @@ function updateSalesOrderLinesTotal() {
 }
 
 function openSalesOrder(id) {
-  const item = state.salesOrders.find(x => x.id === id) || { date: today(), type: 'retail-us', customer: '', salesRep: '', preparedBy: user?.name || '', item: '', qty: 1, unitPrice: 0, status: '待收款', shipping: '', trackingNo: '', paid: 0, paymentMethod: '' };
+  const item = state.salesOrders.find(x => x.id === id) || { date: today(), type: 'retail-us', customer: '', customerAddress: '', customerContact: '', salesRep: '', preparedBy: user?.name || '', item: '', qty: 1, unitPrice: 0, status: '待收款', shipping: '', trackingNo: '', paid: 0, paymentMethod: '' };
   if (id && item.portalSource && (item.portalNew || item.portalCustomerUnread)) markPortalOrderRead(id);
   const lines = salesOrderLineItems(item);
   const shippingTracking = [...new Set([item.shipping, item.trackingNo].map(value => String(value || '').trim()).filter(Boolean))].join(' · ');
   const fields = [
     ['date',t('date'),'date',item.date], ['type',t('type'),'select',item.type, salesOrderTypeOptions()], ['customer',t('customer'),'text',item.customer],
+    ['customerAddress',lang === 'zh' ? '客户地址' : 'Customer address','text',item.customerAddress || ''],
+    ['customerContact',lang === 'zh' ? '客户联系方式（电话 / Email）' : 'Customer contact (phone / email)','text',item.customerContact || ''],
     ['salesRep',t('orderSalesRep'),'text',item.salesRep || ''], ['status',t('status'),'select',item.status, salesStatusOptions()], ['paid',`${t('paid')} $`,'number',item.paid],
     ['paymentMethod',t('paymentMethod'),'select',item.paymentMethod || '', paymentMethodOptions()], ['shippingTracking',lang === 'zh' ? '物流/单号' : 'Shipping / Tracking','text',shippingTracking],
     ['preparedBy',t('preparedBy'),'text',item.preparedBy || user?.name || '']
@@ -6883,7 +6899,7 @@ function openSalesOrder(id) {
     id ? (lang === 'zh' ? '编辑零售/批发订单' : 'Edit Sales Order') : (lang === 'zh' ? '新增零售/批发订单' : 'New Sales Order'),
     formHtml(fields) + lineTable + portalOrderConversationHtml(item),
     () => {
-      const data = numeric(readForm(['date','type','customer','salesRep','status','paid','paymentMethod','shippingTracking','preparedBy']), ['paid']);
+      const data = numeric(readForm(['date','type','customer','customerAddress','customerContact','salesRep','status','paid','paymentMethod','shippingTracking','preparedBy']), ['paid']);
       data.shipping = String(data.shippingTracking || '').trim();
       data.trackingNo = data.shipping;
       delete data.shippingTracking;

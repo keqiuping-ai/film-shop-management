@@ -4475,6 +4475,8 @@ async function api(req, res) {
     }
     if (collection === 'salesOrders') {
       item.salesRep = String(item.salesRep || '').trim();
+      item.customerAddress = String(item.customerAddress || '').trim().slice(0, 500);
+      item.customerContact = String(item.customerContact || '').trim().slice(0, 500);
       const error = validateSalesOrder(db, item);
       if (error) return send(res, 400, { error });
       item.preparedBy = String(item.preparedBy || user.name || '').trim();
@@ -4646,6 +4648,8 @@ async function api(req, res) {
     if (collection === 'salesOrders') {
       const previousStatus = String(db[collection][idx].status || '').trim();
       next.salesRep = String(next.salesRep || '').trim();
+      next.customerAddress = String(next.customerAddress || '').trim().slice(0, 500);
+      next.customerContact = String(next.customerContact || '').trim().slice(0, 500);
       const error = validateSalesOrder(db, next);
       if (error) return send(res, 400, { error });
       next.preparedBy = String(next.preparedBy || db[collection][idx].preparedBy || user.name || '').trim();
