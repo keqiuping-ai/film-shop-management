@@ -1458,14 +1458,25 @@ function normalizeProspectMessages(value) {
     );
     const text = cleanImportedConversationText(item.text || item.message || item.content || item.body || '');
     if (!text) return null;
+    const direction = String(item.direction || '').trim().toLowerCase()
+      || (speaker === 'shop' ? 'outbound' : speaker === 'customer' ? 'inbound' : '');
+    const channel = String(item.channel || item.provider || item.platform || '').trim().toLowerCase() || 'unknown';
     return {
+      id: String(item.id || item.externalEventId || item.eventId || '').trim(),
       speaker,
       speakerName,
+      direction,
+      channel,
       timestamp: String(item.timestamp || item.time || item.createdAt || '').trim(),
       text,
       order: Number.isFinite(Number(item.order)) ? Number(item.order) : index,
       externalEventId: String(item.externalEventId || item.eventId || item.id || '').trim(),
-      provider: String(item.provider || item.platform || '').trim()
+      provider: String(item.provider || item.platform || '').trim(),
+      providerSid: String(item.providerSid || item.messageSid || '').trim(),
+      status: String(item.status || '').trim(),
+      from: String(item.from || '').trim(),
+      to: String(item.to || '').trim(),
+      attachment: item.attachment && typeof item.attachment === 'object' ? { ...item.attachment } : null
     };
   }).filter(Boolean);
 }
@@ -1480,14 +1491,38 @@ function prospectMessagesToText(messages) {
 }
 
 function prospectMessageKey(message) {
+  const providerSid = prospectTextKey(message.providerSid);
+  if (providerSid) return `provider:${prospectTextKey(message.channel || message.provider)}:${providerSid}`;
   const externalEventId = prospectTextKey(message.externalEventId);
-  if (externalEventId) return `event:${externalEventId}`;
+  if (externalEventId) return `event:${prospectTextKey(message.channel || message.provider)}:${externalEventId}`;
   return [
     normalizeProspectSpeaker(message.speaker, message.speakerName),
     prospectTextKey(message.speakerName),
     prospectTextKey(message.timestamp),
     prospectTextKey(message.text)
   ].join('|');
+}
+
+function yelpReplyConfig() {
+  return {
+    webhookUrl: String(process.env.YELP_REPLY_WEBHOOK_URL || '').trim(),
+    webhookToken: String(process.env.YELP_REPLY_WEBHOOK_TOKEN || '').trim()
+  };
+}
+
+async function sendYelpReply({ leadId, businessId, text, requestId }) {
+  const config = yelpReplyConfig();
+  if (!config.webhookUrl) throw new Error('Yelp 回复通道尚未配置，请先设置 YELP_REPLY_WEBHOOK_URL');
+  const headers = { 'Content-Type': 'application/json' };
+  if (config.webhookToken) headers['X-QUAD-Yelp-Token'] = config.webhookToken;
+  const response = await fetch(config.webhookUrl, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ leadId, businessId, text, requestId, source: 'QUaD' })
+  });
+  const responseText = await response.text();
+  if (!response.ok) throw new Error(`Yelp 回复转发失败 (${response.status})${responseText ? `：${responseText.slice(0, 240)}` : ''}`);
+  return { status: 'accepted', response: responseText.slice(0, 1000) };
 }
 
 function normalizeRawPayload(value) {
@@ -1565,7 +1600,20 @@ function appendUniqueText(existing, value, separator = '\n') {
 
 function normalizeProspectInput(input, fallback = {}) {
   const source = cleanImportedText(input.platform || input.source || fallback.source || '');
-  const conversationMessages = normalizeProspectMessages(input.conversationMessages || input.messages || input.chatMessages || fallback.conversationMessages || []);
+  const directMessageText = cleanImportedConversationText(input.messageText || input.message || '');
+  const directMessages = directMessageText ? [{
+    id: input.messageId || input.externalMessageId || input.externalEventId || '',
+    externalEventId: input.messageId || input.externalMessageId || input.externalEventId || '',
+    speaker: input.messageSpeaker || (String(input.messageDirection || '').toLowerCase() === 'outbound' ? 'shop' : 'customer'),
+    speakerName: input.messageSenderName || input.customer || input.customerName || '',
+    direction: input.messageDirection || 'inbound',
+    channel: input.messageChannel || prospectTextKey(source) || 'unknown',
+    text: directMessageText,
+    timestamp: input.messageCreatedAt || input.sourceUpdatedAt || input.sourceCreatedAt || '',
+    provider: input.messageProvider || source
+  }] : [];
+  const messageSource = input.conversationMessages || input.messages || input.chatMessages || (directMessages.length ? directMessages : fallback.conversationMessages) || [];
+  const conversationMessages = normalizeProspectMessages(messageSource);
   const rawConversation = cleanImportedConversationText(input.rawConversation || input.chatContext || input.conversation || fallback.chatContext || prospectMessagesToText(conversationMessages));
   const noteParts = [
     cleanImportedConversationText(input.note || fallback.note || ''),
@@ -3948,6 +3996,53 @@ async function api(req, res) {
     writeDb(db);
     notifyDataChanged('delete-customer-message', item.id);
     return send(res, 200, sanitizeDbForUser(db, user));
+  }
+
+  if (req.method === 'POST' && url.pathname === '/api/yelp/send') {
+    if (!canAccess(user, 'prospectsEdit')) return send(res, 403, { error: '没有发送 Yelp 消息的权限' });
+    const body = await readBody(req);
+    const collection = String(body.collection || '').trim();
+    const recordId = String(body.id || '').trim();
+    const text = String(body.text || '').trim();
+    if (!['customerConversations', 'prospects'].includes(collection)) return send(res, 400, { error: '客户类型不正确' });
+    const item = (db[collection] || []).find(row => row.id === recordId);
+    if (!item) return send(res, 404, { error: '找不到客户记录' });
+    if (prospectTextKey(item.source) !== 'yelp' || !String(item.externalId || '').trim()) return send(res, 400, { error: '这条客户记录没有可用的 Yelp Lead ID' });
+    if (!text) return send(res, 400, { error: 'Yelp 回复内容不能为空' });
+    if (text.length > 5000) return send(res, 400, { error: 'Yelp 回复内容不能超过 5000 个字符' });
+    const requestId = `quad-yelp-${id()}`;
+    await sendYelpReply({
+      leadId: String(item.externalId).trim(),
+      businessId: String(item.externalBusinessId || '').trim(),
+      text,
+      requestId
+    });
+    const now = new Date().toISOString();
+    const yelpMessage = {
+      id: requestId,
+      externalEventId: requestId,
+      speaker: 'shop',
+      speakerName: user.name || user.email,
+      direction: 'outbound',
+      channel: 'yelp',
+      text,
+      timestamp: now,
+      provider: 'yelp-zapier',
+      status: 'accepted'
+    };
+    item.conversationMessages = [...(Array.isArray(item.conversationMessages) ? item.conversationMessages : []), yelpMessage];
+    item.updatedAt = now;
+    item.lastYelpAt = now;
+    item.lastYelpDirection = 'outbound';
+    audit(db, user, 'send-customer-yelp-message', {
+      collection,
+      recordId: item.id,
+      recordLabel: item.customer || item.externalId,
+      detail: `通过 Zapier 向 Yelp Lead ${item.externalId} 发送消息`
+    });
+    writeDb(db);
+    notifyDataChanged('send-customer-yelp-message', item.id);
+    return send(res, 200, { ok: true, requestId, data: sanitizeDbForUser(db, user) });
   }
 
   if (req.method === 'POST' && url.pathname === '/api/twilio/send') {

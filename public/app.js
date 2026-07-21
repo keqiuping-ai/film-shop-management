@@ -4426,6 +4426,8 @@ function structuredProspectMessages(item) {
       : role === 'system'
         ? (lang === 'zh' ? '系统记录' : 'System')
         : `${lang === 'zh' ? '客户说' : 'Customer'}${speakerName ? ` - ${speakerName}` : ''}`;
+    const channel = String(message.channel || '').toLowerCase();
+    const channelLabel = channel === 'yelp' ? 'Yelp' : channel === 'sms' ? 'SMS' : '';
     return {
       role,
       title,
@@ -4433,7 +4435,7 @@ function structuredProspectMessages(item) {
       attachment: message.attachment || null,
       messageId: String(message.id || ''),
       status: String(message.status || ''),
-      meta: [formatAppDateTime(message.timestamp || message.time || message.createdAt || '') || cleanConversationText(message.timestamp || ''), message.channel === 'sms' && message.status ? `SMS · ${message.status}` : ''].filter(Boolean).join(' · '),
+      meta: [formatAppDateTime(message.timestamp || message.time || message.createdAt || '') || cleanConversationText(message.timestamp || ''), channelLabel ? `${channelLabel}${message.status ? ` · ${message.status}` : ''}` : ''].filter(Boolean).join(' · '),
       order: Number.isFinite(Number(message.order)) ? Number(message.order) : index
     };
   }).filter(message => message.text || message.attachment?.url);
@@ -5084,6 +5086,9 @@ function renderProspectWorkspace() {
   const owners = customerServiceOptions();
   const intents = prospectIntentOptions();
   const statuses = prospectStatusOptions();
+  const canReplyYelp = String(item.source || '').trim().toLowerCase() === 'yelp' && Boolean(String(item.externalId || '').trim());
+  const canReplySms = customerPhoneMatchKey(item.phone).length === 10;
+  const defaultReplyChannel = canReplyYelp ? 'yelp' : 'sms';
   workspace.innerHTML = `
     <header class="prospect-workspace-header">
       <div class="prospect-workspace-customer">
@@ -5136,7 +5141,9 @@ function renderProspectWorkspace() {
         </main>
         <footer class="prospect-workspace-composer">
           ${item.agentReplyDraft?.text ? `<div class="customer-agent-draft"><strong>${lang === 'zh' ? '客服助手建议回复（发送前请人工确认）' : 'Agent draft (review before sending)'}</strong><span>${escapeHtml(item.agentReplyDraft.createdBy || '')} · ${escapeHtml(formatAppDateTime(item.agentReplyDraft.createdAt || ''))}</span><p>${escapeHtml(item.agentReplyDraft.text)}</p></div>` : ''}
-          <div class="prospect-sms-status">${lang === 'zh' ? '通过 Twilio 发送和接收短信 · 发送号码：+1 725-241-2586' : 'Send and receive SMS through Twilio · Sender: +1 725-241-2586'}</div>
+          <div class="prospect-sms-status" id="prospectChannelStatus">${canReplyYelp
+            ? (lang === 'zh' ? '通过 Yelp 站内消息回复；也可以切换到手机短信' : 'Reply in Yelp, or switch to SMS')
+            : (lang === 'zh' ? '通过 Twilio 发送和接收短信 · 发送号码：+1 725-241-2586' : 'Send and receive SMS through Twilio · Sender: +1 725-241-2586')}</div>
           <div class="prospect-attachment-tools">
             <button type="button" onclick="document.getElementById('prospectImageInput').click()">🖼️ ${lang === 'zh' ? '图片' : 'Image'}</button>
             <button type="button" onclick="document.getElementById('prospectVideoInput').click()">🎬 ${lang === 'zh' ? '视频' : 'Video'}</button>
@@ -5153,8 +5160,12 @@ function renderProspectWorkspace() {
             <input class="hidden" id="prospectFileInput" type="file" onchange="uploadProspectAttachment(this.files[0]); this.value=''">
           </div>
           <div class="prospect-compose-row">
+            <select id="prospectReplyChannel" onchange="updateProspectReplyChannel()" aria-label="${lang === 'zh' ? '回复渠道' : 'Reply channel'}">
+              <option value="yelp" ${defaultReplyChannel === 'yelp' ? 'selected' : ''} ${canReplyYelp ? '' : 'disabled'}>${lang === 'zh' ? 'Yelp 站内消息' : 'Yelp message'}</option>
+              <option value="sms" ${defaultReplyChannel === 'sms' ? 'selected' : ''} ${canReplySms ? '' : 'disabled'}>${lang === 'zh' ? '手机短信' : 'SMS'}</option>
+            </select>
             <textarea id="prospectReplyInput" oninput="prospectReplyRevision += 1" onpaste="handleProspectReplyPaste(event)" placeholder="${lang === 'zh' ? '输入或粘贴文字、截图、图片…' : 'Write or paste text, screenshots, or images…'}"></textarea>
-            <button id="prospectSendSmsButton" class="btn primary" onclick="sendProspectSms()" ${hasPerm('prospectsEdit') ? '' : 'disabled'}>${lang === 'zh' ? '发送短信' : 'Send SMS'}</button>
+            <button id="prospectSendSmsButton" class="btn primary" onclick="sendProspectMessage()" ${hasPerm('prospectsEdit') ? '' : 'disabled'}>${defaultReplyChannel === 'yelp' ? (lang === 'zh' ? '通过 Yelp 发送' : 'Send via Yelp') : (lang === 'zh' ? '发送短信' : 'Send SMS')}</button>
           </div>
         </footer>
       </section>
@@ -5164,6 +5175,7 @@ function renderProspectWorkspace() {
   restoreProspectWorkspaceDraft();
   const agentDraftInput = document.getElementById('prospectReplyInput');
   if (agentDraftInput && !agentDraftInput.value && item.agentReplyDraft?.text) agentDraftInput.value = item.agentReplyDraft.text;
+  updateProspectReplyChannel();
   workspace.querySelectorAll('.prospect-workspace-sidebar input, .prospect-workspace-sidebar textarea, .prospect-workspace-sidebar select')
     .forEach(control => {
       control.addEventListener('input', () => captureProspectWorkspaceDraft(true));
@@ -5629,20 +5641,36 @@ async function saveProspectWorkspaceDetails() {
   }
 }
 
-async function sendProspectSms() {
+function updateProspectReplyChannel() {
+  const channel = document.getElementById('prospectReplyChannel')?.value || 'sms';
+  const button = document.getElementById('prospectSendSmsButton');
+  const status = document.getElementById('prospectChannelStatus');
+  const attachmentButtons = document.querySelectorAll('.prospect-attachment-tools button');
+  if (button) button.textContent = channel === 'yelp'
+    ? (lang === 'zh' ? '通过 Yelp 发送' : 'Send via Yelp')
+    : (lang === 'zh' ? '发送短信' : 'Send SMS');
+  if (status) status.textContent = channel === 'yelp'
+    ? (lang === 'zh' ? '这条回复会通过 Zapier 发回客户的 Yelp 对话' : 'This reply will be sent to the Yelp conversation through Zapier')
+    : (lang === 'zh' ? '通过 Twilio 发送和接收短信 · 发送号码：+1 725-241-2586' : 'Send and receive SMS through Twilio · Sender: +1 725-241-2586');
+  attachmentButtons.forEach(control => { control.disabled = channel === 'yelp'; });
+}
+
+async function sendProspectMessage() {
   const { collection, item } = activeCustomerWorkspaceItem();
   const input = document.getElementById('prospectReplyInput');
   const button = document.getElementById('prospectSendSmsButton');
+  const channel = document.getElementById('prospectReplyChannel')?.value || 'sms';
   const text = String(input?.value || '').trim();
   if (!item || (!text && !prospectPendingAttachment)) return;
+  if (channel === 'yelp' && prospectPendingAttachment) return alert(lang === 'zh' ? 'Yelp 通道第一版只发送文字；如需发送图片或视频，请切换到手机短信。' : 'Yelp currently supports text replies here. Switch to SMS for attachments.');
   if (button) {
     button.disabled = true;
     button.textContent = lang === 'zh' ? '发送中…' : 'Sending…';
   }
   try {
-    const result = await api('/api/twilio/send', {
+    const result = await api(channel === 'yelp' ? '/api/yelp/send' : '/api/twilio/send', {
       method: 'POST',
-      body: JSON.stringify({ collection, id: item.id, text, attachment: prospectPendingAttachment })
+      body: JSON.stringify({ collection, id: item.id, text, attachment: channel === 'sms' ? prospectPendingAttachment : null })
     });
     prospectReplyRevision += 1;
     if (input) input.value = '';
@@ -5655,9 +5683,15 @@ async function sendProspectSms() {
     alert(err.message);
     if (button) {
       button.disabled = false;
-      button.textContent = lang === 'zh' ? '发送短信' : 'Send SMS';
+      button.textContent = channel === 'yelp'
+        ? (lang === 'zh' ? '通过 Yelp 发送' : 'Send via Yelp')
+        : (lang === 'zh' ? '发送短信' : 'Send SMS');
     }
   }
+}
+
+async function sendProspectSms() {
+  return sendProspectMessage();
 }
 
 function leadTable() {

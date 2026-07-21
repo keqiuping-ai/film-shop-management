@@ -1116,7 +1116,8 @@ body.modal-lock .prospect-workspace { pointer-events: none; }
 .prospect-attachment-tools > button.reply-reference-button:hover { background: #d9f0f4; }
 #prospectAttachmentPreview { color: var(--primary); font-size: 12px; font-weight: 700; }
 #prospectAttachmentPreview button { margin-left: 3px; border: 0; background: none; color: #b42318; font-size: 18px; cursor: pointer; }
-.prospect-compose-row { min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; align-items: stretch; }
+.prospect-compose-row { min-height: 0; display: grid; grid-template-columns: 150px minmax(0, 1fr) auto; gap: 12px; align-items: stretch; }
+.prospect-compose-row select { min-height: 52px; padding: 0 10px; border: 1px solid var(--line); border-radius: 8px; background: #fff; color: var(--ink); font-weight: 700; }
 .prospect-compose-row textarea { width: 100%; min-height: 0; max-height: none; box-sizing: border-box; padding: 9px 12px; font-size: 14px; line-height: 1.35; resize: none; }
 .prospect-compose-row .btn { min-width: 118px; min-height: 52px; font-size: 16px; }
 .prospect-chat-media { display: block; max-width: min(420px, 100%); max-height: 300px; margin-top: 8px; border-radius: 12px; object-fit: contain; background: rgba(0,0,0,.08); }
@@ -1195,7 +1196,7 @@ body.modal-lock .prospect-workspace { pointer-events: none; }
   .prospect-chat-message { width: 88%; }
   .prospect-workspace-conversation { grid-template-rows: minmax(0, 1fr) 270px; padding-bottom: 10px; }
   .prospect-workspace-composer { height: 250px; padding: 8px 12px 10px; border-radius: 10px; transform: none; }
-  .prospect-compose-row { grid-template-columns: 1fr; grid-template-rows: minmax(70px, 1fr) 42px; }
+  .prospect-compose-row { grid-template-columns: 1fr; grid-template-rows: 42px minmax(70px, 1fr) 42px; }
   .prospect-compose-row textarea { min-height: 80px; }
   .prospect-attachment-tools .prospect-tool-divider { display: none; }
   .reply-library-grid { grid-template-columns: 1fr; }
