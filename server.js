@@ -191,6 +191,43 @@ function safePortalCustomer(customer) {
   return safe;
 }
 
+function syncSalesOrderCustomer(db, order) {
+  const businessName = String(order.customer || '').trim().slice(0, 160);
+  if (!businessName) return null;
+  const contact = String(order.customerContact || '').trim().slice(0, 500);
+  const email = String(contact.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i)?.[0] || '').toLowerCase();
+  const phoneText = contact.replace(email, '').replace(/^[\s,;|/·-]+|[\s,;|/·-]+$/g, '');
+  const phone = normalizePhone(phoneText).length >= 7 ? phoneText.slice(0, 80) : '';
+  const phoneKey = normalizedPhone(phone);
+  const nameKey = businessName.toLowerCase();
+  let customer = (db.portalCustomers || []).find(item => item.id === order.portalCustomerId);
+  if (!customer && email) customer = db.portalCustomers.find(item => String(item.email || '').trim().toLowerCase() === email);
+  if (!customer && phoneKey) customer = db.portalCustomers.find(item => normalizedPhone(item.phone) === phoneKey);
+  if (!customer) customer = db.portalCustomers.find(item => String(item.businessName || '').trim().toLowerCase() === nameKey);
+  const now = new Date().toISOString();
+  if (!customer) {
+    customer = {
+      id: id(), businessName, contactName: businessName,
+      account: email || phoneKey || `order-${order.id}`,
+      email, phone, address: String(order.customerAddress || '').trim().slice(0, 500),
+      salesRep: String(order.salesRep || '').trim().slice(0, 120), status: '正常',
+      note: '由零售/批发订单自动同步', active: true, prices: {},
+      passwordHash: hashPassword(crypto.randomBytes(32).toString('hex')),
+      createdAt: now, updatedAt: now, syncedFromSalesOrder: true
+    };
+    db.portalCustomers.push(customer);
+  } else {
+    customer.businessName = businessName;
+    if (email) customer.email = email;
+    if (phone) customer.phone = phone;
+    if (order.customerAddress) customer.address = String(order.customerAddress).trim().slice(0, 500);
+    if (order.salesRep) customer.salesRep = String(order.salesRep).trim().slice(0, 120);
+    customer.updatedAt = now;
+  }
+  order.portalCustomerId = customer.id;
+  return customer;
+}
+
 function portalProductForCustomer(db, product, customer) {
   const hasAgreedPrice = Object.prototype.hasOwnProperty.call(customer?.prices || {}, product.sku);
   const previousLine = hasAgreedPrice ? null : (db.salesOrders || []).filter(order => order.portalCustomerId === customer.id || (!order.portalCustomerId && String(order.customer || '').trim().toLowerCase() === String(customer.businessName || '').trim().toLowerCase())).sort((a, b) => String(b.createdAt || b.date || '').localeCompare(String(a.createdAt || a.date || ''))).flatMap(salesOrderItems).find(line => line.item === product.sku);
@@ -4532,12 +4569,17 @@ async function api(req, res) {
     }
     if (collection === 'movements') applyMovement(db, item);
     if (collection === 'workshopMovements') applyWorkshopMovement(db, item);
+    const syncedSalesOrderCustomer = collection === 'salesOrders' ? syncSalesOrderCustomer(db, item) : null;
     audit(db, user, `create-${collection}`, {
       collection,
       recordId: item.id,
       recordLabel: recordLabel(item),
       after: item,
       detail: `新增 ${collection} ${recordLabel(item) || item.id}`
+    });
+    if (syncedSalesOrderCustomer) audit(db, user, 'sync-sales-order-customer', {
+      collection: 'portalCustomers', recordId: syncedSalesOrderCustomer.id, recordLabel: syncedSalesOrderCustomer.businessName,
+      detail: `零售/批发订单自动同步客户 ${syncedSalesOrderCustomer.businessName}`
     });
     if (autoPromoted) audit(db, user, 'auto-promote-customer-conversation', {
       collection: 'prospects', recordId: autoPromoted.id, recordLabel: recordLabel(autoPromoted),
@@ -4685,6 +4727,7 @@ async function api(req, res) {
     const before = db[collection][idx];
     const changedFields = diffRecords(before, next);
     db[collection][idx] = next;
+    const syncedSalesOrderCustomer = collection === 'salesOrders' ? syncSalesOrderCustomer(db, next) : null;
     audit(db, user, `update-${collection}`, {
       collection,
       recordId,
@@ -4693,6 +4736,10 @@ async function api(req, res) {
       before,
       after: next,
       detail: `修改 ${collection} ${recordLabel(next) || recordId}：${changedFields.map(change => change.field).join(', ') || '无字段变化'}`
+    });
+    if (syncedSalesOrderCustomer) audit(db, user, 'sync-sales-order-customer', {
+      collection: 'portalCustomers', recordId: syncedSalesOrderCustomer.id, recordLabel: syncedSalesOrderCustomer.businessName,
+      detail: `零售/批发订单自动同步客户 ${syncedSalesOrderCustomer.businessName}`
     });
     if (autoPromoted && !before.promotedProspectId) audit(db, user, 'auto-promote-customer-conversation', {
       collection: 'prospects', recordId: autoPromoted.id, recordLabel: recordLabel(autoPromoted),
