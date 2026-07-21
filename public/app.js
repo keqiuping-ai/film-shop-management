@@ -4772,10 +4772,18 @@ function customerAwaitingReply(item) {
   return customerReplyState(item).pending;
 }
 
-function customerHasOutboundSms(item) {
+function customerHasOutboundMessage(item) {
   return (Array.isArray(item?.conversationMessages) ? item.conversationMessages : []).some(message =>
-    String(message.direction || '').toLowerCase() === 'outbound' && String(message.channel || '').toLowerCase() === 'sms'
+    String(message.direction || '').toLowerCase() === 'outbound'
   );
+}
+
+function customerAgentSends(item) {
+  const generic = Array.isArray(item?.agentSends) ? item.agentSends : [];
+  const legacySms = (Array.isArray(item?.agentSmsSends) ? item.agentSmsSends : [])
+    .filter(row => !generic.some(send => send.requestId === row.requestId))
+    .map(row => ({ ...row, channel: 'sms' }));
+  return [...generic, ...legacySms].sort((a, b) => String(a.sentAt || '').localeCompare(String(b.sentAt || '')));
 }
 
 function appNowMinuteKey() {
@@ -4796,7 +4804,7 @@ function customerTaskType(item) {
   const followUpKey = customerFollowUpKey(item);
   if (followUpKey && followUpKey <= appNowMinuteKey()) return 'followup';
   if (followUpKey) return 'future';
-  if (!customerHasOutboundSms(item)) return 'first';
+  if (!customerHasOutboundMessage(item)) return 'first';
   return '';
 }
 
@@ -4804,11 +4812,13 @@ function customerTaskRows() {
   const priority = { reply: 0, followup: 1, first: 2, future: 3 };
   if (customerTaskFilter === 'sent') {
     return allCustomerCenterRows()
-      .filter(item => Array.isArray(item.agentSmsSends) && item.agentSmsSends.length)
+      .filter(item => customerAgentSends(item).length)
       .map(item => ({ ...item, _taskType: 'sent' }))
       .sort((a, b) => {
-        const aSent = a.agentSmsSends[a.agentSmsSends.length - 1]?.sentAt || '';
-        const bSent = b.agentSmsSends[b.agentSmsSends.length - 1]?.sentAt || '';
+        const aSends = customerAgentSends(a);
+        const bSends = customerAgentSends(b);
+        const aSent = aSends[aSends.length - 1]?.sentAt || '';
+        const bSent = bSends[bSends.length - 1]?.sentAt || '';
         return String(bSent).localeCompare(String(aSent));
       });
   }
@@ -4825,7 +4835,7 @@ function customerTaskRows() {
 function customerTaskCounts() {
   const counts = { reply: 0, first: 0, followup: 0, future: 0, sent: 0 };
   customerCenterRows().forEach(item => { const type = customerTaskType(item); if (counts[type] !== undefined) counts[type] += 1; });
-  counts.sent = allCustomerCenterRows().filter(item => Array.isArray(item.agentSmsSends) && item.agentSmsSends.length).length;
+  counts.sent = allCustomerCenterRows().filter(item => customerAgentSends(item).length).length;
   return counts;
 }
 
@@ -4866,11 +4876,12 @@ function customerTaskCard(item) {
   const claimedByOther = item.taskClaimedByUserId && item.taskClaimedByUserId !== user?.id && Date.now() - new Date(item.taskClaimedAt || 0).getTime() < 15 * 60 * 1000;
   const claimedByMe = item.taskClaimedByUserId === user?.id && Date.now() - new Date(item.taskClaimedAt || 0).getTime() < 15 * 60 * 1000;
   const schedule = customerFollowUpKey(item) ? `${item.followUpDate} ${item.followUpTime || '09:00'}` : '';
-  const latestAgentSend = item._taskType === 'sent' ? item.agentSmsSends?.[item.agentSmsSends.length - 1] : null;
+  const agentSends = customerAgentSends(item);
+  const latestAgentSend = item._taskType === 'sent' ? agentSends[agentSends.length - 1] : null;
   const sentMessage = item._taskType === 'sent'
     ? [...(item.conversationMessages || [])].reverse().find(message =>
       String(message.direction || '').toLowerCase() === 'outbound'
-      && String(message.channel || '').toLowerCase() === 'sms'
+      && (!latestAgentSend?.channel || String(message.channel || '').toLowerCase() === String(latestAgentSend.channel).toLowerCase())
       && (!latestAgentSend?.sentAt || String(message.timestamp || '') === String(latestAgentSend.sentAt))
     )?.text || ''
     : '';

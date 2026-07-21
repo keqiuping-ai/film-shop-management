@@ -6,7 +6,7 @@
 
 - 只识别 Railway 环境变量 `CUSTOMER_SERVICE_AGENT_TOKEN`（也可用 `CUSTOMER_SERVICE_AGENT_TOKENS` 配置多个令牌）。
 - 令牌不能读取财务、库存、员工、施工单、设置或完整数据库。
-- 当前为 `direct-send` 模式：助手可以领取任务、读取必要的客户沟通上下文、提交建议回复和跟进时间，也可以通过现有 Twilio 通道直接发送纯文字短信。
+- 当前为 `direct-send` 模式：助手可以领取任务、读取必要的客户沟通上下文、提交建议回复和跟进时间，也可以通过 Yelp（Zapier）或 Twilio 直接发送纯文字回复。
 - 每次直接发送必须先领取任务，并使用唯一 `requestId`；重复提交相同编号不会重复发送。
 - 不要把令牌写入代码、GitHub、聊天记录或截图。
 
@@ -69,7 +69,22 @@ POST /api/agent/customer-tasks/{collection}/{id}/draft
 }
 ```
 
-## 直接发送 Twilio 短信
+## 读取可用回复渠道
+
+每个任务会返回：
+
+```json
+{
+  "availableChannels": ["yelp", "sms"],
+  "preferredChannel": "yelp"
+}
+```
+
+- Yelp 客资带有效 Lead ID 时可用 `yelp`。
+- 客户有美国 10 位手机号时可用 `sms`。
+- Yelp 客资默认优先在原 Yelp 对话内回复；只有业务上明确需要切换到短信时才选 `sms`。
+
+## 直接发送 Yelp 或 Twilio 回复
 
 先领取任务，再调用：
 
@@ -80,11 +95,14 @@ POST /api/agent/customer-tasks/{collection}/{id}/send
 ```json
 {
   "text": "Hi, this is QUAD Film following up on your Yelp inquiry. Would today or tomorrow work better for you to visit our shop?",
+  "channel": "yelp",
   "requestId": "codex-20260720-customer-id-001"
 }
 ```
 
 `requestId` 必须为 8–120 位字母、数字、点、下划线、冒号或短横线组成的唯一编号。同一客户记录使用相同 `requestId` 重试时，系统返回第一次发送结果，不会再次发送。
+
+`channel` 必须出现在任务的 `availableChannels` 中。省略时使用 `preferredChannel`；为了避免误发，建议另一台 Codex 始终显式传入。
 
 ## Codex 工作规则
 
@@ -95,4 +113,5 @@ POST /api/agent/customer-tasks/{collection}/{id}/send
 5. 发送前再次核对客户姓名、规范化手机号、来源和最后一条消息；新客户首聊必须说明 Yelp 或 Meta/Facebook 来源并提出明确的到店问题。
 6. 对投诉、退款、法律责任、价格不确定、库存不确定或重要承诺，使用 `needs_human`，不要直接发送。
 7. 每次发送使用稳定且唯一的 `requestId`；超时重试时必须沿用原编号。
-8. 发送后重新读取任务，确认出站短信已进入聊天记录。
+8. Yelp 客户优先选择 `yelp`，短信客户选择 `sms`；不要因为同时有手机号就擅自改变沟通渠道。
+9. 发送后重新读取任务，确认对应渠道的出站消息已进入聊天记录；`accepted` 只表示 Yelp 已接受，不表示客户已读。

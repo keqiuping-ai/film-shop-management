@@ -2558,8 +2558,23 @@ function customerServiceTaskType(item, now = new Date()) {
   const nowKey = `${nowParts.year}-${nowParts.month}-${nowParts.day}T${nowParts.hour}:${nowParts.minute}`;
   if (followUpKey && followUpKey <= nowKey) return 'followup';
   if (followUpKey) return 'future';
-  if (!messages.some(row => row.role === 'shop' && String(row.message.channel || '').toLowerCase() === 'sms')) return 'first';
+  if (!messages.some(row => row.role === 'shop')) return 'first';
   return '';
+}
+
+function customerServiceAgentSends(item) {
+  const generic = Array.isArray(item?.agentSends) ? item.agentSends : [];
+  const legacySms = (Array.isArray(item?.agentSmsSends) ? item.agentSmsSends : [])
+    .filter(row => !generic.some(send => send.requestId === row.requestId))
+    .map(row => ({ ...row, channel: 'sms' }));
+  return [...generic, ...legacySms].sort((a, b) => String(a.sentAt || '').localeCompare(String(b.sentAt || '')));
+}
+
+function customerServiceAvailableChannels(item) {
+  const channels = [];
+  if (prospectTextKey(item?.source) === 'yelp' && String(item?.externalId || '').trim()) channels.push('yelp');
+  if (normalizedPhone(item?.phone).length === 10) channels.push('sms');
+  return channels;
 }
 
 function customerServiceTaskRows(db, filter = 'active') {
@@ -2572,11 +2587,13 @@ function customerServiceTaskRows(db, filter = 'active') {
   const priority = { reply: 0, followup: 1, first: 2, future: 3 };
   if (filter === 'sent') {
     return rows
-      .filter(({ item }) => Array.isArray(item.agentSmsSends) && item.agentSmsSends.length)
+      .filter(({ item }) => customerServiceAgentSends(item).length)
       .map(row => ({ ...row, taskType: 'sent' }))
       .sort((a, b) => {
-        const aSent = a.item.agentSmsSends[a.item.agentSmsSends.length - 1]?.sentAt || '';
-        const bSent = b.item.agentSmsSends[b.item.agentSmsSends.length - 1]?.sentAt || '';
+        const aSends = customerServiceAgentSends(a.item);
+        const bSends = customerServiceAgentSends(b.item);
+        const aSent = aSends[aSends.length - 1]?.sentAt || '';
+        const bSent = bSends[bSends.length - 1]?.sentAt || '';
         return String(bSent).localeCompare(String(aSent));
       });
   }
@@ -2600,6 +2617,7 @@ function safeCustomerServiceTask(row) {
     timestamp: String(message.timestamp || message.time || message.createdAt || ''), channel: String(message.channel || ''),
     attachment: message.attachment?.url ? { name: String(message.attachment.name || ''), type: String(message.attachment.type || ''), url: String(message.attachment.url) } : null
   }));
+  const availableChannels = customerServiceAvailableChannels(item);
   return {
     id: item.id, collection, taskType, customer: String(item.customer || ''), phone: String(item.phone || ''),
     source: String(item.source || ''), vehicle: String(item.vehicle || ''), need: String(item.need || ''),
@@ -2607,6 +2625,8 @@ function safeCustomerServiceTask(row) {
     followUp: item.followUpDate ? { date: String(item.followUpDate), time: String(item.followUpTime || '09:00'), reason: String(item.followUpReason || '') } : null,
     claim: item.taskClaimedByUserId ? { by: String(item.taskClaimedByName || ''), at: String(item.taskClaimedAt || '') } : null,
     draft: item.agentReplyDraft ? { ...item.agentReplyDraft } : null,
+    availableChannels,
+    preferredChannel: availableChannels.includes('yelp') ? 'yelp' : (availableChannels[0] || ''),
     messages
   };
 }
@@ -3084,9 +3104,9 @@ async function api(req, res) {
       const limit = Math.min(100, Math.max(1, Number(url.searchParams.get('limit') || 50)));
       const allRows = customerServiceTaskRows(db, filter);
       return send(res, 200, {
-        apiVersion: 1,
+        apiVersion: 2,
         mode: 'direct-send',
-        message: '此接口可以通过现有 Twilio 通道直接发送短信；发送前必须先领取任务并提供唯一请求编号。',
+        message: '此接口可以通过 Yelp 或 Twilio 直接发送纯文字回复；发送前必须先领取任务、选择可用渠道并提供唯一请求编号。',
         total: allRows.length,
         tasks: allRows.slice(0, limit).map(safeCustomerServiceTask)
       }, undefined, req);
@@ -3130,31 +3150,52 @@ async function api(req, res) {
       } else {
         const body = await readBody(req);
         const text = String(body.text || '').trim();
+        const availableChannels = customerServiceAvailableChannels(item);
+        const channel = String(body.channel || (availableChannels.includes('yelp') ? 'yelp' : availableChannels[0]) || '').trim().toLowerCase();
         const requestId = String(body.requestId || req.headers['idempotency-key'] || '').trim().slice(0, 120);
         if (!requestId || !/^[a-zA-Z0-9._:-]{8,120}$/.test(requestId)) return send(res, 400, { error: '请提供至少 8 位的唯一请求编号 requestId' });
-        const previousSend = (item.agentSmsSends || []).find(row => row.requestId === requestId);
-        if (previousSend) return send(res, 200, { ok: true, duplicate: true, sid: previousSend.sid, status: previousSend.status, sentAt: previousSend.sentAt });
+        const previousSend = customerServiceAgentSends(item).find(row => row.requestId === requestId);
+        if (previousSend) return send(res, 200, { ok: true, duplicate: true, channel: previousSend.channel || 'sms', sid: previousSend.sid, status: previousSend.status, sentAt: previousSend.sentAt });
         if (!claimActive || item.taskClaimedByUserId !== agent.id) return send(res, 409, { error: '发送前必须先由当前客服助手领取任务' });
-        if (!text) return send(res, 400, { error: '短信内容不能为空' });
-        if (text.length > 1600) return send(res, 400, { error: '短信内容不能超过 1600 个字符' });
-        const phoneDigits = normalizedPhone(item.phone);
-        if (phoneDigits.length !== 10) return send(res, 400, { error: '客户电话格式不正确，请先填写美国 10 位手机号码' });
-        const to = `+1${phoneDigits}`;
-        const sent = await sendTwilioSms({
-          to,
-          body: text,
-          statusCallback: `${requestPublicBaseUrl(req)}/api/twilio/status`
-        });
+        if (!availableChannels.includes(channel)) return send(res, 400, { error: `这条客户记录不能使用 ${channel || '所选'} 渠道；可用渠道：${availableChannels.join(', ') || '无'}` });
+        if (!text) return send(res, 400, { error: '回复内容不能为空' });
+        if (text.length > 1600) return send(res, 400, { error: '回复内容不能超过 1600 个字符' });
         const sentAt = now.toISOString();
-        appendSmsMessage(item, {
-          id: `twilio-${sent.sid || id()}`,
-          speaker: 'shop', speakerName: agent.name, direction: 'outbound', channel: 'sms', text,
-          timestamp: sentAt, provider: 'twilio', providerSid: String(sent.sid || ''),
-          status: String(sent.status || 'queued'), from: String(sent.from || twilioConfig().fromNumber), to
-        });
-        item.agentSmsSends = [...(item.agentSmsSends || []).slice(-49), {
-          requestId, sid: String(sent.sid || ''), status: String(sent.status || 'queued'), sentAt, agentName: agent.name
-        }];
+        let sendRecord;
+        if (channel === 'yelp') {
+          const sent = await sendYelpReply({
+            leadId: String(item.externalId).trim(),
+            businessId: String(item.externalBusinessId || '').trim(),
+            text,
+            requestId
+          });
+          item.conversationMessages = [...(Array.isArray(item.conversationMessages) ? item.conversationMessages : []), {
+            id: requestId, externalEventId: requestId,
+            speaker: 'shop', speakerName: agent.name, direction: 'outbound', channel: 'yelp', text,
+            timestamp: sentAt, provider: 'yelp-zapier', status: String(sent.status || 'accepted')
+          }];
+          item.lastYelpAt = sentAt;
+          item.lastYelpDirection = 'outbound';
+          sendRecord = { requestId, channel, sid: '', status: String(sent.status || 'accepted'), sentAt, agentName: agent.name };
+        } else {
+          const phoneDigits = normalizedPhone(item.phone);
+          const to = `+1${phoneDigits}`;
+          const sent = await sendTwilioSms({
+            to,
+            body: text,
+            statusCallback: `${requestPublicBaseUrl(req)}/api/twilio/status`
+          });
+          appendSmsMessage(item, {
+            id: `twilio-${sent.sid || id()}`,
+            speaker: 'shop', speakerName: agent.name, direction: 'outbound', channel: 'sms', text,
+            timestamp: sentAt, provider: 'twilio', providerSid: String(sent.sid || ''),
+            status: String(sent.status || 'queued'), from: String(sent.from || twilioConfig().fromNumber), to
+          });
+          sendRecord = { requestId, channel, sid: String(sent.sid || ''), status: String(sent.status || 'queued'), sentAt, agentName: agent.name };
+          item.agentSmsSends = [...(item.agentSmsSends || []).slice(-49), sendRecord];
+        }
+        item.agentSends = [...(item.agentSends || []).slice(-99), sendRecord];
+        item.updatedAt = sentAt;
         if (item.followUpDate) {
           item.lastFollowUpCompletedAt = sentAt;
           item.lastFollowUpReason = item.followUpReason || '';
@@ -3170,7 +3211,7 @@ async function api(req, res) {
       }
       audit(db, agent, `agent-customer-task-${action}`, {
         collection, recordId: item.id, recordLabel: item.customer || item.phone,
-        detail: action === 'draft' ? `客服助手提交处理结果：${item.agentReplyDraft.disposition}` : action === 'send' ? '客服助手通过 Twilio 直接发送短信' : `客服助手${action === 'claim' ? '领取' : '释放'}任务`
+        detail: action === 'draft' ? `客服助手提交处理结果：${item.agentReplyDraft.disposition}` : action === 'send' ? '客服助手直接发送客户回复' : `客服助手${action === 'claim' ? '领取' : '释放'}任务`
       });
       writeDb(db);
       notifyDataChanged(`agent-customer-task-${action}`, item.id);
