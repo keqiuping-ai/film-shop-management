@@ -5112,6 +5112,7 @@ function renderProspectWorkspace() {
       </div>
       <div class="prospect-workspace-actions">
         ${collection === 'customerConversations' && item.promotedProspectId ? `<span class="pill good">${lang === 'zh' ? '已转入预约到店客户' : 'Promoted to appointment / arrival'}</span>` : ''}
+        ${hasPerm('prospectsEdit') && !prospectWorkspaceReadOnly ? `<button class="btn primary prospect-header-save" onclick="saveProspectWorkspaceDetails()">${lang === 'zh' ? '保存客户资料' : 'Save customer details'}</button>` : ''}
         <button class="prospect-workspace-close" onclick="closeProspectWorkspace()" aria-label="${lang === 'zh' ? '关闭聊天工作台' : 'Close chat workspace'}">×</button>
       </div>
     </header>
