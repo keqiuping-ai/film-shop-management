@@ -2411,6 +2411,102 @@ function customerConversationImportUser(req) {
   };
 }
 
+function customerServiceAgentTokens() {
+  return [process.env.CUSTOMER_SERVICE_AGENT_TOKEN, process.env.CUSTOMER_SERVICE_AGENT_TOKENS]
+    .filter(Boolean)
+    .join('\n')
+    .split(/[\n,;]+/)
+    .map(value => String(value || '').trim())
+    .filter(Boolean);
+}
+
+function customerServiceAgentUser(req) {
+  const configuredTokens = customerServiceAgentTokens();
+  if (!configuredTokens.length) return null;
+  const providedToken = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '').trim();
+  if (!configuredTokens.some(token => secureEqualString(providedToken, token))) return null;
+  const requestedName = String(req.headers['x-agent-name'] || 'QUAD 客服助手').trim().slice(0, 80);
+  return {
+    id: `customer-service-agent-${crypto.createHash('sha256').update(providedToken).digest('hex').slice(0, 12)}`,
+    name: requestedName || 'QUAD 客服助手',
+    email: 'customer-service-agent@system.local',
+    role: 'agent-api',
+    active: true,
+    restrictedAgent: true,
+    permissions: { prospectsView: true, prospectsEdit: true }
+  };
+}
+
+function customerServiceMessageRole(message) {
+  const direction = String(message?.direction || '').toLowerCase();
+  if (direction === 'inbound') return 'customer';
+  if (direction === 'outbound') return 'shop';
+  const speaker = String(message?.speaker || message?.role || message?.senderType || '').toLowerCase();
+  return /customer|client|lead|客户/.test(speaker) ? 'customer' : /shop|staff|agent|我们|客服/.test(speaker) ? 'shop' : 'system';
+}
+
+function customerServiceConversation(item) {
+  return (Array.isArray(item?.conversationMessages) ? item.conversationMessages : [])
+    .map((message, index) => ({ message, index, role: customerServiceMessageRole(message), at: new Date(message.timestamp || message.time || message.createdAt || 0).getTime() }))
+    .filter(row => row.role === 'customer' || row.role === 'shop')
+    .sort((a, b) => (Number.isFinite(a.at) && Number.isFinite(b.at) && a.at !== b.at) ? a.at - b.at : a.index - b.index);
+}
+
+function customerServiceTaskType(item, now = new Date()) {
+  const messages = customerServiceConversation(item);
+  const latest = messages[messages.length - 1];
+  if (latest?.role === 'customer') return 'reply';
+  const followUpKey = item?.followUpDate ? `${item.followUpDate}T${item.followUpTime || '09:00'}` : '';
+  const nowParts = Object.fromEntries(new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/Los_Angeles', year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', hour12: false
+  }).formatToParts(now).map(part => [part.type, part.value]));
+  const nowKey = `${nowParts.year}-${nowParts.month}-${nowParts.day}T${nowParts.hour}:${nowParts.minute}`;
+  if (followUpKey && followUpKey <= nowKey) return 'followup';
+  if (followUpKey) return 'future';
+  if (!messages.some(row => row.role === 'shop' && String(row.message.channel || '').toLowerCase() === 'sms')) return 'first';
+  return '';
+}
+
+function customerServiceTaskRows(db, filter = 'active') {
+  const promotedIds = new Set((db.prospects || []).map(item => item.id));
+  const rows = [
+    ...(db.customerConversations || []).filter(item => !item.promotedProspectId || !promotedIds.has(item.promotedProspectId)).map(item => ({ item, collection: 'customerConversations' })),
+    ...(db.prospects || []).map(item => ({ item, collection: 'prospects' }))
+  ];
+  const movedStatuses = new Set(['已预约', '已到店', '已转施工单', '无效']);
+  const priority = { reply: 0, followup: 1, first: 2, future: 3 };
+  return rows
+    .filter(({ item }) => !movedStatuses.has(String(item.status || '')) && !item.convertedJobId)
+    .map(row => ({ ...row, taskType: customerServiceTaskType(row.item) }))
+    .filter(row => row.taskType && (filter === 'all' || (filter === 'active' && row.taskType !== 'future') || row.taskType === filter))
+    .sort((a, b) => {
+      const typeDiff = priority[a.taskType] - priority[b.taskType];
+      if (typeDiff) return typeDiff;
+      const aTime = a.item.followUpDate ? `${a.item.followUpDate}T${a.item.followUpTime || '09:00'}` : String(a.item.updatedAt || a.item.importedAt || a.item.createdAt || a.item.date || '');
+      const bTime = b.item.followUpDate ? `${b.item.followUpDate}T${b.item.followUpTime || '09:00'}` : String(b.item.updatedAt || b.item.importedAt || b.item.createdAt || b.item.date || '');
+      return aTime.localeCompare(bTime);
+    });
+}
+
+function safeCustomerServiceTask(row) {
+  const { item, collection, taskType } = row;
+  const messages = customerServiceConversation(item).slice(-40).map(({ message, role }) => ({
+    id: String(message.id || ''), role, text: String(message.text || message.message || message.content || '').slice(0, 4000),
+    timestamp: String(message.timestamp || message.time || message.createdAt || ''), channel: String(message.channel || ''),
+    attachment: message.attachment?.url ? { name: String(message.attachment.name || ''), type: String(message.attachment.type || ''), url: String(message.attachment.url) } : null
+  }));
+  return {
+    id: item.id, collection, taskType, customer: String(item.customer || ''), phone: String(item.phone || ''),
+    source: String(item.source || ''), vehicle: String(item.vehicle || ''), need: String(item.need || ''),
+    status: String(item.status || ''), intentLevel: String(item.intentLevel || ''), ownerName: String(item.ownerName || ''),
+    followUp: item.followUpDate ? { date: String(item.followUpDate), time: String(item.followUpTime || '09:00'), reason: String(item.followUpReason || '') } : null,
+    claim: item.taskClaimedByUserId ? { by: String(item.taskClaimedByName || ''), at: String(item.taskClaimedAt || '') } : null,
+    draft: item.agentReplyDraft ? { ...item.agentReplyDraft } : null,
+    messages
+  };
+}
+
 function openEventStream(req, res, user) {
   res.writeHead(200, {
     'Content-Type': 'text/event-stream; charset=utf-8',
@@ -2874,6 +2970,69 @@ async function api(req, res) {
     const token = createSessionToken(user);
     sessions.set(token, { userId: user.id, at: Date.now() });
     return send(res, 200, { token, user: safeUser(user) });
+  }
+
+  if (url.pathname.startsWith('/api/agent/customer-tasks')) {
+    const agent = customerServiceAgentUser(req);
+    if (!agent) return send(res, 401, { error: '客服助手令牌无效或尚未配置' });
+    if (req.method === 'GET' && url.pathname === '/api/agent/customer-tasks') {
+      const filter = ['active', 'all', 'reply', 'first', 'followup', 'future'].includes(url.searchParams.get('filter')) ? url.searchParams.get('filter') : 'active';
+      const limit = Math.min(100, Math.max(1, Number(url.searchParams.get('limit') || 50)));
+      const allRows = customerServiceTaskRows(db, filter);
+      return send(res, 200, {
+        apiVersion: 1,
+        mode: 'draft-only',
+        message: '此接口不会直接发送短信；提交的回复将进入人工审核。',
+        total: allRows.length,
+        tasks: allRows.slice(0, limit).map(safeCustomerServiceTask)
+      }, undefined, req);
+    }
+    const agentTaskMatch = url.pathname.match(/^\/api\/agent\/customer-tasks\/(customerConversations|prospects)\/([^/]+)\/(claim|release|draft)$/);
+    if (req.method === 'POST' && agentTaskMatch) {
+      const [, collection, recordId, action] = agentTaskMatch;
+      const item = (db[collection] || []).find(row => row.id === recordId);
+      if (!item) return send(res, 404, { error: '找不到客户任务' });
+      const now = new Date();
+      const claimActive = item.taskClaimedByUserId && now.getTime() - new Date(item.taskClaimedAt || 0).getTime() < 15 * 60 * 1000;
+      if (action === 'claim') {
+        if (claimActive && item.taskClaimedByUserId !== agent.id) return send(res, 409, { error: `任务正在由 ${item.taskClaimedByName || '其他人员'} 处理` });
+        item.taskClaimedByUserId = agent.id;
+        item.taskClaimedByName = agent.name;
+        item.taskClaimedAt = now.toISOString();
+      } else if (action === 'release') {
+        if (claimActive && item.taskClaimedByUserId !== agent.id) return send(res, 409, { error: '不能释放其他人员领取的任务' });
+        delete item.taskClaimedByUserId;
+        delete item.taskClaimedByName;
+        delete item.taskClaimedAt;
+      } else {
+        const body = await readBody(req);
+        const text = String(body.replyText || '').trim();
+        const note = String(body.note || '').trim().slice(0, 2000);
+        const disposition = ['ready_for_review', 'needs_human', 'no_reply_needed'].includes(body.disposition) ? body.disposition : 'ready_for_review';
+        if (disposition === 'ready_for_review' && !text) return send(res, 400, { error: '请填写建议回复内容' });
+        if (text.length > 1600) return send(res, 400, { error: '建议回复不能超过 1600 个字符' });
+        item.agentReplyDraft = { text, note, disposition, createdAt: now.toISOString(), createdBy: agent.name, apiVersion: 1 };
+        if (body.followUpDate) {
+          const followUpDate = String(body.followUpDate || '').trim();
+          const followUpTime = String(body.followUpTime || '09:00').trim();
+          if (!/^\d{4}-\d{2}-\d{2}$/.test(followUpDate) || !/^\d{2}:\d{2}$/.test(followUpTime)) return send(res, 400, { error: '跟进日期或时间格式不正确' });
+          item.followUpDate = followUpDate;
+          item.followUpTime = followUpTime;
+          item.followUpReason = String(body.followUpReason || note || '客服助手建议跟进').trim().slice(0, 500);
+        }
+        delete item.taskClaimedByUserId;
+        delete item.taskClaimedByName;
+        delete item.taskClaimedAt;
+      }
+      audit(db, agent, `agent-customer-task-${action}`, {
+        collection, recordId: item.id, recordLabel: item.customer || item.phone,
+        detail: action === 'draft' ? `客服助手提交处理结果：${item.agentReplyDraft.disposition}` : `客服助手${action === 'claim' ? '领取' : '释放'}任务`
+      });
+      writeDb(db);
+      notifyDataChanged(`agent-customer-task-${action}`, item.id);
+      return send(res, 200, { ok: true, task: safeCustomerServiceTask({ item, collection, taskType: customerServiceTaskType(item) }) });
+    }
+    return send(res, 404, { error: '客服助手接口不存在' });
   }
 
   if (req.method === 'POST' && url.pathname === '/api/warranty/lookup') {
@@ -3753,6 +3912,7 @@ async function api(req, res) {
       delete item.followUpReason;
       delete item.followUpCompletedAt;
     }
+    delete item.agentReplyDraft;
     delete item.taskClaimedByUserId;
     delete item.taskClaimedByName;
     delete item.taskClaimedAt;

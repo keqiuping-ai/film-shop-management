@@ -5112,6 +5112,7 @@ function renderProspectWorkspace() {
           </article>`).join('') : `<div class="prospect-chat-empty">${lang === 'zh' ? '还没有聊天记录。' : 'No conversation yet.'}</div>`}
         </main>
         <footer class="prospect-workspace-composer">
+          ${item.agentReplyDraft?.text ? `<div class="customer-agent-draft"><strong>${lang === 'zh' ? '客服助手建议回复（发送前请人工确认）' : 'Agent draft (review before sending)'}</strong><span>${escapeHtml(item.agentReplyDraft.createdBy || '')} · ${escapeHtml(formatAppDateTime(item.agentReplyDraft.createdAt || ''))}</span><p>${escapeHtml(item.agentReplyDraft.text)}</p></div>` : ''}
           <div class="prospect-sms-status">${lang === 'zh' ? '通过 Twilio 发送和接收短信 · 发送号码：+1 725-241-2586' : 'Send and receive SMS through Twilio · Sender: +1 725-241-2586'}</div>
           <div class="prospect-attachment-tools">
             <button type="button" onclick="document.getElementById('prospectImageInput').click()">🖼️ ${lang === 'zh' ? '图片' : 'Image'}</button>
@@ -5138,6 +5139,8 @@ function renderProspectWorkspace() {
   workspace.dataset.conversationKey = conversationKey;
   workspace.classList.add('open');
   restoreProspectWorkspaceDraft();
+  const agentDraftInput = document.getElementById('prospectReplyInput');
+  if (agentDraftInput && !agentDraftInput.value && item.agentReplyDraft?.text) agentDraftInput.value = item.agentReplyDraft.text;
   workspace.querySelectorAll('.prospect-workspace-sidebar input, .prospect-workspace-sidebar textarea, .prospect-workspace-sidebar select')
     .forEach(control => {
       control.addEventListener('input', () => captureProspectWorkspaceDraft(true));

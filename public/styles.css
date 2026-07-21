@@ -1007,6 +1007,10 @@ tr:hover td { background: #fbfcfd; }
 .customer-task-card footer>div { display:flex; gap:7px; }
 .customer-task-empty { grid-column:1/-1; min-height:190px; display:grid; place-content:center; gap:8px; padding:30px; border:1px dashed #afc1ca; border-radius:16px; background:#f8fafb; color:var(--muted); text-align:center; }
 .customer-task-empty strong { color:var(--ink); font-size:20px; }
+.customer-agent-draft { display:grid; gap:5px; padding:10px 12px; border:1px solid #e7c45f; border-radius:11px; background:#fffbed; color:#4f421c; }
+.customer-agent-draft strong { color:#795500; }
+.customer-agent-draft span { color:#7c8790; font-size:12px; }
+.customer-agent-draft p { margin:0; white-space:pre-wrap; line-height:1.45; }
 .prospect-workspace {
   position: fixed;
   inset: 0;
