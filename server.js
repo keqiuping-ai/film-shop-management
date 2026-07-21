@@ -1463,7 +1463,9 @@ function normalizeProspectMessages(value) {
       speakerName,
       timestamp: String(item.timestamp || item.time || item.createdAt || '').trim(),
       text,
-      order: Number.isFinite(Number(item.order)) ? Number(item.order) : index
+      order: Number.isFinite(Number(item.order)) ? Number(item.order) : index,
+      externalEventId: String(item.externalEventId || item.eventId || item.id || '').trim(),
+      provider: String(item.provider || item.platform || '').trim()
     };
   }).filter(Boolean);
 }
@@ -1478,12 +1480,29 @@ function prospectMessagesToText(messages) {
 }
 
 function prospectMessageKey(message) {
+  const externalEventId = prospectTextKey(message.externalEventId);
+  if (externalEventId) return `event:${externalEventId}`;
   return [
     normalizeProspectSpeaker(message.speaker, message.speakerName),
     prospectTextKey(message.speakerName),
     prospectTextKey(message.timestamp),
     prospectTextKey(message.text)
   ].join('|');
+}
+
+function normalizeRawPayload(value) {
+  if (value === undefined || value === null || value === '') return null;
+  if (typeof value === 'string') {
+    const text = value.slice(0, 100000);
+    try { return JSON.parse(text); } catch { return text; }
+  }
+  try {
+    const serialized = JSON.stringify(value);
+    if (serialized.length <= 100000) return JSON.parse(serialized);
+    return { truncated: true, json: serialized.slice(0, 100000) };
+  } catch {
+    return String(value).slice(0, 100000);
+  }
 }
 
 function mergeProspectMessages(existingMessages, incomingMessages) {
@@ -1559,6 +1578,7 @@ function normalizeProspectInput(input, fallback = {}) {
     source,
     customer: cleanImportedText(input.customer || input.customerName || fallback.customer || ''),
     phone: String(input.phone || fallback.phone || '').trim(),
+    email: cleanImportedText(input.email || input.temporaryEmail || fallback.email || ''),
     vehicle: cleanImportedText(input.vehicle || fallback.vehicle || ''),
     need: cleanImportedConversationText(input.need || input.customerNeed || input.interest || fallback.need || ''),
     service: String(input.service || fallback.service || 'tint').trim(),
@@ -1572,11 +1592,22 @@ function normalizeProspectInput(input, fallback = {}) {
     note: noteParts.join('\n'),
     importSource: String(input.importSource || fallback.importSource || 'codex').trim(),
     sourceDevice: String(input.sourceDevice || fallback.sourceDevice || '').trim(),
-    externalId: String(input.externalId || input.conversationId || fallback.externalId || '').trim(),
+    externalId: String(input.externalId || input.yelpLeadId || input.leadId || input.conversationId || fallback.externalId || '').trim(),
+    externalEventId: String(input.externalEventId || input.yelpEventId || input.eventId || fallback.externalEventId || '').trim(),
+    externalBusinessId: String(input.externalBusinessId || input.yelpBusinessId || input.businessId || fallback.externalBusinessId || '').trim(),
     profileUrl: String(input.profileUrl || fallback.profileUrl || '').trim(),
     importedAt: String(input.importedAt || new Date().toISOString()).trim(),
+    sourceCreatedAt: String(input.sourceCreatedAt || input.leadTimeCreated || fallback.sourceCreatedAt || '').trim(),
+    sourceUpdatedAt: String(input.sourceUpdatedAt || input.leadTimeUpdated || fallback.sourceUpdatedAt || '').trim(),
+    lastSyncedAt: new Date().toISOString(),
+    syncStatus: String(input.syncStatus || 'received').trim(),
+    rawPayload: normalizeRawPayload(input.rawPayload),
     conversationMessages
   };
+  base.processedExternalEventIds = Array.from(new Set([
+    ...(Array.isArray(fallback.processedExternalEventIds) ? fallback.processedExternalEventIds : []),
+    base.externalEventId
+  ].map(value => String(value || '').trim()).filter(Boolean))).slice(-500);
   base.status = base.status || (base.appointmentDate || base.appointmentTime ? '已预约' : '新意向');
   base.intentLevel = inferProspectIntent(base, input.intentLevel || fallback.intentLevel || '');
   base.intentReason = String(input.intentReason || fallback.intentReason || inferProspectIntentReason(base, conversationMessages, base.intentLevel)).trim();
@@ -1595,6 +1626,13 @@ function mergeProspect(existing, incoming) {
   for (const [key, value] of Object.entries(incoming)) {
     if (value === undefined || value === null || value === '') continue;
     if (key === 'conversationMessages') continue;
+    if (key === 'processedExternalEventIds') {
+      next.processedExternalEventIds = Array.from(new Set([
+        ...(Array.isArray(existing.processedExternalEventIds) ? existing.processedExternalEventIds : []),
+        ...(Array.isArray(value) ? value : [])
+      ].map(item => String(item || '').trim()).filter(Boolean))).slice(-500);
+      continue;
+    }
     if (key === 'chatContext') {
       next.chatContext = appendUniqueText(existing.chatContext, value, `\n\n--- ${new Date().toLocaleString('en-US', { timeZone: 'America/Los_Angeles' })} 自动导入更新 ---\n`);
       continue;
@@ -1657,6 +1695,14 @@ function importCustomerRecords(db, user, body, collection = 'prospects') {
     }
     const duplicate = findProspectDuplicate(db[collection], candidate);
     if (duplicate) {
+      const externalEventId = String(candidate.externalEventId || '').trim();
+      const processedEventIds = new Set((duplicate.processedExternalEventIds || []).map(value => String(value || '').trim()));
+      if (externalEventId && (processedEventIds.has(externalEventId) || String(duplicate.externalEventId || '').trim() === externalEventId)) {
+        result.skipped += 1;
+        result.duplicateCount += 1;
+        result.items.push({ id: duplicate.id, status: 'duplicate-event', customer: duplicate.customer, source: duplicate.source });
+        return;
+      }
       const before = { ...duplicate };
       const next = mergeProspect(duplicate, {
         ...candidate,
