@@ -2606,6 +2606,7 @@ function customerServiceTaskRows(db, filter = 'active') {
       if (typeDiff) return typeDiff;
       const aTime = a.item.followUpDate ? `${a.item.followUpDate}T${a.item.followUpTime || '09:00'}` : String(a.item.updatedAt || a.item.importedAt || a.item.createdAt || a.item.date || '');
       const bTime = b.item.followUpDate ? `${b.item.followUpDate}T${b.item.followUpTime || '09:00'}` : String(b.item.updatedAt || b.item.importedAt || b.item.createdAt || b.item.date || '');
+      if (a.taskType === 'first') return bTime.localeCompare(aTime);
       return aTime.localeCompare(bTime);
     });
 }

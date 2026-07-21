@@ -4828,6 +4828,7 @@ function customerTaskRows() {
       const typeDiff = priority[a._taskType] - priority[b._taskType];
       if (typeDiff) return typeDiff;
       if (a._taskType === 'followup' || a._taskType === 'future') return customerFollowUpKey(a).localeCompare(customerFollowUpKey(b));
+      if (a._taskType === 'first') return new Date(prospectActivityTime(b)).getTime() - new Date(prospectActivityTime(a)).getTime();
       return new Date(prospectActivityTime(a)).getTime() - new Date(prospectActivityTime(b)).getTime();
     });
 }
