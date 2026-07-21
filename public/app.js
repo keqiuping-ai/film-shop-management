@@ -55,6 +55,7 @@ let eventSource = null;
 let realtimeConnected = false;
 let activeMessageUserId = '';
 let activeProspectWorkspaceId = '';
+let prospectWorkspaceReadOnly = false;
 let prospectWorkspaceSyncTimer = null;
 let prospectPendingAttachment = null;
 let replyTemplatePendingAttachment = null;
@@ -4874,8 +4875,7 @@ function customerTaskCenterView() {
 function customerTaskCard(item) {
   const replyState = customerReplyState(item);
   const latestText = replyState.latest ? cleanConversationText(replyState.latest.text || replyState.latest.message || replyState.latest.content || '') : '';
-  const claimedByOther = item.taskClaimedByUserId && item.taskClaimedByUserId !== user?.id && Date.now() - new Date(item.taskClaimedAt || 0).getTime() < 15 * 60 * 1000;
-  const claimedByMe = item.taskClaimedByUserId === user?.id && Date.now() - new Date(item.taskClaimedAt || 0).getTime() < 15 * 60 * 1000;
+  const claimedByCodex = String(item.taskClaimedByUserId || '').startsWith('customer-service-agent-') && Date.now() - new Date(item.taskClaimedAt || 0).getTime() < 15 * 60 * 1000;
   const schedule = customerFollowUpKey(item) ? `${item.followUpDate} ${item.followUpTime || '09:00'}` : '';
   const agentSends = customerAgentSends(item);
   const latestAgentSend = item._taskType === 'sent' ? agentSends[agentSends.length - 1] : null;
@@ -4895,7 +4895,7 @@ function customerTaskCard(item) {
     ${latestText ? `<div class="customer-task-message"><small>${lang === 'zh' ? '客户最新消息' : 'Latest customer message'}</small>${escapeHtml(shortText(latestText, 150))}</div>` : ''}
     ${sentMessage ? `<div class="customer-task-message"><small>${lang === 'zh' ? `Codex 最近发送${sentAt ? ` · ${sentAt}` : ''}` : `Latest Codex message${sentAt ? ` · ${sentAt}` : ''}`}</small>${escapeHtml(shortText(sentMessage, 220))}</div>` : ''}
     ${schedule ? `<div class="customer-task-schedule"><strong>⏰ ${escapeHtml(schedule)}</strong><span>${escapeHtml(item.followUpReason || (lang === 'zh' ? '定时跟进' : 'Scheduled follow-up'))}</span></div>` : ''}
-    <footer><span>${item._taskType === 'sent' ? (lang === 'zh' ? '已由 Codex 处理' : 'Handled by Codex') : claimedByOther ? `${lang === 'zh' ? '正在处理：' : 'In progress: '}${escapeHtml(item.taskClaimedByName || '')}` : claimedByMe ? (lang === 'zh' ? '已由我领取' : 'Claimed by me') : (lang === 'zh' ? '尚未领取' : 'Unclaimed')}</span><div><button class="btn" onclick="scheduleCustomerFollowUp('${item._collection}','${item.id}')">${lang === 'zh' ? '设置跟进' : 'Schedule'}</button>${item._taskType === 'sent' ? `<button class="btn primary" onclick="openProspectWorkspace('${item._collection}','${item.id}')">${lang === 'zh' ? '查看完整聊天' : 'View full chat'}</button>` : `<button class="btn primary" ${claimedByOther ? 'disabled' : ''} onclick="claimAndOpenCustomerTask('${item._collection}','${item.id}')">${claimedByMe ? (lang === 'zh' ? '继续处理' : 'Continue') : (lang === 'zh' ? '领取并打开' : 'Claim & open')}</button>`}</div></footer>
+    <footer><span>${item._taskType === 'sent' ? (lang === 'zh' ? '已由 Codex 处理' : 'Handled by Codex') : claimedByCodex ? `${lang === 'zh' ? 'Codex AI 正在处理：' : 'Codex AI in progress: '}${escapeHtml(item.taskClaimedByName || '')}` : (lang === 'zh' ? '等待 Codex AI' : 'Waiting for Codex AI')}</span><div><button class="btn primary" onclick="openProspectWorkspace('${item._collection}','${item.id}',true)">${lang === 'zh' ? '查看完整聊天' : 'View full chat'}</button></div></footer>
   </article>`;
 }
 
@@ -5006,13 +5006,14 @@ function activeCustomerWorkspaceItem() {
   return { collection, item: (state[collection] || []).find(row => row.id === id) };
 }
 
-function openProspectWorkspace(collection, id) {
+function openProspectWorkspace(collection, id, readOnly = false) {
   const item = (state[collection] || []).find(row => row.id === id);
   if (item?.newCustomer) {
     item.newCustomer = false;
     markCustomerRecordSeen(collection, id);
   }
   activeProspectWorkspaceId = `${collection}:${id}`;
+  prospectWorkspaceReadOnly = Boolean(readOnly);
   document.body.classList.add('prospect-workspace-open');
   renderProspectWorkspace();
   startProspectWorkspaceSync();
@@ -5051,6 +5052,7 @@ function restoreProspectWorkspaceDraft() {
 function closeProspectWorkspace() {
   prospectWorkspaceDrafts.delete(activeProspectWorkspaceId);
   activeProspectWorkspaceId = '';
+  prospectWorkspaceReadOnly = false;
   stopProspectWorkspaceSync();
   document.body.classList.remove('prospect-workspace-open');
   const workspace = document.getElementById('prospectWorkspace');
@@ -5184,6 +5186,12 @@ function renderProspectWorkspace() {
     </div>`;
   workspace.dataset.conversationKey = conversationKey;
   workspace.classList.add('open');
+  if (prospectWorkspaceReadOnly) {
+    workspace.querySelectorAll('.prospect-workspace-sidebar input, .prospect-workspace-sidebar textarea, .prospect-workspace-sidebar select').forEach(control => { control.disabled = true; });
+    workspace.querySelector('.prospect-sidebar-actions')?.remove();
+    workspace.querySelector('.prospect-workspace-composer')?.remove();
+    workspace.querySelectorAll('.prospect-message-delete').forEach(control => control.remove());
+  }
   restoreProspectWorkspaceDraft();
   const agentDraftInput = document.getElementById('prospectReplyInput');
   if (agentDraftInput && !agentDraftInput.value && item.agentReplyDraft?.text) agentDraftInput.value = item.agentReplyDraft.text;

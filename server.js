@@ -3118,7 +3118,7 @@ async function api(req, res) {
       const item = (db[collection] || []).find(row => row.id === recordId);
       if (!item) return send(res, 404, { error: '找不到客户任务' });
       const now = new Date();
-      const claimActive = item.taskClaimedByUserId && now.getTime() - new Date(item.taskClaimedAt || 0).getTime() < 15 * 60 * 1000;
+      const claimActive = String(item.taskClaimedByUserId || '').startsWith('customer-service-agent-') && now.getTime() - new Date(item.taskClaimedAt || 0).getTime() < 15 * 60 * 1000;
       if (action === 'claim') {
         if (claimActive && item.taskClaimedByUserId !== agent.id) return send(res, 409, { error: `任务正在由 ${item.taskClaimedByName || '其他人员'} 处理` });
         item.taskClaimedByUserId = agent.id;
@@ -3496,31 +3496,7 @@ async function api(req, res) {
 
   const customerTaskClaimMatch = url.pathname.match(/^\/api\/customer-tasks\/(customerConversations|prospects)\/([^/]+)\/(claim|release)$/);
   if (req.method === 'POST' && customerTaskClaimMatch) {
-    if (!canAccess(user, 'prospectsEdit')) return send(res, 403, { error: '没有处理客服任务的权限' });
-    const [, collection, recordId, action] = customerTaskClaimMatch;
-    const item = (db[collection] || []).find(row => row.id === recordId);
-    if (!item) return send(res, 404, { error: '找不到客户记录' });
-    const now = new Date();
-    const claimActive = item.taskClaimedByUserId && now.getTime() - new Date(item.taskClaimedAt || 0).getTime() < 15 * 60 * 1000;
-    if (action === 'claim') {
-      if (claimActive && item.taskClaimedByUserId !== user.id) return send(res, 409, { error: `这位客户正在由 ${item.taskClaimedByName || '其他员工'} 处理，请稍后再试` });
-      item.taskClaimedByUserId = user.id;
-      item.taskClaimedByName = user.name || user.email;
-      item.taskClaimedAt = now.toISOString();
-    } else if (!claimActive || item.taskClaimedByUserId === user.id || user.role === 'owner') {
-      delete item.taskClaimedByUserId;
-      delete item.taskClaimedByName;
-      delete item.taskClaimedAt;
-    } else {
-      return send(res, 409, { error: '只能由领取人释放这个客服任务' });
-    }
-    audit(db, user, action === 'claim' ? 'claim-customer-task' : 'release-customer-task', {
-      collection, recordId: item.id, recordLabel: item.customer || item.phone,
-      detail: `${action === 'claim' ? '领取' : '释放'}客服任务 ${item.customer || item.phone}`
-    });
-    writeDb(db);
-    notifyDataChanged(`customer-task-${action}`, item.id);
-    return send(res, 200, { data: sanitizeDbForUser(db, user) });
+    return send(res, 403, { error: 'AI 客服任务只允许 Codex AI 领取；网页登录用户仅可查看' });
   }
 
   const portalCustomerMatch = url.pathname.match(/^\/api\/portal-customers(?:\/([^/]+))?$/);
