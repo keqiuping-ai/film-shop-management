@@ -6,8 +6,8 @@
 
 - 只识别 Railway 环境变量 `CUSTOMER_SERVICE_AGENT_TOKEN`（也可用 `CUSTOMER_SERVICE_AGENT_TOKENS` 配置多个令牌）。
 - 令牌不能读取财务、库存、员工、施工单、设置或完整数据库。
-- 当前为 `draft-only` 模式：助手可以领取任务、读取必要的客户沟通上下文、提交建议回复和跟进时间，但不能直接发送 Twilio 短信。
-- 建议回复进入人工审核；员工在客户聊天工作台确认后才点击“发送短信”。
+- 当前为 `direct-send` 模式：助手可以领取任务、读取必要的客户沟通上下文、提交建议回复和跟进时间，也可以通过现有 Twilio 通道直接发送纯文字短信。
+- 每次直接发送必须先领取任务，并使用唯一 `requestId`；重复提交相同编号不会重复发送。
 - 不要把令牌写入代码、GitHub、聊天记录或截图。
 
 ## 请求头
@@ -69,11 +69,30 @@ POST /api/agent/customer-tasks/{collection}/{id}/draft
 }
 ```
 
+## 直接发送 Twilio 短信
+
+先领取任务，再调用：
+
+```http
+POST /api/agent/customer-tasks/{collection}/{id}/send
+```
+
+```json
+{
+  "text": "Hi, this is QUAD Film following up on your Yelp inquiry. Would today or tomorrow work better for you to visit our shop?",
+  "requestId": "codex-20260720-customer-id-001"
+}
+```
+
+`requestId` 必须为 8–120 位字母、数字、点、下划线、冒号或短横线组成的唯一编号。同一客户记录使用相同 `requestId` 重试时，系统返回第一次发送结果，不会再次发送。
+
 ## Codex 工作规则
 
 1. 先读取 `active` 队列，每次只领取一项。
 2. 核对来源平台、客户姓名、电话、车辆、需求和最近沟通记录。
 3. 回复客户必须使用英文；不要虚构价格、库存、工期或预约时间。
 4. 涉及价格不确定、投诉、退款、法律责任或重要承诺时，提交 `needs_human`，不要自行决定。
-5. 只提交建议回复，不尝试调用系统其他接口或获取其他密钥。
-6. 提交后重新读取队列，确认结果已保存。
+5. 发送前再次核对客户姓名、规范化手机号、来源和最后一条消息；新客户首聊必须说明 Yelp 或 Meta/Facebook 来源并提出明确的到店问题。
+6. 对投诉、退款、法律责任、价格不确定、库存不确定或重要承诺，使用 `needs_human`，不要直接发送。
+7. 每次发送使用稳定且唯一的 `requestId`；超时重试时必须沿用原编号。
+8. 发送后重新读取任务，确认出站短信已进入聊天记录。

@@ -2981,13 +2981,13 @@ async function api(req, res) {
       const allRows = customerServiceTaskRows(db, filter);
       return send(res, 200, {
         apiVersion: 1,
-        mode: 'draft-only',
-        message: '此接口不会直接发送短信；提交的回复将进入人工审核。',
+        mode: 'direct-send',
+        message: '此接口可以通过现有 Twilio 通道直接发送短信；发送前必须先领取任务并提供唯一请求编号。',
         total: allRows.length,
         tasks: allRows.slice(0, limit).map(safeCustomerServiceTask)
       }, undefined, req);
     }
-    const agentTaskMatch = url.pathname.match(/^\/api\/agent\/customer-tasks\/(customerConversations|prospects)\/([^/]+)\/(claim|release|draft)$/);
+    const agentTaskMatch = url.pathname.match(/^\/api\/agent\/customer-tasks\/(customerConversations|prospects)\/([^/]+)\/(claim|release|draft|send)$/);
     if (req.method === 'POST' && agentTaskMatch) {
       const [, collection, recordId, action] = agentTaskMatch;
       const item = (db[collection] || []).find(row => row.id === recordId);
@@ -3004,7 +3004,7 @@ async function api(req, res) {
         delete item.taskClaimedByUserId;
         delete item.taskClaimedByName;
         delete item.taskClaimedAt;
-      } else {
+      } else if (action === 'draft') {
         const body = await readBody(req);
         const text = String(body.replyText || '').trim();
         const note = String(body.note || '').trim().slice(0, 2000);
@@ -3023,10 +3023,50 @@ async function api(req, res) {
         delete item.taskClaimedByUserId;
         delete item.taskClaimedByName;
         delete item.taskClaimedAt;
+      } else {
+        const body = await readBody(req);
+        const text = String(body.text || '').trim();
+        const requestId = String(body.requestId || req.headers['idempotency-key'] || '').trim().slice(0, 120);
+        if (!requestId || !/^[a-zA-Z0-9._:-]{8,120}$/.test(requestId)) return send(res, 400, { error: '请提供至少 8 位的唯一请求编号 requestId' });
+        const previousSend = (item.agentSmsSends || []).find(row => row.requestId === requestId);
+        if (previousSend) return send(res, 200, { ok: true, duplicate: true, sid: previousSend.sid, status: previousSend.status, sentAt: previousSend.sentAt });
+        if (!claimActive || item.taskClaimedByUserId !== agent.id) return send(res, 409, { error: '发送前必须先由当前客服助手领取任务' });
+        if (!text) return send(res, 400, { error: '短信内容不能为空' });
+        if (text.length > 1600) return send(res, 400, { error: '短信内容不能超过 1600 个字符' });
+        const phoneDigits = normalizedPhone(item.phone);
+        if (phoneDigits.length !== 10) return send(res, 400, { error: '客户电话格式不正确，请先填写美国 10 位手机号码' });
+        const to = `+1${phoneDigits}`;
+        const sent = await sendTwilioSms({
+          to,
+          body: text,
+          statusCallback: `${requestPublicBaseUrl(req)}/api/twilio/status`
+        });
+        const sentAt = now.toISOString();
+        appendSmsMessage(item, {
+          id: `twilio-${sent.sid || id()}`,
+          speaker: 'shop', speakerName: agent.name, direction: 'outbound', channel: 'sms', text,
+          timestamp: sentAt, provider: 'twilio', providerSid: String(sent.sid || ''),
+          status: String(sent.status || 'queued'), from: String(sent.from || twilioConfig().fromNumber), to
+        });
+        item.agentSmsSends = [...(item.agentSmsSends || []).slice(-49), {
+          requestId, sid: String(sent.sid || ''), status: String(sent.status || 'queued'), sentAt, agentName: agent.name
+        }];
+        if (item.followUpDate) {
+          item.lastFollowUpCompletedAt = sentAt;
+          item.lastFollowUpReason = item.followUpReason || '';
+          delete item.followUpDate;
+          delete item.followUpTime;
+          delete item.followUpReason;
+          delete item.followUpCompletedAt;
+        }
+        delete item.agentReplyDraft;
+        delete item.taskClaimedByUserId;
+        delete item.taskClaimedByName;
+        delete item.taskClaimedAt;
       }
       audit(db, agent, `agent-customer-task-${action}`, {
         collection, recordId: item.id, recordLabel: item.customer || item.phone,
-        detail: action === 'draft' ? `客服助手提交处理结果：${item.agentReplyDraft.disposition}` : `客服助手${action === 'claim' ? '领取' : '释放'}任务`
+        detail: action === 'draft' ? `客服助手提交处理结果：${item.agentReplyDraft.disposition}` : action === 'send' ? '客服助手通过 Twilio 直接发送短信' : `客服助手${action === 'claim' ? '领取' : '释放'}任务`
       });
       writeDb(db);
       notifyDataChanged(`agent-customer-task-${action}`, item.id);
