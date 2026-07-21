@@ -2476,6 +2476,16 @@ function customerServiceTaskRows(db, filter = 'active') {
   ];
   const movedStatuses = new Set(['已预约', '已到店', '已转施工单', '无效']);
   const priority = { reply: 0, followup: 1, first: 2, future: 3 };
+  if (filter === 'sent') {
+    return rows
+      .filter(({ item }) => Array.isArray(item.agentSmsSends) && item.agentSmsSends.length)
+      .map(row => ({ ...row, taskType: 'sent' }))
+      .sort((a, b) => {
+        const aSent = a.item.agentSmsSends[a.item.agentSmsSends.length - 1]?.sentAt || '';
+        const bSent = b.item.agentSmsSends[b.item.agentSmsSends.length - 1]?.sentAt || '';
+        return String(bSent).localeCompare(String(aSent));
+      });
+  }
   return rows
     .filter(({ item }) => !movedStatuses.has(String(item.status || '')) && !item.convertedJobId)
     .map(row => ({ ...row, taskType: customerServiceTaskType(row.item) }))
@@ -2976,7 +2986,7 @@ async function api(req, res) {
     const agent = customerServiceAgentUser(req);
     if (!agent) return send(res, 401, { error: '客服助手令牌无效或尚未配置' });
     if (req.method === 'GET' && url.pathname === '/api/agent/customer-tasks') {
-      const filter = ['active', 'all', 'reply', 'first', 'followup', 'future'].includes(url.searchParams.get('filter')) ? url.searchParams.get('filter') : 'active';
+      const filter = ['active', 'all', 'reply', 'first', 'followup', 'future', 'sent'].includes(url.searchParams.get('filter')) ? url.searchParams.get('filter') : 'active';
       const limit = Math.min(100, Math.max(1, Number(url.searchParams.get('limit') || 50)));
       const allRows = customerServiceTaskRows(db, filter);
       return send(res, 200, {

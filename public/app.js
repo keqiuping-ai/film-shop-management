@@ -4800,6 +4800,16 @@ function customerTaskType(item) {
 
 function customerTaskRows() {
   const priority = { reply: 0, followup: 1, first: 2, future: 3 };
+  if (customerTaskFilter === 'sent') {
+    return allCustomerCenterRows()
+      .filter(item => Array.isArray(item.agentSmsSends) && item.agentSmsSends.length)
+      .map(item => ({ ...item, _taskType: 'sent' }))
+      .sort((a, b) => {
+        const aSent = a.agentSmsSends[a.agentSmsSends.length - 1]?.sentAt || '';
+        const bSent = b.agentSmsSends[b.agentSmsSends.length - 1]?.sentAt || '';
+        return String(bSent).localeCompare(String(aSent));
+      });
+  }
   return customerCenterRows().map(item => ({ ...item, _taskType: customerTaskType(item) }))
     .filter(item => item._taskType && (customerTaskFilter === 'all' || item._taskType === customerTaskFilter))
     .sort((a, b) => {
@@ -4811,8 +4821,9 @@ function customerTaskRows() {
 }
 
 function customerTaskCounts() {
-  const counts = { reply: 0, first: 0, followup: 0, future: 0 };
+  const counts = { reply: 0, first: 0, followup: 0, future: 0, sent: 0 };
   customerCenterRows().forEach(item => { const type = customerTaskType(item); if (counts[type] !== undefined) counts[type] += 1; });
+  counts.sent = allCustomerCenterRows().filter(item => Array.isArray(item.agentSmsSends) && item.agentSmsSends.length).length;
   return counts;
 }
 
@@ -4821,7 +4832,8 @@ function customerTaskTypeLabel(type) {
     reply: lang === 'zh' ? '客户待回复' : 'Reply needed',
     first: lang === 'zh' ? '新客户首聊' : 'First contact',
     followup: lang === 'zh' ? '到期跟进' : 'Follow-up due',
-    future: lang === 'zh' ? '未来跟进' : 'Upcoming'
+    future: lang === 'zh' ? '未来跟进' : 'Upcoming',
+    sent: lang === 'zh' ? 'Codex 已发送' : 'Sent by Codex'
   }[type] || '';
 }
 
@@ -4838,7 +4850,8 @@ function customerTaskCenterView() {
     ['reply', lang === 'zh' ? '待回复' : 'Replies', counts.reply],
     ['first', lang === 'zh' ? '新客户首聊' : 'First contact', counts.first],
     ['followup', lang === 'zh' ? '到期跟进' : 'Due follow-ups', counts.followup],
-    ['future', lang === 'zh' ? '未来跟进' : 'Upcoming', counts.future]
+    ['future', lang === 'zh' ? '未来跟进' : 'Upcoming', counts.future],
+    ['sent', lang === 'zh' ? 'Codex 已发送' : 'Sent by Codex', counts.sent]
   ];
   const filterHtml = `<div class="customer-task-filters">${filters.map(([id, label, count]) => `<button class="customer-task-filter ${customerTaskFilter === id ? 'active' : ''}" onclick="setCustomerTaskFilter('${id}')"><span>${escapeHtml(label)}</span><strong>${count}</strong></button>`).join('')}</div>`;
   const cards = `<div class="customer-task-grid">${rows.map(customerTaskCard).join('')}${rows.length ? '' : `<div class="customer-task-empty"><strong>${lang === 'zh' ? '当前队列已经处理完成' : 'This queue is clear'}</strong><span>${lang === 'zh' ? '系统会继续实时接收新客户和客户短信。' : 'New customers and messages will continue to appear automatically.'}</span></div>`}</div>`;
@@ -4851,14 +4864,24 @@ function customerTaskCard(item) {
   const claimedByOther = item.taskClaimedByUserId && item.taskClaimedByUserId !== user?.id && Date.now() - new Date(item.taskClaimedAt || 0).getTime() < 15 * 60 * 1000;
   const claimedByMe = item.taskClaimedByUserId === user?.id && Date.now() - new Date(item.taskClaimedAt || 0).getTime() < 15 * 60 * 1000;
   const schedule = customerFollowUpKey(item) ? `${item.followUpDate} ${item.followUpTime || '09:00'}` : '';
+  const latestAgentSend = item._taskType === 'sent' ? item.agentSmsSends?.[item.agentSmsSends.length - 1] : null;
+  const sentMessage = item._taskType === 'sent'
+    ? [...(item.conversationMessages || [])].reverse().find(message =>
+      String(message.direction || '').toLowerCase() === 'outbound'
+      && String(message.channel || '').toLowerCase() === 'sms'
+      && (!latestAgentSend?.sentAt || String(message.timestamp || '') === String(latestAgentSend.sentAt))
+    )?.text || ''
+    : '';
+  const sentAt = latestAgentSend?.sentAt ? new Date(latestAgentSend.sentAt).toLocaleString(lang === 'zh' ? 'zh-CN' : 'en-US') : '';
   return `<article class="customer-task-card ${item._taskType}">
     <header><span class="customer-task-kind">${customerTaskTypeLabel(item._taskType)}</span><span class="customer-task-source">${escapeHtml(item.source || '')}</span></header>
     <h3>${escapeHtml(item.customer || (lang === 'zh' ? '未命名客户' : 'Unnamed customer'))}</h3>
     <div class="customer-task-phone">${escapeHtml(item.phone || (lang === 'zh' ? '未填写电话' : 'No phone'))}</div>
     <dl><div><dt>${lang === 'zh' ? '车辆' : 'Vehicle'}</dt><dd>${escapeHtml(item.vehicle || '—')}</dd></div><div><dt>${lang === 'zh' ? '需求' : 'Request'}</dt><dd>${escapeHtml(shortText(item.need || '—', 90))}</dd></div></dl>
     ${latestText ? `<div class="customer-task-message"><small>${lang === 'zh' ? '客户最新消息' : 'Latest customer message'}</small>${escapeHtml(shortText(latestText, 150))}</div>` : ''}
+    ${sentMessage ? `<div class="customer-task-message"><small>${lang === 'zh' ? `Codex 最近发送${sentAt ? ` · ${sentAt}` : ''}` : `Latest Codex message${sentAt ? ` · ${sentAt}` : ''}`}</small>${escapeHtml(shortText(sentMessage, 220))}</div>` : ''}
     ${schedule ? `<div class="customer-task-schedule"><strong>⏰ ${escapeHtml(schedule)}</strong><span>${escapeHtml(item.followUpReason || (lang === 'zh' ? '定时跟进' : 'Scheduled follow-up'))}</span></div>` : ''}
-    <footer><span>${claimedByOther ? `${lang === 'zh' ? '正在处理：' : 'In progress: '}${escapeHtml(item.taskClaimedByName || '')}` : claimedByMe ? (lang === 'zh' ? '已由我领取' : 'Claimed by me') : (lang === 'zh' ? '尚未领取' : 'Unclaimed')}</span><div><button class="btn" onclick="scheduleCustomerFollowUp('${item._collection}','${item.id}')">${lang === 'zh' ? '设置跟进' : 'Schedule'}</button><button class="btn primary" ${claimedByOther ? 'disabled' : ''} onclick="claimAndOpenCustomerTask('${item._collection}','${item.id}')">${claimedByMe ? (lang === 'zh' ? '继续处理' : 'Continue') : (lang === 'zh' ? '领取并打开' : 'Claim & open')}</button></div></footer>
+    <footer><span>${item._taskType === 'sent' ? (lang === 'zh' ? '已由 Codex 处理' : 'Handled by Codex') : claimedByOther ? `${lang === 'zh' ? '正在处理：' : 'In progress: '}${escapeHtml(item.taskClaimedByName || '')}` : claimedByMe ? (lang === 'zh' ? '已由我领取' : 'Claimed by me') : (lang === 'zh' ? '尚未领取' : 'Unclaimed')}</span><div><button class="btn" onclick="scheduleCustomerFollowUp('${item._collection}','${item.id}')">${lang === 'zh' ? '设置跟进' : 'Schedule'}</button>${item._taskType === 'sent' ? `<button class="btn primary" onclick="openProspectWorkspace('${item._collection}','${item.id}')">${lang === 'zh' ? '查看完整聊天' : 'View full chat'}</button>` : `<button class="btn primary" ${claimedByOther ? 'disabled' : ''} onclick="claimAndOpenCustomerTask('${item._collection}','${item.id}')">${claimedByMe ? (lang === 'zh' ? '继续处理' : 'Continue') : (lang === 'zh' ? '领取并打开' : 'Claim & open')}</button>`}</div></footer>
   </article>`;
 }
 
