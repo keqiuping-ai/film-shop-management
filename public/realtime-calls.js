@@ -87,11 +87,27 @@
 
   async function start(userIds) {
     try {
+      if (!window.LivekitClient?.isBrowserSupported?.()) {
+        alert(zh()
+          ? '当前浏览器已限制 WebRTC，无法建立实时通话。\n\nSafari 用户：请打开“Safari 浏览器 > 此网站的设置”，关闭本网站的“启用锁定模式”，并将麦克风设为“允许”。也可使用最新版 Chrome。'
+          : 'This browser is blocking WebRTC. In Safari, open Settings for This Website, disable Lockdown Mode for this site, and allow Microphone. You can also use the latest Chrome.');
+        return;
+      }
       const ids = [...new Set((Array.isArray(userIds) ? userIds : [userIds]).filter(id => id && id !== me()?.id))];
       if (!ids.length) return alert(zh() ? '没有可呼叫的员工' : 'No staff to call');
       const result = await request('/api/voice-calls', { method:'POST', body:JSON.stringify({ participantUserIds: ids }) });
       if (result.data) replaceStore(result.data); activeCall = result.call; renderCall(result.call, zh() ? '正在呼叫…' : 'Calling…'); await join(result.call);
-    } catch (error) { finishLocal(false); alert(error.message || error); }
+    } catch (error) {
+      const failedCall = activeCall;
+      finishLocal();
+      if (failedCall?.id) {
+        try { await request(`/api/voice-calls/${encodeURIComponent(failedCall.id)}`, { method:'PUT', body:JSON.stringify({ action:'end' }) }); } catch {}
+      }
+      const unsupported = /not supported|webrtc/i.test(String(error?.message || error));
+      alert(unsupported && zh()
+        ? '当前浏览器禁用了 WebRTC。请关闭该网站的 Safari 锁定模式，允许麦克风后重试，或改用最新版 Chrome。'
+        : (error.message || error));
+    }
   }
 
   async function accept(callId) {
