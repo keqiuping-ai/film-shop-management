@@ -59,6 +59,7 @@ let activeProspectWorkspaceId = '';
 let prospectWorkspaceReadOnly = false;
 let prospectWorkspaceSyncTimer = null;
 let prospectPendingAttachment = null;
+const prospectReplyChannels = new Map();
 let replyTemplatePendingAttachment = null;
 let replyTemplateLibraryType = 'text';
 let replyTemplateCategoryFilter = 'all';
@@ -5063,6 +5064,21 @@ function restoreProspectWorkspaceDraft() {
   });
 }
 
+function savedProspectReplyChannel(canReplyYelp, canReplySms) {
+  const key = activeProspectWorkspaceId;
+  let channel = prospectReplyChannels.get(key);
+  if (!channel && key) channel = localStorage.getItem(`filmShopCloud.replyChannel.${key}`) || '';
+  if (channel === 'yelp' && canReplyYelp) return channel;
+  if (channel === 'sms' && canReplySms) return channel;
+  return canReplyYelp ? 'yelp' : 'sms';
+}
+
+function rememberProspectReplyChannel(channel) {
+  if (!activeProspectWorkspaceId || !['yelp', 'sms'].includes(channel)) return;
+  prospectReplyChannels.set(activeProspectWorkspaceId, channel);
+  localStorage.setItem(`filmShopCloud.replyChannel.${activeProspectWorkspaceId}`, channel);
+}
+
 function closeProspectWorkspace() {
   prospectWorkspaceDrafts.delete(activeProspectWorkspaceId);
   activeProspectWorkspaceId = '';
@@ -5116,7 +5132,7 @@ function renderProspectWorkspace() {
   const statuses = prospectStatusOptions();
   const canReplyYelp = String(item.source || '').trim().toLowerCase() === 'yelp' && Boolean(String(item.externalId || '').trim());
   const canReplySms = customerPhoneMatchKey(item.phone).length === 10;
-  const defaultReplyChannel = canReplyYelp ? 'yelp' : 'sms';
+  const defaultReplyChannel = savedProspectReplyChannel(canReplyYelp, canReplySms);
   workspace.innerHTML = `
     <header class="prospect-workspace-header">
       <div class="prospect-workspace-customer">
@@ -5678,6 +5694,7 @@ async function saveProspectWorkspaceDetails() {
 
 function updateProspectReplyChannel() {
   const channel = document.getElementById('prospectReplyChannel')?.value || 'sms';
+  rememberProspectReplyChannel(channel);
   const button = document.getElementById('prospectSendSmsButton');
   const status = document.getElementById('prospectChannelStatus');
   const attachmentButtons = document.querySelectorAll('.prospect-attachment-tools button');
