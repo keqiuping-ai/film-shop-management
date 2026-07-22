@@ -10,6 +10,11 @@
   let ringTimeout = null;
   let polling = false;
   let actionBusy = false;
+  let recording = null;
+  let recordingChunks = [];
+  let recordingContext = null;
+  let recordingDestination = null;
+  const recordingSources = new Map();
 
   const context = () => window.getQuadCallContext?.() || {};
   const me = () => context().user || null;
@@ -21,12 +26,27 @@
   const callUsers = () => store().messageUsers || store().users || [];
   const calls = () => store().voiceCalls || [];
   const activeForMe = () => calls().find(call => ['ringing', 'active'].includes(call.status) && (call.callerUserId === me()?.id || (call.participantUserIds || []).includes(me()?.id)));
+  const waitingForMe = call => {
+    if (!call || call.callerUserId === me()?.id || !(call.participantUserIds || []).includes(me()?.id)) return false;
+    const status = call.participantStatuses?.[me()?.id];
+    return status ? ['ringing', 'invited'].includes(status) : call.status === 'ringing';
+  };
 
   function ensureLayer() {
     let layer = document.getElementById('quadCallLayer');
     if (!layer) {
       layer = document.createElement('div');
       layer.id = 'quadCallLayer';
+      document.body.appendChild(layer);
+    }
+    return layer;
+  }
+
+  function ensurePickerLayer() {
+    let layer = document.getElementById('quadCallPickerLayer');
+    if (!layer) {
+      layer = document.createElement('div');
+      layer.id = 'quadCallPickerLayer';
       document.body.appendChild(layer);
     }
     return layer;
@@ -70,9 +90,10 @@
     const layer = ensureLayer();
     layer.innerHTML = `<div class="quad-call-backdrop"><section class="quad-call-card active">
       <div class="quad-call-quality" id="quadCallQuality">● ${esc(statusText || (zh() ? '正在连接…' : 'Connecting…'))}</div>
-      <div class="quad-call-avatar">🎧</div><h2>${esc(nameFor(call))}</h2><time id="quadCallTime">00:00</time>
+      <div class="quad-call-avatar">🎧</div><h2 id="quadCallName">${esc(nameFor(call))}</h2><time id="quadCallTime">00:00</time>
+      <div id="quadCallRecording" style="${call.recording ? '' : 'display:none'};color:#ff6b6b;font-weight:800;margin:.5rem 0">🔴 ${zh() ? 'AI 通话记录已开启' : 'AI recording enabled'}</div>
       <div id="quadCallRemoteAudio"></div>
-      <footer><button id="quadMute" onclick="QuadCalls.toggleMute()">🎙️<br>${zh() ? '静音' : 'Mute'}</button><button onclick="QuadCalls.pickParticipants(true)">➕<br>${zh() ? '添加成员' : 'Add'}</button><button class="quad-call-end" onclick="QuadCalls.end()">📞<br>${zh() ? '挂断' : 'End'}</button></footer>
+      <footer><button id="quadMute" onclick="QuadCalls.toggleMute()">🎙️<br>${zh() ? '静音' : 'Mute'}</button>${call.callerUserId === me()?.id ? `<button id="quadRecord" onclick="QuadCalls.startAiRecord()">🔴<br>${zh() ? 'AI记录' : 'AI record'}</button>` : ''}<button onclick="QuadCalls.pickParticipants(true)">➕<br>${zh() ? '添加成员' : 'Add'}</button><button class="quad-call-end" onclick="QuadCalls.end()">📞<br>${zh() ? '挂断' : 'End'}</button></footer>
     </section></div>`;
   }
 
@@ -84,6 +105,7 @@
     room.on(LivekitClient.RoomEvent.TrackSubscribed, track => {
       if (track.kind !== LivekitClient.Track.Kind.Audio) return;
       const element = track.attach(); element.autoplay = true; document.getElementById('quadCallRemoteAudio')?.appendChild(element);
+      connectRecordingTrack(track.mediaStreamTrack);
     });
     room.on(LivekitClient.RoomEvent.ParticipantConnected, () => markAnswered());
     room.on(LivekitClient.RoomEvent.ConnectionQualityChanged, quality => {
@@ -93,6 +115,8 @@
     room.on(LivekitClient.RoomEvent.Disconnected, () => { if (activeCall) finishLocal(false); });
     await room.connect(credentials.url, credentials.token, { autoSubscribe: true });
     await room.localParticipant.setMicrophoneEnabled(true, { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 });
+    const localAudio = room.localParticipant.getTrackPublication?.(LivekitClient.Track.Source.Microphone)?.track;
+    connectRecordingTrack(localAudio?.mediaStreamTrack);
     if (call.callerUserId !== me()?.id || room.remoteParticipants.size > 0) markAnswered();
     else {
       const label = document.getElementById('quadCallQuality'); if (label) label.textContent = zh() ? '● 正在呼叫，等待对方接听…' : '● Calling…';
@@ -152,27 +176,33 @@
     const unavailable = new Set(addToCall ? [activeCall?.callerUserId, ...(activeCall?.participantUserIds || [])] : [me()?.id]);
     const people = callUsers().filter(item => item.id !== me()?.id && item.active !== false && !unavailable.has(item.id));
     if (!people.length) return alert(zh() ? '没有其他可选员工' : 'No other staff available');
-    const layer = ensureLayer();
+    const layer = addToCall ? ensurePickerLayer() : ensureLayer();
     layer.innerHTML = `<div class="quad-call-backdrop"><section class="quad-call-card picker">
-      <button class="quad-call-close" onclick="QuadCalls.${addToCall ? 'restoreCall' : 'close'}()">×</button>
+      <button class="quad-call-close" onclick="QuadCalls.${addToCall ? 'closePicker' : 'close'}()">×</button>
       <h2>${addToCall ? (zh() ? '添加通话成员' : 'Add participants') : (zh() ? '选择通话员工' : 'Choose participants')}</h2>
       <p>${zh() ? '只有勾选的员工会收到来电' : 'Only selected staff will be called'}</p>
       <div class="quad-call-people">${people.map(person => `<label><input type="checkbox" value="${esc(person.id)}"><span>${esc(person.name || person.email)}</span></label>`).join('')}</div>
-      <footer><button onclick="QuadCalls.${addToCall ? 'restoreCall' : 'close'}()">${zh() ? '取消' : 'Cancel'}</button><button class="quad-call-accept" onclick="QuadCalls.confirmParticipants(${addToCall ? 'true' : 'false'})">${addToCall ? (zh() ? '邀请加入' : 'Invite') : (zh() ? '发起通话' : 'Call')}</button></footer>
+      <footer><button onclick="QuadCalls.${addToCall ? 'closePicker' : 'close'}()">${zh() ? '取消' : 'Cancel'}</button><button class="quad-call-accept" onclick="QuadCalls.confirmParticipants(${addToCall ? 'true' : 'false'})">${addToCall ? (zh() ? '邀请加入' : 'Invite') : (zh() ? '发起通话' : 'Call')}</button></footer>
     </section></div>`;
   }
 
   async function confirmParticipants(addToCall) {
-    const selected = [...document.querySelectorAll('.quad-call-people input:checked')].map(input => input.value);
+    const pickerRoot = addToCall ? ensurePickerLayer() : ensureLayer();
+    const selected = [...pickerRoot.querySelectorAll('.quad-call-people input:checked')].map(input => input.value);
     if (!selected.length) return alert(zh() ? '请至少选择一位员工' : 'Select at least one person');
     if (!addToCall) return start(selected);
     try {
       const result = await request(`/api/voice-calls/${encodeURIComponent(activeCall.id)}`, { method:'PUT', body:JSON.stringify({ action:'invite', participantUserIds:selected }) });
-      if (result.data) replaceStore(result.data); activeCall = result.call; renderCall(activeCall, zh() ? '已邀请新成员' : 'Participants invited');
-    } catch (error) { alert(error.message || error); restoreCall(); }
+      if (result.data) replaceStore(result.data);
+      activeCall = result.call;
+      closePicker();
+      const name = document.getElementById('quadCallName'); if (name) name.textContent = nameFor(activeCall);
+      const quality = document.getElementById('quadCallQuality'); if (quality) quality.textContent = zh() ? '● 已邀请新成员，原通话保持连接' : '● Participants invited; call remains connected';
+    } catch (error) { alert(error.message || error); closePicker(); }
   }
 
   function restoreCall() { if (activeCall) renderCall(activeCall, zh() ? '通话中' : 'In call'); else close(); }
+  function closePicker() { const layer = document.getElementById('quadCallPickerLayer'); if (layer) layer.innerHTML = ''; }
 
   async function accept(callId) {
     if (actionBusy) return;
@@ -195,14 +225,65 @@
   }
 
   async function end() {
-    const call = activeCall; finishLocal(false); if (!call) return;
+    const call = activeCall; const audioDataUrl = await stopAiRecord(); finishLocal(false); if (!call) return;
     try { const result = await request(`/api/voice-calls/${encodeURIComponent(call.id)}`, { method:'PUT', body:JSON.stringify({ action:'end' }) }); if (result.data) replaceStore(result.data); showSummary(call.id); }
     catch (error) { alert(error.message || error); }
+    if (audioDataUrl) transcribeAndSummarize(call.id, audioDataUrl);
+  }
+
+  function connectRecordingTrack(mediaStreamTrack) {
+    if (!recordingDestination || !mediaStreamTrack || recordingSources.has(mediaStreamTrack.id)) return;
+    try {
+      const source = recordingContext.createMediaStreamSource(new MediaStream([mediaStreamTrack]));
+      source.connect(recordingDestination); recordingSources.set(mediaStreamTrack.id, source);
+    } catch {}
+  }
+
+  async function startAiRecord() {
+    if (!room || !activeCall || recording) return;
+    if (!confirm(zh() ? '开启后，本次通话声音会被录制并发送给 AI 生成记录。请确认已告知所有通话成员。' : 'This records the call for AI notes. Confirm all participants have been informed.')) return;
+    try {
+      await request(`/api/voice-calls/${encodeURIComponent(activeCall.id)}`, { method:'PUT', body:JSON.stringify({ action:'recording', enabled:true }) });
+      recordingContext = new (window.AudioContext || window.webkitAudioContext)();
+      recordingDestination = recordingContext.createMediaStreamDestination(); recordingSources.clear(); recordingChunks = [];
+      const localAudio = room.localParticipant.getTrackPublication?.(LivekitClient.Track.Source.Microphone)?.track;
+      connectRecordingTrack(localAudio?.mediaStreamTrack);
+      room.remoteParticipants.forEach(participant => participant.audioTrackPublications.forEach(publication => connectRecordingTrack(publication.track?.mediaStreamTrack)));
+      const mimeType = ['audio/webm;codecs=opus','audio/webm','audio/mp4'].find(type => MediaRecorder.isTypeSupported(type)) || '';
+      recording = new MediaRecorder(recordingDestination.stream, { mimeType, audioBitsPerSecond:32000 });
+      recording.ondataavailable = event => { if (event.data?.size) recordingChunks.push(event.data); };
+      recording.start(1000); activeCall.recording = true;
+      const indicator = document.getElementById('quadCallRecording'); if (indicator) indicator.style.display = '';
+      const button = document.getElementById('quadRecord'); if (button) { button.disabled = true; button.innerHTML = `🔴<br>${zh() ? '记录中' : 'Recording'}`; }
+    } catch (error) { alert(error.message || error); }
+  }
+
+  async function stopAiRecord() {
+    if (!recording) return '';
+    const current = recording; recording = null;
+    return new Promise(resolve => {
+      current.onstop = () => {
+        const blob = new Blob(recordingChunks, { type:(current.mimeType || 'audio/webm').split(';')[0] });
+        const reader = new FileReader(); reader.onload = () => resolve(String(reader.result || '')); reader.onerror = () => resolve(''); reader.readAsDataURL(blob);
+        recordingContext?.close?.(); recordingContext = null; recordingDestination = null; recordingSources.clear(); recordingChunks = [];
+      };
+      current.stop();
+    });
+  }
+
+  async function transcribeAndSummarize(callId, dataUrl) {
+    const notes = document.getElementById('quadCallNotes'); if (notes) notes.placeholder = zh() ? 'AI 正在转写通话，请稍候…' : 'AI is transcribing the call…';
+    try {
+      const transcript = await request('/api/ai-boss/transcribe', { method:'POST', body:JSON.stringify({ dataUrl, language:zh() ? 'zh' : 'en' }) });
+      if (notes) notes.value = transcript.text || '';
+      const result = await request(`/api/voice-calls/${encodeURIComponent(callId)}/summary`, { method:'POST', body:JSON.stringify({ notes:transcript.text, createTask:true }) });
+      if (result.data) replaceStore(result.data); close(); alert(result.task ? (zh() ? 'AI 通话记录和督办任务已生成' : 'AI notes and task created') : (zh() ? 'AI 通话记录已生成' : 'AI notes created'));
+    } catch (error) { if (notes) notes.placeholder = zh() ? '自动转写失败，可在这里补充通话要点…' : 'Transcription failed; enter notes…'; alert(error.message || error); }
   }
 
   function finishLocal(clear = true) {
     clearInterval(timer); timer = null; stopRinging(); clearTimeout(ringTimeout); ringTimeout = null; callStartedAt = 0; if (room) { const old = room; room = null; old.disconnect().catch?.(() => {}); }
-    if (clear) activeCall = null; ensureLayer().innerHTML = '';
+    if (clear) activeCall = null; closePicker(); ensureLayer().innerHTML = '';
   }
 
   async function toggleMute() {
@@ -228,7 +309,7 @@
     } catch (error) { alert(error.message || error); }
   }
 
-  function close() { incomingCallId = ''; activeCall = null; ensureLayer().innerHTML = ''; }
+  function close() { incomingCallId = ''; activeCall = null; closePicker(); ensureLayer().innerHTML = ''; }
 
   async function poll() {
     if (polling || !me()?.id) return; polling = true;
@@ -236,7 +317,7 @@
       const result = await request('/api/voice-calls');
       if (Array.isArray(result.calls)) store().voiceCalls = result.calls;
       const call = activeForMe();
-      if (call?.status === 'ringing' && call.callerUserId !== me()?.id) renderIncoming(call);
+      if (waitingForMe(call)) renderIncoming(call);
       if (activeCall && ['declined', 'ended', 'missed'].includes(calls().find(item => item.id === activeCall.id)?.status)) finishLocal();
     } catch {} finally { polling = false; }
   }
@@ -248,7 +329,8 @@
     const list = calls();
     const index = list.findIndex(item => item.id === call.id);
     if (index >= 0) list[index] = call; else list.push(call);
-    if (call.status === 'ringing' && call.callerUserId !== me()?.id && (call.participantUserIds || []).includes(me()?.id)) renderIncoming(call);
+    if (waitingForMe(call)) renderIncoming(call);
+    if (activeCall?.id === call.id && call.recording) { const indicator = document.getElementById('quadCallRecording'); if (indicator) indicator.style.display = ''; }
     if (activeCall?.id === call.id && ['declined', 'ended', 'missed'].includes(call.status)) finishLocal();
   }
 
@@ -256,7 +338,7 @@
     if ('Notification' in window && Notification.permission === 'default') await Notification.requestPermission();
   }
 
-  window.QuadCalls = { start, accept, decline, end, toggleMute, summarize, showSummary, close, poll, enableNotifications, pickParticipants, confirmParticipants, restoreCall,
+  window.QuadCalls = { start, accept, decline, end, toggleMute, startAiRecord, summarize, showSummary, close, poll, enableNotifications, pickParticipants, confirmParticipants, restoreCall, closePicker,
     startDirect: userId => start(userId),
     startGroup: () => pickParticipants(false) };
   window.addEventListener('quad-voice-call', receiveVoiceEvent);

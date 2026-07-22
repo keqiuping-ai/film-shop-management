@@ -1279,7 +1279,7 @@ function mobileSnapshot(db, user) {
 }
 
 function dataUrlAudio(value) {
-  const match = String(value || '').match(/^data:([^;,]+);base64,([A-Za-z0-9+/=]+)$/);
+  const match = String(value || '').match(/^data:([^;,]+)(?:;[^,]*)?;base64,([A-Za-z0-9+/=]+)$/);
   if (!match) return null;
   const buffer = Buffer.from(match[2], 'base64');
   if (!buffer.length || buffer.length > 12 * 1024 * 1024) return null;
@@ -4405,7 +4405,8 @@ async function api(req, res) {
         id: id(), roomName: `quad-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`,
         callerUserId: user.id, callerName: user.name || user.email,
         participantUserIds, participantNames: participantUserIds.map(value => db.users.find(row => row.id === value)?.name || '').filter(Boolean),
-        status: 'ringing', createdAt: now, answeredAt: '', endedAt: '', endedByUserId: '',
+        participantStatuses: Object.fromEntries(participantUserIds.map(userId => [userId, 'ringing'])),
+        status: 'ringing', createdAt: now, answeredAt: '', endedAt: '', endedByUserId: '', recording: false,
         declinedByUserIds: [], durationSeconds: 0, summary: '', summaryProvider: '', taskId: ''
       };
       db.voiceCalls.push(call);
@@ -4433,9 +4434,14 @@ async function api(req, res) {
       const body = await readBody(req); const action = String(body.action || ''); const now = new Date().toISOString();
       if (action === 'accept') {
         if (!(call.participantUserIds || []).includes(user.id)) return send(res, 403, { error: '只有被叫员工可以接听' });
-        if (call.status !== 'ringing') return send(res, 409, { error: '通话已被处理' });
-        call.status = 'active'; call.answeredAt = now; call.answeredByUserId = user.id;
+        if (!['ringing', 'active'].includes(call.status)) return send(res, 409, { error: '通话已被处理' });
+        call.participantStatuses = { ...(call.participantStatuses || {}) };
+        if (call.participantStatuses[user.id] === 'declined') return send(res, 409, { error: '你已经拒绝了这次通话' });
+        call.participantStatuses[user.id] = 'joined';
+        call.status = 'active';
+        if (!call.answeredAt) { call.answeredAt = now; call.answeredByUserId = user.id; }
       } else if (action === 'decline') {
+        call.participantStatuses = { ...(call.participantStatuses || {}), [user.id]: 'declined' };
         call.declinedByUserIds = [...new Set([...(call.declinedByUserIds || []), user.id])];
         if (call.declinedByUserIds.length >= (call.participantUserIds || []).length) { call.status = 'declined'; call.endedAt = now; }
       } else if (action === 'end') {
@@ -4448,7 +4454,14 @@ async function api(req, res) {
           .filter(userId => userId !== call.callerUserId && (db.users || []).some(row => row.id === userId && row.active !== false));
         call.participantUserIds = [...new Set([...(call.participantUserIds || []), ...additions])];
         call.participantNames = call.participantUserIds.map(value => db.users.find(row => row.id === value)?.name || '').filter(Boolean);
+        call.participantStatuses = { ...(call.participantStatuses || {}) };
+        additions.forEach(userId => { call.participantStatuses[userId] = 'ringing'; });
         call.declinedByUserIds = (call.declinedByUserIds || []).filter(value => !additions.includes(value));
+      } else if (action === 'recording') {
+        if (call.callerUserId !== user.id) return send(res, 403, { error: '只有发起人可以开启 AI 通话记录' });
+        if (call.status !== 'active') return send(res, 409, { error: '通话接通后才能开启 AI 记录' });
+        call.recording = Boolean(body.enabled);
+        call.recordingStartedAt = call.recording ? now : (call.recordingStartedAt || '');
       } else return send(res, 400, { error: '不支持的通话操作' });
       audit(db, user, `voice-call-${action}`, { collection: 'voiceCalls', recordId: call.id, recordLabel: call.callerName, detail: `实时语音通话 ${action}` });
       notifyDataChanged(`voice-call-${action}`, { call }, [call.callerUserId, ...(call.participantUserIds || [])]);
