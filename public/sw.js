@@ -1,4 +1,4 @@
-const CACHE_NAME = 'film-shop-v74-retail-wholesale-dashboard';
+const CACHE_NAME = 'film-shop-v75-auto-ai-call-recording';
 const ASSETS = [
     '/',
     '/mobile.html',
