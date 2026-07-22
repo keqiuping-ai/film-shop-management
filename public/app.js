@@ -55,6 +55,7 @@ let syncInFlight = false;
 let eventSource = null;
 let realtimeConnected = false;
 let activeMessageUserId = '';
+let messageThreadResizeObserver = null;
 let activeProspectWorkspaceId = '';
 let prospectWorkspaceReadOnly = false;
 let prospectWorkspaceSyncTimer = null;
@@ -1590,7 +1591,7 @@ function openMessages(selectedUserId = '') {
   const firstUnread = unreadMessages()[0];
   activeMessageUserId = selectedUserId || activeMessageUserId || (firstUnread?.scope === 'group' ? GROUP_CHAT_ID : firstUnread?.fromUserId) || GROUP_CHAT_ID;
   const title = lang === 'zh' ? '站内留言' : 'Messages';
-  renderMessageModal(title);
+  renderMessageModal(title, { forceLatest:true });
   if (activeMessageUserId) markMessagesRead(activeMessageUserId);
 }
 
@@ -1599,19 +1600,49 @@ function internalMessageInputActive() {
   return internalMessageComposing || Boolean(input && document.activeElement === input);
 }
 
-function renderMessageModal(title = (lang === 'zh' ? '站内留言' : 'Messages')) {
+function renderMessageModal(title = (lang === 'zh' ? '站内留言' : 'Messages'), options = {}) {
   const users = messageUsers();
   if (!activeMessageUserId) activeMessageUserId = GROUP_CHAT_ID;
+  const previousThread = document.getElementById('messageThread');
+  const sameConversation = previousThread?.dataset.conversationId === activeMessageUserId;
+  const previousScrollTop = sameConversation ? previousThread.scrollTop : 0;
+  const previousDistanceFromBottom = sameConversation
+    ? previousThread.scrollHeight - previousThread.clientHeight - previousThread.scrollTop
+    : 0;
+  const shouldFollowLatest = Boolean(options.forceLatest || !sameConversation || previousDistanceFromBottom < 100);
+  messageThreadResizeObserver?.disconnect();
+  messageThreadResizeObserver = null;
   document.getElementById('modalTitle').textContent = title;
   document.getElementById('modalBody').innerHTML = messageModalHtml(users);
   document.getElementById('modalSave').textContent = lang === 'zh' ? '关闭' : 'Close';
   document.getElementById('modalSave').onclick = closeModal;
   document.getElementById('modal').classList.add('open', 'message-modal-open');
   document.body.classList.add('modal-lock');
-  setTimeout(() => {
+  const restoreMessagePosition = () => {
     const list = document.getElementById('messageThread');
-    if (list) list.scrollTop = list.scrollHeight;
-  }, 0);
+    if (!list || list.dataset.conversationId !== activeMessageUserId) return;
+    list.scrollTop = list.dataset.followLatest === 'true' ? list.scrollHeight : previousScrollTop;
+  };
+  const list = document.getElementById('messageThread');
+  if (list) {
+    list.dataset.conversationId = activeMessageUserId;
+    list.dataset.followLatest = shouldFollowLatest ? 'true' : 'false';
+    list.addEventListener('scroll', () => {
+      const distance = list.scrollHeight - list.clientHeight - list.scrollTop;
+      list.dataset.followLatest = distance < 100 ? 'true' : 'false';
+    }, { passive:true });
+    if (window.ResizeObserver) {
+      messageThreadResizeObserver = new ResizeObserver(() => {
+        if (list.dataset.followLatest === 'true') list.scrollTop = list.scrollHeight;
+      });
+      messageThreadResizeObserver.observe(list);
+      [...list.children].forEach(child => messageThreadResizeObserver.observe(child));
+    }
+  }
+  requestAnimationFrame(() => {
+    restoreMessagePosition();
+    requestAnimationFrame(restoreMessagePosition);
+  });
 }
 
 function messageModalHtml(users) {
@@ -1762,7 +1793,7 @@ async function deleteMessage(messageId) {
 
 async function selectMessageUser(id) {
   activeMessageUserId = id;
-  renderMessageModal();
+  renderMessageModal(undefined, { forceLatest:true });
   await markMessagesRead(id);
 }
 
@@ -1808,7 +1839,7 @@ async function postInternalMessage({ text = '', attachment = null, restoreTextOn
     readByUserIds: recipientId === GROUP_CHAT_ID ? [user?.id] : []
   };
   state.messages = [...(state.messages || []), pendingMessage];
-  renderMessageModal();
+  renderMessageModal(undefined, { forceLatest:true });
   try {
     state = await api('/api/messages', {
       method: 'POST',
@@ -1817,7 +1848,7 @@ async function postInternalMessage({ text = '', attachment = null, restoreTextOn
         : { toUserId: recipientId, text: String(text || '').trim(), attachment })
     });
     broadcastDataChange();
-    if (!internalMessageInputActive()) renderMessageModal();
+    if (!internalMessageInputActive()) renderMessageModal(undefined, { forceLatest:true });
     updateMessageBadge();
   } catch (err) {
     state.messages = (state.messages || []).filter(message => message.id !== pendingId);
@@ -7870,6 +7901,8 @@ function openModal(title, html, onSave) {
 function closeModal() {
   closeReplyTemplateVideoPreview();
   if (messageRecorder && messageRecorder.state === 'recording') messageRecorder.stop();
+  messageThreadResizeObserver?.disconnect();
+  messageThreadResizeObserver = null;
   document.getElementById('modal').classList.remove('open', 'message-modal-open', 'confirmation-modal-open', 'personal-note-modal-open', 'warranty-modal-open');
   document.getElementById('modal').classList.remove('reply-library-open');
   document.body.classList.remove('modal-lock');

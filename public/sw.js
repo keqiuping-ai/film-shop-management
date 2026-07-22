@@ -1,4 +1,4 @@
-const CACHE_NAME = 'film-shop-v77-future-supervision-due-dates';
+const CACHE_NAME = 'film-shop-v78-stable-message-scroll';
 const ASSETS = [
     '/',
     '/mobile.html',
