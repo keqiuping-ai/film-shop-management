@@ -2346,6 +2346,7 @@ async function reconcileRecentTwilioInboundMessages() {
       timestamp: Number.isNaN(parsedTimestamp.getTime()) ? String(rawTimestamp) : parsedTimestamp.toISOString(),
       provider: 'twilio', providerSid: String(message.sid || ''), status: String(message.status || 'received')
     });
+    reactivateInvalidConversationOnInbound(match.item, Number.isNaN(parsedTimestamp.getTime()) ? String(rawTimestamp) : parsedTimestamp.toISOString());
     added += 1;
   }
   if (!added) return;
@@ -2353,6 +2354,19 @@ async function reconcileRecentTwilioInboundMessages() {
   writeDb(db);
   notifyDataChanged('reconcile-customer-sms', String(added));
   console.log(`Twilio inbound messages reconciled: ${added}.`);
+}
+
+function reactivateInvalidConversationOnInbound(item, receivedAt = new Date().toISOString()) {
+  if (String(item?.status || '') !== '无效') return false;
+  item.reactivationHistory = [...(Array.isArray(item.reactivationHistory) ? item.reactivationHistory : []), {
+    fromStatus: '无效', toStatus: '新意向', channel: 'sms', receivedAt
+  }];
+  item.status = '新意向';
+  item.intentLevel = '普通';
+  item.reactivatedAt = receivedAt;
+  item.reactivatedBy = '客户短信回复';
+  item.updatedAt = receivedAt;
+  return true;
 }
 
 function startTwilioReconciliationWorker() {
@@ -3531,24 +3545,29 @@ async function api(req, res) {
         return null;
       }) : null;
       const duplicate = (match.item.conversationMessages || []).some(message => message.providerSid === messageSid && messageSid);
-      if (!duplicate) appendSmsMessage(match.item, {
-        id: `twilio-${messageSid || id()}`,
-        speaker: 'customer',
-        speakerName: match.item.customer || from,
-        direction: 'inbound',
-        channel: 'sms',
-        text: (body || (mediaCount > 0 && !attachment ? '收到附件，但附件下载失败' : '')).slice(0, 4000),
-        attachment,
-        timestamp: String(params.DateSent || new Date().toISOString()),
-        provider: 'twilio',
-        providerSid: messageSid,
-        status: String(params.SmsStatus || 'received')
-      });
+      let reactivated = false;
+      if (!duplicate) {
+        const receivedAt = String(params.DateSent || new Date().toISOString());
+        appendSmsMessage(match.item, {
+          id: `twilio-${messageSid || id()}`,
+          speaker: 'customer',
+          speakerName: match.item.customer || from,
+          direction: 'inbound',
+          channel: 'sms',
+          text: (body || (mediaCount > 0 && !attachment ? '收到附件，但附件下载失败' : '')).slice(0, 4000),
+          attachment,
+          timestamp: receivedAt,
+          provider: 'twilio',
+          providerSid: messageSid,
+          status: String(params.SmsStatus || 'received')
+        });
+        reactivated = reactivateInvalidConversationOnInbound(match.item, receivedAt);
+      }
       audit(db, { id: 'twilio-webhook', name: 'Twilio' }, 'receive-customer-sms', {
         collection: match.collection,
         recordId: match.item.id,
         recordLabel: match.item.customer || from,
-        detail: `收到 ${from} 的${attachment ? '图片/附件' : '短信'}`
+        detail: `收到 ${from} 的${attachment ? '图片/附件' : '短信'}${reactivated ? '；无效客户已恢复为新意向并进入待回复' : ''}`
       });
       writeDb(db);
       notifyDataChanged('receive-customer-sms', match.item.id);
