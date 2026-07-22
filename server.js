@@ -2927,6 +2927,8 @@ function safeCustomerServiceTask(row) {
 }
 
 function openEventStream(req, res, user) {
+  res.socket?.setNoDelay?.(true);
+  res.socket?.setKeepAlive?.(true, 15000);
   res.writeHead(200, {
     'Content-Type': 'text/event-stream; charset=utf-8',
     'Cache-Control': 'no-cache, no-transform',
@@ -2935,7 +2937,7 @@ function openEventStream(req, res, user) {
   });
   const client = { res, userId: user.id };
   eventClients.add(client);
-  res.write(`event: ready\ndata: ${JSON.stringify({ at: new Date().toISOString() })}\n\n`);
+  res.write(`retry: 500\nevent: ready\ndata: ${JSON.stringify({ at: new Date().toISOString() })}\n\n`);
   const heartbeat = setInterval(() => {
     try {
       res.write(`event: ping\ndata: ${Date.now()}\n\n`);

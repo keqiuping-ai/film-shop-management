@@ -400,7 +400,7 @@ function startRealtimeSync() {
     realtimeRetryTimer = setTimeout(() => {
       realtimeRetryTimer = null;
       if (token && !document.hidden) startRealtimeSync();
-    }, 15000);
+    }, 1000);
   };
 }
 

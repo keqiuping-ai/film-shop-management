@@ -415,7 +415,7 @@
     if (pollTimer) return;
     pollTimer = setInterval(() => {
       if (!document.hidden) poll();
-    }, 750);
+    }, 250);
   }
 
   function receiveVoiceEvent(event) {
