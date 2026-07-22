@@ -5,6 +5,7 @@ const crypto = require('crypto');
 const zlib = require('zlib');
 const { execFile } = require('child_process');
 const { promisify } = require('util');
+const { AccessToken } = require('livekit-server-sdk');
 const execFileAsync = promisify(execFile);
 
 const ROOT = __dirname;
@@ -287,6 +288,7 @@ function seedDb() {
     personalNotes: [],
     aiBossTasks: [],
     aiBossProfiles: [],
+    voiceCalls: [],
     reimbursements: [],
     portalCustomers: [],
     warranties: [],
@@ -344,6 +346,7 @@ function readDb() {
   if (!Array.isArray(db.personalNotes)) db.personalNotes = [];
   if (!Array.isArray(db.aiBossTasks)) db.aiBossTasks = [];
   if (!Array.isArray(db.aiBossProfiles)) db.aiBossProfiles = [];
+  if (!Array.isArray(db.voiceCalls)) db.voiceCalls = [];
   if (!Array.isArray(db.reimbursements)) db.reimbursements = [];
   if (!Array.isArray(db.portalCustomers)) db.portalCustomers = [];
   if (!Array.isArray(db.warranties)) db.warranties = [];
@@ -1077,6 +1080,7 @@ function sanitizeDbForUser(db, user) {
     users: p.usersManage || p.schedulesView || p.reportsView ? db.users.map(safeUser) : [safeUser(user)],
     messageUsers: db.users.filter(item => item.active !== false).map(safeUser),
     messages: messagesForUser(db, user),
+    voiceCalls: voiceCallsForUser(db, user),
     personalNotes: (db.personalNotes || []).filter(item => personalNoteVisibleTo(item, user)).map(item => personalNoteForUser(db, item, user)),
     aiBossTasks: aiBossTasksForUser(db, user),
     aiBossProfiles: (db.aiBossProfiles || []).map(profile => ['owner', 'manager'].includes(user.role)
@@ -1113,6 +1117,14 @@ function messagesForUser(db, user) {
     .filter(message => message.scope === 'group' || message.fromUserId === userId || message.toUserId === userId)
     .sort((a, b) => String(a.createdAt || '').localeCompare(String(b.createdAt || '')))
     .slice(-500);
+}
+
+function voiceCallsForUser(db, user) {
+  const userId = user?.id || '';
+  return (db.voiceCalls || [])
+    .filter(call => call.callerUserId === userId || (call.participantUserIds || []).includes(userId))
+    .sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')))
+    .slice(0, 100);
 }
 
 function aiBossTasksForUser(db, user) {
@@ -1216,6 +1228,7 @@ function mobileSnapshot(db, user) {
     user: safeUser(user),
     users: db.users.filter(item => item.active !== false).map(safeUser),
     messages: messagesForUser(db, user),
+    voiceCalls: voiceCallsForUser(db, user),
     unread: unreadMessageCount(db, user),
     canApproveLeave: approver,
     canCreateReimbursements: Boolean(permissions.reimbursementsCreate),
@@ -4342,6 +4355,93 @@ async function api(req, res) {
       writeDb(db);
       notifyDataChanged('send-message', message.id);
       return send(res, 200, sanitizeDbForUser(db, user));
+    }
+  }
+
+  const voiceCallMatch = url.pathname.match(/^\/api\/voice-calls(?:\/([^/]+))?(?:\/(token|summary))?$/);
+  if (voiceCallMatch) {
+    const callId = String(voiceCallMatch[1] || '');
+    const operation = String(voiceCallMatch[2] || '');
+    const configured = Boolean(process.env.LIVEKIT_URL && process.env.LIVEKIT_API_KEY && process.env.LIVEKIT_API_SECRET);
+    if (req.method === 'GET' && !callId) {
+      return send(res, 200, { configured, calls: voiceCallsForUser(db, user) });
+    }
+    if (req.method === 'POST' && !callId) {
+      if (!configured) return send(res, 503, { error: '实时通话云服务尚未配置' });
+      const body = await readBody(req);
+      const requested = [...new Set((Array.isArray(body.participantUserIds) ? body.participantUserIds : [body.toUserId]).map(String).filter(Boolean))];
+      const participantUserIds = requested.filter(userId => userId !== user.id && (db.users || []).some(row => row.id === userId && row.active !== false));
+      if (!participantUserIds.length) return send(res, 400, { error: '请选择要呼叫的员工' });
+      const now = new Date().toISOString();
+      const call = {
+        id: id(), roomName: `quad-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`,
+        callerUserId: user.id, callerName: user.name || user.email,
+        participantUserIds, participantNames: participantUserIds.map(value => db.users.find(row => row.id === value)?.name || '').filter(Boolean),
+        status: 'ringing', createdAt: now, answeredAt: '', endedAt: '', endedByUserId: '',
+        declinedByUserIds: [], durationSeconds: 0, summary: '', summaryProvider: '', taskId: ''
+      };
+      db.voiceCalls.push(call);
+      db.voiceCalls = db.voiceCalls.slice(-1000);
+      audit(db, user, 'start-voice-call', { collection: 'voiceCalls', recordId: call.id, recordLabel: call.callerName, detail: `发起实时语音通话给 ${call.participantNames.join('、')}` });
+      writeDb(db); notifyDataChanged('voice-call-started', call.id);
+      return send(res, 201, { call, data: sanitizeDbForUser(db, user) });
+    }
+    const call = (db.voiceCalls || []).find(row => row.id === callId);
+    if (!call) return send(res, 404, { error: '通话不存在或已清理' });
+    const involved = call.callerUserId === user.id || (call.participantUserIds || []).includes(user.id);
+    if (!involved) return send(res, 403, { error: '无权访问这次通话' });
+    if (req.method === 'POST' && operation === 'token') {
+      if (!configured) return send(res, 503, { error: '实时通话云服务尚未配置' });
+      if (['declined', 'ended', 'missed'].includes(call.status)) return send(res, 409, { error: '这次通话已经结束' });
+      const token = new AccessToken(process.env.LIVEKIT_API_KEY, process.env.LIVEKIT_API_SECRET, {
+        identity: user.id, name: user.name || user.email, ttl: '2h',
+        metadata: JSON.stringify({ callId: call.id, role: user.role || '' })
+      });
+      token.addGrant({ roomJoin: true, room: call.roomName, canPublish: true, canSubscribe: true });
+      return send(res, 200, { url: process.env.LIVEKIT_URL, token: await token.toJwt(), call });
+    }
+    if (req.method === 'PUT' && !operation) {
+      const body = await readBody(req); const action = String(body.action || ''); const now = new Date().toISOString();
+      if (action === 'accept') {
+        if (!(call.participantUserIds || []).includes(user.id)) return send(res, 403, { error: '只有被叫员工可以接听' });
+        if (call.status !== 'ringing') return send(res, 409, { error: '通话已被处理' });
+        call.status = 'active'; call.answeredAt = now; call.answeredByUserId = user.id;
+      } else if (action === 'decline') {
+        call.declinedByUserIds = [...new Set([...(call.declinedByUserIds || []), user.id])];
+        if (call.declinedByUserIds.length >= (call.participantUserIds || []).length) { call.status = 'declined'; call.endedAt = now; }
+      } else if (action === 'end') {
+        if (!['ringing', 'active'].includes(call.status)) return send(res, 409, { error: '通话已经结束' });
+        call.status = call.status === 'ringing' ? 'missed' : 'ended'; call.endedAt = now; call.endedByUserId = user.id;
+        call.durationSeconds = call.answeredAt ? Math.max(0, Math.round((Date.parse(now) - Date.parse(call.answeredAt)) / 1000)) : 0;
+      } else return send(res, 400, { error: '不支持的通话操作' });
+      audit(db, user, `voice-call-${action}`, { collection: 'voiceCalls', recordId: call.id, recordLabel: call.callerName, detail: `实时语音通话 ${action}` });
+      writeDb(db); notifyDataChanged(`voice-call-${action}`, call.id);
+      return send(res, 200, { call, data: sanitizeDbForUser(db, user) });
+    }
+    if (req.method === 'POST' && operation === 'summary') {
+      if (!['ended', 'active'].includes(call.status)) return send(res, 409, { error: '请在通话接通或结束后整理内容' });
+      const body = await readBody(req); const notes = String(body.notes || '').trim().slice(0, 8000);
+      if (!notes) return send(res, 400, { error: '请先输入本次通话的要点；系统不会在未告知双方的情况下录音' });
+      try {
+        const result = await createAiBossDraft(db, `这是员工内部通话记录。请整理通话结论，并生成需要督办的任务：\n${notes}`, String(body.provider || ''));
+        const draft = result.draft || {};
+        call.summary = String(draft.description || notes).slice(0, 4000); call.summaryProvider = result.provider; call.summaryAt = new Date().toISOString();
+        let task = null;
+        if (body.createTask !== false) {
+          const assignee = (db.users || []).find(row => row.id === String(draft.assigneeUserId || body.assigneeUserId || '') && row.active !== false)
+            || (db.users || []).find(row => row.id === call.answeredByUserId && row.active !== false)
+            || user;
+          const now = new Date().toISOString();
+          task = { id: id(), title: String(draft.title || '通话后续任务').slice(0, 180), description: call.summary, sourceText: notes,
+            createdByUserId: user.id, createdByName: user.name || user.email, assigneeUserId: assignee.id, assigneeName: assignee.name || assignee.email,
+            helperUserIds: [], helperNames: [], dueAt: String(draft.dueAt || ''), priority: ['低','普通','高','紧急'].includes(draft.priority) ? draft.priority : '普通',
+            difficulty: Math.min(10, Math.max(1, Number(draft.difficulty || 3))), acceptanceCriteria: String(draft.acceptanceCriteria || '').slice(0, 2000),
+            aiReason: String(draft.reason || '').slice(0, 1000), status: 'pending', progressUpdates: [], createdAt: now, updatedAt: now, acceptedAt: '', completedAt: '', verifiedAt: '', callId: call.id };
+          db.aiBossTasks.push(task); call.taskId = task.id;
+        }
+        writeDb(db); notifyDataChanged('voice-call-summary', call.id);
+        return send(res, 200, { call, task, data: sanitizeDbForUser(db, user) });
+      } catch (error) { return send(res, 502, { error: `AI 整理失败：${String(error.message || error).slice(0, 220)}` }); }
     }
   }
 

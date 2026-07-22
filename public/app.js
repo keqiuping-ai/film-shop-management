@@ -1631,7 +1631,7 @@ function messageModalHtml(users) {
       }).join('')}
     </div>
     <div class="message-chat">
-      <div class="message-chat-head">${escapeHtml(activeName)}</div>
+      <div class="message-chat-head"><span>${escapeHtml(activeName)}</span><button class="quad-call-head-button" type="button" onclick="QuadCalls.enableNotifications(); ${isGroup ? 'QuadCalls.startGroup()' : `QuadCalls.startDirect('${activeUser?.id || ''}')`}">📞 ${lang === 'zh' ? '语音通话' : 'Voice call'}</button></div>
       <div class="message-thread" id="messageThread">
         ${thread.length ? thread.map(messageBubbleHtml).join('') : `<div class="note">${lang === 'zh' ? '还没有留言。' : 'No messages yet.'}</div>`}
       </div>
@@ -1654,6 +1654,9 @@ function messageModalHtml(users) {
     </div>
   </div>`;
 }
+
+window.getQuadCallContext = () => ({ user, state });
+window.setQuadCallState = value => { state = value; };
 
 function conversationMessages(otherUserId) {
   if (otherUserId === GROUP_CHAT_ID) {

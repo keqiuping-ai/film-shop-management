@@ -4,7 +4,9 @@
   "private": true,
   "description": "联网可安装版美国贴膜店管理系统",
   "dependencies": {
-    "exceljs": "^4.4.0"
+    "exceljs": "^4.4.0",
+    "livekit-client": "^2.20.2",
+    "livekit-server-sdk": "^2.17.0"
   },
   "scripts": {
     "start": "node server.js"

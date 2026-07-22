@@ -621,6 +621,7 @@ function chatHtml() {
         return `<button class="person ${item.id === activeUserId ? 'active' : ''}" onclick="selectChatUser('${item.id}')"><span class="mobile-avatar-badge-wrap">${avatarHtml(item)}${mentioned ? `<i class="mobile-at-badge">${item.id === GROUP_CHAT_ID ? '@我' : '@'}</i>` : ''}</span><span>${escapeHtml(item.name || item.email)}${!mentioned && unreadFrom(item.id) ? `<b>${unreadFrom(item.id)}</b>` : ''}</span></button>`;
       }).join('')}
     </div>
+    <div class="mobile-chat-head"><strong>${escapeHtml(active.name || active.email)}</strong><button class="quad-call-head-button" type="button" onclick="QuadCalls.enableNotifications(); ${active.id === GROUP_CHAT_ID ? 'QuadCalls.startGroup()' : `QuadCalls.startDirect('${active.id}')`}">📞 ${lang === 'zh' ? '语音通话' : 'Voice call'}</button></div>
     <div class="thread" id="thread">
       ${thread.length ? thread.map(messageHtml).join('') : `<p class="hint">${t('noMessages')}</p>`}
     </div>
@@ -639,6 +640,9 @@ function chatHtml() {
     </div>
   </div>`;
 }
+
+window.getQuadCallContext = () => ({ user, state });
+window.setQuadCallState = value => { state = value; };
 
 async function selectChatUser(id) {
   saveActiveChatDraft();
