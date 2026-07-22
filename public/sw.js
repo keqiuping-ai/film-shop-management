@@ -1,4 +1,4 @@
-const CACHE_NAME = 'film-shop-v71-call-leave-minimize';
+const CACHE_NAME = 'film-shop-v72-mobile-call-controls';
 const ASSETS = [
     '/',
     '/mobile.html',
