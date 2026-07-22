@@ -1959,11 +1959,31 @@ function importCustomerRecords(db, user, body, collection = 'prospects') {
         return;
       }
       const before = { ...duplicate };
-      const next = mergeProspect(duplicate, {
+      const waitingForCustomer = String(duplicate.status || '') === '暂时无需回复';
+      const hasNewCustomerMessage = (candidate.conversationMessages || []).some(message =>
+        customerServiceMessageRole(message) === 'customer'
+      );
+      const incoming = waitingForCustomer ? {
         ...candidate,
+        status: hasNewCustomerMessage ? '新意向' : '暂时无需回复',
+        intentLevel: duplicate.intentLevel || candidate.intentLevel,
+        ...(hasNewCustomerMessage ? {
+          reactivationHistory: [...(Array.isArray(duplicate.reactivationHistory) ? duplicate.reactivationHistory : []), {
+            fromStatus: '暂时无需回复', toStatus: '新意向', channel: String(candidate.source || '').toLowerCase() === 'yelp' ? 'yelp' : 'import', receivedAt: candidate.sourceUpdatedAt || candidate.importedAt
+          }],
+          reactivatedAt: candidate.sourceUpdatedAt || candidate.importedAt,
+          reactivatedBy: '等待中的客户发来新消息'
+        } : {})
+      } : candidate;
+      const next = mergeProspect(duplicate, {
+        ...incoming,
         updatedBy: user.name || user.email,
         updatedByUserId: user.id
       });
+      if (waitingForCustomer) {
+        next.intentLevel = duplicate.intentLevel || candidate.intentLevel;
+        next.intentReason = duplicate.intentReason || next.intentReason;
+      }
       const idx = db[collection].findIndex(item => item.id === duplicate.id);
       db[collection][idx] = next;
       result.updated += 1;
@@ -2405,7 +2425,7 @@ async function reconcileRecentTwilioInboundMessages() {
       timestamp: Number.isNaN(parsedTimestamp.getTime()) ? String(rawTimestamp) : parsedTimestamp.toISOString(),
       provider: 'twilio', providerSid: String(message.sid || ''), status: String(message.status || 'received')
     });
-    reactivateInvalidConversationOnInbound(match.item, Number.isNaN(parsedTimestamp.getTime()) ? String(rawTimestamp) : parsedTimestamp.toISOString());
+    reactivateConversationOnInbound(match.item, Number.isNaN(parsedTimestamp.getTime()) ? String(rawTimestamp) : parsedTimestamp.toISOString());
     added += 1;
   }
   if (!added) return;
@@ -2415,17 +2435,18 @@ async function reconcileRecentTwilioInboundMessages() {
   console.log(`Twilio inbound messages reconciled: ${added}.`);
 }
 
-function reactivateInvalidConversationOnInbound(item, receivedAt = new Date().toISOString()) {
-  if (String(item?.status || '') !== '无效') return false;
+function reactivateConversationOnInbound(item, receivedAt = new Date().toISOString()) {
+  const fromStatus = String(item?.status || '');
+  if (!['无效', '暂时无需回复'].includes(fromStatus)) return '';
   item.reactivationHistory = [...(Array.isArray(item.reactivationHistory) ? item.reactivationHistory : []), {
-    fromStatus: '无效', toStatus: '新意向', channel: 'sms', receivedAt
+    fromStatus, toStatus: '新意向', channel: 'sms', receivedAt
   }];
   item.status = '新意向';
-  item.intentLevel = '普通';
+  if (fromStatus === '无效') item.intentLevel = '普通';
   item.reactivatedAt = receivedAt;
-  item.reactivatedBy = '客户短信回复';
+  item.reactivatedBy = fromStatus === '暂时无需回复' ? '等待中的客户发来新消息' : '无效客户短信回复';
   item.updatedAt = receivedAt;
-  return true;
+  return fromStatus;
 }
 
 function startTwilioReconciliationWorker() {
@@ -2813,7 +2834,7 @@ function customerServiceTaskRows(db, filter = 'active') {
     ...(db.customerConversations || []).filter(item => !item.promotedProspectId || !promotedIds.has(item.promotedProspectId)).map(item => ({ item, collection: 'customerConversations' })),
     ...(db.prospects || []).map(item => ({ item, collection: 'prospects' }))
   ];
-  const movedStatuses = new Set(['已预约', '已到店', '已转施工单', '无效']);
+  const movedStatuses = new Set(['已预约', '已到店', '已转施工单', '无效', '暂时无需回复']);
   const priority = { reply: 0, followup: 1, first: 2, future: 3 };
   if (filter === 'sent') {
     return rows
@@ -3620,13 +3641,13 @@ async function api(req, res) {
           providerSid: messageSid,
           status: String(params.SmsStatus || 'received')
         });
-        reactivated = reactivateInvalidConversationOnInbound(match.item, receivedAt);
+        reactivated = reactivateConversationOnInbound(match.item, receivedAt);
       }
       audit(db, { id: 'twilio-webhook', name: 'Twilio' }, 'receive-customer-sms', {
         collection: match.collection,
         recordId: match.item.id,
         recordLabel: match.item.customer || from,
-        detail: `收到 ${from} 的${attachment ? '图片/附件' : '短信'}${reactivated ? '；无效客户已恢复为新意向并进入待回复' : ''}`
+        detail: `收到 ${from} 的${attachment ? '图片/附件' : '短信'}${reactivated ? `；${reactivated}客户已恢复为新意向并进入待回复` : ''}`
       });
       writeDb(db);
       notifyDataChanged('receive-customer-sms', match.item.id);

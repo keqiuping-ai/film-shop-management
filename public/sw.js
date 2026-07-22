@@ -1,4 +1,4 @@
-const CACHE_NAME = 'film-shop-v72-mobile-call-controls';
+const CACHE_NAME = 'film-shop-v73-no-reply-needed';
 const ASSETS = [
     '/',
     '/mobile.html',
