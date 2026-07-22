@@ -30,6 +30,9 @@
   const activeForMe = () => calls().find(call => ['ringing', 'active'].includes(call.status) && call.participantStatuses?.[me()?.id] !== 'left' && (call.callerUserId === me()?.id || (call.participantUserIds || []).includes(me()?.id)));
   const waitingForMe = call => {
     if (!call || call.callerUserId === me()?.id || !(call.participantUserIds || []).includes(me()?.id)) return false;
+    // A participant can still have a stale `ringing` value after the call as a
+    // whole has ended. Never let a terminal call ring again on a later poll.
+    if (!['ringing', 'active'].includes(call.status)) return false;
     if ((declinedCallerUntil.get(call.callerUserId) || 0) > Date.now()) return false;
     const status = call.participantStatuses?.[me()?.id];
     return status ? ['ringing', 'invited'].includes(status) : call.status === 'ringing';
@@ -412,7 +415,7 @@
     if (pollTimer) return;
     pollTimer = setInterval(() => {
       if (!document.hidden) poll();
-    }, 2000);
+    }, 750);
   }
 
   function receiveVoiceEvent(event) {
@@ -423,6 +426,11 @@
     const index = list.findIndex(item => item.id === call.id);
     if (index >= 0) list[index] = call; else list.push(call);
     if (waitingForMe(call)) renderIncoming(call);
+    else if (incomingCallId === call.id) {
+      stopRinging();
+      incomingCallId = '';
+      if (!activeCall) ensureLayer().innerHTML = '';
+    }
     if (activeCall?.id === call.id) {
       activeCall = call;
       const name = document.getElementById('quadCallName'); if (name) name.textContent = nameFor(call);
@@ -446,6 +454,8 @@
     startGroup: () => pickParticipants(false) };
   window.addEventListener('quad-voice-call', receiveVoiceEvent);
   document.addEventListener('visibilitychange', () => { if (!document.hidden) poll(); });
+  window.addEventListener('focus', poll);
+  window.addEventListener('pageshow', poll);
   startPolling();
   setTimeout(poll, 1200);
 })();

@@ -4530,7 +4530,10 @@ async function api(req, res) {
       const cutoff = Date.now() - 45_000;
       (db.voiceCalls || []).forEach(call => {
         if (call.status === 'ringing' && Date.parse(call.createdAt || '') < cutoff) {
-          call.status = 'missed'; call.endedAt = new Date().toISOString(); expired = true;
+          call.status = 'missed'; call.endedAt = new Date().toISOString();
+          call.participantStatuses = Object.fromEntries(Object.entries(call.participantStatuses || {}).map(([userId, status]) =>
+            [userId, ['ringing', 'invited'].includes(status) ? 'missed' : status]));
+          expired = true;
         }
       });
       if (expired) { scheduleDbWrite(db); notifyDataChanged('voice-calls-expired', user.id); }
@@ -4601,10 +4604,28 @@ async function api(req, res) {
         if (!['ringing', 'active'].includes(call.status)) return send(res, 409, { error: '通话已经结束' });
         call.participantStatuses = { ...(call.participantStatuses || {}), [user.id]: 'left' };
         call.leftAtByUserId = { ...(call.leftAtByUserId || {}), [user.id]: now };
+        // If the caller clicked several times, ending the visible call must also
+        // cancel the still-ringing duplicates for the same recipients. Otherwise
+        // those older rows surface one by one after the caller has hung up.
+        if (user.id === call.callerUserId) {
+          const participantKey = [...(call.participantUserIds || [])].sort().join('|');
+          (db.voiceCalls || []).filter(item =>
+            item.id !== call.id
+            && item.status === 'ringing'
+            && item.callerUserId === call.callerUserId
+            && [...(item.participantUserIds || [])].sort().join('|') === participantKey
+          ).forEach(item => {
+            item.status = 'missed'; item.endedAt = now; item.endedByUserId = user.id;
+            item.participantStatuses = Object.fromEntries(Object.entries(item.participantStatuses || {}).map(([userId, status]) =>
+              [userId, ['ringing', 'invited'].includes(status) ? 'missed' : status]));
+          });
+        }
         const allUserIds = [call.callerUserId, ...(call.participantUserIds || [])];
         const remaining = allUserIds.filter(userId => !['left', 'declined'].includes(call.participantStatuses[userId] || (userId === call.callerUserId ? 'joined' : 'ringing')));
         if (call.status === 'ringing' || remaining.length <= 1) {
           call.status = call.status === 'ringing' ? 'missed' : 'ended'; call.endedAt = now; call.endedByUserId = user.id;
+          call.participantStatuses = Object.fromEntries(Object.entries(call.participantStatuses || {}).map(([userId, status]) =>
+            [userId, ['ringing', 'invited'].includes(status) ? 'missed' : status]));
           call.durationSeconds = call.answeredAt ? Math.max(0, Math.round((Date.parse(now) - Date.parse(call.answeredAt)) / 1000)) : 0;
         }
       } else if (action === 'invite') {

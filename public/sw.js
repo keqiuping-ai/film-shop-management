@@ -1,4 +1,4 @@
-const CACHE_NAME = 'film-shop-v86-group-repeated-calls';
+const CACHE_NAME = 'film-shop-v87-terminal-call-state';
 const ASSETS = [
     '/',
     '/mobile.html',
