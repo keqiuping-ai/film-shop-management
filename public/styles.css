@@ -1610,6 +1610,48 @@ body.modal-lock .prospect-workspace { pointer-events: none; }
   padding: 0 10px;
   font-size: 14px;
 }
+#internalMessagePendingImage {
+  grid-column: 1 / -1;
+}
+.message-pasted-image-preview {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr) 34px;
+  align-items: center;
+  gap: 10px;
+  max-width: 420px;
+  padding: 8px;
+  border: 1px solid #9fd7e2;
+  border-radius: 10px;
+  background: #eefbfe;
+}
+.message-pasted-image-preview img {
+  width: 64px;
+  height: 52px;
+  border-radius: 7px;
+  object-fit: cover;
+  background: white;
+}
+.message-pasted-image-preview strong,
+.message-pasted-image-preview small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.message-pasted-image-preview small {
+  margin-top: 3px;
+  color: var(--muted);
+}
+.message-pasted-image-remove {
+  width: 34px;
+  height: 34px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: white;
+  color: #b91c1c;
+  font-size: 22px;
+  cursor: pointer;
+}
 .message-compose textarea { font-size: 14px; }
 .message-file { font-size: 14px; }
 .message-tools .recording {

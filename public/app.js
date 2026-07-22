@@ -56,6 +56,7 @@ let eventSource = null;
 let realtimeConnected = false;
 let activeMessageUserId = '';
 let messageThreadResizeObserver = null;
+let internalMessagePendingImage = null;
 let activeProspectWorkspaceId = '';
 let prospectWorkspaceReadOnly = false;
 let prospectWorkspaceSyncTimer = null;
@@ -1589,10 +1590,12 @@ function updateMessageBadge() {
 function openMessages(selectedUserId = '') {
   const users = messageUsers();
   const firstUnread = unreadMessages()[0];
-  activeMessageUserId = selectedUserId || activeMessageUserId || (firstUnread?.scope === 'group' ? GROUP_CHAT_ID : firstUnread?.fromUserId) || GROUP_CHAT_ID;
+  const nextMessageUserId = selectedUserId || activeMessageUserId || (firstUnread?.scope === 'group' ? GROUP_CHAT_ID : firstUnread?.fromUserId) || GROUP_CHAT_ID;
+  if (activeMessageUserId && nextMessageUserId !== activeMessageUserId) clearInternalMessagePendingImage();
+  activeMessageUserId = nextMessageUserId;
   const title = lang === 'zh' ? '站内留言' : 'Messages';
   renderMessageModal(title, { forceLatest:true });
-  if (activeMessageUserId) markMessagesRead(activeMessageUserId);
+  if (activeMessageUserId) markMessagesRead(activeMessageUserId, { forceLatest:true });
 }
 
 function internalMessageInputActive() {
@@ -1688,14 +1691,69 @@ function messageModalHtml(users) {
           <input class="hidden" id="messageVideoInput" type="file" accept="video/*" onchange="sendMessageFile(this.files[0], 'video'); this.value='';" />
           <input class="hidden" id="messageFileInput" type="file" onchange="sendMessageFile(this.files[0], 'file'); this.value='';" />
         </div>
+        <div id="internalMessagePendingImage">${internalMessagePendingImageHtml()}</div>
         <textarea id="messageText" lang="zh-CN" autocomplete="off" autocorrect="on" spellcheck="true"
           oncompositionstart="internalMessageComposing=true"
           oncompositionend="internalMessageComposing=false"
-          placeholder="${lang === 'zh' ? '输入留言内容...' : 'Type a message...'}"></textarea>
+          onpaste="handleInternalMessagePaste(event)"
+          placeholder="${lang === 'zh' ? '输入留言内容，可直接粘贴照片...' : 'Type a message or paste an image...'}"></textarea>
         <button class="btn primary" onclick="sendInternalMessage()">${lang === 'zh' ? '发送' : 'Send'}</button>
       </div>
     </div>
   </div>`;
+}
+
+function internalMessagePendingImageHtml() {
+  if (!internalMessagePendingImage?.previewUrl) return '';
+  return `<div class="message-pasted-image-preview">
+    <img src="${escapeHtml(internalMessagePendingImage.previewUrl)}" alt="${escapeHtml(internalMessagePendingImage.file?.name || 'pasted image')}" />
+    <div><strong>${lang === 'zh' ? '待发送照片' : 'Image ready to send'}</strong><small>${escapeHtml(internalMessagePendingImage.file?.name || '')}</small></div>
+    <button type="button" class="message-pasted-image-remove" onclick="clearInternalMessagePendingImage()" title="${lang === 'zh' ? '移除照片' : 'Remove image'}">×</button>
+  </div>`;
+}
+
+function refreshInternalMessagePendingImage() {
+  const container = document.getElementById('internalMessagePendingImage');
+  if (container) container.innerHTML = internalMessagePendingImageHtml();
+}
+
+function clearInternalMessagePendingImage() {
+  if (internalMessagePendingImage?.previewUrl) URL.revokeObjectURL(internalMessagePendingImage.previewUrl);
+  internalMessagePendingImage = null;
+  refreshInternalMessagePendingImage();
+}
+
+async function handleInternalMessagePaste(event) {
+  const imageItem = Array.from(event.clipboardData?.items || [])
+    .find(item => item.kind === 'file' && String(item.type || '').startsWith('image/'));
+  if (!imageItem) return;
+  const pastedImage = imageItem.getAsFile();
+  if (!pastedImage) return;
+  event.preventDefault();
+  if (pastedImage.size > MAX_CLOUD_IMAGE_BYTES) {
+    alert(lang === 'zh' ? '粘贴的原图不能超过20MB。' : 'The pasted image must be 20MB or smaller.');
+    return;
+  }
+  try {
+    const extension = String(pastedImage.type || '').split('/')[1]?.replace('jpeg', 'jpg') || 'png';
+    const namedImage = new File([pastedImage], `pasted-image-${Date.now()}.${extension}`, {
+      type: pastedImage.type || 'image/png',
+      lastModified: Date.now()
+    });
+    const optimizedImage = await optimizeProspectImage(namedImage);
+    if (optimizedImage.size > MAX_CLOUD_IMAGE_BYTES) {
+      alert(lang === 'zh' ? '照片自动处理后仍超过20MB，请换一张照片。' : 'The processed image is still over 20MB.');
+      return;
+    }
+    if (internalMessagePendingImage?.previewUrl) URL.revokeObjectURL(internalMessagePendingImage.previewUrl);
+    internalMessagePendingImage = {
+      file: optimizedImage,
+      previewUrl: URL.createObjectURL(optimizedImage)
+    };
+    refreshInternalMessagePendingImage();
+  } catch (err) {
+    alert(err.message || (lang === 'zh' ? '无法读取粘贴的照片。' : 'Could not read the pasted image.'));
+  }
 }
 
 window.getQuadCallContext = () => ({ user, state });
@@ -1792,12 +1850,13 @@ async function deleteMessage(messageId) {
 }
 
 async function selectMessageUser(id) {
+  if (id !== activeMessageUserId) clearInternalMessagePendingImage();
   activeMessageUserId = id;
   renderMessageModal(undefined, { forceLatest:true });
-  await markMessagesRead(id);
+  await markMessagesRead(id, { forceLatest:true });
 }
 
-async function markMessagesRead(fromUserId) {
+async function markMessagesRead(fromUserId, options = {}) {
   if (!fromUserId) return;
   if (!unreadCountFromUser(fromUserId)) return;
   try {
@@ -1806,7 +1865,9 @@ async function markMessagesRead(fromUserId) {
       body: JSON.stringify(fromUserId === GROUP_CHAT_ID ? { groupId: 'all-staff' } : { fromUserId })
     });
     updateMessageBadge();
-    if (document.getElementById('modal')?.classList.contains('open') && !internalMessageInputActive()) renderMessageModal();
+    if (document.getElementById('modal')?.classList.contains('open') && !internalMessageInputActive()) {
+      renderMessageModal(undefined, { forceLatest:Boolean(options.forceLatest) });
+    }
   } catch (err) {
     console.warn(err);
   }
@@ -1815,13 +1876,35 @@ async function markMessagesRead(fromUserId) {
 async function sendInternalMessage() {
   const input = document.getElementById('messageText');
   const text = String(input?.value || '').trim();
-  if (!activeMessageUserId || !text) return;
+  const pendingImage = internalMessagePendingImage;
+  if (!activeMessageUserId || (!text && !pendingImage?.file)) return;
   input.value = '';
-  await postInternalMessage({ text, restoreTextOnError: true });
+  if (!pendingImage?.file) {
+    await postInternalMessage({ text, restoreTextOnError: true });
+    return;
+  }
+  try {
+    const uploaded = await uploadCloudMedia('/api/message-media/upload', pendingImage.file);
+    const sent = await postInternalMessage({
+      text,
+      restoreTextOnError: true,
+      attachment: {
+        kind: 'image',
+        name: uploaded.name || pendingImage.file.name || 'image',
+        type: uploaded.type || pendingImage.file.type || 'image/jpeg',
+        size: uploaded.size || pendingImage.file.size,
+        url: uploaded.url
+      }
+    });
+    if (sent) clearInternalMessagePendingImage();
+  } catch (err) {
+    if (input && !input.value) input.value = text;
+    alert(err.message || (lang === 'zh' ? '照片发送失败。' : 'Could not send the image.'));
+  }
 }
 
 async function postInternalMessage({ text = '', attachment = null, restoreTextOnError = false }) {
-  if (!activeMessageUserId || (!String(text || '').trim() && !attachment)) return;
+  if (!activeMessageUserId || (!String(text || '').trim() && !attachment)) return false;
   const recipientId = activeMessageUserId;
   const pendingId = `pending-${Date.now()}-${Math.random().toString(36).slice(2)}`;
   const pendingMessage = {
@@ -1850,6 +1933,7 @@ async function postInternalMessage({ text = '', attachment = null, restoreTextOn
     broadcastDataChange();
     if (!internalMessageInputActive()) renderMessageModal(undefined, { forceLatest:true });
     updateMessageBadge();
+    return true;
   } catch (err) {
     state.messages = (state.messages || []).filter(message => message.id !== pendingId);
     if (restoreTextOnError) {
@@ -1858,6 +1942,7 @@ async function postInternalMessage({ text = '', attachment = null, restoreTextOn
     }
     renderMessageModal();
     alert(err.message);
+    return false;
   }
 }
 

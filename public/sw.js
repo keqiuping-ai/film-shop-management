@@ -1,4 +1,4 @@
-const CACHE_NAME = 'film-shop-v78-stable-message-scroll';
+const CACHE_NAME = 'film-shop-v79-paste-message-images';
 const ASSETS = [
     '/',
     '/mobile.html',
