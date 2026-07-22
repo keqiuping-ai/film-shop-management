@@ -3360,25 +3360,37 @@ function aiBossView() {
     <div class="ai-boss-task-grid">${tasks.map(aiBossTaskCard).join('') || '<div class="empty-state">还没有交办任务。按住语音键说出第一件事情。</div>'}</div></section>${aiBossMonthlyRanking()}</div>`;
 }
 
-function openAiBossTask(sourceText = '') {
-  const suggested = suggestAiBossAssignee(sourceText);
-  const title = sourceText ? sourceText.replace(/[。！？].*$/, '').slice(0, 50) : '';
+function openAiBossTask(sourceText = '', aiDraft = null, aiProvider = '') {
+  const suggested = aiDraft?.assigneeUserId || suggestAiBossAssignee(sourceText);
+  const title = aiDraft?.title || (sourceText ? sourceText.replace(/[。！？].*$/, '').slice(0, 50) : '');
   const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000); tomorrow.setHours(17,0,0,0);
+  const targetDue = aiDraft?.dueAt && !Number.isNaN(new Date(aiDraft.dueAt).getTime()) ? new Date(aiDraft.dueAt) : tomorrow;
   const pad = value => String(value).padStart(2, '0');
-  const dueValue = `${tomorrow.getFullYear()}-${pad(tomorrow.getMonth() + 1)}-${pad(tomorrow.getDate())}T${pad(tomorrow.getHours())}:${pad(tomorrow.getMinutes())}`;
+  const dueValue = `${targetDue.getFullYear()}-${pad(targetDue.getMonth() + 1)}-${pad(targetDue.getDate())}T${pad(targetDue.getHours())}:${pad(targetDue.getMinutes())}`;
   openModal('交办新任务', `<div class="ai-boss-form">
+    ${aiProvider ? `<p class="note wide">${escapeHtml(aiProvider === 'openai' ? 'OpenAI' : 'DeepSeek')} 已根据员工能力档案整理，确认后才正式派单。</p>` : ''}
     <button id="aiBossVoiceButton" class="ai-boss-form-voice" type="button" onpointerdown="startAiBossFormVoice(event)" onpointerup="stopAiBossFormVoice(event)" onpointercancel="stopAiBossFormVoice(event)">🎙️ 按住补充语音</button>
     <label><span>任务标题</span><input id="aiBossTitle" value="${escapeHtml(title)}" placeholder="例如：找到仓库里的这款窗膜"></label>
-    <label class="wide"><span>具体要求</span><textarea id="aiBossDescription" placeholder="说明要做什么、为什么、需要什么结果…">${escapeHtml(sourceText)}</textarea></label>
+    <label class="wide"><span>具体要求</span><textarea id="aiBossDescription" placeholder="说明要做什么、为什么、需要什么结果…">${escapeHtml(aiDraft?.description || sourceText)}</textarea></label>
     <label><span>负责人</span><select id="aiBossAssignee">${aiBossPeopleOptions(suggested)}</select></label>
     <label><span>截止时间</span><input id="aiBossDueAt" type="datetime-local" value="${dueValue}"></label>
-    <label><span>优先级</span><select id="aiBossPriority"><option>普通</option><option>高</option><option>紧急</option><option>低</option></select></label>
-    <label><span>任务难度</span><select id="aiBossDifficulty"><option value="1">简单 · 1</option><option value="3" selected>普通 · 3</option><option value="5">复杂 · 5</option><option value="10">重大 · 10</option></select></label>
-    <label class="wide"><span>验收标准</span><textarea id="aiBossCriteria" placeholder="例如：找到材料并拍照，说明仓位和剩余数量"></textarea></label>
+    <label><span>优先级</span><select id="aiBossPriority">${['普通','高','紧急','低'].map(value => `<option ${value === (aiDraft?.priority || '普通') ? 'selected' : ''}>${value}</option>`).join('')}</select></label>
+    <label><span>任务难度</span><select id="aiBossDifficulty">${[[1,'简单 · 1'],[3,'普通 · 3'],[5,'复杂 · 5'],[10,'重大 · 10']].map(([value,label]) => `<option value="${value}" ${Number(aiDraft?.difficulty || 3) === value ? 'selected' : ''}>${label}</option>`).join('')}</select></label>
+    <label class="wide"><span>验收标准</span><textarea id="aiBossCriteria" placeholder="例如：找到材料并拍照，说明仓位和剩余数量">${escapeHtml(aiDraft?.acceptanceCriteria || '')}</textarea></label>
   </div>`, saveAiBossTask);
 }
 
-function startAiBossQuickVoice(event) { event?.preventDefault(); beginAiBossRecognition(text => openAiBossTask(text)); }
+async function openAiBossTaskWithAi(sourceText) {
+  try {
+    const result = await api('/api/ai-boss/draft', { method:'POST', body:JSON.stringify({ text:sourceText }) });
+    openAiBossTask(result.sourceText || sourceText, result.draft || null, result.provider || '');
+  } catch (error) {
+    alert(`${error.message}\n\nAI 暂时不可用，已保留原话供手动确认。`);
+    openAiBossTask(sourceText);
+  }
+}
+
+function startAiBossQuickVoice(event) { event?.preventDefault(); beginAiBossRecognition(text => openAiBossTaskWithAi(text)); }
 function stopAiBossQuickVoice(event) { event?.preventDefault(); aiBossRecognition?.stop?.(); stopAiBossCloudRecording(); }
 function startAiBossFormVoice(event) { event?.preventDefault(); beginAiBossRecognition(text => { const field = document.getElementById('aiBossDescription'); if (field) field.value = [field.value, text].filter(Boolean).join(' '); const assignee = document.getElementById('aiBossAssignee'); if (assignee) assignee.value = suggestAiBossAssignee(field?.value || text); }); }
 function stopAiBossFormVoice(event) { event?.preventDefault(); aiBossRecognition?.stop?.(); stopAiBossCloudRecording(); }
