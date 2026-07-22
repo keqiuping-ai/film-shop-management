@@ -127,7 +127,7 @@ const dict = {
     modules: '功能模块',
     modulesSub: '每个业务模块独立入口，像桌面图标一样打开',
     dashboard: '仪表盘',
-    dashboardSub: '收入、来源渠道和批发客户销售情况',
+    dashboardSub: '收入、来源渠道和零售批发销售情况',
     jobs: '施工订单',
     jobsSub: '窗膜、TPU改色、PPF、建筑膜',
     warranties: '客户质保',
@@ -381,7 +381,7 @@ const dict = {
     modules: 'Modules',
     modulesSub: 'Open each business area from a simple desktop-style grid',
     dashboard: 'Dashboard',
-    dashboardSub: 'Revenue, source channels, and wholesale customer sales',
+    dashboardSub: 'Revenue, source channels, and retail / wholesale sales',
     jobs: 'Job Orders',
     jobsSub: 'Window tint, TPU color change, PPF, and architectural film',
     warranties: 'Customer Warranty',
@@ -3492,8 +3492,8 @@ const views = {
         ${jobRevenueDetailTable(dashboardJobs)}
       </div>
       <div class="panel" style="margin-top:14px">
-        <div class="panel-head"><h3>${lang === 'zh' ? '批发客户销售情况' : 'Wholesale Customer Sales'}</h3>${hasPerm('ordersView') ? `<button class="btn" onclick="setPage('orders')">${t('viewAll')}</button>` : ''}</div>
-        ${wholesaleCustomerSalesTable(dashboardOrders)}
+        <div class="panel-head"><h3>${lang === 'zh' ? '零售批发销售情况' : 'Retail / Wholesale Sales'}</h3>${hasPerm('ordersView') ? `<button class="btn" onclick="setPage('orders')">${t('viewAll')}</button>` : ''}</div>
+        ${retailWholesaleSalesTable(dashboardOrders)}
       </div>`;
   },
   jobs() {
@@ -4324,14 +4324,13 @@ function updateSalesOrderSearch(value) {
   if (container) container.innerHTML = salesOrderTable();
 }
 
-function wholesaleCustomerSalesTable(orders = []) {
-  const wholesaleOrders = (orders || []).filter(order => {
-    const type = String(order.type || '').toLowerCase();
+function retailWholesaleSalesTable(orders = []) {
+  const retailWholesaleOrders = (orders || []).filter(order => {
     const status = String(order.status || '').trim().toLowerCase();
-    return (type === 'wholesale' || type.startsWith('wholesale-')) && !['已取消', '取消', 'canceled', 'cancelled'].includes(status);
+    return !['已取消', '取消', 'canceled', 'cancelled'].includes(status);
   });
   const groups = new Map();
-  wholesaleOrders.forEach(order => {
+  retailWholesaleOrders.forEach(order => {
     const customer = String(order.customer || '').trim() || (lang === 'zh' ? '未填写客户' : 'Unspecified customer');
     const key = normalizeCustomerLookupText(customer) || customer;
     if (!groups.has(key)) groups.set(key, { customer, orderCount: 0, qty: 0, total: 0, paid: 0, balance: 0, latest: order });
@@ -4346,10 +4345,10 @@ function wholesaleCustomerSalesTable(orders = []) {
   });
   const rows = [...groups.values()].sort((a, b) => b.total - a.total || b.balance - a.balance || a.customer.localeCompare(b.customer));
   const totals = rows.reduce((sum, row) => ({ orders: sum.orders + row.orderCount, qty: sum.qty + row.qty, total: sum.total + row.total, paid: sum.paid + row.paid, balance: sum.balance + row.balance }), { orders: 0, qty: 0, total: 0, paid: 0, balance: 0 });
-  return `<div class="table-wrap wholesale-customer-sales"><table><thead><tr><th>${lang === 'zh' ? '批发客户' : 'Wholesale customer'}</th><th>${lang === 'zh' ? '订单数' : 'Orders'}</th><th>${t('qty')}</th><th>${lang === 'zh' ? '销售额' : 'Sales'}</th><th>${t('paid')}</th><th>${lang === 'zh' ? '未收款' : 'Outstanding'}</th><th>${lang === 'zh' ? '最近订单' : 'Latest order'}</th><th>${t('status')}</th></tr></thead><tbody>
+  return `<div class="table-wrap wholesale-customer-sales"><table><thead><tr><th>${lang === 'zh' ? '零售/批发客户' : 'Retail / wholesale customer'}</th><th>${lang === 'zh' ? '订单数' : 'Orders'}</th><th>${t('qty')}</th><th>${lang === 'zh' ? '销售额' : 'Sales'}</th><th>${t('paid')}</th><th>${lang === 'zh' ? '未收款' : 'Outstanding'}</th><th>${lang === 'zh' ? '最近订单' : 'Latest order'}</th><th>${t('status')}</th></tr></thead><tbody>
     ${rows.map(row => `<tr ${hasPerm('ordersEdit') ? `class="click-row" onclick="openSalesOrder('${row.latest.id}')"` : ''}><td><strong>${escapeHtml(row.customer)}</strong><br><span class="note">${escapeHtml(row.latest.salesRep || row.latest.preparedBy || '')}</span></td><td>${row.orderCount}</td><td>${Number(row.qty || 0).toLocaleString()}</td><td>${currency.format(row.total)}</td><td>${currency.format(row.paid)}</td><td>${row.balance > 0 ? `<strong class="wholesale-balance-due">${currency.format(row.balance)}</strong>` : `<span class="pill good">${lang === 'zh' ? '已结清' : 'Paid'}</span>`}</td><td>${escapeHtml(row.latest.date || '')}</td><td>${statusPill(row.latest.status)}</td></tr>`).join('')}
-    ${rows.length ? `<tr class="total-row"><td>${lang === 'zh' ? '合计' : 'Total'}</td><td>${totals.orders}</td><td>${Number(totals.qty || 0).toLocaleString()}</td><td>${currency.format(totals.total)}</td><td>${currency.format(totals.paid)}</td><td>${currency.format(totals.balance)}</td><td colspan="2"></td></tr>` : `<tr><td colspan="8" class="note">${lang === 'zh' ? '当前筛选时间内还没有批发销售订单。' : 'No wholesale sales in the selected period.'}</td></tr>`}
-  </tbody></table></div><p class="note">${lang === 'zh' ? '按批发客户汇总当前筛选时间内的订单；取消订单不计入销售额。' : 'Wholesale orders are grouped by customer for the selected period; canceled orders are excluded.'}</p>`;
+    ${rows.length ? `<tr class="total-row"><td>${lang === 'zh' ? '合计' : 'Total'}</td><td>${totals.orders}</td><td>${Number(totals.qty || 0).toLocaleString()}</td><td>${currency.format(totals.total)}</td><td>${currency.format(totals.paid)}</td><td>${currency.format(totals.balance)}</td><td colspan="2"></td></tr>` : `<tr><td colspan="8" class="note">${lang === 'zh' ? '当前筛选时间内还没有零售批发订单。' : 'No retail / wholesale sales in the selected period.'}</td></tr>`}
+  </tbody></table></div><p class="note">${lang === 'zh' ? '按客户汇总“零售批发”模块中当前筛选时间内的全部订单；取消订单不计入销售额。' : 'All orders from Retail / Wholesale are grouped by customer for the selected period; canceled orders are excluded.'}</p>`;
 }
 
 function portalCustomerTable() {
