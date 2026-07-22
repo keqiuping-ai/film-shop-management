@@ -1669,6 +1669,16 @@ body.modal-lock .prospect-workspace { pointer-events: none; }
   min-height: 58px;
   max-height: 120px;
   resize: vertical;
+  -webkit-appearance: none;
+  appearance: none;
+  outline: none;
+  box-shadow: none;
+  background-image: none;
+}
+.message-compose textarea:focus,
+.message-compose textarea:focus-visible {
+  outline: none;
+  box-shadow: none;
 }
 .message-image {
   display: block;
