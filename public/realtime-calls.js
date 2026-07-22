@@ -25,7 +25,7 @@
   const esc = value => String(value || '').replace(/[&<>"']/g, char => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[char]));
   const callUsers = () => store().messageUsers || store().users || [];
   const calls = () => store().voiceCalls || [];
-  const activeForMe = () => calls().find(call => ['ringing', 'active'].includes(call.status) && (call.callerUserId === me()?.id || (call.participantUserIds || []).includes(me()?.id)));
+  const activeForMe = () => calls().find(call => ['ringing', 'active'].includes(call.status) && call.participantStatuses?.[me()?.id] !== 'left' && (call.callerUserId === me()?.id || (call.participantUserIds || []).includes(me()?.id)));
   const waitingForMe = call => {
     if (!call || call.callerUserId === me()?.id || !(call.participantUserIds || []).includes(me()?.id)) return false;
     const status = call.participantStatuses?.[me()?.id];
@@ -53,8 +53,12 @@
   }
 
   function nameFor(call) {
-    if (call.callerUserId === me()?.id) return (call.participantNames || []).join('、') || (zh() ? '员工' : 'Staff');
-    return call.callerName || (zh() ? '员工' : 'Staff');
+    const names = [];
+    if (call.callerUserId !== me()?.id && call.participantStatuses?.[call.callerUserId] !== 'left') names.push(call.callerName);
+    (call.participantUserIds || []).forEach((userId, index) => {
+      if (userId !== me()?.id && !['left','declined'].includes(call.participantStatuses?.[userId])) names.push((call.participantNames || [])[index]);
+    });
+    return names.filter(Boolean).join('、') || (zh() ? '员工' : 'Staff');
   }
 
   function renderIncoming(call) {
@@ -89,6 +93,7 @@
   function renderCall(call, statusText) {
     const layer = ensureLayer();
     layer.innerHTML = `<div class="quad-call-backdrop"><section class="quad-call-card active">
+      <button class="quad-call-minimize" onclick="QuadCalls.toggleMinimize()">—</button>
       <div class="quad-call-quality" id="quadCallQuality">● ${esc(statusText || (zh() ? '正在连接…' : 'Connecting…'))}</div>
       <div class="quad-call-avatar">🎧</div><h2 id="quadCallName">${esc(nameFor(call))}</h2><time id="quadCallTime">00:00</time>
       <div id="quadCallRecording" style="${call.recording ? '' : 'display:none'};color:#ff6b6b;font-weight:800;margin:.5rem 0">🔴 ${zh() ? 'AI 通话记录已开启' : 'AI recording enabled'}</div>
@@ -102,12 +107,19 @@
     activeCall = call; incomingCallId = ''; renderCall(call);
     const credentials = await request(`/api/voice-calls/${encodeURIComponent(call.id)}/token`, { method: 'POST', body: '{}' });
     room = new LivekitClient.Room({ adaptiveStream: true, dynacast: true, disconnectOnPageLeave: true });
-    room.on(LivekitClient.RoomEvent.TrackSubscribed, track => {
+    room.on(LivekitClient.RoomEvent.TrackSubscribed, (track, publication, participant) => {
       if (track.kind !== LivekitClient.Track.Kind.Audio) return;
-      const element = track.attach(); element.autoplay = true; document.getElementById('quadCallRemoteAudio')?.appendChild(element);
+      const element = track.attach(); element.autoplay = true; element.dataset.participantIdentity = participant.identity; document.getElementById('quadCallRemoteAudio')?.appendChild(element);
       connectRecordingTrack(track.mediaStreamTrack);
     });
+    room.on(LivekitClient.RoomEvent.TrackUnsubscribed, track => {
+      track.detach().forEach(element => element.remove());
+    });
     room.on(LivekitClient.RoomEvent.ParticipantConnected, () => markAnswered());
+    room.on(LivekitClient.RoomEvent.ParticipantDisconnected, participant => {
+      participant.audioTrackPublications.forEach(publication => publication.track?.detach().forEach(element => element.remove()));
+      document.querySelectorAll(`#quadCallRemoteAudio audio[data-participant-identity="${CSS.escape(participant.identity)}"]`).forEach(element => element.remove());
+    });
     room.on(LivekitClient.RoomEvent.ConnectionQualityChanged, quality => {
       const label = document.getElementById('quadCallQuality');
       if (label) label.textContent = quality === 'excellent' ? '● 网络优秀' : quality === 'good' ? '● 网络良好' : quality === 'poor' ? '● 网络较弱' : '● 通话中';
@@ -226,7 +238,7 @@
 
   async function end() {
     const call = activeCall; const audioDataUrl = await stopAiRecord(); finishLocal(false); if (!call) return;
-    try { const result = await request(`/api/voice-calls/${encodeURIComponent(call.id)}`, { method:'PUT', body:JSON.stringify({ action:'end' }) }); if (result.data) replaceStore(result.data); showSummary(call.id); }
+    try { const result = await request(`/api/voice-calls/${encodeURIComponent(call.id)}`, { method:'PUT', body:JSON.stringify({ action:'leave' }) }); if (result.data) replaceStore(result.data); showSummary(call.id); }
     catch (error) { alert(error.message || error); }
     if (audioDataUrl) transcribeAndSummarize(call.id, audioDataUrl);
   }
@@ -291,6 +303,12 @@
     const button = document.getElementById('quadMute'); if (button) button.innerHTML = `${enabled ? '🔇' : '🎙️'}<br>${enabled ? (zh() ? '恢复' : 'Unmute') : (zh() ? '静音' : 'Mute')}`;
   }
 
+  function toggleMinimize() {
+    const layer = ensureLayer(); const minimized = layer.classList.toggle('minimized');
+    const button = layer.querySelector('.quad-call-minimize'); if (button) button.textContent = minimized ? (zh() ? '展开' : 'Open') : '—';
+    if (minimized && document.getElementById('modal')?.classList.contains('message-modal-open') && typeof window.closeModal === 'function') window.closeModal();
+  }
+
   function showSummary(callId) {
     activeCall = null; const layer = ensureLayer();
     layer.innerHTML = `<div class="quad-call-backdrop"><section class="quad-call-card summary"><button class="quad-call-close" onclick="QuadCalls.close()">×</button>
@@ -318,7 +336,8 @@
       if (Array.isArray(result.calls)) store().voiceCalls = result.calls;
       const call = activeForMe();
       if (waitingForMe(call)) renderIncoming(call);
-      if (activeCall && ['declined', 'ended', 'missed'].includes(calls().find(item => item.id === activeCall.id)?.status)) finishLocal();
+      const current = activeCall && calls().find(item => item.id === activeCall.id);
+      if (current && (['declined', 'ended', 'missed'].includes(current.status) || current.participantStatuses?.[me()?.id] === 'left')) finishLocal();
     } catch {} finally { polling = false; }
   }
 
@@ -330,15 +349,19 @@
     const index = list.findIndex(item => item.id === call.id);
     if (index >= 0) list[index] = call; else list.push(call);
     if (waitingForMe(call)) renderIncoming(call);
+    if (activeCall?.id === call.id) {
+      activeCall = call;
+      const name = document.getElementById('quadCallName'); if (name) name.textContent = nameFor(call);
+    }
     if (activeCall?.id === call.id && call.recording) { const indicator = document.getElementById('quadCallRecording'); if (indicator) indicator.style.display = ''; }
-    if (activeCall?.id === call.id && ['declined', 'ended', 'missed'].includes(call.status)) finishLocal();
+    if (activeCall?.id === call.id && (['declined', 'ended', 'missed'].includes(call.status) || call.participantStatuses?.[me()?.id] === 'left')) finishLocal();
   }
 
   async function enableNotifications() {
     if ('Notification' in window && Notification.permission === 'default') await Notification.requestPermission();
   }
 
-  window.QuadCalls = { start, accept, decline, end, toggleMute, startAiRecord, summarize, showSummary, close, poll, enableNotifications, pickParticipants, confirmParticipants, restoreCall, closePicker,
+  window.QuadCalls = { start, accept, decline, end, toggleMute, toggleMinimize, startAiRecord, summarize, showSummary, close, poll, enableNotifications, pickParticipants, confirmParticipants, restoreCall, closePicker,
     startDirect: userId => start(userId),
     startGroup: () => pickParticipants(false) };
   window.addEventListener('quad-voice-call', receiveVoiceEvent);

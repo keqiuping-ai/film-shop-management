@@ -4405,7 +4405,7 @@ async function api(req, res) {
         id: id(), roomName: `quad-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`,
         callerUserId: user.id, callerName: user.name || user.email,
         participantUserIds, participantNames: participantUserIds.map(value => db.users.find(row => row.id === value)?.name || '').filter(Boolean),
-        participantStatuses: Object.fromEntries(participantUserIds.map(userId => [userId, 'ringing'])),
+        participantStatuses: { [user.id]: 'joined', ...Object.fromEntries(participantUserIds.map(userId => [userId, 'ringing'])) },
         status: 'ringing', createdAt: now, answeredAt: '', endedAt: '', endedByUserId: '', recording: false,
         declinedByUserIds: [], durationSeconds: 0, summary: '', summaryProvider: '', taskId: ''
       };
@@ -4444,10 +4444,16 @@ async function api(req, res) {
         call.participantStatuses = { ...(call.participantStatuses || {}), [user.id]: 'declined' };
         call.declinedByUserIds = [...new Set([...(call.declinedByUserIds || []), user.id])];
         if (call.declinedByUserIds.length >= (call.participantUserIds || []).length) { call.status = 'declined'; call.endedAt = now; }
-      } else if (action === 'end') {
+      } else if (action === 'leave' || action === 'end') {
         if (!['ringing', 'active'].includes(call.status)) return send(res, 409, { error: '通话已经结束' });
-        call.status = call.status === 'ringing' ? 'missed' : 'ended'; call.endedAt = now; call.endedByUserId = user.id;
-        call.durationSeconds = call.answeredAt ? Math.max(0, Math.round((Date.parse(now) - Date.parse(call.answeredAt)) / 1000)) : 0;
+        call.participantStatuses = { ...(call.participantStatuses || {}), [user.id]: 'left' };
+        call.leftAtByUserId = { ...(call.leftAtByUserId || {}), [user.id]: now };
+        const allUserIds = [call.callerUserId, ...(call.participantUserIds || [])];
+        const remaining = allUserIds.filter(userId => !['left', 'declined'].includes(call.participantStatuses[userId] || (userId === call.callerUserId ? 'joined' : 'ringing')));
+        if (call.status === 'ringing' || remaining.length <= 1) {
+          call.status = call.status === 'ringing' ? 'missed' : 'ended'; call.endedAt = now; call.endedByUserId = user.id;
+          call.durationSeconds = call.answeredAt ? Math.max(0, Math.round((Date.parse(now) - Date.parse(call.answeredAt)) / 1000)) : 0;
+        }
       } else if (action === 'invite') {
         if (!['ringing', 'active'].includes(call.status)) return send(res, 409, { error: '通话已经结束' });
         const additions = [...new Set((Array.isArray(body.participantUserIds) ? body.participantUserIds : []).map(String))]
