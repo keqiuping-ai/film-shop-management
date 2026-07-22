@@ -5,6 +5,9 @@
   let incomingCallId = '';
   let callStartedAt = 0;
   let timer = null;
+  let ringTimer = null;
+  let ringContext = null;
+  let ringTimeout = null;
   let polling = false;
 
   const context = () => window.getQuadCallContext?.() || {};
@@ -43,10 +46,24 @@
       <footer><button class="quad-call-decline" onclick="QuadCalls.decline('${call.id}')">拒绝</button><button class="quad-call-accept" onclick="QuadCalls.accept('${call.id}')">接听</button></footer>
     </section></div>`;
     try { navigator.vibrate?.([300, 200, 300, 200, 500]); } catch {}
+    startRinging();
     if ('Notification' in window && Notification.permission === 'granted' && document.hidden) {
       new Notification(zh() ? 'QUaD 语音来电' : 'QUaD voice call', { body: `${call.callerName || ''} ${zh() ? '正在呼叫你' : 'is calling'}`, icon: '/quad-film-icon-192.png', tag: `call-${call.id}`, requireInteraction: true });
     }
   }
+
+  function ringOnce() {
+    try {
+      ringContext ||= new (window.AudioContext || window.webkitAudioContext)();
+      const oscillator = ringContext.createOscillator(); const gain = ringContext.createGain();
+      oscillator.frequency.value = 720; gain.gain.setValueAtTime(.0001, ringContext.currentTime);
+      gain.gain.exponentialRampToValueAtTime(.16, ringContext.currentTime + .02); gain.gain.exponentialRampToValueAtTime(.0001, ringContext.currentTime + .5);
+      oscillator.connect(gain); gain.connect(ringContext.destination); oscillator.start(); oscillator.stop(ringContext.currentTime + .55);
+    } catch {}
+  }
+
+  function startRinging() { stopRinging(); ringOnce(); ringTimer = setInterval(ringOnce, 1500); }
+  function stopRinging() { clearInterval(ringTimer); ringTimer = null; }
 
   function renderCall(call, statusText) {
     const layer = ensureLayer();
@@ -67,6 +84,7 @@
       if (track.kind !== LivekitClient.Track.Kind.Audio) return;
       const element = track.attach(); element.autoplay = true; document.getElementById('quadCallRemoteAudio')?.appendChild(element);
     });
+    room.on(LivekitClient.RoomEvent.ParticipantConnected, () => markAnswered());
     room.on(LivekitClient.RoomEvent.ConnectionQualityChanged, quality => {
       const label = document.getElementById('quadCallQuality');
       if (label) label.textContent = quality === 'excellent' ? '● 网络优秀' : quality === 'good' ? '● 网络良好' : quality === 'poor' ? '● 网络较弱' : '● 通话中';
@@ -74,8 +92,18 @@
     room.on(LivekitClient.RoomEvent.Disconnected, () => { if (activeCall) finishLocal(false); });
     await room.connect(credentials.url, credentials.token, { autoSubscribe: true });
     await room.localParticipant.setMicrophoneEnabled(true, { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 });
-    callStartedAt = Date.now(); startTimer();
-    const label = document.getElementById('quadCallQuality'); if (label) label.textContent = '● 已连接';
+    if (call.callerUserId !== me()?.id || room.remoteParticipants.size > 0) markAnswered();
+    else {
+      const label = document.getElementById('quadCallQuality'); if (label) label.textContent = zh() ? '● 正在呼叫，等待对方接听…' : '● Calling…';
+      clearTimeout(ringTimeout); ringTimeout = setTimeout(() => { if (activeCall && !callStartedAt) end(); }, 45_000);
+    }
+  }
+
+  function markAnswered() {
+    if (callStartedAt) return; stopRinging(); clearTimeout(ringTimeout); ringTimeout = null;
+    callStartedAt = activeCall?.answeredAt ? Date.parse(activeCall.answeredAt) : Date.now();
+    if (!Number.isFinite(callStartedAt)) callStartedAt = Date.now();
+    startTimer(); const label = document.getElementById('quadCallQuality'); if (label) label.textContent = zh() ? '● 通话中' : '● In call';
   }
 
   function startTimer() {
@@ -138,12 +166,14 @@
 
   async function accept(callId) {
     try {
+      stopRinging();
       const result = await request(`/api/voice-calls/${encodeURIComponent(callId)}`, { method:'PUT', body:JSON.stringify({ action:'accept' }) });
       if (result.data) replaceStore(result.data); await join(result.call);
     } catch (error) { incomingCallId = ''; ensureLayer().innerHTML = ''; alert(error.message || error); }
   }
 
   async function decline(callId) {
+    stopRinging();
     try { const result = await request(`/api/voice-calls/${encodeURIComponent(callId)}`, { method:'PUT', body:JSON.stringify({ action:'decline' }) }); if (result.data) replaceStore(result.data); }
     catch (error) { alert(error.message || error); }
     incomingCallId = ''; ensureLayer().innerHTML = '';
@@ -156,7 +186,7 @@
   }
 
   function finishLocal(clear = true) {
-    clearInterval(timer); timer = null; if (room) { const old = room; room = null; old.disconnect().catch?.(() => {}); }
+    clearInterval(timer); timer = null; stopRinging(); clearTimeout(ringTimeout); ringTimeout = null; callStartedAt = 0; if (room) { const old = room; room = null; old.disconnect().catch?.(() => {}); }
     if (clear) activeCall = null; ensureLayer().innerHTML = '';
   }
 

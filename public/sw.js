@@ -1,4 +1,4 @@
-const CACHE_NAME = 'film-shop-v66';
+const CACHE_NAME = 'film-shop-v67-voice-calls';
 const ASSETS = [
     '/',
     '/mobile.html',
@@ -9,6 +9,9 @@ const ASSETS = [
     '/app.js',
     '/mobile.css',
     '/mobile.js',
+    '/livekit-client.umd.js',
+    '/realtime-calls.js',
+    '/realtime-calls.css',
     '/manifest.webmanifest',
     '/mobile.webmanifest',
     '/quad-film-icon.png',

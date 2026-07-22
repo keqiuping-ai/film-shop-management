@@ -4364,6 +4364,14 @@ async function api(req, res) {
     const operation = String(voiceCallMatch[2] || '');
     const configured = Boolean(process.env.LIVEKIT_URL && process.env.LIVEKIT_API_KEY && process.env.LIVEKIT_API_SECRET);
     if (req.method === 'GET' && !callId) {
+      let expired = false;
+      const cutoff = Date.now() - 45_000;
+      (db.voiceCalls || []).forEach(call => {
+        if (call.status === 'ringing' && Date.parse(call.createdAt || '') < cutoff) {
+          call.status = 'missed'; call.endedAt = new Date().toISOString(); expired = true;
+        }
+      });
+      if (expired) { writeDb(db); notifyDataChanged('voice-calls-expired', user.id); }
       return send(res, 200, { configured, calls: voiceCallsForUser(db, user) });
     }
     if (req.method === 'POST' && !callId) {
