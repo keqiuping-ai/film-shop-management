@@ -148,6 +148,8 @@ const dict = {
     customerCenterSub: '集中查看所有客户聊天，已预约或已到店后加入预约到店客户',
     customerTasks: 'AI客服任务中心',
     customerTasksSub: '统一处理待回复、新客户首聊和到期跟进',
+    aiBoss: '智能督办中心',
+    aiBossSub: '语音交办、智能派单、过程催办、结果验收和月度排名',
     replyLibrary: '云端回复素材库',
     replyLibrarySub: '统一上传和维护客服常用文字、图片和短视频',
     leads: '客资提成',
@@ -400,6 +402,8 @@ const dict = {
     customerCenterSub: 'Manage all customer conversations and promote qualified customers to high intent',
     customerTasks: 'AI Customer Service Center',
     customerTasksSub: 'Handle replies, first contact, and scheduled follow-ups in one queue',
+    aiBoss: 'Smart Supervision Center',
+    aiBossSub: 'Voice assignment, smart routing, follow-up, acceptance and monthly ranking',
     replyLibrary: 'Cloud Reply Library',
     replyLibrarySub: 'Manage shared reply text, images, and short videos',
     leads: 'Lead Commissions',
@@ -629,6 +633,7 @@ const pages = [
   ['workshopInventory', 'workshopInventory', 'workshopInventorySub'],
   ['inventoryAlerts', 'inventoryAlerts', 'inventoryAlertsSub'],
   ['customerTasks', 'customerTasks', 'customerTasksSub'],
+  ['aiBoss', 'aiBoss', 'aiBossSub'],
   ['customerCenter', 'customerCenter', 'customerCenterSub'],
   ['replyLibrary', 'replyLibrary', 'replyLibrarySub'],
   ['prospects', 'prospects', 'prospectsSub'],
@@ -657,6 +662,7 @@ const pagePermissions = {
   workshopInventory: 'inventoryView',
   inventoryAlerts: 'inventoryView',
   customerTasks: 'prospectsView',
+  aiBoss: null,
   customerCenter: 'prospectsView',
   replyLibrary: 'prospectsView',
   prospects: 'prospectsView',
@@ -856,6 +862,7 @@ async function sync(options = {}) {
     renderAuth();
     render();
     checkNewAppointmentAlerts();
+    startAiBossReminderLoop();
     if (internalMessageModalOpen && !internalMessageInputActive()) {
       renderMessageModal();
       const refreshedInternalInput = document.getElementById('messageText');
@@ -1899,7 +1906,7 @@ function updateVoiceButton(recording) {
 }
 
 function navIcon(id) {
-  return { modules:'▦', dashboard:'⌂', jobs:'▣', warranties:'◆', installers:'◉', pricing:'$', inventory:'▤', workshopInventory:'▥', inventoryAlerts:'!', customerTasks:'🎧', customerCenter:'💬', replyLibrary:'☁', prospects:'★', leads:'☎', orders:'⇄', portalCustomers:'👤', shipments:'✈', schedules:'◫', workTime:'◴', expenses:'◇', reimbursements:'🧾', reports:'◌', audit:'◷', users:'◎', personalNotes:'📝', settings:'⚙' }[id] || '□';
+  return { modules:'▦', dashboard:'⌂', jobs:'▣', warranties:'◆', installers:'◉', pricing:'$', inventory:'▤', workshopInventory:'▥', inventoryAlerts:'!', customerTasks:'🎧', aiBoss:'🧠', customerCenter:'💬', replyLibrary:'☁', prospects:'★', leads:'☎', orders:'⇄', portalCustomers:'👤', shipments:'✈', schedules:'◫', workTime:'◴', expenses:'◇', reimbursements:'🧾', reports:'◌', audit:'◷', users:'◎', personalNotes:'📝', settings:'⚙' }[id] || '□';
 }
 
 function moduleGrid(availablePages) {
@@ -3234,7 +3241,185 @@ async function deleteWarranty(id) {
   } catch (err) { alert(err.message); }
 }
 
+let aiBossRecognition = null;
+let aiBossReminderTimer = null;
+
+function aiBossPeopleOptions(selected = '') {
+  return (state.users || []).filter(row => row.active !== false).map(row => `<option value="${escapeHtml(row.id)}" ${row.id === selected ? 'selected' : ''}>${escapeHtml(row.name || row.email)} · ${escapeHtml(t(row.role) || row.role)}</option>`).join('');
+}
+
+function aiBossProfile(userId) {
+  return (state.aiBossProfiles || []).find(row => row.userId === userId) || {};
+}
+
+function suggestAiBossAssignee(text) {
+  const normalized = normalizeSearchText(text);
+  const people = (state.users || []).filter(row => row.active !== false);
+  const named = people.find(row => normalized.includes(normalizeSearchText(row.name || '')) && String(row.name || '').trim().length > 1);
+  if (named) return named.id;
+  let best = { id: '', score: 0 };
+  people.forEach(person => {
+    const profile = aiBossProfile(person.id);
+    const words = normalizeSearchText([profile.department, profile.duties, profile.skills, profile.resources, profile.authorizedActions, person.role].join(' ')).split(/\s+/).filter(word => word.length > 1);
+    const profileScore = words.reduce((sum, word) => sum + (normalized.includes(word) ? 3 : 0), 0);
+    const learnedScore = (state.aiBossTasks || []).filter(task => task.assigneeUserId === person.id && task.status === '已完成').reduce((sum, task) => {
+      const evidenceWords = normalizeSearchText(`${task.title || ''} ${task.description || ''} ${task.result || ''}`).split(/\s+/).filter(word => word.length > 1);
+      return sum + evidenceWords.reduce((value, word) => value + (normalized.includes(word) ? Math.max(1, Number(task.qualityScore || 90) / 50) : 0), 0);
+    }, 0);
+    const score = profileScore + learnedScore;
+    if (score > best.score) best = { id: person.id, score };
+  });
+  return best.id || people.find(row => row.role === 'manager')?.id || people[0]?.id || '';
+}
+
+function aiBossTaskStatusClass(status) {
+  return ({ '待接单':'new', '进行中':'active', '需要协助':'blocked', '待验收':'review', '已退回':'returned', '已完成':'done', '已取消':'cancelled' })[status] || 'new';
+}
+
+function aiBossTaskIsOverdue(task) {
+  return task.dueAt && !['已完成', '已取消'].includes(task.status) && new Date(task.dueAt).getTime() < Date.now();
+}
+
+function aiBossTaskActions(task) {
+  const manager = ['owner', 'manager'].includes(user?.role);
+  const assignee = task.assigneeUserId === user?.id;
+  const helper = (task.helperUserIds || []).includes(user?.id);
+  const creator = task.createdByUserId === user?.id;
+  const buttons = [];
+  if (task.status === '待接单' && (assignee || manager)) buttons.push(`<button class="btn primary" onclick="updateAiBossTask('${task.id}','accept')">接单</button>`);
+  if (['进行中','已退回','需要协助'].includes(task.status) && (assignee || helper || manager)) {
+    buttons.push(`<button class="btn" onclick="aiBossProgress('${task.id}')">提交进度</button>`);
+    buttons.push(`<button class="btn" onclick="aiBossHelp('${task.id}')">申请协助</button>`);
+    buttons.push(`<button class="btn primary" onclick="aiBossResult('${task.id}')">提交结果</button>`);
+  }
+  if (task.status === '待验收' && (creator || manager)) {
+    buttons.push(`<button class="btn" onclick="aiBossReject('${task.id}')">退回继续办</button>`);
+    buttons.push(`<button class="btn primary" onclick="aiBossApprove('${task.id}')">验收通过</button>`);
+  }
+  return buttons.join('');
+}
+
+function aiBossTaskCard(task) {
+  const updates = [...(task.updates || [])].slice(-3).reverse();
+  return `<article class="ai-boss-task ${aiBossTaskStatusClass(task.status)} ${aiBossTaskIsOverdue(task) ? 'overdue' : ''}">
+    <header><span class="ai-boss-status">${aiBossTaskIsOverdue(task) ? '已逾期 · ' : ''}${escapeHtml(task.status)}</span><span>${escapeHtml(task.priority || '普通')} · 难度 ${Number(task.difficulty || 3)}</span></header>
+    <h3>${escapeHtml(task.title)}</h3><p>${escapeHtml(task.description)}</p>
+    <dl><div><dt>交办人</dt><dd>${escapeHtml(task.createdByName || '')}</dd></div><div><dt>负责人</dt><dd>${escapeHtml(task.assigneeName || '')}</dd></div><div><dt>截止时间</dt><dd>${escapeHtml(formatAppDateTime(task.dueAt || '') || '未设置')}</dd></div><div><dt>进度</dt><dd>${Number(task.progress || 0)}%</dd></div></dl>
+    ${task.acceptanceCriteria ? `<div class="ai-boss-criteria"><strong>验收标准</strong>${escapeHtml(task.acceptanceCriteria)}</div>` : ''}
+    ${task.result ? `<div class="ai-boss-result"><strong>提交结果</strong>${escapeHtml(task.result)}</div>` : ''}
+    ${updates.length ? `<div class="ai-boss-updates">${updates.map(row => `<div><strong>${escapeHtml(row.byName || '')}</strong> · ${escapeHtml(formatAppDateTime(row.at || ''))}<br>${escapeHtml(row.note || '')}</div>`).join('')}</div>` : ''}
+    <footer>${aiBossTaskActions(task)}</footer>
+  </article>`;
+}
+
+function aiBossMonthlyRanking() {
+  const month = today().slice(0, 7);
+  const tasks = (state.aiBossTasks || []).filter(task => String(task.completedAt || '').slice(0, 7) === month);
+  const rows = (state.users || []).filter(person => person.active !== false).map(person => {
+    const own = tasks.filter(task => task.assigneeUserId === person.id);
+    const onTime = own.filter(task => !task.dueAt || new Date(task.completedAt) <= new Date(task.dueAt)).length;
+    const quality = own.length ? own.reduce((sum, task) => sum + Number(task.qualityScore || 90), 0) / own.length : 0;
+    const timely = own.length ? onTime / own.length * 100 : 0;
+    const rework = own.reduce((sum, task) => sum + Number(task.reworkCount || 0), 0);
+    const score = own.length ? Math.max(0, Math.round(quality * .45 + timely * .35 + Math.min(100, own.reduce((sum, task) => sum + Number(task.difficulty || 3), 0) * 5) * .2 - rework * 3)) : 0;
+    return { person, count: own.length, onTime, quality: Math.round(quality), score };
+  }).filter(row => row.count).sort((a,b) => b.score - a.score);
+  return `<div class="ai-boss-ranking"><h3>本月执行力排名</h3>${['owner','manager'].includes(user?.role) ? '<button class="btn ai-boss-profile-button" onclick="openAiBossProfile()">员工能力档案</button>' : ''}${rows.length ? rows.map((row,index) => `<div><strong>${index + 1}</strong><span>${escapeHtml(row.person.name || row.person.email)}</span><small>完成 ${row.count} · 按时 ${row.onTime} · 质量 ${row.quality}</small><b>${row.score}分</b></div>`).join('') : '<p class="note">本月暂时没有已验收任务。</p>'}</div>`;
+}
+
+function openAiBossProfile(userId = '') {
+  const people = (state.users || []).filter(row => row.active !== false);
+  const employee = people.find(row => row.id === userId) || people[0];
+  if (!employee) return alert('还没有员工账号。');
+  const profile = aiBossProfile(employee.id);
+  openModal('员工能力档案', `<div class="ai-boss-form">
+    <label class="wide"><span>选择员工</span><select id="aiBossProfileUser" onchange="openAiBossProfile(this.value)">${aiBossPeopleOptions(employee.id)}</select></label>
+    <label><span>部门 / 岗位</span><input id="aiBossDepartment" value="${escapeHtml(profile.department || '')}" placeholder="例如：美国仓库"></label>
+    <label><span>备用负责人</span><select id="aiBossBackup"><option value="">未设置</option>${aiBossPeopleOptions(profile.backupUserId || '')}</select></label>
+    <label class="wide"><span>主要职责</span><textarea id="aiBossDuties" placeholder="例如：出货、库存查找、仓库开门">${escapeHtml(profile.duties || '')}</textarea></label>
+    <label class="wide"><span>技能 / 强项</span><textarea id="aiBossSkills" placeholder="例如：熟悉窗膜仓位、维修仓库门">${escapeHtml(profile.skills || '')}</textarea></label>
+    <label class="wide"><span>掌握的资源</span><textarea id="aiBossResources" placeholder="例如：知道钥匙保管人、熟悉设备位置（不要填写密码）">${escapeHtml(profile.resources || '')}</textarea></label>
+    <label class="wide"><span>正式授权事项</span><textarea id="aiBossAuthorized" placeholder="例如：允许开美国仓库、办理出库">${escapeHtml(profile.authorizedActions || '')}</textarea></label>
+  </div>`, () => saveAiBossProfile(employee.id));
+}
+
+async function saveAiBossProfile(userId) {
+  const value = id => String(document.getElementById(id)?.value || '').trim();
+  try { state = await api(`/api/ai-boss/profiles/${userId}`, { method:'PUT', body:JSON.stringify({ department:value('aiBossDepartment'), duties:value('aiBossDuties'), skills:value('aiBossSkills'), resources:value('aiBossResources'), authorizedActions:value('aiBossAuthorized'), backupUserId:value('aiBossBackup') }) }); closeModal(); broadcastDataChange(); render(); } catch (err) { alert(err.message); }
+}
+
+function aiBossView() {
+  const tasks = [...(state.aiBossTasks || [])].sort((a,b) => String(b.updatedAt || '').localeCompare(String(a.updatedAt || '')));
+  const counts = status => tasks.filter(task => task.status === status).length;
+  return `<div class="ai-boss-layout"><section><div class="ai-boss-hero"><div><span>QUaD 智能督办中心</span><h2>有交办、有过程、有结果</h2><p>按住说话生成任务，系统持续督办直到交办人验收。</p></div><button class="ai-boss-voice" onpointerdown="startAiBossQuickVoice(event)" onpointerup="stopAiBossQuickVoice(event)" onpointercancel="stopAiBossQuickVoice(event)">🎙️<strong>按住说话</strong><small>松开生成任务</small></button><button class="btn primary" onclick="openAiBossTask()">＋ 手动交办</button></div>
+    <div class="grid stats ai-boss-stats"><div class="stat"><span>待接单</span><strong>${counts('待接单')}</strong></div><div class="stat"><span>进行中</span><strong>${counts('进行中')}</strong></div><div class="stat"><span>待验收</span><strong>${counts('待验收')}</strong></div><div class="stat"><span>已逾期</span><strong>${tasks.filter(aiBossTaskIsOverdue).length}</strong></div></div>
+    <div class="ai-boss-task-grid">${tasks.map(aiBossTaskCard).join('') || '<div class="empty-state">还没有交办任务。按住语音键说出第一件事情。</div>'}</div></section>${aiBossMonthlyRanking()}</div>`;
+}
+
+function openAiBossTask(sourceText = '') {
+  const suggested = suggestAiBossAssignee(sourceText);
+  const title = sourceText ? sourceText.replace(/[。！？].*$/, '').slice(0, 50) : '';
+  const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000); tomorrow.setHours(17,0,0,0);
+  const pad = value => String(value).padStart(2, '0');
+  const dueValue = `${tomorrow.getFullYear()}-${pad(tomorrow.getMonth() + 1)}-${pad(tomorrow.getDate())}T${pad(tomorrow.getHours())}:${pad(tomorrow.getMinutes())}`;
+  openModal('交办新任务', `<div class="ai-boss-form">
+    <button id="aiBossVoiceButton" class="ai-boss-form-voice" type="button" onpointerdown="startAiBossFormVoice(event)" onpointerup="stopAiBossFormVoice(event)" onpointercancel="stopAiBossFormVoice(event)">🎙️ 按住补充语音</button>
+    <label><span>任务标题</span><input id="aiBossTitle" value="${escapeHtml(title)}" placeholder="例如：找到仓库里的这款窗膜"></label>
+    <label class="wide"><span>具体要求</span><textarea id="aiBossDescription" placeholder="说明要做什么、为什么、需要什么结果…">${escapeHtml(sourceText)}</textarea></label>
+    <label><span>负责人</span><select id="aiBossAssignee">${aiBossPeopleOptions(suggested)}</select></label>
+    <label><span>截止时间</span><input id="aiBossDueAt" type="datetime-local" value="${dueValue}"></label>
+    <label><span>优先级</span><select id="aiBossPriority"><option>普通</option><option>高</option><option>紧急</option><option>低</option></select></label>
+    <label><span>任务难度</span><select id="aiBossDifficulty"><option value="1">简单 · 1</option><option value="3" selected>普通 · 3</option><option value="5">复杂 · 5</option><option value="10">重大 · 10</option></select></label>
+    <label class="wide"><span>验收标准</span><textarea id="aiBossCriteria" placeholder="例如：找到材料并拍照，说明仓位和剩余数量"></textarea></label>
+  </div>`, saveAiBossTask);
+}
+
+function startAiBossQuickVoice(event) { event?.preventDefault(); beginAiBossRecognition(text => openAiBossTask(text)); }
+function stopAiBossQuickVoice(event) { event?.preventDefault(); aiBossRecognition?.stop?.(); }
+function startAiBossFormVoice(event) { event?.preventDefault(); beginAiBossRecognition(text => { const field = document.getElementById('aiBossDescription'); if (field) field.value = [field.value, text].filter(Boolean).join(' '); const assignee = document.getElementById('aiBossAssignee'); if (assignee) assignee.value = suggestAiBossAssignee(field?.value || text); }); }
+function stopAiBossFormVoice(event) { event?.preventDefault(); aiBossRecognition?.stop?.(); }
+
+function beginAiBossRecognition(onText) {
+  const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!Recognition) return alert('当前浏览器不支持直接语音识别，请先使用手动交办。后续接入云端语音识别后可在所有设备使用。');
+  aiBossRecognition?.abort?.(); aiBossRecognition = new Recognition(); aiBossRecognition.lang = 'zh-CN'; aiBossRecognition.continuous = true; aiBossRecognition.interimResults = false;
+  let transcript = ''; aiBossRecognition.onresult = event => { for (let i = event.resultIndex; i < event.results.length; i += 1) if (event.results[i].isFinal) transcript += event.results[i][0].transcript; };
+  aiBossRecognition.onend = () => { aiBossRecognition = null; if (transcript.trim()) onText(transcript.trim()); };
+  aiBossRecognition.onerror = () => { aiBossRecognition = null; alert('没有识别到语音，请重试或手动输入。'); };
+  aiBossRecognition.start();
+}
+
+async function saveAiBossTask() {
+  const value = id => String(document.getElementById(id)?.value || '').trim();
+  const payload = { title:value('aiBossTitle'), description:value('aiBossDescription'), sourceText:value('aiBossDescription'), assigneeUserId:value('aiBossAssignee'), dueAt:value('aiBossDueAt'), priority:value('aiBossPriority'), difficulty:Number(value('aiBossDifficulty') || 3), acceptanceCriteria:value('aiBossCriteria'), reminderHours:2 };
+  try { state = await api('/api/ai-boss/tasks', { method:'POST', body:JSON.stringify(payload) }); closeModal(); broadcastDataChange(); render(); } catch (err) { alert(err.message); }
+}
+
+async function updateAiBossTask(id, action, note = '', extra = {}) { try { state = await api(`/api/ai-boss/tasks/${id}`, { method:'PUT', body:JSON.stringify({ action, note, ...extra }) }); broadcastDataChange(); render(); } catch (err) { alert(err.message); } }
+function aiBossProgress(id) { const progress = prompt('请输入当前完成进度（1-99）'); if (progress === null) return; const note = prompt('请说明已经完成什么、下一步做什么：') || ''; if (note) updateAiBossTask(id,'progress',note,{progress:Number(progress)}); }
+function aiBossHelp(id) { const note = prompt('请说明遇到的困难和需要谁协助：') || ''; if (note) updateAiBossTask(id,'help',note); }
+function aiBossResult(id) { const note = prompt('请提交最终结果和可以验收的证据说明：') || ''; if (note) updateAiBossTask(id,'result',note); }
+function aiBossReject(id) { const note = prompt('请说明不满意的地方和需要继续完成的内容：') || ''; if (note) updateAiBossTask(id,'reject',note); }
+function aiBossApprove(id) { const score = prompt('结果质量评分（0-100）：','90'); if (score !== null) updateAiBossTask(id,'approve','',{qualityScore:Number(score)}); }
+
+function checkAiBossReminder() {
+  if (!state?.aiBossTasks || document.hidden) return;
+  const candidates = state.aiBossTasks.filter(task => task.assigneeUserId === user?.id && !['已完成','已取消','待验收'].includes(task.status));
+  if (!candidates.length || document.querySelector('.ai-boss-reminder-overlay.open')) return;
+  const key = `filmShopCloud.aiBossReminder.${user.id}`; const last = Number(localStorage.getItem(key) || 0);
+  const overdue = candidates.some(aiBossTaskIsOverdue); const interval = overdue ? 60 * 60 * 1000 : 2 * 60 * 60 * 1000;
+  if (Date.now() - last < interval) return;
+  const task = candidates.sort((a,b) => Number(aiBossTaskIsOverdue(b)) - Number(aiBossTaskIsOverdue(a)) || String(a.dueAt || '').localeCompare(String(b.dueAt || '')))[0];
+  let overlay = document.querySelector('.ai-boss-reminder-overlay'); if (!overlay) { overlay = document.createElement('div'); overlay.className = 'ai-boss-reminder-overlay'; document.body.appendChild(overlay); }
+  overlay.innerHTML = `<div class="ai-boss-reminder-box"><div>🧠</div><section><small>智能督办提醒 · ${aiBossTaskIsOverdue(task) ? '任务已经逾期' : '未完成任务'}</small><h2>${escapeHtml(task.title)}</h2><p>${escapeHtml(task.description)}</p><time>截止：${escapeHtml(formatAppDateTime(task.dueAt || '') || '未设置')}</time><footer><button class="btn" onclick="closeAiBossReminder()">稍后提醒</button><button class="btn primary" onclick="openAiBossReminderTask('${task.id}')">立即处理</button></footer></section></div>`;
+  overlay.classList.add('open'); localStorage.setItem(key,String(Date.now()));
+}
+function closeAiBossReminder() { document.querySelector('.ai-boss-reminder-overlay')?.classList.remove('open'); }
+function openAiBossReminderTask() { closeAiBossReminder(); setPage('aiBoss'); }
+function startAiBossReminderLoop() { if (aiBossReminderTimer) return; aiBossReminderTimer = setInterval(checkAiBossReminder, 60000); setTimeout(checkAiBossReminder, 800); }
+
 const views = {
+  aiBoss() { return aiBossView(); },
   personalNotes() { return personalNotesView(); },
   dashboard() {
     const dashboardJobs = filteredJobs(false);

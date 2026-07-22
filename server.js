@@ -285,6 +285,8 @@ function seedDb() {
     schedules: [],
     scheduleReminderLogs: [],
     personalNotes: [],
+    aiBossTasks: [],
+    aiBossProfiles: [],
     reimbursements: [],
     portalCustomers: [],
     warranties: [],
@@ -340,6 +342,8 @@ function readDb() {
   if (!Array.isArray(db.schedules)) db.schedules = [];
   if (!Array.isArray(db.scheduleReminderLogs)) db.scheduleReminderLogs = [];
   if (!Array.isArray(db.personalNotes)) db.personalNotes = [];
+  if (!Array.isArray(db.aiBossTasks)) db.aiBossTasks = [];
+  if (!Array.isArray(db.aiBossProfiles)) db.aiBossProfiles = [];
   if (!Array.isArray(db.reimbursements)) db.reimbursements = [];
   if (!Array.isArray(db.portalCustomers)) db.portalCustomers = [];
   if (!Array.isArray(db.warranties)) db.warranties = [];
@@ -1074,6 +1078,10 @@ function sanitizeDbForUser(db, user) {
     messageUsers: db.users.filter(item => item.active !== false).map(safeUser),
     messages: messagesForUser(db, user),
     personalNotes: (db.personalNotes || []).filter(item => personalNoteVisibleTo(item, user)).map(item => personalNoteForUser(db, item, user)),
+    aiBossTasks: aiBossTasksForUser(db, user),
+    aiBossProfiles: (db.aiBossProfiles || []).map(profile => ['owner', 'manager'].includes(user.role)
+      ? { ...profile }
+      : { id: profile.id, userId: profile.userId, userName: profile.userName, department: profile.department, duties: profile.duties, skills: profile.skills, backupUserId: profile.backupUserId, updatedAt: profile.updatedAt }),
     installers: p.installerView || p.jobsView ? db.installers.map(installer => sanitizeInstaller(installer, p)) : [],
     products: p.inventoryView || p.ordersEdit ? sanitizeProducts(db.products, canSeeCosts) : [],
     priceRules: p.pricingView ? db.priceRules.map(rule => canSeeCosts ? rule : { ...rule, materialCost: 0 }) : [],
@@ -1105,6 +1113,14 @@ function messagesForUser(db, user) {
     .filter(message => message.scope === 'group' || message.fromUserId === userId || message.toUserId === userId)
     .sort((a, b) => String(a.createdAt || '').localeCompare(String(b.createdAt || '')))
     .slice(-500);
+}
+
+function aiBossTasksForUser(db, user) {
+  const canSeeAll = user?.role === 'owner' || user?.role === 'manager';
+  return (db.aiBossTasks || []).filter(task => canSeeAll
+    || task.createdByUserId === user.id
+    || task.assigneeUserId === user.id
+    || (task.helperUserIds || []).includes(user.id));
 }
 
 function unreadMessageCount(db, user) {
@@ -4429,6 +4445,87 @@ async function api(req, res) {
     }
     writeDb(db);
     notifyDataChanged('create-workshopMovements-batch', batchId);
+    return send(res, 200, sanitizeDbForUser(db, user));
+  }
+
+  const aiBossTaskMatch = url.pathname.match(/^\/api\/ai-boss\/tasks(?:\/([^/]+))?$/);
+  if (aiBossTaskMatch) {
+    const taskId = aiBossTaskMatch[1] || '';
+    if (req.method === 'GET') return send(res, 200, aiBossTasksForUser(db, user));
+    const body = await readBody(req);
+    const now = new Date().toISOString();
+    if (req.method === 'POST' && !taskId) {
+      const title = String(body.title || '').trim().slice(0, 180);
+      const description = String(body.description || '').trim().slice(0, 4000);
+      const assignee = (db.users || []).find(row => row.id === String(body.assigneeUserId || '') && row.active !== false);
+      if (!title || !description) return send(res, 400, { error: '请填写任务标题和具体要求' });
+      if (!assignee) return send(res, 400, { error: '请选择有效的负责人' });
+      const helperUserIds = [...new Set((Array.isArray(body.helperUserIds) ? body.helperUserIds : []).map(String))]
+        .filter(idValue => idValue !== assignee.id && (db.users || []).some(row => row.id === idValue && row.active !== false));
+      const task = {
+        id: id(), title, description, sourceText: String(body.sourceText || description).trim().slice(0, 5000),
+        createdByUserId: user.id, createdByName: user.name || user.email,
+        assigneeUserId: assignee.id, assigneeName: assignee.name || assignee.email,
+        helperUserIds, helperNames: helperUserIds.map(value => db.users.find(row => row.id === value)?.name || '').filter(Boolean),
+        dueAt: String(body.dueAt || '').trim(), priority: ['低', '普通', '高', '紧急'].includes(body.priority) ? body.priority : '普通',
+        difficulty: Math.min(10, Math.max(1, Number(body.difficulty || 3))), acceptanceCriteria: String(body.acceptanceCriteria || '').trim().slice(0, 2000),
+        status: '待接单', progress: 0, updates: [], reminderHours: Math.min(24, Math.max(1, Number(body.reminderHours || 2))),
+        createdAt: now, updatedAt: now
+      };
+      db.aiBossTasks.push(task);
+      audit(db, user, 'create-ai-boss-task', { collection: 'aiBossTasks', recordId: task.id, recordLabel: task.title, detail: `交办任务给 ${task.assigneeName}` });
+      writeDb(db); notifyDataChanged('create-ai-boss-task', task.id);
+      return send(res, 201, sanitizeDbForUser(db, user));
+    }
+    if (req.method === 'PUT' && taskId) {
+      const task = (db.aiBossTasks || []).find(row => row.id === taskId);
+      if (!task) return send(res, 404, { error: '找不到任务' });
+      const isManager = user.role === 'owner' || user.role === 'manager';
+      const isCreator = task.createdByUserId === user.id;
+      const isAssignee = task.assigneeUserId === user.id;
+      const isHelper = (task.helperUserIds || []).includes(user.id);
+      if (!isManager && !isCreator && !isAssignee && !isHelper) return send(res, 403, { error: '没有操作这个任务的权限' });
+      const action = String(body.action || '').trim();
+      const note = String(body.note || '').trim().slice(0, 3000);
+      if (action === 'accept' && (isAssignee || isManager)) {
+        task.status = '进行中'; task.acceptedAt = now; task.progress = Math.max(1, Number(task.progress || 0));
+      } else if (action === 'progress' && (isAssignee || isHelper || isManager)) {
+        task.status = '进行中'; task.progress = Math.min(99, Math.max(1, Number(body.progress || task.progress || 1)));
+      } else if (action === 'help' && (isAssignee || isHelper || isManager)) {
+        task.status = '需要协助'; task.helpRequestedAt = now;
+      } else if (action === 'result' && (isAssignee || isHelper || isManager)) {
+        if (!note) return send(res, 400, { error: '请填写完成结果' });
+        task.status = '待验收'; task.progress = 100; task.result = note; task.submittedAt = now;
+      } else if (action === 'approve' && (isCreator || isManager)) {
+        task.status = '已完成'; task.progress = 100; task.completedAt = now; task.approvedAt = now; task.approvedByName = user.name || user.email;
+        task.qualityScore = Math.min(100, Math.max(0, Number(body.qualityScore || 90)));
+      } else if (action === 'reject' && (isCreator || isManager)) {
+        if (!note) return send(res, 400, { error: '请填写退回原因' });
+        task.status = '已退回'; task.progress = Math.min(95, Number(task.progress || 0)); task.reworkCount = Number(task.reworkCount || 0) + 1;
+      } else if (action === 'cancel' && (isCreator || isManager)) {
+        task.status = '已取消'; task.cancelledAt = now;
+      } else return send(res, 400, { error: '当前身份不能执行这个操作' });
+      if (note) task.updates = [...(task.updates || []), { id: id(), action, note, progress: Number(task.progress || 0), byUserId: user.id, byName: user.name || user.email, at: now }];
+      task.updatedAt = now;
+      audit(db, user, `ai-boss-task-${action}`, { collection: 'aiBossTasks', recordId: task.id, recordLabel: task.title, detail: `${action}${note ? `：${note.slice(0, 120)}` : ''}` });
+      writeDb(db); notifyDataChanged(`ai-boss-task-${action}`, task.id);
+      return send(res, 200, sanitizeDbForUser(db, user));
+    }
+    return send(res, 405, { error: '不支持的任务操作' });
+  }
+
+  const aiBossProfileMatch = url.pathname.match(/^\/api\/ai-boss\/profiles\/([^/]+)$/);
+  if (aiBossProfileMatch && req.method === 'PUT') {
+    if (!['owner', 'manager'].includes(user.role)) return send(res, 403, { error: '只有老板或店长可以维护员工能力档案' });
+    const targetUser = (db.users || []).find(row => row.id === aiBossProfileMatch[1] && row.active !== false);
+    if (!targetUser) return send(res, 404, { error: '找不到员工' });
+    const body = await readBody(req); const now = new Date().toISOString();
+    const existing = (db.aiBossProfiles || []).find(row => row.userId === targetUser.id) || { id: id(), userId: targetUser.id };
+    const profile = { ...existing, userName: targetUser.name || targetUser.email, department: String(body.department || '').trim().slice(0, 120), duties: String(body.duties || '').trim().slice(0, 2000), skills: String(body.skills || '').trim().slice(0, 2000), resources: String(body.resources || '').trim().slice(0, 2000), authorizedActions: String(body.authorizedActions || '').trim().slice(0, 2000), backupUserId: String(body.backupUserId || '').trim(), updatedAt: now, updatedByName: user.name || user.email };
+    const index = db.aiBossProfiles.findIndex(row => row.userId === targetUser.id);
+    if (index >= 0) db.aiBossProfiles[index] = profile; else db.aiBossProfiles.push(profile);
+    audit(db, user, 'update-ai-boss-profile', { collection: 'aiBossProfiles', recordId: profile.id, recordLabel: profile.userName, detail: '更新员工能力档案' });
+    writeDb(db); notifyDataChanged('update-ai-boss-profile', profile.id);
     return send(res, 200, sanitizeDbForUser(db, user));
   }
 
