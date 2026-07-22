@@ -1308,12 +1308,55 @@ function parseAiBossDraft(text) {
   return JSON.parse(raw.slice(start, end + 1));
 }
 
+function zonedDateTimeToIso(timeZone, dateValue, hour = 17, minute = 0) {
+  const [year, month, day] = String(dateValue || '').split('-').map(Number);
+  if (![year, month, day, hour, minute].every(Number.isFinite)) return '';
+  const targetAsUtc = Date.UTC(year, month - 1, day, hour, minute, 0, 0);
+  let candidate = targetAsUtc;
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    timeZone: timeZone || 'America/Los_Angeles', year:'numeric', month:'2-digit', day:'2-digit',
+    hour:'2-digit', minute:'2-digit', second:'2-digit', hour12:false
+  });
+  for (let index = 0; index < 3; index += 1) {
+    const parts = Object.fromEntries(formatter.formatToParts(new Date(candidate)).map(part => [part.type, part.value]));
+    const representedAsUtc = Date.UTC(Number(parts.year), Number(parts.month) - 1, Number(parts.day), Number(parts.hour) % 24, Number(parts.minute), Number(parts.second));
+    candidate += targetAsUtc - representedAsUtc;
+  }
+  return new Date(candidate).toISOString();
+}
+
+function defaultAiBossDueAt(db, now = new Date()) {
+  const timezone = db?.settings?.timezone || 'America/Los_Angeles';
+  return zonedDateTimeToIso(timezone, dateInTimezone(timezone, 1), 17, 0);
+}
+
+function normalizeAiBossDraftDueAt(db, value, now = new Date()) {
+  const parsed = parseAiBossDueAt(db, value);
+  return Number.isFinite(parsed.getTime()) && parsed.getTime() > now.getTime()
+    ? parsed.toISOString()
+    : defaultAiBossDueAt(db, now);
+}
+
+function parseAiBossDueAt(db, value) {
+  const raw = String(value || '').trim();
+  const localMatch = raw.match(/^(\d{4}-\d{2}-\d{2})T(\d{2}):(\d{2})(?::\d{2})?$/);
+  if (localMatch) return new Date(zonedDateTimeToIso(db?.settings?.timezone || 'America/Los_Angeles', localMatch[1], Number(localMatch[2]), Number(localMatch[3])));
+  return new Date(raw);
+}
+
+function validFutureAiBossDueAt(db, value, now = new Date()) {
+  const parsed = parseAiBossDueAt(db, value);
+  return Number.isFinite(parsed.getTime()) && parsed.getTime() > now.getTime() ? parsed.toISOString() : '';
+}
+
 function aiBossPrompt(db, sourceText) {
   const people = (db.users || []).filter(row => row.active !== false).map(person => {
     const profile = (db.aiBossProfiles || []).find(row => row.userId === person.id) || {};
     return { id: person.id, name: person.name || person.email, role: person.role, department: profile.department || '', duties: profile.duties || '', skills: profile.skills || '' };
   });
-  return `你是 QUaD 智能督办中心的任务分析助手。把口语需求整理成一张可确认的任务单。\n可选员工：${JSON.stringify(people)}\n用户原话：${sourceText}\n只返回 json 对象，字段必须是：title,description,assigneeUserId,dueAt,priority,difficulty,acceptanceCriteria,reason。dueAt 使用 ISO 8601；未提时间时设为明天下午5点（America/Los_Angeles）。priority 只能为低、普通、高、紧急；difficulty 为1到10。若用户明确指定人员必须尊重；否则根据职责技能选择最合适的人。`;
+  const timezone = db.settings?.timezone || 'America/Los_Angeles';
+  const nowText = new Date().toLocaleString('en-CA', { timeZone:timezone, hour12:false });
+  return `你是 QUaD 智能督办中心的任务分析助手。把口语需求整理成一张可确认的任务单。\n当前时间：${nowText}（${timezone}）。任何截止时间必须晚于当前时间，绝对不能返回过去的日期或年份。\n可选员工：${JSON.stringify(people)}\n用户原话：${sourceText}\n只返回 json 对象，字段必须是：title,description,assigneeUserId,dueAt,priority,difficulty,acceptanceCriteria,reason。dueAt 使用 ISO 8601；未提时间、日期不明确或识别出的时间已经过去时，设为明天下午5点（${timezone}）。priority 只能为低、普通、高、紧急；difficulty 为1到10。若用户明确指定人员必须尊重；否则根据职责技能选择最合适的人。`;
 }
 
 async function createAiBossDraft(db, sourceText, requestedProvider) {
@@ -4589,7 +4632,7 @@ async function api(req, res) {
           const now = new Date().toISOString();
           task = { id: id(), title: String(draft.title || '通话后续任务').slice(0, 180), description: call.summary, sourceText: notes,
             createdByUserId: user.id, createdByName: user.name || user.email, assigneeUserId: assignee.id, assigneeName: assignee.name || assignee.email,
-            helperUserIds: [], helperNames: [], dueAt: String(draft.dueAt || ''), priority: ['低','普通','高','紧急'].includes(draft.priority) ? draft.priority : '普通',
+            helperUserIds: [], helperNames: [], dueAt: normalizeAiBossDraftDueAt(db, draft.dueAt), priority: ['低','普通','高','紧急'].includes(draft.priority) ? draft.priority : '普通',
             difficulty: Math.min(10, Math.max(1, Number(draft.difficulty || 3))), acceptanceCriteria: String(draft.acceptanceCriteria || '').slice(0, 2000),
             aiReason: String(draft.reason || '').slice(0, 1000), status: 'pending', progressUpdates: [], createdAt: now, updatedAt: now, acceptedAt: '', completedAt: '', verifiedAt: '', callId: call.id };
           db.aiBossTasks.push(task); call.taskId = task.id;
@@ -4813,6 +4856,7 @@ async function api(req, res) {
       draft.acceptanceCriteria = String(draft.acceptanceCriteria || '').slice(0, 2000);
       draft.priority = ['低', '普通', '高', '紧急'].includes(draft.priority) ? draft.priority : '普通';
       draft.difficulty = Math.min(10, Math.max(1, Number(draft.difficulty || 3)));
+      draft.dueAt = normalizeAiBossDraftDueAt(db, draft.dueAt);
       return send(res, 200, { provider: result.provider, fallbackReason: result.fallbackReason || '', sourceText, draft });
     } catch (error) {
       return send(res, 502, { error: `AI 任务分析失败：${String(error.message || error).slice(0, 220)}` });
@@ -4828,9 +4872,11 @@ async function api(req, res) {
     if (req.method === 'POST' && !taskId) {
       const title = String(body.title || '').trim().slice(0, 180);
       const description = String(body.description || '').trim().slice(0, 4000);
+      const dueAt = validFutureAiBossDueAt(db, body.dueAt);
       const assignee = (db.users || []).find(row => row.id === String(body.assigneeUserId || '') && row.active !== false);
       if (!title || !description) return send(res, 400, { error: '请填写任务标题和具体要求' });
       if (!assignee) return send(res, 400, { error: '请选择有效的负责人' });
+      if (!dueAt) return send(res, 400, { error: '截止时间必须晚于当前时间，请重新选择' });
       const helperUserIds = [...new Set((Array.isArray(body.helperUserIds) ? body.helperUserIds : []).map(String))]
         .filter(idValue => idValue !== assignee.id && (db.users || []).some(row => row.id === idValue && row.active !== false));
       const task = {
@@ -4838,7 +4884,7 @@ async function api(req, res) {
         createdByUserId: user.id, createdByName: user.name || user.email,
         assigneeUserId: assignee.id, assigneeName: assignee.name || assignee.email,
         helperUserIds, helperNames: helperUserIds.map(value => db.users.find(row => row.id === value)?.name || '').filter(Boolean),
-        dueAt: String(body.dueAt || '').trim(), priority: ['低', '普通', '高', '紧急'].includes(body.priority) ? body.priority : '普通',
+        dueAt, priority: ['低', '普通', '高', '紧急'].includes(body.priority) ? body.priority : '普通',
         difficulty: Math.min(10, Math.max(1, Number(body.difficulty || 3))), acceptanceCriteria: String(body.acceptanceCriteria || '').trim().slice(0, 2000),
         status: '待接单', progress: 0, updates: [], reminderHours: Math.min(24, Math.max(1, Number(body.reminderHours || 2))),
         createdAt: now, updatedAt: now

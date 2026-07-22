@@ -1,4 +1,4 @@
-const CACHE_NAME = 'film-shop-v76-recurring-supervision-reminders';
+const CACHE_NAME = 'film-shop-v77-future-supervision-due-dates';
 const ASSETS = [
     '/',
     '/mobile.html',

@@ -3298,7 +3298,17 @@ function aiBossTaskStatusClass(status) {
 }
 
 function aiBossTaskIsOverdue(task) {
-  return task.dueAt && !['已完成', '已取消'].includes(task.status) && new Date(task.dueAt).getTime() < Date.now();
+  const dueTime = new Date(task.dueAt || '').getTime();
+  const createdTime = new Date(task.createdAt || '').getTime();
+  if (!Number.isFinite(dueTime) || (Number.isFinite(createdTime) && dueTime < createdTime)) return false;
+  return !['已完成', '已取消'].includes(task.status) && dueTime < Date.now();
+}
+
+function aiBossTaskDueLabel(task) {
+  const dueTime = new Date(task.dueAt || '').getTime();
+  const createdTime = new Date(task.createdAt || '').getTime();
+  if (!Number.isFinite(dueTime) || (Number.isFinite(createdTime) && dueTime < createdTime)) return '原自动时间无效，请重新设置';
+  return formatAppDateTime(task.dueAt) || '未设置';
 }
 
 function aiBossTaskActions(task) {
@@ -3325,7 +3335,7 @@ function aiBossTaskCard(task) {
   return `<article class="ai-boss-task ${aiBossTaskStatusClass(task.status)} ${aiBossTaskIsOverdue(task) ? 'overdue' : ''}">
     <header><span class="ai-boss-status">${aiBossTaskIsOverdue(task) ? '已逾期 · ' : ''}${escapeHtml(task.status)}</span><span>${escapeHtml(task.priority || '普通')} · 难度 ${Number(task.difficulty || 3)}</span></header>
     <h3>${escapeHtml(task.title)}</h3><p>${escapeHtml(task.description)}</p>
-    <dl><div><dt>交办人</dt><dd>${escapeHtml(task.createdByName || '')}</dd></div><div><dt>负责人</dt><dd>${escapeHtml(task.assigneeName || '')}</dd></div><div><dt>截止时间</dt><dd>${escapeHtml(formatAppDateTime(task.dueAt || '') || '未设置')}</dd></div><div><dt>进度</dt><dd>${Number(task.progress || 0)}%</dd></div></dl>
+    <dl><div><dt>交办人</dt><dd>${escapeHtml(task.createdByName || '')}</dd></div><div><dt>负责人</dt><dd>${escapeHtml(task.assigneeName || '')}</dd></div><div><dt>截止时间</dt><dd>${escapeHtml(aiBossTaskDueLabel(task))}</dd></div><div><dt>进度</dt><dd>${Number(task.progress || 0)}%</dd></div></dl>
     ${task.acceptanceCriteria ? `<div class="ai-boss-criteria"><strong>验收标准</strong>${escapeHtml(task.acceptanceCriteria)}</div>` : ''}
     ${task.result ? `<div class="ai-boss-result"><strong>提交结果</strong>${escapeHtml(task.result)}</div>` : ''}
     ${updates.length ? `<div class="ai-boss-updates">${updates.map(row => `<div><strong>${escapeHtml(row.byName || '')}</strong> · ${escapeHtml(formatAppDateTime(row.at || ''))}<br>${escapeHtml(row.note || '')}</div>`).join('')}</div>` : ''}
@@ -3381,16 +3391,19 @@ function openAiBossTask(sourceText = '', aiDraft = null, aiProvider = '') {
   const suggested = aiDraft?.assigneeUserId || suggestAiBossAssignee(sourceText);
   const title = aiDraft?.title || (sourceText ? sourceText.replace(/[。！？].*$/, '').slice(0, 50) : '');
   const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000); tomorrow.setHours(17,0,0,0);
-  const targetDue = aiDraft?.dueAt && !Number.isNaN(new Date(aiDraft.dueAt).getTime()) ? new Date(aiDraft.dueAt) : tomorrow;
+  const proposedDue = new Date(aiDraft?.dueAt || '');
+  const targetDue = Number.isFinite(proposedDue.getTime()) && proposedDue.getTime() > Date.now() ? proposedDue : tomorrow;
   const pad = value => String(value).padStart(2, '0');
   const dueValue = `${targetDue.getFullYear()}-${pad(targetDue.getMonth() + 1)}-${pad(targetDue.getDate())}T${pad(targetDue.getHours())}:${pad(targetDue.getMinutes())}`;
+  const minimumDue = new Date(Date.now() + 60 * 1000);
+  const minimumDueValue = `${minimumDue.getFullYear()}-${pad(minimumDue.getMonth() + 1)}-${pad(minimumDue.getDate())}T${pad(minimumDue.getHours())}:${pad(minimumDue.getMinutes())}`;
   openModal('交办新任务', `<div class="ai-boss-form">
     ${aiProvider ? `<p class="note wide">${escapeHtml(aiProvider === 'openai' ? 'OpenAI' : 'DeepSeek')} 已根据员工能力档案整理，确认后才正式派单。</p>` : ''}
     <button id="aiBossVoiceButton" class="ai-boss-form-voice" type="button" onpointerdown="startAiBossFormVoice(event)" onpointerup="stopAiBossFormVoice(event)" onpointercancel="stopAiBossFormVoice(event)">🎙️ 按住补充语音</button>
     <label><span>任务标题</span><input id="aiBossTitle" value="${escapeHtml(title)}" placeholder="例如：找到仓库里的这款窗膜"></label>
     <label class="wide"><span>具体要求</span><textarea id="aiBossDescription" placeholder="说明要做什么、为什么、需要什么结果…">${escapeHtml(aiDraft?.description || sourceText)}</textarea></label>
     <label><span>负责人</span><select id="aiBossAssignee">${aiBossPeopleOptions(suggested)}</select></label>
-    <label><span>截止时间</span><input id="aiBossDueAt" type="datetime-local" value="${dueValue}"></label>
+    <label><span>截止时间</span><input id="aiBossDueAt" type="datetime-local" min="${minimumDueValue}" value="${dueValue}"></label>
     <label><span>优先级</span><select id="aiBossPriority">${['普通','高','紧急','低'].map(value => `<option ${value === (aiDraft?.priority || '普通') ? 'selected' : ''}>${value}</option>`).join('')}</select></label>
     <label><span>任务难度</span><select id="aiBossDifficulty">${[[1,'简单 · 1'],[3,'普通 · 3'],[5,'复杂 · 5'],[10,'重大 · 10']].map(([value,label]) => `<option value="${value}" ${Number(aiDraft?.difficulty || 3) === value ? 'selected' : ''}>${label}</option>`).join('')}</select></label>
     <label class="wide"><span>验收标准</span><textarea id="aiBossCriteria" placeholder="例如：找到材料并拍照，说明仓位和剩余数量">${escapeHtml(aiDraft?.acceptanceCriteria || '')}</textarea></label>
@@ -3477,7 +3490,7 @@ function checkAiBossReminder(options = {}) {
   const task = sorted[previousIndex >= 0 ? (previousIndex + 1) % sorted.length : 0];
   const position = sorted.findIndex(row => row.id === task.id) + 1;
   let overlay = document.querySelector('.ai-boss-reminder-overlay'); if (!overlay) { overlay = document.createElement('div'); overlay.className = 'ai-boss-reminder-overlay'; document.body.appendChild(overlay); }
-  overlay.innerHTML = `<div class="ai-boss-reminder-box"><div>🧠</div><section><small>智能督办提醒 · ${aiBossTaskIsOverdue(task) ? '任务已经逾期（每1小时提醒）' : `未完成任务（每2小时提醒 · ${position}/${sorted.length}）`}</small><h2>${escapeHtml(task.title)}</h2><p>${escapeHtml(task.description)}</p><time>截止：${escapeHtml(formatAppDateTime(task.dueAt || '') || '未设置')}</time><footer><button class="btn" onclick="closeAiBossReminder()">稍后提醒</button><button class="btn primary" onclick="openAiBossReminderTask('${task.id}')">立即处理</button></footer></section></div>`;
+  overlay.innerHTML = `<div class="ai-boss-reminder-box"><div>🧠</div><section><small>智能督办提醒 · ${aiBossTaskIsOverdue(task) ? '任务已经逾期（每1小时提醒）' : `未完成任务（每2小时提醒 · ${position}/${sorted.length}）`}</small><h2>${escapeHtml(task.title)}</h2><p>${escapeHtml(task.description)}</p><time>截止：${escapeHtml(aiBossTaskDueLabel(task))}</time><footer><button class="btn" onclick="closeAiBossReminder()">稍后提醒</button><button class="btn primary" onclick="openAiBossReminderTask('${task.id}')">立即处理</button></footer></section></div>`;
   overlay.classList.add('open');
   localStorage.setItem(key,String(Date.now()));
   localStorage.setItem(taskKey, task.id);

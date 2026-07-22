@@ -1022,8 +1022,17 @@ function supervisionHtml() {
 }
 
 function supervisionTaskIsOverdue(task) {
-  if (!task?.dueAt || ['已完成','已取消','completed','cancelled','canceled'].includes(String(task.status || '').toLowerCase())) return false;
-  return new Date(task.dueAt).getTime() < Date.now();
+  const dueTime = new Date(task?.dueAt || '').getTime();
+  const createdTime = new Date(task?.createdAt || '').getTime();
+  if (!Number.isFinite(dueTime) || (Number.isFinite(createdTime) && dueTime < createdTime)) return false;
+  return !['已完成','已取消','completed','cancelled','canceled'].includes(String(task.status || '').toLowerCase()) && dueTime < Date.now();
+}
+
+function supervisionTaskDueLabel(task) {
+  const dueTime = new Date(task?.dueAt || '').getTime();
+  const createdTime = new Date(task?.createdAt || '').getTime();
+  if (!Number.isFinite(dueTime) || (Number.isFinite(createdTime) && dueTime < createdTime)) return '原自动时间无效，请重新设置';
+  return formatMobileDateTime(task.dueAt) || '—';
 }
 
 function checkSupervisionReminder(options = {}) {
@@ -1046,7 +1055,7 @@ function checkSupervisionReminder(options = {}) {
     overlay.className = 'supervision-reminder';
     document.body.appendChild(overlay);
   }
-  overlay.innerHTML = `<div class="supervision-reminder-card"><div class="supervision-reminder-icon">🧠</div><small>智能督办提醒 · ${supervisionTaskIsOverdue(task) ? '任务已逾期（每1小时提醒）' : `未完成任务（每2小时提醒 · ${position}/${sorted.length}）`}</small><h2>${escapeHtml(task.title || '')}</h2><p>${escapeHtml(task.description || '')}</p><time>截止：${escapeHtml(formatMobileDateTime(task.dueAt || '') || '未设置')}</time><footer><button onclick="closeSupervisionReminder()">稍后提醒</button><button class="primary" onclick="openSupervisionReminderTask()">立即处理</button></footer></div>`;
+  overlay.innerHTML = `<div class="supervision-reminder-card"><div class="supervision-reminder-icon">🧠</div><small>智能督办提醒 · ${supervisionTaskIsOverdue(task) ? '任务已逾期（每1小时提醒）' : `未完成任务（每2小时提醒 · ${position}/${sorted.length}）`}</small><h2>${escapeHtml(task.title || '')}</h2><p>${escapeHtml(task.description || '')}</p><time>截止：${escapeHtml(supervisionTaskDueLabel(task))}</time><footer><button onclick="closeSupervisionReminder()">稍后提醒</button><button class="primary" onclick="openSupervisionReminderTask()">立即处理</button></footer></div>`;
   overlay.classList.add('open');
   localStorage.setItem(timeKey, String(Date.now()));
   localStorage.setItem(taskKey, task.id);
@@ -1087,7 +1096,7 @@ function supervisionTaskHtml(task) {
     actions.push(`<button onclick="updateSupervisionTask('${task.id}','approve','',{qualityScore:90})">验收通过</button>`);
     actions.push(`<button onclick="supervisionReject('${task.id}')">退回</button>`);
   }
-  return `<article class="supervision-card"><header><span>${escapeHtml(task.status || '')}</span><b>${escapeHtml(task.priority || '普通')}</b></header><h3>${escapeHtml(task.title || '')}</h3><p>${escapeHtml(task.description || '')}</p><dl><div><dt>负责人</dt><dd>${escapeHtml(task.assigneeName || '')}</dd></div><div><dt>截止</dt><dd>${escapeHtml(formatMobileDateTime(task.dueAt || '')) || '—'}</dd></div><div><dt>进度</dt><dd>${Number(task.progress || 0)}%</dd></div></dl>${task.acceptanceCriteria ? `<aside><strong>验收：</strong>${escapeHtml(task.acceptanceCriteria)}</aside>` : ''}${task.result ? `<aside><strong>结果：</strong>${escapeHtml(task.result)}</aside>` : ''}<footer>${actions.join('')}</footer></article>`;
+  return `<article class="supervision-card"><header><span>${escapeHtml(task.status || '')}</span><b>${escapeHtml(task.priority || '普通')}</b></header><h3>${escapeHtml(task.title || '')}</h3><p>${escapeHtml(task.description || '')}</p><dl><div><dt>负责人</dt><dd>${escapeHtml(task.assigneeName || '')}</dd></div><div><dt>截止</dt><dd>${escapeHtml(supervisionTaskDueLabel(task))}</dd></div><div><dt>进度</dt><dd>${Number(task.progress || 0)}%</dd></div></dl>${task.acceptanceCriteria ? `<aside><strong>验收：</strong>${escapeHtml(task.acceptanceCriteria)}</aside>` : ''}${task.result ? `<aside><strong>结果：</strong>${escapeHtml(task.result)}</aside>` : ''}<footer>${actions.join('')}</footer></article>`;
 }
 
 function formatMobileDateTime(value) {
@@ -1156,19 +1165,22 @@ function supervisionUserOptions(selectedId) {
 }
 
 function localDateTimeValue(value) {
-  const date = value ? new Date(value) : new Date(Date.now() + 24 * 60 * 60 * 1000);
+  const proposed = value ? new Date(value) : new Date('');
+  const fallback = new Date(Date.now() + 24 * 60 * 60 * 1000); fallback.setHours(17,0,0,0);
+  const date = Number.isFinite(proposed.getTime()) && proposed.getTime() > Date.now() ? proposed : fallback;
   if (Number.isNaN(date.getTime())) return '';
   const parts = new Intl.DateTimeFormat('en-CA', { timeZone:APP_TIMEZONE, year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hourCycle:'h23' }).formatToParts(date).reduce((result,item)=>(result[item.type]=item.value,result),{});
   return `${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}`;
 }
 
 function openSupervisionDraft(draft, sourceText, provider) {
+  const minimumDue = localDateTimeValue(new Date(Date.now() + 60 * 1000).toISOString());
   const overlay = document.createElement('div'); overlay.className = 'mobile-modal';
   overlay.innerHTML = `<div class="mobile-dialog"><div class="dialog-head"><strong>AI 任务确认单</strong><button onclick="this.closest('.mobile-modal').remove()">×</button></div><p class="hint">${provider === 'openai' ? 'OpenAI' : 'DeepSeek'} 已整理，请确认后再正式派单。</p>
     <label>任务标题<input id="supervisionTitle" value="${escapeHtml(draft.title || '')}"></label>
     <label>具体要求<textarea id="supervisionDescription">${escapeHtml(draft.description || sourceText || '')}</textarea></label>
     <label>负责人<select id="supervisionAssignee"><option value="">请选择</option>${supervisionUserOptions(draft.assigneeUserId || '')}</select></label>
-    <label>截止时间<input id="supervisionDueAt" type="datetime-local" value="${localDateTimeValue(draft.dueAt)}"></label>
+    <label>截止时间<input id="supervisionDueAt" type="datetime-local" min="${minimumDue}" value="${localDateTimeValue(draft.dueAt)}"></label>
     <label>优先级<select id="supervisionPriority">${['低','普通','高','紧急'].map(item=>`<option ${item===(draft.priority||'普通')?'selected':''}>${item}</option>`).join('')}</select></label>
     <label>验收标准<textarea id="supervisionCriteria">${escapeHtml(draft.acceptanceCriteria || '')}</textarea></label>
     <input id="supervisionSourceText" type="hidden" value="${escapeHtml(sourceText || '')}"><input id="supervisionDifficulty" type="hidden" value="${Number(draft.difficulty || 3)}">
