@@ -54,7 +54,7 @@
       <div class="quad-call-quality" id="quadCallQuality">● ${esc(statusText || (zh() ? '正在连接…' : 'Connecting…'))}</div>
       <div class="quad-call-avatar">🎧</div><h2>${esc(nameFor(call))}</h2><time id="quadCallTime">00:00</time>
       <div id="quadCallRemoteAudio"></div>
-      <footer><button id="quadMute" onclick="QuadCalls.toggleMute()">🎙️<br>${zh() ? '静音' : 'Mute'}</button><button class="quad-call-end" onclick="QuadCalls.end()">📞<br>${zh() ? '挂断' : 'End'}</button></footer>
+      <footer><button id="quadMute" onclick="QuadCalls.toggleMute()">🎙️<br>${zh() ? '静音' : 'Mute'}</button><button onclick="QuadCalls.pickParticipants(true)">➕<br>${zh() ? '添加成员' : 'Add'}</button><button class="quad-call-end" onclick="QuadCalls.end()">📞<br>${zh() ? '挂断' : 'End'}</button></footer>
     </section></div>`;
   }
 
@@ -109,6 +109,32 @@
         : (error.message || error));
     }
   }
+
+  function pickParticipants(addToCall = false) {
+    const unavailable = new Set(addToCall ? [activeCall?.callerUserId, ...(activeCall?.participantUserIds || [])] : [me()?.id]);
+    const people = callUsers().filter(item => item.id !== me()?.id && item.active !== false && !unavailable.has(item.id));
+    if (!people.length) return alert(zh() ? '没有其他可选员工' : 'No other staff available');
+    const layer = ensureLayer();
+    layer.innerHTML = `<div class="quad-call-backdrop"><section class="quad-call-card picker">
+      <button class="quad-call-close" onclick="QuadCalls.${addToCall ? 'restoreCall' : 'close'}()">×</button>
+      <h2>${addToCall ? (zh() ? '添加通话成员' : 'Add participants') : (zh() ? '选择通话员工' : 'Choose participants')}</h2>
+      <p>${zh() ? '只有勾选的员工会收到来电' : 'Only selected staff will be called'}</p>
+      <div class="quad-call-people">${people.map(person => `<label><input type="checkbox" value="${esc(person.id)}"><span>${esc(person.name || person.email)}</span></label>`).join('')}</div>
+      <footer><button onclick="QuadCalls.${addToCall ? 'restoreCall' : 'close'}()">${zh() ? '取消' : 'Cancel'}</button><button class="quad-call-accept" onclick="QuadCalls.confirmParticipants(${addToCall ? 'true' : 'false'})">${addToCall ? (zh() ? '邀请加入' : 'Invite') : (zh() ? '发起通话' : 'Call')}</button></footer>
+    </section></div>`;
+  }
+
+  async function confirmParticipants(addToCall) {
+    const selected = [...document.querySelectorAll('.quad-call-people input:checked')].map(input => input.value);
+    if (!selected.length) return alert(zh() ? '请至少选择一位员工' : 'Select at least one person');
+    if (!addToCall) return start(selected);
+    try {
+      const result = await request(`/api/voice-calls/${encodeURIComponent(activeCall.id)}`, { method:'PUT', body:JSON.stringify({ action:'invite', participantUserIds:selected }) });
+      if (result.data) replaceStore(result.data); activeCall = result.call; renderCall(activeCall, zh() ? '已邀请新成员' : 'Participants invited');
+    } catch (error) { alert(error.message || error); restoreCall(); }
+  }
+
+  function restoreCall() { if (activeCall) renderCall(activeCall, zh() ? '通话中' : 'In call'); else close(); }
 
   async function accept(callId) {
     try {
@@ -174,8 +200,8 @@
     if ('Notification' in window && Notification.permission === 'default') await Notification.requestPermission();
   }
 
-  window.QuadCalls = { start, accept, decline, end, toggleMute, summarize, showSummary, close, poll, enableNotifications,
+  window.QuadCalls = { start, accept, decline, end, toggleMute, summarize, showSummary, close, poll, enableNotifications, pickParticipants, confirmParticipants, restoreCall,
     startDirect: userId => start(userId),
-    startGroup: () => start(callUsers().filter(item => item.id !== me()?.id && item.active !== false).map(item => item.id)) };
+    startGroup: () => pickParticipants(false) };
   setInterval(poll, 2500); document.addEventListener('visibilitychange', () => { if (!document.hidden) poll(); }); setTimeout(poll, 1200);
 })();

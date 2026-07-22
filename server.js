@@ -4413,6 +4413,13 @@ async function api(req, res) {
         if (!['ringing', 'active'].includes(call.status)) return send(res, 409, { error: '通话已经结束' });
         call.status = call.status === 'ringing' ? 'missed' : 'ended'; call.endedAt = now; call.endedByUserId = user.id;
         call.durationSeconds = call.answeredAt ? Math.max(0, Math.round((Date.parse(now) - Date.parse(call.answeredAt)) / 1000)) : 0;
+      } else if (action === 'invite') {
+        if (!['ringing', 'active'].includes(call.status)) return send(res, 409, { error: '通话已经结束' });
+        const additions = [...new Set((Array.isArray(body.participantUserIds) ? body.participantUserIds : []).map(String))]
+          .filter(userId => userId !== call.callerUserId && (db.users || []).some(row => row.id === userId && row.active !== false));
+        call.participantUserIds = [...new Set([...(call.participantUserIds || []), ...additions])];
+        call.participantNames = call.participantUserIds.map(value => db.users.find(row => row.id === value)?.name || '').filter(Boolean);
+        call.declinedByUserIds = (call.declinedByUserIds || []).filter(value => !additions.includes(value));
       } else return send(res, 400, { error: '不支持的通话操作' });
       audit(db, user, `voice-call-${action}`, { collection: 'voiceCalls', recordId: call.id, recordLabel: call.callerName, detail: `实时语音通话 ${action}` });
       writeDb(db); notifyDataChanged(`voice-call-${action}`, call.id);
