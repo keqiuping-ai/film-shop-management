@@ -621,7 +621,7 @@ function chatHtml() {
         return `<button class="person ${item.id === activeUserId ? 'active' : ''}" onclick="selectChatUser('${item.id}')"><span class="mobile-avatar-badge-wrap">${avatarHtml(item)}${mentioned ? `<i class="mobile-at-badge">${item.id === GROUP_CHAT_ID ? '@我' : '@'}</i>` : ''}</span><span>${escapeHtml(item.name || item.email)}${!mentioned && unreadFrom(item.id) ? `<b>${unreadFrom(item.id)}</b>` : ''}</span></button>`;
       }).join('')}
     </div>
-    <div class="mobile-chat-head"><strong>${escapeHtml(active.name || active.email)}</strong><button class="quad-call-head-button" type="button" onclick="QuadCalls.enableNotifications(); ${active.id === GROUP_CHAT_ID ? 'QuadCalls.startGroup()' : `QuadCalls.startDirect('${active.id}')`}">📞 ${lang === 'zh' ? '语音通话' : 'Voice call'}</button></div>
+    <div class="mobile-chat-head"><strong>${escapeHtml(active.name || active.email)}</strong></div>
     <div class="thread" id="thread">
       ${thread.length ? thread.map(messageHtml).join('') : `<p class="hint">${t('noMessages')}</p>`}
     </div>
@@ -630,6 +630,7 @@ function chatHtml() {
       <button onclick="document.getElementById('mobileVideoInput').click()">${t('video')}</button>
       <button onclick="document.getElementById('mobileFileInput').click()">${t('file')}</button>
       <button id="mobileVoiceBtn" onclick="toggleVoiceMessage()">${t('voice')}</button>
+      <button class="quad-call-tool-button" type="button" onclick="QuadCalls.enableNotifications(); ${active.id === GROUP_CHAT_ID ? 'QuadCalls.startGroup()' : `QuadCalls.startDirect('${active.id}')`}">📞 ${lang === 'zh' ? '语音通话' : 'Voice call'}</button>
       <input class="hidden" id="mobileImageInput" type="file" accept="image/*" onchange="sendMessageFile(this.files[0], 'image'); this.value='';" />
       <input class="hidden" id="mobileVideoInput" type="file" accept="video/*" onchange="sendMessageFile(this.files[0], 'video'); this.value='';" />
       <input class="hidden" id="mobileFileInput" type="file" onchange="sendMessageFile(this.files[0], 'file'); this.value='';" />

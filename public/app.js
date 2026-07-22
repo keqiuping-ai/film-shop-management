@@ -1631,7 +1631,7 @@ function messageModalHtml(users) {
       }).join('')}
     </div>
     <div class="message-chat">
-      <div class="message-chat-head"><span>${escapeHtml(activeName)}</span><button class="quad-call-head-button" type="button" onclick="QuadCalls.enableNotifications(); ${isGroup ? 'QuadCalls.startGroup()' : `QuadCalls.startDirect('${activeUser?.id || ''}')`}">📞 ${lang === 'zh' ? '语音通话' : 'Voice call'}</button></div>
+      <div class="message-chat-head"><span>${escapeHtml(activeName)}</span></div>
       <div class="message-thread" id="messageThread">
         ${thread.length ? thread.map(messageBubbleHtml).join('') : `<div class="note">${lang === 'zh' ? '还没有留言。' : 'No messages yet.'}</div>`}
       </div>
@@ -1641,6 +1641,7 @@ function messageModalHtml(users) {
           <button class="btn" onclick="document.getElementById('messageVideoInput').click()">${lang === 'zh' ? '视频' : 'Video'}</button>
           <button class="btn" onclick="document.getElementById('messageFileInput').click()">${lang === 'zh' ? '文件' : 'File'}</button>
           <button class="btn" id="messageVoiceBtn" onclick="toggleVoiceMessage()">${lang === 'zh' ? '语音' : 'Voice'}</button>
+          <button class="btn quad-call-tool-button" type="button" onclick="QuadCalls.enableNotifications(); ${isGroup ? 'QuadCalls.startGroup()' : `QuadCalls.startDirect('${activeUser?.id || ''}')`}">📞 ${lang === 'zh' ? '语音通话' : 'Voice call'}</button>
           <input class="hidden" id="messageImageInput" type="file" accept="image/*" onchange="sendMessageFile(this.files[0], 'image'); this.value='';" />
           <input class="hidden" id="messageVideoInput" type="file" accept="video/*" onchange="sendMessageFile(this.files[0], 'video'); this.value='';" />
           <input class="hidden" id="messageFileInput" type="file" onchange="sendMessageFile(this.files[0], 'file'); this.value='';" />
