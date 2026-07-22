@@ -1630,10 +1630,15 @@ function keepNewlyOpenedMessageThreadAtLatest(list) {
     if (!media.complete || media.readyState < 1) media.addEventListener('load', followLatest, { once:true });
     if (media.tagName === 'VIDEO') media.addEventListener('loadedmetadata', followLatest, { once:true });
   });
-  const stopInitialFollow = () => clearMessageThreadLatestTimers();
-  list.addEventListener('wheel', stopInitialFollow, { passive:true, once:true });
-  list.addEventListener('touchstart', stopInitialFollow, { passive:true, once:true });
-  list.addEventListener('pointerdown', stopInitialFollow, { passive:true, once:true });
+  const markUserScrollIntent = () => {
+    list.dataset.userScrollIntent = 'true';
+    clearMessageThreadLatestTimers();
+  };
+  list.addEventListener('wheel', markUserScrollIntent, { passive:true, once:true });
+  list.addEventListener('touchstart', markUserScrollIntent, { passive:true, once:true });
+  list.addEventListener('pointerdown', event => {
+    if (event.offsetX >= list.clientWidth - 24) markUserScrollIntent();
+  }, { passive:true });
 }
 
 function renderMessageModal(title = (lang === 'zh' ? '站内留言' : 'Messages'), options = {}) {
@@ -1665,9 +1670,15 @@ function renderMessageModal(title = (lang === 'zh' ? '站内留言' : 'Messages'
   if (list) {
     list.dataset.conversationId = activeMessageUserId;
     list.dataset.followLatest = shouldFollowLatest ? 'true' : 'false';
+    list.dataset.userScrollIntent = 'false';
     list.addEventListener('scroll', () => {
       const distance = list.scrollHeight - list.clientHeight - list.scrollTop;
-      list.dataset.followLatest = distance < 100 ? 'true' : 'false';
+      if (distance < 100) {
+        list.dataset.followLatest = 'true';
+        list.dataset.userScrollIntent = 'false';
+      } else if (list.dataset.userScrollIntent === 'true') {
+        list.dataset.followLatest = 'false';
+      }
     }, { passive:true });
     if (window.ResizeObserver) {
       messageThreadResizeObserver = new ResizeObserver(() => {
