@@ -4583,9 +4583,20 @@ async function api(req, res) {
         call.status = 'active';
         if (!call.answeredAt) { call.answeredAt = now; call.answeredByUserId = user.id; }
       } else if (action === 'decline') {
-        call.participantStatuses = { ...(call.participantStatuses || {}), [user.id]: 'declined' };
-        call.declinedByUserIds = [...new Set([...(call.declinedByUserIds || []), user.id])];
-        if (call.declinedByUserIds.length >= (call.participantUserIds || []).length) { call.status = 'declined'; call.endedAt = now; }
+        // One decline clears every still-ringing duplicate from the same caller
+        // for this recipient. Repeated calls remain in history, but never force
+        // the recipient to dismiss several identical popups one by one.
+        const repeatedCalls = (db.voiceCalls || []).filter(item =>
+          item.status === 'ringing'
+          && item.callerUserId === call.callerUserId
+          && (item.participantUserIds || []).includes(user.id));
+        repeatedCalls.forEach(item => {
+          item.participantStatuses = { ...(item.participantStatuses || {}), [user.id]: 'declined' };
+          item.declinedByUserIds = [...new Set([...(item.declinedByUserIds || []), user.id])];
+          if (item.declinedByUserIds.length >= (item.participantUserIds || []).length) {
+            item.status = 'declined'; item.endedAt = now; item.endedByUserId = user.id;
+          }
+        });
       } else if (action === 'leave' || action === 'end') {
         if (!['ringing', 'active'].includes(call.status)) return send(res, 409, { error: '通话已经结束' });
         call.participantStatuses = { ...(call.participantStatuses || {}), [user.id]: 'left' };

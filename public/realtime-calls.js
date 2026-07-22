@@ -16,6 +16,7 @@
   let recordingContext = null;
   let recordingDestination = null;
   const recordingSources = new Map();
+  const declinedCallerUntil = new Map();
 
   const context = () => window.getQuadCallContext?.() || {};
   const me = () => context().user || null;
@@ -29,6 +30,7 @@
   const activeForMe = () => calls().find(call => ['ringing', 'active'].includes(call.status) && call.participantStatuses?.[me()?.id] !== 'left' && (call.callerUserId === me()?.id || (call.participantUserIds || []).includes(me()?.id)));
   const waitingForMe = call => {
     if (!call || call.callerUserId === me()?.id || !(call.participantUserIds || []).includes(me()?.id)) return false;
+    if ((declinedCallerUntil.get(call.callerUserId) || 0) > Date.now()) return false;
     const status = call.participantStatuses?.[me()?.id];
     return status ? ['ringing', 'invited'].includes(status) : call.status === 'ringing';
   };
@@ -72,10 +74,19 @@
   function renderIncoming(call) {
     if (room || activeCall?.id === call.id || incomingCallId === call.id) return;
     incomingCallId = call.id;
+    const currentCallTime = Date.parse(call.createdAt || '') || Date.now();
+    const repeatedCallIds = new Set(calls()
+      .filter(item => waitingForMe(item)
+        && item.callerUserId === call.callerUserId
+        && Math.abs(currentCallTime - (Date.parse(item.createdAt || '') || currentCallTime)) <= 45_000)
+      .map(item => item.id));
+    const repeatCount = Math.max(1, repeatedCallIds.size);
     const layer = ensureLayer();
     layer.innerHTML = `<div class="quad-call-backdrop"><section class="quad-call-card incoming">
       <div class="quad-call-pulse">📞</div><small>${zh() ? '实时语音来电' : 'Incoming voice call'}</small>
-      <h2>${esc(call.callerName)}</h2><p>${zh() ? '正在呼叫你…' : 'is calling you…'}</p>
+      <h2>${esc(call.callerName)}</h2><p>${repeatCount > 1
+        ? (zh() ? `连续呼叫 ${repeatCount} 次，处理一次即可` : `called ${repeatCount} times; dismiss once`)
+        : (zh() ? '正在呼叫你…' : 'is calling you…')}</p>
       <footer><button class="quad-call-decline" onclick="QuadCalls.decline('${call.id}')">拒绝</button><button class="quad-call-accept" onclick="QuadCalls.accept('${call.id}')">接听</button></footer>
     </section></div>`;
     try { navigator.vibrate?.([300, 200, 300, 200, 500]); } catch {}
@@ -241,9 +252,17 @@
 
   async function decline(callId) {
     stopRinging();
+    const declinedCall = calls().find(item => item.id === callId);
+    if (declinedCall) {
+      calls().filter(item => waitingForMe(item) && item.callerUserId === declinedCall.callerUserId).forEach(item => {
+        item.participantStatuses = { ...(item.participantStatuses || {}), [me()?.id]: 'declined' };
+      });
+      declinedCallerUntil.set(declinedCall.callerUserId, Date.now() + 15_000);
+    }
+    incomingCallId = '';
+    ensureLayer().innerHTML = '';
     try { const result = await request(`/api/voice-calls/${encodeURIComponent(callId)}`, { method:'PUT', body:JSON.stringify({ action:'decline' }) }); if (result.data) replaceStore(result.data); }
     catch (error) { alert(error.message || error); }
-    incomingCallId = ''; ensureLayer().innerHTML = '';
   }
 
   async function end() {
@@ -379,6 +398,11 @@
       // older outgoing/active call. Otherwise a stale call can mask a new one.
       const waitingCall = calls().find(waitingForMe);
       if (waitingCall) renderIncoming(waitingCall);
+      else if (incomingCallId) {
+        stopRinging();
+        incomingCallId = '';
+        if (!activeCall) ensureLayer().innerHTML = '';
+      }
       const current = activeCall && calls().find(item => item.id === activeCall.id);
       if (current && (['declined', 'ended', 'missed'].includes(current.status) || current.participantStatuses?.[me()?.id] === 'left')) finishLocal();
     } catch {} finally { polling = false; }
