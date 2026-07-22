@@ -1,4 +1,4 @@
-const CACHE_NAME = 'film-shop-v79-paste-message-images';
+const CACHE_NAME = 'film-shop-v80-safari-latest-message-anchor';
 const ASSETS = [
     '/',
     '/mobile.html',

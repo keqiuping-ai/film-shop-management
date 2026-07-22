@@ -1528,6 +1528,12 @@ body.modal-lock .prospect-workspace { pointer-events: none; }
   min-height: 0;
   overscroll-behavior: contain;
 }
+.message-thread-latest {
+  width: 100%;
+  height: 1px;
+  flex: 0 0 1px;
+  pointer-events: none;
+}
 .message-row { display: flex; align-items: flex-start; gap: 8px; margin: 0 0 10px; }
 .message-row.mine { flex-direction: row-reverse; }
 .message-row-avatar { flex: 0 0 32px; padding-top: 2px; }

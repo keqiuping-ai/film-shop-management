@@ -56,6 +56,7 @@ let eventSource = null;
 let realtimeConnected = false;
 let activeMessageUserId = '';
 let messageThreadResizeObserver = null;
+let messageThreadLatestTimers = [];
 let internalMessagePendingImage = null;
 let activeProspectWorkspaceId = '';
 let prospectWorkspaceReadOnly = false;
@@ -1603,6 +1604,38 @@ function internalMessageInputActive() {
   return internalMessageComposing || Boolean(input && document.activeElement === input);
 }
 
+function clearMessageThreadLatestTimers() {
+  messageThreadLatestTimers.forEach(timer => clearTimeout(timer));
+  messageThreadLatestTimers = [];
+}
+
+function scrollMessageThreadToLatest(list) {
+  if (!list || list.dataset.conversationId !== activeMessageUserId) return;
+  list.scrollTop = list.scrollHeight;
+  const anchor = list.querySelector('#messageThreadLatest');
+  if (anchor && list.scrollHeight - list.clientHeight - list.scrollTop > 2) {
+    anchor.scrollIntoView({ block:'end', inline:'nearest' });
+  }
+}
+
+function keepNewlyOpenedMessageThreadAtLatest(list) {
+  clearMessageThreadLatestTimers();
+  const followLatest = () => {
+    if (list.dataset.followLatest === 'true') scrollMessageThreadToLatest(list);
+  };
+  [0, 60, 180, 400, 800, 1400, 2200].forEach(delay => {
+    messageThreadLatestTimers.push(setTimeout(followLatest, delay));
+  });
+  list.querySelectorAll('img, video').forEach(media => {
+    if (!media.complete || media.readyState < 1) media.addEventListener('load', followLatest, { once:true });
+    if (media.tagName === 'VIDEO') media.addEventListener('loadedmetadata', followLatest, { once:true });
+  });
+  const stopInitialFollow = () => clearMessageThreadLatestTimers();
+  list.addEventListener('wheel', stopInitialFollow, { passive:true, once:true });
+  list.addEventListener('touchstart', stopInitialFollow, { passive:true, once:true });
+  list.addEventListener('pointerdown', stopInitialFollow, { passive:true, once:true });
+}
+
 function renderMessageModal(title = (lang === 'zh' ? '站内留言' : 'Messages'), options = {}) {
   const users = messageUsers();
   if (!activeMessageUserId) activeMessageUserId = GROUP_CHAT_ID;
@@ -1613,6 +1646,7 @@ function renderMessageModal(title = (lang === 'zh' ? '站内留言' : 'Messages'
     ? previousThread.scrollHeight - previousThread.clientHeight - previousThread.scrollTop
     : 0;
   const shouldFollowLatest = Boolean(options.forceLatest || !sameConversation || previousDistanceFromBottom < 100);
+  clearMessageThreadLatestTimers();
   messageThreadResizeObserver?.disconnect();
   messageThreadResizeObserver = null;
   document.getElementById('modalTitle').textContent = title;
@@ -1624,7 +1658,8 @@ function renderMessageModal(title = (lang === 'zh' ? '站内留言' : 'Messages'
   const restoreMessagePosition = () => {
     const list = document.getElementById('messageThread');
     if (!list || list.dataset.conversationId !== activeMessageUserId) return;
-    list.scrollTop = list.dataset.followLatest === 'true' ? list.scrollHeight : previousScrollTop;
+    if (list.dataset.followLatest === 'true') scrollMessageThreadToLatest(list);
+    else list.scrollTop = previousScrollTop;
   };
   const list = document.getElementById('messageThread');
   if (list) {
@@ -1636,11 +1671,12 @@ function renderMessageModal(title = (lang === 'zh' ? '站内留言' : 'Messages'
     }, { passive:true });
     if (window.ResizeObserver) {
       messageThreadResizeObserver = new ResizeObserver(() => {
-        if (list.dataset.followLatest === 'true') list.scrollTop = list.scrollHeight;
+        if (list.dataset.followLatest === 'true') scrollMessageThreadToLatest(list);
       });
       messageThreadResizeObserver.observe(list);
       [...list.children].forEach(child => messageThreadResizeObserver.observe(child));
     }
+    if (shouldFollowLatest) keepNewlyOpenedMessageThreadAtLatest(list);
   }
   requestAnimationFrame(() => {
     restoreMessagePosition();
@@ -1679,6 +1715,7 @@ function messageModalHtml(users) {
       <div class="message-chat-head"><span>${escapeHtml(activeName)}</span></div>
       <div class="message-thread" id="messageThread">
         ${thread.length ? thread.map(messageBubbleHtml).join('') : `<div class="note">${lang === 'zh' ? '还没有留言。' : 'No messages yet.'}</div>`}
+        <div class="message-thread-latest" id="messageThreadLatest" aria-hidden="true"></div>
       </div>
       <div class="message-compose">
         <div class="message-tools">
@@ -7988,6 +8025,7 @@ function closeModal() {
   if (messageRecorder && messageRecorder.state === 'recording') messageRecorder.stop();
   messageThreadResizeObserver?.disconnect();
   messageThreadResizeObserver = null;
+  clearMessageThreadLatestTimers();
   document.getElementById('modal').classList.remove('open', 'message-modal-open', 'confirmation-modal-open', 'personal-note-modal-open', 'warranty-modal-open');
   document.getElementById('modal').classList.remove('reply-library-open');
   document.body.classList.remove('modal-lock');
