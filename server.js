@@ -322,8 +322,14 @@ function ensureDb() {
   if (!fs.existsSync(DB_FILE)) writeDb(seedDb());
 }
 
+let cachedDb = null;
+let cachedDbRevision = '';
+let deferredDbWriteTimer = null;
+
 function readDb() {
   ensureDb();
+  const revision = databaseRevision();
+  if (cachedDb && revision && revision === cachedDbRevision) return cachedDb;
   const db = JSON.parse(fs.readFileSync(DB_FILE, 'utf8'));
   if (!db.settings) db.settings = {};
   if (!db.settings.timezone) db.settings.timezone = 'America/Los_Angeles';
@@ -355,11 +361,23 @@ function readDb() {
   if (!Array.isArray(db.leaveRequests)) db.leaveRequests = [];
   if (!Array.isArray(db.employeeActivity)) db.employeeActivity = [];
   if (!Array.isArray(db.workshopMovements)) db.workshopMovements = [];
+  cachedDb = db;
+  cachedDbRevision = revision;
   return db;
 }
 
 function writeDb(db) {
   fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2));
+  cachedDb = db;
+  cachedDbRevision = databaseRevision();
+}
+
+function scheduleDbWrite(db, delayMs = 10000) {
+  if (deferredDbWriteTimer) clearTimeout(deferredDbWriteTimer);
+  deferredDbWriteTimer = setTimeout(() => {
+    deferredDbWriteTimer = null;
+    try { writeDb(db); } catch (error) { console.error('Deferred database write failed:', error); }
+  }, delayMs);
 }
 
 function databaseRevision() {
@@ -2795,9 +2813,11 @@ function openEventStream(req, res, user) {
   });
 }
 
-function notifyDataChanged(action, detail) {
+function notifyDataChanged(action, detail, targetUserIds = []) {
   const payload = JSON.stringify({ action, detail, at: new Date().toISOString() });
+  const targets = new Set((targetUserIds || []).map(String).filter(Boolean));
   for (const client of [...eventClients]) {
+    if (targets.size && !targets.has(String(client.userId))) continue;
     try {
       client.res.write(`event: data-changed\ndata: ${payload}\n\n`);
     } catch {
@@ -4371,7 +4391,7 @@ async function api(req, res) {
           call.status = 'missed'; call.endedAt = new Date().toISOString(); expired = true;
         }
       });
-      if (expired) { writeDb(db); notifyDataChanged('voice-calls-expired', user.id); }
+      if (expired) { scheduleDbWrite(db); notifyDataChanged('voice-calls-expired', user.id); }
       return send(res, 200, { configured, calls: voiceCallsForUser(db, user) });
     }
     if (req.method === 'POST' && !callId) {
@@ -4391,8 +4411,9 @@ async function api(req, res) {
       db.voiceCalls.push(call);
       db.voiceCalls = db.voiceCalls.slice(-1000);
       audit(db, user, 'start-voice-call', { collection: 'voiceCalls', recordId: call.id, recordLabel: call.callerName, detail: `发起实时语音通话给 ${call.participantNames.join('、')}` });
-      writeDb(db); notifyDataChanged('voice-call-started', call.id);
-      return send(res, 201, { call, data: sanitizeDbForUser(db, user) });
+      notifyDataChanged('voice-call-started', { call }, [call.callerUserId, ...call.participantUserIds]);
+      scheduleDbWrite(db);
+      return send(res, 201, { call });
     }
     const call = (db.voiceCalls || []).find(row => row.id === callId);
     if (!call) return send(res, 404, { error: '通话不存在或已清理' });
@@ -4430,8 +4451,9 @@ async function api(req, res) {
         call.declinedByUserIds = (call.declinedByUserIds || []).filter(value => !additions.includes(value));
       } else return send(res, 400, { error: '不支持的通话操作' });
       audit(db, user, `voice-call-${action}`, { collection: 'voiceCalls', recordId: call.id, recordLabel: call.callerName, detail: `实时语音通话 ${action}` });
-      writeDb(db); notifyDataChanged(`voice-call-${action}`, call.id);
-      return send(res, 200, { call, data: sanitizeDbForUser(db, user) });
+      notifyDataChanged(`voice-call-${action}`, { call }, [call.callerUserId, ...(call.participantUserIds || [])]);
+      scheduleDbWrite(db);
+      return send(res, 200, { call });
     }
     if (req.method === 'POST' && operation === 'summary') {
       if (!['ended', 'active'].includes(call.status)) return send(res, 409, { error: '请在通话接通或结束后整理内容' });

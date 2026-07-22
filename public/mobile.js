@@ -379,7 +379,16 @@ function ensureSyncTimer() {
 function startRealtimeSync() {
   if (eventSource || !token || !window.EventSource || document.hidden) return;
   eventSource = new EventSource(`/api/events?token=${encodeURIComponent(token)}`);
-  eventSource.addEventListener('data-changed', () => sync());
+  eventSource.addEventListener('data-changed', event => {
+    try {
+      const payload = JSON.parse(event.data || '{}');
+      if (String(payload.action || '').startsWith('voice-call-')) {
+        window.dispatchEvent(new CustomEvent('quad-voice-call', { detail: payload }));
+        return;
+      }
+    } catch {}
+    sync();
+  });
   eventSource.onerror = () => {
     stopRealtimeSync();
     if (realtimeRetryTimer) clearTimeout(realtimeRetryTimer);

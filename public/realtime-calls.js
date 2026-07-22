@@ -9,6 +9,7 @@
   let ringContext = null;
   let ringTimeout = null;
   let polling = false;
+  let actionBusy = false;
 
   const context = () => window.getQuadCallContext?.() || {};
   const me = () => context().user || null;
@@ -123,6 +124,13 @@
       }
       const ids = [...new Set((Array.isArray(userIds) ? userIds : [userIds]).filter(id => id && id !== me()?.id))];
       if (!ids.length) return alert(zh() ? '没有可呼叫的员工' : 'No staff to call');
+      if (actionBusy) return;
+      actionBusy = true;
+      const people = callUsers();
+      const preview = { id:'', callerUserId:me()?.id, callerName:me()?.name || me()?.email || '', participantUserIds:ids,
+        participantNames:ids.map(id => people.find(person => person.id === id)?.name || '').filter(Boolean), status:'preparing' };
+      activeCall = preview;
+      renderCall(preview, zh() ? '正在发起通话…' : 'Starting call…');
       const result = await request('/api/voice-calls', { method:'POST', body:JSON.stringify({ participantUserIds: ids }) });
       if (result.data) replaceStore(result.data); activeCall = result.call; renderCall(result.call, zh() ? '正在呼叫…' : 'Calling…'); await join(result.call);
     } catch (error) {
@@ -135,6 +143,8 @@
       alert(unsupported && zh()
         ? '当前浏览器禁用了 WebRTC。请关闭该网站的 Safari 锁定模式，允许麦克风后重试，或改用最新版 Chrome。'
         : (error.message || error));
+    } finally {
+      actionBusy = false;
     }
   }
 
@@ -165,11 +175,16 @@
   function restoreCall() { if (activeCall) renderCall(activeCall, zh() ? '通话中' : 'In call'); else close(); }
 
   async function accept(callId) {
+    if (actionBusy) return;
+    actionBusy = true;
     try {
       stopRinging();
+      const call = calls().find(item => item.id === callId);
+      if (call) { activeCall = call; renderCall(call, zh() ? '正在接听…' : 'Answering…'); }
       const result = await request(`/api/voice-calls/${encodeURIComponent(callId)}`, { method:'PUT', body:JSON.stringify({ action:'accept' }) });
       if (result.data) replaceStore(result.data); await join(result.call);
-    } catch (error) { incomingCallId = ''; ensureLayer().innerHTML = ''; alert(error.message || error); }
+    } catch (error) { incomingCallId = ''; activeCall = null; ensureLayer().innerHTML = ''; alert(error.message || error); }
+    finally { actionBusy = false; }
   }
 
   async function decline(callId) {
@@ -226,6 +241,17 @@
     } catch {} finally { polling = false; }
   }
 
+  function receiveVoiceEvent(event) {
+    const payload = event?.detail || {};
+    const call = payload.detail?.call;
+    if (!call?.id || !me()?.id) return;
+    const list = calls();
+    const index = list.findIndex(item => item.id === call.id);
+    if (index >= 0) list[index] = call; else list.push(call);
+    if (call.status === 'ringing' && call.callerUserId !== me()?.id && (call.participantUserIds || []).includes(me()?.id)) renderIncoming(call);
+    if (activeCall?.id === call.id && ['declined', 'ended', 'missed'].includes(call.status)) finishLocal();
+  }
+
   async function enableNotifications() {
     if ('Notification' in window && Notification.permission === 'default') await Notification.requestPermission();
   }
@@ -233,5 +259,7 @@
   window.QuadCalls = { start, accept, decline, end, toggleMute, summarize, showSummary, close, poll, enableNotifications, pickParticipants, confirmParticipants, restoreCall,
     startDirect: userId => start(userId),
     startGroup: () => pickParticipants(false) };
-  setInterval(poll, 2500); document.addEventListener('visibilitychange', () => { if (!document.hidden) poll(); }); setTimeout(poll, 1200);
+  window.addEventListener('quad-voice-call', receiveVoiceEvent);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) poll(); });
+  setTimeout(poll, 1200);
 })();

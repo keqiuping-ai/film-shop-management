@@ -966,8 +966,13 @@ function startRealtimeSync() {
     updateSyncStatus();
   });
   eventSource.addEventListener('data-changed', event => {
+    let payload = {};
     try {
-      const payload = JSON.parse(event.data || '{}');
+      payload = JSON.parse(event.data || '{}');
+      if (String(payload.action || '').startsWith('voice-call-')) {
+        window.dispatchEvent(new CustomEvent('quad-voice-call', { detail: payload }));
+        return;
+      }
       const newCustomerImport = ['import-prospects', 'import-customer-conversations'].includes(payload.action)
         && Number(payload.detail?.imported || 0) > 0;
       if (newCustomerImport && !['prospects', 'customerCenter'].includes(current)) {
