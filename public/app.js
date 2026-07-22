@@ -3242,6 +3242,10 @@ async function deleteWarranty(id) {
 }
 
 let aiBossRecognition = null;
+let aiBossCloudRecorder = null;
+let aiBossCloudChunks = [];
+let aiBossCloudStream = null;
+let aiBossCloudStopRequested = false;
 let aiBossReminderTimer = null;
 
 function aiBossPeopleOptions(selected = '') {
@@ -3375,18 +3379,45 @@ function openAiBossTask(sourceText = '') {
 }
 
 function startAiBossQuickVoice(event) { event?.preventDefault(); beginAiBossRecognition(text => openAiBossTask(text)); }
-function stopAiBossQuickVoice(event) { event?.preventDefault(); aiBossRecognition?.stop?.(); }
+function stopAiBossQuickVoice(event) { event?.preventDefault(); aiBossRecognition?.stop?.(); stopAiBossCloudRecording(); }
 function startAiBossFormVoice(event) { event?.preventDefault(); beginAiBossRecognition(text => { const field = document.getElementById('aiBossDescription'); if (field) field.value = [field.value, text].filter(Boolean).join(' '); const assignee = document.getElementById('aiBossAssignee'); if (assignee) assignee.value = suggestAiBossAssignee(field?.value || text); }); }
-function stopAiBossFormVoice(event) { event?.preventDefault(); aiBossRecognition?.stop?.(); }
+function stopAiBossFormVoice(event) { event?.preventDefault(); aiBossRecognition?.stop?.(); stopAiBossCloudRecording(); }
 
 function beginAiBossRecognition(onText) {
   const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if (!Recognition) return alert('当前浏览器不支持直接语音识别，请先使用手动交办。后续接入云端语音识别后可在所有设备使用。');
+  if (!Recognition) return beginAiBossCloudRecording(onText);
   aiBossRecognition?.abort?.(); aiBossRecognition = new Recognition(); aiBossRecognition.lang = 'zh-CN'; aiBossRecognition.continuous = true; aiBossRecognition.interimResults = false;
   let transcript = ''; aiBossRecognition.onresult = event => { for (let i = event.resultIndex; i < event.results.length; i += 1) if (event.results[i].isFinal) transcript += event.results[i][0].transcript; };
   aiBossRecognition.onend = () => { aiBossRecognition = null; if (transcript.trim()) onText(transcript.trim()); };
   aiBossRecognition.onerror = () => { aiBossRecognition = null; alert('没有识别到语音，请重试或手动输入。'); };
   aiBossRecognition.start();
+}
+
+async function beginAiBossCloudRecording(onText) {
+  try {
+    aiBossCloudStopRequested = false;
+    aiBossCloudStream = await navigator.mediaDevices.getUserMedia({ audio:true });
+    aiBossCloudChunks = [];
+    aiBossCloudRecorder = new MediaRecorder(aiBossCloudStream);
+    aiBossCloudRecorder.ondataavailable = event => { if (event.data?.size) aiBossCloudChunks.push(event.data); };
+    aiBossCloudRecorder.onstop = async () => {
+      const stream = aiBossCloudStream; aiBossCloudStream = null; stream?.getTracks().forEach(track => track.stop());
+      const type = aiBossCloudChunks[0]?.type || 'audio/webm'; const blob = new Blob(aiBossCloudChunks, { type });
+      aiBossCloudRecorder = null; aiBossCloudChunks = [];
+      if (!blob.size) return;
+      try {
+        const result = await api('/api/ai-boss/transcribe', { method:'POST', body:JSON.stringify({ dataUrl:await fileToDataUrl(blob), language:'zh' }) });
+        if (result.text) onText(result.text);
+      } catch (error) { alert(error.message || '云端语音识别失败，请重试。'); }
+    };
+    aiBossCloudRecorder.start();
+    if (aiBossCloudStopRequested) aiBossCloudRecorder.stop();
+  } catch { alert('无法录音，请在浏览器设置中允许麦克风权限。'); }
+}
+
+function stopAiBossCloudRecording() {
+  aiBossCloudStopRequested = true;
+  if (aiBossCloudRecorder?.state === 'recording') aiBossCloudRecorder.stop();
 }
 
 async function saveAiBossTask() {

@@ -1236,8 +1236,72 @@ function mobileSnapshot(db, user) {
     personalNotes: (db.personalNotes || [])
       .filter(item => personalNoteVisibleTo(item, user))
       .map(item => personalNoteForUser(db, item, user))
-      .sort((a, b) => String(b.updatedAt || b.createdAt || '').localeCompare(String(a.updatedAt || a.createdAt || '')))
+      .sort((a, b) => String(b.updatedAt || b.createdAt || '').localeCompare(String(a.updatedAt || a.createdAt || ''))),
+    aiBossTasks: aiBossTasksForUser(db, user)
+      .sort((a, b) => String(b.updatedAt || b.createdAt || '').localeCompare(String(a.updatedAt || a.createdAt || ''))),
+    aiBossProfiles: (db.aiBossProfiles || []).map(profile => ({
+      id: profile.id, userId: profile.userId, userName: profile.userName,
+      department: profile.department, duties: profile.duties, skills: profile.skills,
+      backupUserId: profile.backupUserId, updatedAt: profile.updatedAt
+    }))
   };
+}
+
+function dataUrlAudio(value) {
+  const match = String(value || '').match(/^data:([^;,]+);base64,([A-Za-z0-9+/=]+)$/);
+  if (!match) return null;
+  const buffer = Buffer.from(match[2], 'base64');
+  if (!buffer.length || buffer.length > 12 * 1024 * 1024) return null;
+  return { type: match[1], buffer };
+}
+
+async function fetchAiJson(url, options, timeoutMs = 45_000) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(url, { ...options, signal: controller.signal });
+    const text = await response.text();
+    let value = {};
+    try { value = text ? JSON.parse(text) : {}; } catch { value = { error: { message: text.slice(0, 300) } }; }
+    if (!response.ok) throw new Error(value?.error?.message || `AI service returned ${response.status}`);
+    return value;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function parseAiBossDraft(text) {
+  const raw = String(text || '').trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '');
+  const start = raw.indexOf('{'); const end = raw.lastIndexOf('}');
+  if (start < 0 || end <= start) throw new Error('AI 没有返回可用的任务草稿');
+  return JSON.parse(raw.slice(start, end + 1));
+}
+
+function aiBossPrompt(db, sourceText) {
+  const people = (db.users || []).filter(row => row.active !== false).map(person => {
+    const profile = (db.aiBossProfiles || []).find(row => row.userId === person.id) || {};
+    return { id: person.id, name: person.name || person.email, role: person.role, department: profile.department || '', duties: profile.duties || '', skills: profile.skills || '' };
+  });
+  return `你是 QUaD 智能督办中心的任务分析助手。把口语需求整理成一张可确认的任务单。\n可选员工：${JSON.stringify(people)}\n用户原话：${sourceText}\n只返回 json 对象，字段必须是：title,description,assigneeUserId,dueAt,priority,difficulty,acceptanceCriteria,reason。dueAt 使用 ISO 8601；未提时间时设为明天下午5点（America/Los_Angeles）。priority 只能为低、普通、高、紧急；difficulty 为1到10。若用户明确指定人员必须尊重；否则根据职责技能选择最合适的人。`;
+}
+
+async function createAiBossDraft(db, sourceText, requestedProvider) {
+  const provider = requestedProvider === 'openai' ? 'openai' : requestedProvider === 'deepseek' ? 'deepseek' : (process.env.AI_BOSS_PROVIDER || 'deepseek');
+  const prompt = aiBossPrompt(db, sourceText);
+  if (provider === 'deepseek') {
+    if (!process.env.DEEPSEEK_API_KEY) throw new Error('DeepSeek API Key 尚未配置');
+    const value = await fetchAiJson('https://api.deepseek.com/chat/completions', {
+      method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${process.env.DEEPSEEK_API_KEY}` },
+      body: JSON.stringify({ model: process.env.DEEPSEEK_MODEL || 'deepseek-v4-flash', messages: [{ role: 'user', content: prompt }], response_format: { type: 'json_object' }, temperature: 0.2 })
+    });
+    return { provider, draft: parseAiBossDraft(value?.choices?.[0]?.message?.content) };
+  }
+  if (!process.env.OPENAI_API_KEY) throw new Error('OpenAI API Key 尚未配置');
+  const value = await fetchAiJson('https://api.openai.com/v1/chat/completions', {
+    method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${process.env.OPENAI_API_KEY}` },
+    body: JSON.stringify({ model: process.env.OPENAI_TASK_MODEL || 'gpt-5-mini', messages: [{ role: 'user', content: prompt }], response_format: { type: 'json_object' } })
+  });
+  return { provider, draft: parseAiBossDraft(value?.choices?.[0]?.message?.content) };
 }
 
 function sanitizeMessageAttachment(input) {
@@ -4446,6 +4510,58 @@ async function api(req, res) {
     writeDb(db);
     notifyDataChanged('create-workshopMovements-batch', batchId);
     return send(res, 200, sanitizeDbForUser(db, user));
+  }
+
+  if (req.method === 'POST' && url.pathname === '/api/ai-boss/transcribe') {
+    try {
+      if (!process.env.OPENAI_API_KEY) return send(res, 503, { error: 'OpenAI 语音识别尚未配置' });
+      const body = await readBody(req);
+      const audio = dataUrlAudio(body.dataUrl);
+      if (!audio) return send(res, 400, { error: '录音为空、格式不正确或超过 12MB' });
+      const extension = audio.type.includes('mp4') ? 'm4a' : audio.type.includes('ogg') ? 'ogg' : 'webm';
+      const form = new FormData();
+      form.append('file', new Blob([audio.buffer], { type: audio.type }), `supervision-${Date.now()}.${extension}`);
+      form.append('model', process.env.OPENAI_TRANSCRIBE_MODEL || 'gpt-4o-mini-transcribe');
+      form.append('language', String(body.language || 'zh').slice(0, 8));
+      form.append('prompt', 'QUaD 贴膜店员工交办任务，可能包含员工姓名、仓库、窗膜、PPF、TPU、车型和订单术语。');
+      const value = await fetchAiJson('https://api.openai.com/v1/audio/transcriptions', {
+        method: 'POST', headers: { Authorization: `Bearer ${process.env.OPENAI_API_KEY}` }, body: form
+      }, 60_000);
+      const text = String(value?.text || '').trim();
+      if (!text) return send(res, 422, { error: '没有识别到有效语音，请重新说一次' });
+      audit(db, user, 'ai-boss-transcribe', { collection: 'aiBossTasks', detail: `云端识别语音 ${text.length} 字` });
+      return send(res, 200, { text, provider: 'openai' });
+    } catch (error) {
+      return send(res, 502, { error: `语音识别失败：${String(error.message || error).slice(0, 220)}` });
+    }
+  }
+
+  if (req.method === 'POST' && url.pathname === '/api/ai-boss/draft') {
+    const body = await readBody(req);
+    const sourceText = String(body.text || '').trim().slice(0, 5000);
+    if (!sourceText) return send(res, 400, { error: '请先说出或输入要交办的事情' });
+    try {
+      let result;
+      try {
+        result = await createAiBossDraft(db, sourceText, String(body.provider || ''));
+      } catch (firstError) {
+        const requested = String(body.provider || '');
+        if (requested || !process.env.OPENAI_API_KEY) throw firstError;
+        result = await createAiBossDraft(db, sourceText, 'openai');
+        result.fallbackReason = String(firstError.message || firstError).slice(0, 180);
+      }
+      const activeUserIds = new Set((db.users || []).filter(row => row.active !== false).map(row => row.id));
+      const draft = result.draft || {};
+      if (!activeUserIds.has(String(draft.assigneeUserId || ''))) draft.assigneeUserId = '';
+      draft.title = String(draft.title || sourceText.slice(0, 50)).slice(0, 180);
+      draft.description = String(draft.description || sourceText).slice(0, 4000);
+      draft.acceptanceCriteria = String(draft.acceptanceCriteria || '').slice(0, 2000);
+      draft.priority = ['低', '普通', '高', '紧急'].includes(draft.priority) ? draft.priority : '普通';
+      draft.difficulty = Math.min(10, Math.max(1, Number(draft.difficulty || 3)));
+      return send(res, 200, { provider: result.provider, fallbackReason: result.fallbackReason || '', sourceText, draft });
+    } catch (error) {
+      return send(res, 502, { error: `AI 任务分析失败：${String(error.message || error).slice(0, 220)}` });
+    }
   }
 
   const aiBossTaskMatch = url.pathname.match(/^\/api\/ai-boss\/tasks(?:\/([^/]+))?$/);

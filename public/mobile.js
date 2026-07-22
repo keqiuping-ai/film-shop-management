@@ -18,6 +18,10 @@ let reimbursementAttachments = [];
 let deferredInstall = null;
 let messageRecorder = null;
 let messageAudioChunks = [];
+let supervisionRecorder = null;
+let supervisionAudioChunks = [];
+let supervisionRecordingStream = null;
+let supervisionStopRequested = false;
 let lang = localStorage.getItem('filmShopCloud.lang') || 'zh';
 const MAX_MESSAGE_ATTACHMENT_BYTES = 8 * 1024 * 1024;
 const GROUP_CHAT_ID = '__all_staff__';
@@ -120,7 +124,7 @@ const I18N = {
     logout: '退出登录',
     iosInstall: 'iPhone/iPad 安装方法：点击 Safari 底部“分享”按钮，然后选择“添加到主屏幕”。图标会使用 QUAD FILM 黑色品牌标。',
     browserInstall: '如果浏览器没有弹出安装窗口，请打开浏览器菜单，选择“安装应用”或“添加到主屏幕”。'
-    ,groupChat: '全体员工群聊', myNotes: '我的记事本', notesPrivate: '包含自己的记事和别人分享给你的内容；只有原作者能修改。', newMemo: '新建备忘录', newTask: '新建待办', memo: '备忘', todo: '待办', completed: '已完成', finish: '办完了', edit: '编辑', delete: '删除', noteTitle: '标题', noteContent: '详细内容（可不填）', remindAt: '提醒时间', save: '保存', cancel: '取消', noteTitleRequired: '请填写标题', noteTimeRequired: '请选择提醒日期和时间', confirmDeleteNote: '确定删除这条记事吗？', noNotes: '还没有记事或待办。', due: '提醒', attachmentSending: '正在发送附件…', submitClaim: '提交报销', expenseDate: '消费日期', category: '报销类别', vendor: '商家（可不填）', purpose: '费用用途', amount: '金额', paymentMethod: '付款方式（可不填）', claimNotes: '备注（没有小票时必须说明）', receipt: '拍照或上传小票', receiptHint: '支持照片或 PDF，单个不超过 5MB', myClaims: '我的报销记录', noClaims: '暂无报销记录', claimSubmitted: '报销申请已提交', uploadingReceipt: '正在上传凭证…', remove: '删除', noClaimPermission: '当前账号没有提交报销的权限。', receiptCount: '个凭证'
+    ,groupChat: '全体员工群聊', myNotes: '我的记事本', notesPrivate: '包含自己的记事和别人分享给你的内容；只有原作者能修改。', newMemo: '新建备忘录', newTask: '新建待办', memo: '备忘', todo: '待办', completed: '已完成', finish: '办完了', edit: '编辑', delete: '删除', noteTitle: '标题', noteContent: '详细内容（可不填）', remindAt: '提醒时间', save: '保存', cancel: '取消', noteTitleRequired: '请填写标题', noteTimeRequired: '请选择提醒日期和时间', confirmDeleteNote: '确定删除这条记事吗？', noNotes: '还没有记事或待办。', due: '提醒', attachmentSending: '正在发送附件…', submitClaim: '提交报销', expenseDate: '消费日期', category: '报销类别', vendor: '商家（可不填）', purpose: '费用用途', amount: '金额', paymentMethod: '付款方式（可不填）', claimNotes: '备注（没有小票时必须说明）', receipt: '拍照或上传小票', receiptHint: '支持照片或 PDF，单个不超过 5MB', myClaims: '我的报销记录', noClaims: '暂无报销记录', claimSubmitted: '报销申请已提交', uploadingReceipt: '正在上传凭证…', remove: '删除', noClaimPermission: '当前账号没有提交报销的权限。', receiptCount: '个凭证', supervision: '督办', supervisionTitle: '智能督办中心', holdToSpeak: '按住说话', releaseToCreate: '松开后 AI 生成任务确认单', manualAssignment: '手动交办', noSupervisionTasks: '还没有与你相关的督办任务。', aiProcessing: 'AI 正在整理任务…', recording: '正在录音，松开结束', transcribeFailed: '语音识别失败', draftFailed: '任务分析失败'
   },
   en: {
     languageToggle: '中文',
@@ -217,7 +221,7 @@ const I18N = {
     logout: 'Log Out',
     iosInstall: 'iPhone/iPad: tap the Safari Share button, then choose Add to Home Screen. The icon will use the black QUAD FILM brand icon.',
     browserInstall: 'If the install prompt does not appear, open the browser menu and choose Install App or Add to Home Screen.'
-    ,groupChat: 'All Staff', myNotes: 'My Notes', notesPrivate: 'Includes your notes and notes shared with you; only authors can edit.', newMemo: 'New Memo', newTask: 'New Task', memo: 'Memo', todo: 'To-do', completed: 'Completed', finish: 'Done', edit: 'Edit', delete: 'Delete', noteTitle: 'Title', noteContent: 'Details (optional)', remindAt: 'Reminder', save: 'Save', cancel: 'Cancel', noteTitleRequired: 'Enter a title', noteTimeRequired: 'Choose a reminder date and time', confirmDeleteNote: 'Delete this note?', noNotes: 'No notes or tasks yet.', due: 'Reminder', attachmentSending: 'Sending attachment…', submitClaim: 'Submit Expense', expenseDate: 'Expense Date', category: 'Category', vendor: 'Vendor (optional)', purpose: 'Business Purpose', amount: 'Amount', paymentMethod: 'Payment Method (optional)', claimNotes: 'Notes (required without a receipt)', receipt: 'Take Photo or Upload Receipt', receiptHint: 'Photo or PDF, up to 5MB each', myClaims: 'My Expense Claims', noClaims: 'No expense claims', claimSubmitted: 'Expense claim submitted', uploadingReceipt: 'Uploading receipt…', remove: 'Remove', noClaimPermission: 'This account cannot submit expense claims.', receiptCount: 'receipt(s)'
+    ,groupChat: 'All Staff', myNotes: 'My Notes', notesPrivate: 'Includes your notes and notes shared with you; only authors can edit.', newMemo: 'New Memo', newTask: 'New Task', memo: 'Memo', todo: 'To-do', completed: 'Completed', finish: 'Done', edit: 'Edit', delete: 'Delete', noteTitle: 'Title', noteContent: 'Details (optional)', remindAt: 'Reminder', save: 'Save', cancel: 'Cancel', noteTitleRequired: 'Enter a title', noteTimeRequired: 'Choose a reminder date and time', confirmDeleteNote: 'Delete this note?', noNotes: 'No notes or tasks yet.', due: 'Reminder', attachmentSending: 'Sending attachment…', submitClaim: 'Submit Expense', expenseDate: 'Expense Date', category: 'Category', vendor: 'Vendor (optional)', purpose: 'Business Purpose', amount: 'Amount', paymentMethod: 'Payment Method (optional)', claimNotes: 'Notes (required without a receipt)', receipt: 'Take Photo or Upload Receipt', receiptHint: 'Photo or PDF, up to 5MB each', myClaims: 'My Expense Claims', noClaims: 'No expense claims', claimSubmitted: 'Expense claim submitted', uploadingReceipt: 'Uploading receipt…', remove: 'Remove', noClaimPermission: 'This account cannot submit expense claims.', receiptCount: 'receipt(s)', supervision: 'Tasks', supervisionTitle: 'Smart Supervision', holdToSpeak: 'Hold to speak', releaseToCreate: 'Release for AI task draft', manualAssignment: 'Manual task', noSupervisionTasks: 'No supervision tasks related to you.', aiProcessing: 'AI is preparing the task…', recording: 'Recording — release to finish', transcribeFailed: 'Transcription failed', draftFailed: 'Task analysis failed'
   }
 };
 
@@ -245,6 +249,7 @@ function applyLanguage() {
   setText('tabChat', t('chat'));
   setText('tabNotes', t('notes'));
   setText('tabClock', t('clock'));
+  setText('tabSupervision', t('supervision'));
   setText('tabLeave', t('leave'));
   setText('tabReimbursement', t('reimbursement'));
   setText('tabMe', t('me'));
@@ -526,6 +531,7 @@ function render(options = {}) {
   if (tab === 'chat') view.innerHTML = chatHtml();
   if (tab === 'notes') view.innerHTML = notesHtml();
   if (tab === 'clock') view.innerHTML = clockHtml();
+  if (tab === 'supervision') view.innerHTML = supervisionHtml();
   if (tab === 'leave') view.innerHTML = leaveHtml();
   if (tab === 'reimbursement') view.innerHTML = reimbursementHtml();
   if (tab === 'me') view.innerHTML = meHtml();
@@ -547,6 +553,7 @@ function renderSnapshot() {
     noteCount: (state?.personalNotes || []).length,
     leaveCount: (state?.leaveRequests || []).length,
     clockCount: (state?.clockRecords || []).length,
+    supervisionCount: (state?.aiBossTasks || []).length,
     reimbursementCount: (state?.reimbursements || []).length
   });
 }
@@ -977,6 +984,137 @@ function clockHtml() {
     ${records.length ? records.map(clockRecordHtml).join('') : `<div class="row"><span>${t('noClockRecords')}</span></div>`}
   </div>`;
 }
+
+function supervisionHtml() {
+  const tasks = state.aiBossTasks || [];
+  return `<section class="supervision-hero">
+    <div><small>QUaD AI</small><h2>${t('supervisionTitle')}</h2><p>${t('releaseToCreate')}</p></div>
+    <select id="supervisionProvider" aria-label="AI Provider"><option value="deepseek">DeepSeek</option><option value="openai">OpenAI</option></select>
+    <button id="supervisionVoiceButton" class="supervision-voice" onpointerdown="startSupervisionVoice(event)" onpointerup="stopSupervisionVoice(event)" onpointercancel="stopSupervisionVoice(event)">🎙️ <strong>${t('holdToSpeak')}</strong></button>
+    <button class="supervision-manual" onclick="manualSupervisionTask()">＋ ${t('manualAssignment')}</button>
+    <div id="supervisionStatus" class="hint"></div>
+  </section>
+  <div class="supervision-list">${tasks.length ? tasks.map(supervisionTaskHtml).join('') : `<div class="panel-body hint">${t('noSupervisionTasks')}</div>`}</div>`;
+}
+
+function supervisionTaskHtml(task) {
+  const isManager = ['owner', 'manager'].includes(user?.role);
+  const isAssignee = task.assigneeUserId === user?.id;
+  const isCreator = task.createdByUserId === user?.id;
+  const actions = [];
+  if (task.status === '待接单' && (isAssignee || isManager)) actions.push(`<button onclick="updateSupervisionTask('${task.id}','accept')">接单</button>`);
+  if (!['已完成','已取消','待验收'].includes(task.status) && (isAssignee || isManager)) {
+    actions.push(`<button onclick="supervisionProgress('${task.id}')">报进度</button>`);
+    actions.push(`<button onclick="supervisionResult('${task.id}')">交结果</button>`);
+  }
+  if (task.status === '待验收' && (isCreator || isManager)) {
+    actions.push(`<button onclick="updateSupervisionTask('${task.id}','approve','',{qualityScore:90})">验收通过</button>`);
+    actions.push(`<button onclick="supervisionReject('${task.id}')">退回</button>`);
+  }
+  return `<article class="supervision-card"><header><span>${escapeHtml(task.status || '')}</span><b>${escapeHtml(task.priority || '普通')}</b></header><h3>${escapeHtml(task.title || '')}</h3><p>${escapeHtml(task.description || '')}</p><dl><div><dt>负责人</dt><dd>${escapeHtml(task.assigneeName || '')}</dd></div><div><dt>截止</dt><dd>${escapeHtml(formatMobileDateTime(task.dueAt || '')) || '—'}</dd></div><div><dt>进度</dt><dd>${Number(task.progress || 0)}%</dd></div></dl>${task.acceptanceCriteria ? `<aside><strong>验收：</strong>${escapeHtml(task.acceptanceCriteria)}</aside>` : ''}${task.result ? `<aside><strong>结果：</strong>${escapeHtml(task.result)}</aside>` : ''}<footer>${actions.join('')}</footer></article>`;
+}
+
+function formatMobileDateTime(value) {
+  if (!value) return '';
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleString(lang === 'en' ? 'en-US' : 'zh-CN', { timeZone: APP_TIMEZONE, month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit' });
+}
+
+async function startSupervisionVoice(event) {
+  event?.preventDefault();
+  if (supervisionRecorder?.state === 'recording') return;
+  try {
+    supervisionStopRequested = false;
+    supervisionRecordingStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    supervisionAudioChunks = [];
+    supervisionRecorder = new MediaRecorder(supervisionRecordingStream);
+    supervisionRecorder.ondataavailable = item => { if (item.data?.size) supervisionAudioChunks.push(item.data); };
+    supervisionRecorder.onstop = processSupervisionRecording;
+    supervisionRecorder.start();
+    if (supervisionStopRequested) supervisionRecorder.stop();
+    document.getElementById('supervisionVoiceButton')?.classList.add('recording');
+    const status = document.getElementById('supervisionStatus'); if (status) status.textContent = t('recording');
+  } catch { alert(t('micDenied')); }
+}
+
+function stopSupervisionVoice(event) {
+  event?.preventDefault();
+  supervisionStopRequested = true;
+  if (supervisionRecorder?.state === 'recording') supervisionRecorder.stop();
+}
+
+async function processSupervisionRecording() {
+  const stream = supervisionRecordingStream;
+  supervisionRecordingStream = null;
+  stream?.getTracks().forEach(track => track.stop());
+  const type = supervisionAudioChunks[0]?.type || 'audio/webm';
+  const blob = new Blob(supervisionAudioChunks, { type });
+  supervisionRecorder = null; supervisionAudioChunks = [];
+  document.getElementById('supervisionVoiceButton')?.classList.remove('recording');
+  if (!blob.size) return;
+  if (blob.size > 12 * 1024 * 1024) return alert(t('voiceLimit'));
+  const status = document.getElementById('supervisionStatus'); if (status) status.textContent = t('aiProcessing');
+  try {
+    const transcription = await api('/api/ai-boss/transcribe', { method:'POST', body:JSON.stringify({ dataUrl:await fileToDataUrl(blob), language:lang === 'en' ? 'en' : 'zh' }) });
+    await analyzeSupervisionText(transcription.text);
+  } catch (error) { alert(`${t('transcribeFailed')}：${error.message}`); if (status) status.textContent = ''; }
+}
+
+async function manualSupervisionTask() {
+  const text = prompt(lang === 'en' ? 'Describe the task:' : '请说清楚或输入要交办的事情：');
+  if (String(text || '').trim()) await analyzeSupervisionText(String(text).trim());
+}
+
+async function analyzeSupervisionText(text) {
+  const provider = document.getElementById('supervisionProvider')?.value || 'deepseek';
+  const status = document.getElementById('supervisionStatus'); if (status) status.textContent = t('aiProcessing');
+  try {
+    const result = await api('/api/ai-boss/draft', { method:'POST', body:JSON.stringify({ text, provider }) });
+    openSupervisionDraft(result.draft || {}, result.sourceText || text, result.provider || provider);
+  } catch (error) { alert(`${t('draftFailed')}：${error.message}`); }
+  finally { if (status) status.textContent = ''; }
+}
+
+function supervisionUserOptions(selectedId) {
+  return (state.users || []).filter(item => item.active !== false).map(item => `<option value="${item.id}" ${item.id === selectedId ? 'selected' : ''}>${escapeHtml(item.name || item.email)}</option>`).join('');
+}
+
+function localDateTimeValue(value) {
+  const date = value ? new Date(value) : new Date(Date.now() + 24 * 60 * 60 * 1000);
+  if (Number.isNaN(date.getTime())) return '';
+  const parts = new Intl.DateTimeFormat('en-CA', { timeZone:APP_TIMEZONE, year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hourCycle:'h23' }).formatToParts(date).reduce((result,item)=>(result[item.type]=item.value,result),{});
+  return `${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}`;
+}
+
+function openSupervisionDraft(draft, sourceText, provider) {
+  const overlay = document.createElement('div'); overlay.className = 'mobile-modal';
+  overlay.innerHTML = `<div class="mobile-dialog"><div class="dialog-head"><strong>AI 任务确认单</strong><button onclick="this.closest('.mobile-modal').remove()">×</button></div><p class="hint">${provider === 'openai' ? 'OpenAI' : 'DeepSeek'} 已整理，请确认后再正式派单。</p>
+    <label>任务标题<input id="supervisionTitle" value="${escapeHtml(draft.title || '')}"></label>
+    <label>具体要求<textarea id="supervisionDescription">${escapeHtml(draft.description || sourceText || '')}</textarea></label>
+    <label>负责人<select id="supervisionAssignee"><option value="">请选择</option>${supervisionUserOptions(draft.assigneeUserId || '')}</select></label>
+    <label>截止时间<input id="supervisionDueAt" type="datetime-local" value="${localDateTimeValue(draft.dueAt)}"></label>
+    <label>优先级<select id="supervisionPriority">${['低','普通','高','紧急'].map(item=>`<option ${item===(draft.priority||'普通')?'selected':''}>${item}</option>`).join('')}</select></label>
+    <label>验收标准<textarea id="supervisionCriteria">${escapeHtml(draft.acceptanceCriteria || '')}</textarea></label>
+    <input id="supervisionSourceText" type="hidden" value="${escapeHtml(sourceText || '')}"><input id="supervisionDifficulty" type="hidden" value="${Number(draft.difficulty || 3)}">
+    <div class="dialog-actions"><button onclick="this.closest('.mobile-modal').remove()">${t('cancel')}</button><button class="primary-inline" onclick="submitSupervisionDraft(this)">确认派单</button></div></div>`;
+  document.body.appendChild(overlay);
+}
+
+async function submitSupervisionDraft(button) {
+  const overlay = button.closest('.mobile-modal'); const value = id => String(overlay.querySelector(`#${id}`)?.value || '').trim();
+  try {
+    button.disabled = true;
+    await api('/api/ai-boss/tasks', { method:'POST', body:JSON.stringify({ title:value('supervisionTitle'), description:value('supervisionDescription'), sourceText:value('supervisionSourceText'), assigneeUserId:value('supervisionAssignee'), dueAt:value('supervisionDueAt'), priority:value('supervisionPriority'), difficulty:Number(value('supervisionDifficulty') || 3), acceptanceCriteria:value('supervisionCriteria'), reminderHours:2 }) });
+    overlay.remove(); state = await api('/api/mobile/bootstrap'); renderAuth(); render();
+  } catch (error) { alert(error.message); button.disabled = false; }
+}
+
+async function updateSupervisionTask(id, action, note = '', extra = {}) {
+  try { await api(`/api/ai-boss/tasks/${encodeURIComponent(id)}`, { method:'PUT', body:JSON.stringify({ action, note, ...extra }) }); state = await api('/api/mobile/bootstrap'); renderAuth(); render(); } catch (error) { alert(error.message); }
+}
+function supervisionProgress(id) { const progress=prompt('当前完成进度（1-99）：'); if(progress===null)return; const note=prompt('已经完成什么、下一步做什么：')||''; if(note) updateSupervisionTask(id,'progress',note,{progress:Number(progress)}); }
+function supervisionResult(id) { const note=prompt('请提交最终结果和证据说明：')||''; if(note) updateSupervisionTask(id,'result',note); }
+function supervisionReject(id) { const note=prompt('请说明退回原因和需要继续完成的内容：')||''; if(note) updateSupervisionTask(id,'reject',note); }
 
 function clockRecordHtml(item) {
   const mapUrl = item.mapUrl || `https://www.google.com/maps?q=${encodeURIComponent(`${item.lat},${item.lng}`)}`;
