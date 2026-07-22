@@ -9,6 +9,7 @@
   let ringContext = null;
   let ringTimeout = null;
   let polling = false;
+  let pollTimer = null;
   let actionBusy = false;
   let recording = null;
   let recordingChunks = [];
@@ -374,11 +375,20 @@
     try {
       const result = await request('/api/voice-calls');
       if (Array.isArray(result.calls)) store().voiceCalls = result.calls;
-      const call = activeForMe();
-      if (waitingForMe(call)) renderIncoming(call);
+      // Always look for a call that is ringing this user before considering an
+      // older outgoing/active call. Otherwise a stale call can mask a new one.
+      const waitingCall = calls().find(waitingForMe);
+      if (waitingCall) renderIncoming(waitingCall);
       const current = activeCall && calls().find(item => item.id === activeCall.id);
       if (current && (['declined', 'ended', 'missed'].includes(current.status) || current.participantStatuses?.[me()?.id] === 'left')) finishLocal();
     } catch {} finally { polling = false; }
+  }
+
+  function startPolling() {
+    if (pollTimer) return;
+    pollTimer = setInterval(() => {
+      if (!document.hidden) poll();
+    }, 2000);
   }
 
   function receiveVoiceEvent(event) {
@@ -412,5 +422,6 @@
     startGroup: () => pickParticipants(false) };
   window.addEventListener('quad-voice-call', receiveVoiceEvent);
   document.addEventListener('visibilitychange', () => { if (!document.hidden) poll(); });
+  startPolling();
   setTimeout(poll, 1200);
 })();

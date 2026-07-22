@@ -1,4 +1,4 @@
-const CACHE_NAME = 'film-shop-v81-safari-scroll-intent';
+const CACHE_NAME = 'film-shop-v82-reliable-incoming-calls';
 const ASSETS = [
     '/',
     '/mobile.html',
