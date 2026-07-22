@@ -2607,11 +2607,20 @@ function customerServiceAgentSends(item) {
   return [...generic, ...legacySms].sort((a, b) => String(a.sentAt || '').localeCompare(String(b.sentAt || '')));
 }
 
+function customerServiceRequiredReplyChannel(item) {
+  const inbound = (Array.isArray(item?.conversationMessages) ? item.conversationMessages : [])
+    .map((message, index) => ({ message, index, at: new Date(message.timestamp || message.time || message.createdAt || 0).getTime() }))
+    .filter(row => customerServiceMessageRole(row.message) === 'customer' && ['yelp', 'sms'].includes(String(row.message.channel || '').toLowerCase()))
+    .sort((a, b) => (Number.isFinite(a.at) && Number.isFinite(b.at) && a.at !== b.at) ? a.at - b.at : a.index - b.index);
+  return String(inbound[inbound.length - 1]?.message?.channel || '').toLowerCase();
+}
+
 function customerServiceAvailableChannels(item) {
   const channels = [];
   if (prospectTextKey(item?.source) === 'yelp' && String(item?.externalId || '').trim()) channels.push('yelp');
   if (normalizedPhone(item?.phone).length === 10) channels.push('sms');
-  return channels;
+  const required = customerServiceRequiredReplyChannel(item);
+  return required && channels.includes(required) ? [required] : channels;
 }
 
 function customerServiceTaskRows(db, filter = 'active') {
@@ -3189,7 +3198,7 @@ async function api(req, res) {
         const body = await readBody(req);
         const text = String(body.text || '').trim();
         const availableChannels = customerServiceAvailableChannels(item);
-        const channel = String(body.channel || (availableChannels.includes('yelp') ? 'yelp' : availableChannels[0]) || '').trim().toLowerCase();
+        const channel = String(body.channel || availableChannels[0] || '').trim().toLowerCase();
         const requestId = String(body.requestId || req.headers['idempotency-key'] || '').trim().slice(0, 120);
         if (!requestId || !/^[a-zA-Z0-9._:-]{8,120}$/.test(requestId)) return send(res, 400, { error: '请提供至少 8 位的唯一请求编号 requestId' });
         const previousSend = customerServiceAgentSends(item).find(row => row.requestId === requestId);
@@ -4062,6 +4071,8 @@ async function api(req, res) {
     if (!['customerConversations', 'prospects'].includes(collection)) return send(res, 400, { error: '客户类型不正确' });
     const item = (db[collection] || []).find(row => row.id === recordId);
     if (!item) return send(res, 404, { error: '找不到客户记录' });
+    const requiredChannel = customerServiceRequiredReplyChannel(item);
+    if (requiredChannel && requiredChannel !== 'yelp') return send(res, 409, { error: '客户最后通过手机短信联系，请继续使用短信回复，不能同时切换到 Yelp' });
     if (prospectTextKey(item.source) !== 'yelp' || !String(item.externalId || '').trim()) return send(res, 400, { error: '这条客户记录没有可用的 Yelp Lead ID' });
     if (!text) return send(res, 400, { error: 'Yelp 回复内容不能为空' });
     if (text.length > 5000) return send(res, 400, { error: 'Yelp 回复内容不能超过 5000 个字符' });
@@ -4110,6 +4121,8 @@ async function api(req, res) {
     if (!['customerConversations', 'prospects'].includes(collection)) return send(res, 400, { error: '客户类型不正确' });
     const item = (db[collection] || []).find(row => row.id === recordId);
     if (!item) return send(res, 404, { error: '找不到客户记录' });
+    const requiredChannel = customerServiceRequiredReplyChannel(item);
+    if (requiredChannel && requiredChannel !== 'sms') return send(res, 409, { error: '客户最后通过 Yelp 联系，请继续在 Yelp 回复，不能同时切换到短信' });
     const phoneDigits = normalizedPhone(item.phone);
     if (phoneDigits.length !== 10) return send(res, 400, { error: '客户电话格式不正确，请先填写美国 10 位手机号码' });
     if (!text && !attachment?.url) return send(res, 400, { error: '短信内容或附件不能为空' });

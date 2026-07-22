@@ -5079,6 +5079,18 @@ function rememberProspectReplyChannel(channel) {
   localStorage.setItem(`filmShopCloud.replyChannel.${activeProspectWorkspaceId}`, channel);
 }
 
+function requiredProspectReplyChannel(item) {
+  const inbound = (Array.isArray(item?.conversationMessages) ? item.conversationMessages : [])
+    .map((message, index) => ({ message, index, at: new Date(message.timestamp || message.time || message.createdAt || 0).getTime() }))
+    .filter(row => {
+      const direction = String(row.message.direction || '').toLowerCase();
+      const role = direction === 'inbound' ? 'customer' : prospectSpeakerRole(row.message.speaker || row.message.role || row.message.senderType, row.message.speakerName || row.message.name || '');
+      return role === 'customer' && ['yelp', 'sms'].includes(String(row.message.channel || '').toLowerCase());
+    })
+    .sort((a, b) => (Number.isFinite(a.at) && Number.isFinite(b.at) && a.at !== b.at) ? a.at - b.at : a.index - b.index);
+  return String(inbound[inbound.length - 1]?.message?.channel || '').toLowerCase();
+}
+
 function closeProspectWorkspace() {
   prospectWorkspaceDrafts.delete(activeProspectWorkspaceId);
   activeProspectWorkspaceId = '';
@@ -5132,7 +5144,10 @@ function renderProspectWorkspace() {
   const statuses = prospectStatusOptions();
   const canReplyYelp = String(item.source || '').trim().toLowerCase() === 'yelp' && Boolean(String(item.externalId || '').trim());
   const canReplySms = customerPhoneMatchKey(item.phone).length === 10;
-  const defaultReplyChannel = savedProspectReplyChannel(canReplyYelp, canReplySms);
+  const requiredReplyChannel = requiredProspectReplyChannel(item);
+  const defaultReplyChannel = (requiredReplyChannel === 'yelp' && canReplyYelp) || (requiredReplyChannel === 'sms' && canReplySms)
+    ? requiredReplyChannel
+    : savedProspectReplyChannel(canReplyYelp, canReplySms);
   workspace.innerHTML = `
     <header class="prospect-workspace-header">
       <div class="prospect-workspace-customer">
@@ -5206,8 +5221,8 @@ function renderProspectWorkspace() {
           </div>
           <div class="prospect-compose-row">
             <select id="prospectReplyChannel" onchange="updateProspectReplyChannel()" aria-label="${lang === 'zh' ? '回复渠道' : 'Reply channel'}">
-              <option value="yelp" ${defaultReplyChannel === 'yelp' ? 'selected' : ''} ${canReplyYelp ? '' : 'disabled'}>${lang === 'zh' ? 'Yelp 站内消息' : 'Yelp message'}</option>
-              <option value="sms" ${defaultReplyChannel === 'sms' ? 'selected' : ''} ${canReplySms ? '' : 'disabled'}>${lang === 'zh' ? '手机短信' : 'SMS'}</option>
+              <option value="yelp" ${defaultReplyChannel === 'yelp' ? 'selected' : ''} ${canReplyYelp && (!requiredReplyChannel || requiredReplyChannel === 'yelp') ? '' : 'disabled'}>${lang === 'zh' ? 'Yelp 站内消息' : 'Yelp message'}</option>
+              <option value="sms" ${defaultReplyChannel === 'sms' ? 'selected' : ''} ${canReplySms && (!requiredReplyChannel || requiredReplyChannel === 'sms') ? '' : 'disabled'}>${lang === 'zh' ? '手机短信' : 'SMS'}</option>
             </select>
             <textarea id="prospectReplyInput" oninput="prospectReplyRevision += 1" onpaste="handleProspectReplyPaste(event)" placeholder="${lang === 'zh' ? '输入或粘贴文字、截图、图片…' : 'Write or paste text, screenshots, or images…'}"></textarea>
             <button id="prospectSendSmsButton" class="btn primary" onclick="sendProspectMessage()" ${hasPerm('prospectsEdit') ? '' : 'disabled'}>${defaultReplyChannel === 'yelp' ? (lang === 'zh' ? '通过 Yelp 发送' : 'Send via Yelp') : (lang === 'zh' ? '发送短信' : 'Send SMS')}</button>
@@ -5693,7 +5708,11 @@ async function saveProspectWorkspaceDetails() {
 }
 
 function updateProspectReplyChannel() {
-  const channel = document.getElementById('prospectReplyChannel')?.value || 'sms';
+  const { item } = activeCustomerWorkspaceItem();
+  const requiredChannel = requiredProspectReplyChannel(item);
+  const select = document.getElementById('prospectReplyChannel');
+  if (select && requiredChannel && select.value !== requiredChannel) select.value = requiredChannel;
+  const channel = select?.value || requiredChannel || 'sms';
   rememberProspectReplyChannel(channel);
   const button = document.getElementById('prospectSendSmsButton');
   const status = document.getElementById('prospectChannelStatus');
@@ -5701,9 +5720,13 @@ function updateProspectReplyChannel() {
   if (button) button.textContent = channel === 'yelp'
     ? (lang === 'zh' ? '通过 Yelp 发送' : 'Send via Yelp')
     : (lang === 'zh' ? '发送短信' : 'Send SMS');
-  if (status) status.textContent = channel === 'yelp'
-    ? (lang === 'zh' ? '这条回复会通过 Zapier 发回客户的 Yelp 对话' : 'This reply will be sent to the Yelp conversation through Zapier')
-    : (lang === 'zh' ? '通过 Twilio 发送和接收短信 · 发送号码：+1 725-241-2586' : 'Send and receive SMS through Twilio · Sender: +1 725-241-2586');
+  if (status) status.textContent = requiredChannel
+    ? (channel === 'yelp'
+      ? (lang === 'zh' ? '客户最后从 Yelp 联系，已锁定通过 Yelp 回复' : 'Locked to Yelp because the customer last contacted you on Yelp')
+      : (lang === 'zh' ? '客户最后从短信联系，已锁定通过短信回复 · 发送号码：+1 725-241-2586' : 'Locked to SMS because the customer last contacted you by SMS'))
+    : (channel === 'yelp'
+      ? (lang === 'zh' ? '这条回复会通过 Zapier 发回客户的 Yelp 对话' : 'This reply will be sent to the Yelp conversation through Zapier')
+      : (lang === 'zh' ? '通过 Twilio 发送和接收短信 · 发送号码：+1 725-241-2586' : 'Send and receive SMS through Twilio · Sender: +1 725-241-2586'));
   attachmentButtons.forEach(control => { control.disabled = channel === 'yelp'; });
 }
 
