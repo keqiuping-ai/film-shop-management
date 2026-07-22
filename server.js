@@ -1812,8 +1812,18 @@ function normalizeProspectInput(input, fallback = {}) {
 
 function findProspectDuplicate(prospects, candidate) {
   const candidateKey = prospectIdentityKey(candidate);
-  if (!candidateKey) return null;
-  return (prospects || []).find(item => prospectIdentityKey(item) === candidateKey) || null;
+  const exact = candidateKey ? (prospects || []).find(item => prospectIdentityKey(item) === candidateKey) : null;
+  if (exact) return exact;
+  const safeKey = customerConversationSafeDuplicateKey(candidate);
+  return safeKey ? (prospects || []).find(item => customerConversationSafeDuplicateKey(item) === safeKey) || null : null;
+}
+
+function customerConversationSafeDuplicateKey(item) {
+  const phone = normalizedPhone(item?.phone);
+  const source = prospectTextKey(item?.source);
+  const customer = prospectTextKey(item?.customer);
+  if (phone.length < 7 || !source || !customer) return '';
+  return `${source}|${phone}|${customer}`;
 }
 
 function mergeProspect(existing, incoming) {
@@ -1822,6 +1832,7 @@ function mergeProspect(existing, incoming) {
   for (const [key, value] of Object.entries(incoming)) {
     if (value === undefined || value === null || value === '') continue;
     if (key === 'conversationMessages') continue;
+    if (['vehicle', 'need'].includes(key) && ['/','-','—'].includes(String(value).trim()) && String(existing[key] || '').trim() && !['/','-','—'].includes(String(existing[key]).trim())) continue;
     if (key === 'processedExternalEventIds') {
       next.processedExternalEventIds = Array.from(new Set([
         ...(Array.isArray(existing.processedExternalEventIds) ? existing.processedExternalEventIds : []),
@@ -1848,6 +1859,54 @@ function mergeProspect(existing, incoming) {
   next.duplicateStatus = 'updated';
   next.updatedAt = new Date().toISOString();
   return next;
+}
+
+function applyCustomerConversationDuplicateMerge() {
+  const migrationVersion = 'customer-conversation-safe-dedup-2026-07-22-v1';
+  const db = readDb();
+  if (db.customerConversationSafeDedupVersion === migrationVersion) return;
+  createDatabaseBackup(db, 'manual', { id: 'system', name: 'System' });
+  const groups = new Map();
+  for (const item of (db.customerConversations || [])) {
+    const key = customerConversationSafeDuplicateKey(item);
+    if (!key) continue;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(item);
+  }
+  let mergedRecords = 0;
+  let mergedGroups = 0;
+  for (const records of groups.values()) {
+    if (records.length < 2) continue;
+    records.sort((a, b) => {
+      const messageDiff = (b.conversationMessages || []).length - (a.conversationMessages || []).length;
+      if (messageDiff) return messageDiff;
+      return String(a.createdAt || a.importedAt || '').localeCompare(String(b.createdAt || b.importedAt || ''));
+    });
+    const survivor = records[0];
+    const originalCreatedAt = records.map(row => row.createdAt).filter(Boolean).sort()[0] || survivor.createdAt;
+    const originalImportedAt = records.map(row => row.importedAt).filter(Boolean).sort()[0] || survivor.importedAt;
+    for (const duplicate of records.slice(1)) {
+      const next = mergeProspect(survivor, normalizeProspectInput(duplicate, survivor));
+      Object.assign(survivor, next);
+      survivor.mergedDuplicateIds = [...new Set([...(survivor.mergedDuplicateIds || []), duplicate.id, ...(duplicate.mergedDuplicateIds || [])])];
+      mergedRecords += 1;
+    }
+    survivor.createdAt = originalCreatedAt;
+    survivor.importedAt = originalImportedAt;
+    survivor.duplicateStatus = 'merged';
+    survivor.updatedAt = new Date().toISOString();
+    const duplicateIds = new Set(records.slice(1).map(row => row.id));
+    db.customerConversations = db.customerConversations.filter(row => !duplicateIds.has(row.id));
+    mergedGroups += 1;
+  }
+  db.customerConversationSafeDedupVersion = migrationVersion;
+  db.customerConversationSafeDedupAt = new Date().toISOString();
+  audit(db, { id: 'system', name: 'System' }, 'merge-safe-customer-conversation-duplicates', {
+    collection: 'customerConversations',
+    detail: `按同来源、同电话、同姓名合并 ${mergedGroups} 组、${mergedRecords} 条明确重复客户；聊天历史已合并保留`
+  });
+  writeDb(db);
+  console.log(`Customer conversation duplicates merged: ${mergedRecords} records in ${mergedGroups} groups.`);
 }
 
 function prospectImportRows(body) {
@@ -4947,6 +5006,34 @@ async function api(req, res) {
       item.createdBy = user.name || user.email;
       item.createdByUserId = user.id;
     }
+    if (collection === 'customerConversations') {
+      const duplicate = findProspectDuplicate(db.customerConversations, item);
+      if (duplicate) {
+        const before = { ...duplicate };
+        const next = mergeProspect(duplicate, {
+          ...normalizeProspectInput(item, duplicate),
+          id: duplicate.id,
+          createdAt: duplicate.createdAt,
+          importedAt: duplicate.importedAt,
+          updatedBy: user.name || user.email,
+          updatedByUserId: user.id
+        });
+        const idx = db.customerConversations.findIndex(row => row.id === duplicate.id);
+        db.customerConversations[idx] = next;
+        const promoted = promoteEligibleCustomerConversation(db, next, user);
+        audit(db, user, 'prevent-duplicate-customer-conversation', {
+          collection, recordId: next.id, recordLabel: recordLabel(next), changedFields: diffRecords(before, next), before, after: next,
+          detail: `拦截重复新增并合并到现有客户 ${recordLabel(next) || next.id}`
+        });
+        if (promoted) audit(db, user, 'auto-promote-customer-conversation', {
+          collection: 'prospects', recordId: promoted.id, recordLabel: recordLabel(promoted),
+          detail: `客户状态为 ${next.status}，自动转入高意向客户`
+        });
+        writeDb(db);
+        notifyDataChanged('prevent-duplicate-customer-conversation', next.id);
+        return send(res, 200, sanitizeDbForUser(db, user));
+      }
+    }
     const autoPromoted = collection === 'customerConversations' ? promoteEligibleCustomerConversation(db, item, user) : null;
     if (collection === 'schedules') {
       const error = prepareScheduleItem(db, item);
@@ -5409,6 +5496,7 @@ applyCustomPrintedFilmSalesOrderMigration();
 applyPromotedConversationMerge();
 applyCustomerConversationPromotionEligibilityMigration();
 applyImportedCustomerEncodingMigration();
+applyCustomerConversationDuplicateMerge();
 applyCustomerNumberRemoval();
 expireInternalMessageVideos();
 cleanupStaleMediaUploadParts();
