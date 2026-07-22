@@ -27,6 +27,9 @@ const MAX_MESSAGE_ATTACHMENT_BYTES = 8 * 1024 * 1024;
 const GROUP_CHAT_ID = '__all_staff__';
 let lastChatUserId = '';
 let noteSaving = false;
+let supervisionReminderTimer = null;
+let supervisionReminderSessionUserId = '';
+let supervisionReminderActivityCheckAt = 0;
 
 const I18N = {
   zh: {
@@ -347,6 +350,7 @@ function logout(clear = true) {
   if (syncTimer) clearInterval(syncTimer);
   syncTimer = null;
   stopRealtimeSync();
+  stopSupervisionReminderLoop();
   renderAuth();
 }
 
@@ -362,6 +366,7 @@ async function sync(options = {}) {
     render({ preserveActiveInput: !options.force || userRecentlyEditing() });
     ensureSyncTimer();
     startRealtimeSync();
+    startSupervisionReminderLoop();
   } catch (err) {
     console.warn(err);
   } finally {
@@ -412,6 +417,11 @@ document.addEventListener('visibilitychange', () => {
     return;
   }
   sync({ force: !userRecentlyEditing() });
+  checkSupervisionReminder();
+});
+window.addEventListener('focus', () => { if (token) checkSupervisionReminder(); });
+['pointerdown','keydown','touchstart'].forEach(eventName => {
+  window.addEventListener(eventName, checkSupervisionReminderAfterActivity, { passive:true });
 });
 
 document.addEventListener('focusin', event => {
@@ -1009,6 +1019,58 @@ function supervisionHtml() {
     <div id="supervisionStatus" class="hint"></div>
   </section>
   <div class="supervision-list">${tasks.length ? tasks.map(supervisionTaskHtml).join('') : `<div class="panel-body hint">${t('noSupervisionTasks')}</div>`}</div>`;
+}
+
+function supervisionTaskIsOverdue(task) {
+  if (!task?.dueAt || ['已完成','已取消','completed','cancelled','canceled'].includes(String(task.status || '').toLowerCase())) return false;
+  return new Date(task.dueAt).getTime() < Date.now();
+}
+
+function checkSupervisionReminder(options = {}) {
+  if (!state?.aiBossTasks || document.hidden || !user?.id) return;
+  const completedStatuses = ['已完成','已取消','待验收','completed','cancelled','canceled'];
+  const candidates = state.aiBossTasks.filter(task => task.assigneeUserId === user.id && !completedStatuses.includes(String(task.status || '').toLowerCase()));
+  if (!candidates.length || document.querySelector('.supervision-reminder.open')) return;
+  const timeKey = `filmShopCloud.aiBossReminder.${user.id}`;
+  const overdue = candidates.some(supervisionTaskIsOverdue);
+  const interval = overdue ? 60 * 60 * 1000 : 2 * 60 * 60 * 1000;
+  if (!options.force && Date.now() - Number(localStorage.getItem(timeKey) || 0) < interval) return;
+  const sorted = [...candidates].sort((a,b) => Number(supervisionTaskIsOverdue(b)) - Number(supervisionTaskIsOverdue(a)) || String(a.dueAt || '').localeCompare(String(b.dueAt || '')));
+  const taskKey = `filmShopCloud.aiBossReminder.lastTask.${user.id}`;
+  const previousIndex = sorted.findIndex(task => task.id === (localStorage.getItem(taskKey) || ''));
+  const task = sorted[previousIndex >= 0 ? (previousIndex + 1) % sorted.length : 0];
+  const position = sorted.findIndex(row => row.id === task.id) + 1;
+  let overlay = document.querySelector('.supervision-reminder');
+  if (!overlay) {
+    overlay = document.createElement('div');
+    overlay.className = 'supervision-reminder';
+    document.body.appendChild(overlay);
+  }
+  overlay.innerHTML = `<div class="supervision-reminder-card"><div class="supervision-reminder-icon">🧠</div><small>智能督办提醒 · ${supervisionTaskIsOverdue(task) ? '任务已逾期（每1小时提醒）' : `未完成任务（每2小时提醒 · ${position}/${sorted.length}）`}</small><h2>${escapeHtml(task.title || '')}</h2><p>${escapeHtml(task.description || '')}</p><time>截止：${escapeHtml(formatMobileDateTime(task.dueAt || '') || '未设置')}</time><footer><button onclick="closeSupervisionReminder()">稍后提醒</button><button class="primary" onclick="openSupervisionReminderTask()">立即处理</button></footer></div>`;
+  overlay.classList.add('open');
+  localStorage.setItem(timeKey, String(Date.now()));
+  localStorage.setItem(taskKey, task.id);
+}
+
+function closeSupervisionReminder() { document.querySelector('.supervision-reminder')?.classList.remove('open'); }
+function openSupervisionReminderTask() { closeSupervisionReminder(); setTab('supervision'); }
+function checkSupervisionReminderAfterActivity() {
+  if (!token || Date.now() - supervisionReminderActivityCheckAt < 60000) return;
+  supervisionReminderActivityCheckAt = Date.now();
+  checkSupervisionReminder();
+}
+function startSupervisionReminderLoop() {
+  if (!supervisionReminderTimer) supervisionReminderTimer = setInterval(checkSupervisionReminder, 60000);
+  if (!user?.id || supervisionReminderSessionUserId === user.id) return;
+  supervisionReminderSessionUserId = user.id;
+  setTimeout(() => checkSupervisionReminder({ force:true }), 800);
+}
+function stopSupervisionReminderLoop() {
+  if (supervisionReminderTimer) clearInterval(supervisionReminderTimer);
+  supervisionReminderTimer = null;
+  supervisionReminderSessionUserId = '';
+  supervisionReminderActivityCheckAt = 0;
+  closeSupervisionReminder();
 }
 
 function supervisionTaskHtml(task) {

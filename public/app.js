@@ -819,6 +819,7 @@ async function logout() {
   stopAutoSync();
   stopRealtimeSync();
   stopPersonalReminderChecks();
+  stopAiBossReminderLoop();
   renderAuth();
 }
 
@@ -1018,11 +1019,16 @@ window.addEventListener('storage', event => {
 ['pointerdown', 'keydown', 'wheel', 'touchstart'].forEach(eventName => {
   window.addEventListener(eventName, () => getMessageAudioContext(), { once: true });
   window.addEventListener(eventName, markEmployeeInteraction, { passive: true });
+  window.addEventListener(eventName, checkAiBossReminderAfterActivity, { passive: true });
 });
 
 document.addEventListener('visibilitychange', () => {
-  if (!document.hidden && token) sync({ silent: true });
+  if (!document.hidden && token) {
+    sync({ silent: true });
+    checkAiBossReminder();
+  }
 });
+window.addEventListener('focus', () => { if (token) checkAiBossReminder(); });
 
 function setPage(page) {
   current = page;
@@ -3256,6 +3262,8 @@ let aiBossCloudChunks = [];
 let aiBossCloudStream = null;
 let aiBossCloudStopRequested = false;
 let aiBossReminderTimer = null;
+let aiBossReminderSessionUserId = '';
+let aiBossReminderActivityCheckAt = 0;
 
 function aiBossPeopleOptions(selected = '') {
   return (state.users || []).filter(row => row.active !== false).map(row => `<option value="${escapeHtml(row.id)}" ${row.id === selected ? 'selected' : ''}>${escapeHtml(row.name || row.email)} · ${escapeHtml(t(row.role) || row.role)}</option>`).join('');
@@ -3454,21 +3462,46 @@ function aiBossResult(id) { const note = prompt('请提交最终结果和可以�
 function aiBossReject(id) { const note = prompt('请说明不满意的地方和需要继续完成的内容：') || ''; if (note) updateAiBossTask(id,'reject',note); }
 function aiBossApprove(id) { const score = prompt('结果质量评分（0-100）：','90'); if (score !== null) updateAiBossTask(id,'approve','',{qualityScore:Number(score)}); }
 
-function checkAiBossReminder() {
+function checkAiBossReminder(options = {}) {
   if (!state?.aiBossTasks || document.hidden) return;
-  const candidates = state.aiBossTasks.filter(task => task.assigneeUserId === user?.id && !['已完成','已取消','待验收'].includes(task.status));
+  const completedStatuses = ['已完成','已取消','待验收','completed','cancelled','canceled'];
+  const candidates = state.aiBossTasks.filter(task => task.assigneeUserId === user?.id && !completedStatuses.includes(String(task.status || '').toLowerCase()));
   if (!candidates.length || document.querySelector('.ai-boss-reminder-overlay.open')) return;
   const key = `filmShopCloud.aiBossReminder.${user.id}`; const last = Number(localStorage.getItem(key) || 0);
   const overdue = candidates.some(aiBossTaskIsOverdue); const interval = overdue ? 60 * 60 * 1000 : 2 * 60 * 60 * 1000;
-  if (Date.now() - last < interval) return;
-  const task = candidates.sort((a,b) => Number(aiBossTaskIsOverdue(b)) - Number(aiBossTaskIsOverdue(a)) || String(a.dueAt || '').localeCompare(String(b.dueAt || '')))[0];
+  if (!options.force && Date.now() - last < interval) return;
+  const sorted = [...candidates].sort((a,b) => Number(aiBossTaskIsOverdue(b)) - Number(aiBossTaskIsOverdue(a)) || String(a.dueAt || '').localeCompare(String(b.dueAt || '')));
+  const taskKey = `filmShopCloud.aiBossReminder.lastTask.${user.id}`;
+  const previousTaskId = localStorage.getItem(taskKey) || '';
+  const previousIndex = sorted.findIndex(task => task.id === previousTaskId);
+  const task = sorted[previousIndex >= 0 ? (previousIndex + 1) % sorted.length : 0];
+  const position = sorted.findIndex(row => row.id === task.id) + 1;
   let overlay = document.querySelector('.ai-boss-reminder-overlay'); if (!overlay) { overlay = document.createElement('div'); overlay.className = 'ai-boss-reminder-overlay'; document.body.appendChild(overlay); }
-  overlay.innerHTML = `<div class="ai-boss-reminder-box"><div>🧠</div><section><small>智能督办提醒 · ${aiBossTaskIsOverdue(task) ? '任务已经逾期' : '未完成任务'}</small><h2>${escapeHtml(task.title)}</h2><p>${escapeHtml(task.description)}</p><time>截止：${escapeHtml(formatAppDateTime(task.dueAt || '') || '未设置')}</time><footer><button class="btn" onclick="closeAiBossReminder()">稍后提醒</button><button class="btn primary" onclick="openAiBossReminderTask('${task.id}')">立即处理</button></footer></section></div>`;
-  overlay.classList.add('open'); localStorage.setItem(key,String(Date.now()));
+  overlay.innerHTML = `<div class="ai-boss-reminder-box"><div>🧠</div><section><small>智能督办提醒 · ${aiBossTaskIsOverdue(task) ? '任务已经逾期（每1小时提醒）' : `未完成任务（每2小时提醒 · ${position}/${sorted.length}）`}</small><h2>${escapeHtml(task.title)}</h2><p>${escapeHtml(task.description)}</p><time>截止：${escapeHtml(formatAppDateTime(task.dueAt || '') || '未设置')}</time><footer><button class="btn" onclick="closeAiBossReminder()">稍后提醒</button><button class="btn primary" onclick="openAiBossReminderTask('${task.id}')">立即处理</button></footer></section></div>`;
+  overlay.classList.add('open');
+  localStorage.setItem(key,String(Date.now()));
+  localStorage.setItem(taskKey, task.id);
 }
 function closeAiBossReminder() { document.querySelector('.ai-boss-reminder-overlay')?.classList.remove('open'); }
 function openAiBossReminderTask() { closeAiBossReminder(); setPage('aiBoss'); }
-function startAiBossReminderLoop() { if (aiBossReminderTimer) return; aiBossReminderTimer = setInterval(checkAiBossReminder, 60000); setTimeout(checkAiBossReminder, 800); }
+function checkAiBossReminderAfterActivity() {
+  if (!token || Date.now() - aiBossReminderActivityCheckAt < 60000) return;
+  aiBossReminderActivityCheckAt = Date.now();
+  checkAiBossReminder();
+}
+function startAiBossReminderLoop() {
+  if (!aiBossReminderTimer) aiBossReminderTimer = setInterval(checkAiBossReminder, 60000);
+  if (!user?.id || aiBossReminderSessionUserId === user.id) return;
+  aiBossReminderSessionUserId = user.id;
+  setTimeout(() => checkAiBossReminder({ force:true }), 800);
+}
+function stopAiBossReminderLoop() {
+  if (aiBossReminderTimer) clearInterval(aiBossReminderTimer);
+  aiBossReminderTimer = null;
+  aiBossReminderSessionUserId = '';
+  aiBossReminderActivityCheckAt = 0;
+  closeAiBossReminder();
+}
 
 const views = {
   aiBoss() { return aiBossView(); },

@@ -1,4 +1,4 @@
-const CACHE_NAME = 'film-shop-v75-auto-ai-call-recording';
+const CACHE_NAME = 'film-shop-v76-recurring-supervision-reminders';
 const ASSETS = [
     '/',
     '/mobile.html',
