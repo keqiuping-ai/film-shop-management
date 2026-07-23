@@ -3775,7 +3775,9 @@ const views = {
     return panel(t('orders'), hasPerm('ordersEdit') ? `<button class="btn primary" onclick="openSalesOrder()">${t('addNew')}</button>` : '', `${search}<div id="salesOrderTableContainer">${salesOrderTable()}</div>`);
   },
   portalCustomers() {
-    return panel(t('portalCustomers'), hasPerm('ordersEdit') ? `<button class="btn primary" onclick="openPortalCustomer()">${lang === 'zh' ? '新增客户账号' : 'New customer'}</button>` : '', portalCustomerTable() + `<p class="note">${lang === 'zh' ? '客户登录地址：' : 'Customer login: '}<a href="/customer.html" target="_blank">${location.origin}/customer.html</a></p>`);
+    const actions = hasPerm('ordersEdit') ? `<div class="mini-actions"><button class="btn" onclick="document.getElementById('portalReferenceImportFile')?.click()">${lang === 'zh' ? '导入UPS客户资料' : 'Import UPS customers'}</button><button class="btn primary" onclick="openPortalCustomer()">${lang === 'zh' ? '新增客户账号' : 'New customer'}</button></div>` : '';
+    const importInput = hasPerm('ordersEdit') ? `<input id="portalReferenceImportFile" class="hidden" type="file" accept="application/json,.json" onchange="importPortalReferenceCustomers(this.files?.[0]); this.value=''" />` : '';
+    return panel(t('portalCustomers'), actions, importInput + portalCustomerTable() + `<p class="note">${lang === 'zh' ? '资料客户仅用于保存历史联系方式，不能登录客户端。客户登录地址：' : 'Reference customers store historical contact data and cannot sign in. Customer login: '}<a href="/customer.html" target="_blank">${location.origin}/customer.html</a></p>`);
   },
   shipments() {
     const actions = hasPerm('shipmentsEdit') ? `<div class="mini-actions">
@@ -4563,7 +4565,21 @@ function retailWholesaleSalesTable(orders = []) {
 
 function portalCustomerTable() {
   const rows = state.portalCustomers || [];
-  return `<div class="table-wrap"><table><thead><tr><th>${lang === 'zh' ? '客户/公司' : 'Customer'}</th><th>${lang === 'zh' ? '联系人' : 'Contact'}</th><th>${lang === 'zh' ? '登录账号' : 'Login'}</th><th>${lang === 'zh' ? '地址' : 'Address'}</th><th>${lang === 'zh' ? '业务员' : 'Sales rep'}</th><th>${lang === 'zh' ? '协议价数量' : 'SKU prices'}</th><th>${t('status')}</th><th></th></tr></thead><tbody>${rows.map(c => `<tr><td><strong>${escapeHtml(c.businessName || '')}</strong><br><span class="note">${escapeHtml(c.note || '')}</span></td><td>${escapeHtml(c.contactName || '')}<br><span class="note">${escapeHtml(c.phone || '')}<br>${escapeHtml(c.email || '')}</span></td><td>${escapeHtml(c.account || '')}</td><td>${escapeHtml(c.address || '')}</td><td>${escapeHtml(c.salesRep || '')}</td><td>${Object.keys(c.prices || {}).length}</td><td>${statusPill(c.active === false ? '停用' : (c.status || '正常'))}</td><td><button class="btn" onclick="openPortalCustomer('${c.id}')">${t('edit')}</button></td></tr>`).join('')}${rows.length ? '' : `<tr><td colspan="8" class="note">${lang === 'zh' ? '还没有客户账号。' : 'No customer accounts.'}</td></tr>`}</tbody></table></div>`;
+  return `<div class="table-wrap"><table><thead><tr><th>${lang === 'zh' ? '客户/公司' : 'Customer'}</th><th>${lang === 'zh' ? '联系人' : 'Contact'}</th><th>${lang === 'zh' ? '登录账号' : 'Login'}</th><th>${lang === 'zh' ? '地址' : 'Address'}</th><th>${lang === 'zh' ? '业务员' : 'Sales rep'}</th><th>${lang === 'zh' ? '协议价数量' : 'SKU prices'}</th><th>${t('status')}</th><th></th></tr></thead><tbody>${rows.map(c => `<tr><td><strong>${escapeHtml(c.businessName || '')}</strong><br><span class="note">${escapeHtml(c.note || '')}</span></td><td>${escapeHtml(c.contactName || '')}<br><span class="note">${escapeHtml(c.phone || '')}<br>${escapeHtml(c.email || '')}</span></td><td>${escapeHtml(c.account || '')}</td><td><span style="white-space:pre-line">${escapeHtml(c.address || '')}</span></td><td>${escapeHtml(c.salesRep || '')}</td><td>${Object.keys(c.prices || {}).length}</td><td>${statusPill(c.referenceOnly ? '资料客户' : (c.active === false ? '停用' : (c.status || '正常')))}</td><td><button class="btn" onclick="openPortalCustomer('${c.id}')">${t('edit')}</button></td></tr>`).join('')}${rows.length ? '' : `<tr><td colspan="8" class="note">${lang === 'zh' ? '还没有客户账号。' : 'No customer accounts.'}</td></tr>`}</tbody></table></div>`;
+}
+
+async function importPortalReferenceCustomers(file) {
+  if (!file) return;
+  try {
+    const parsed = JSON.parse(await file.text());
+    const records = Array.isArray(parsed) ? parsed : parsed.records;
+    if (!Array.isArray(records) || !records.length) throw new Error(lang === 'zh' ? '文件中没有客户资料' : 'No customer records found');
+    const message = lang === 'zh' ? `准备导入 ${records.length} 条资料。系统会按“公司名＋完整地址”再次去重；资料客户不能登录。是否继续？` : `Import ${records.length} reference records? The server will deduplicate by business name and full address, and these records cannot sign in.`;
+    if (!confirm(message)) return;
+    const result = await api('/api/portal-customers/import-reference', { method: 'POST', body: JSON.stringify({ records }) });
+    state = result.data; render(); broadcastDataChange();
+    alert(lang === 'zh' ? `导入完成：新增 ${result.added} 条，跳过 ${result.skipped} 条重复或不完整资料。` : `Import complete: ${result.added} added, ${result.skipped} skipped.`);
+  } catch (err) { alert(err.message || String(err)); }
 }
 
 function portalPriceRows(customer) {

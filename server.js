@@ -3802,6 +3802,61 @@ async function api(req, res) {
     return send(res, 403, { error: 'AI 客服任务只允许 Codex AI 领取；网页登录用户仅可查看' });
   }
 
+  if (req.method === 'POST' && url.pathname === '/api/portal-customers/import-reference') {
+    if (!canAccess(user, 'ordersEdit')) return send(res, 403, { error: '没有客户管理权限' });
+    const body = await readBody(req);
+    const records = Array.isArray(body.records) ? body.records : [];
+    if (!records.length || records.length > 250) return send(res, 400, { error: '导入资料必须包含 1 至 250 位客户' });
+    const normalizeBusiness = value => String(value || '').normalize('NFKC').toLowerCase()
+      .replace(/\b(incorporated|inc|llc|l\.l\.c|corp|corporation|company|co|ltd)\b\.?/g, '')
+      .replace(/[^a-z0-9]+/g, '');
+    const normalizeAddress = value => String(value || '').split(/\r?\n/, 1)[0].normalize('NFKC').toLowerCase()
+      .replace(/\b(street)\b/g, 'st').replace(/\b(avenue)\b/g, 'ave').replace(/\b(road)\b/g, 'rd')
+      .replace(/\b(boulevard)\b/g, 'blvd').replace(/\b(drive)\b/g, 'dr').replace(/\b(lane)\b/g, 'ln')
+      .replace(/\b(suite)\b/g, 'ste').replace(/\b(apartment)\b/g, 'apt').replace(/[^a-z0-9]+/g, '');
+    const recordKey = item => `${normalizeBusiness(item.businessName)}|${normalizeAddress(item.address)}`;
+    const existingKeys = new Set((db.portalCustomers || []).map(recordKey).filter(key => key !== '|'));
+    const sourceKeys = new Set((db.portalCustomers || []).map(item => String(item.sourceKey || '').trim()).filter(Boolean));
+    const incomingKeys = new Set();
+    const incomingSources = new Set();
+    const added = [];
+    const skipped = [];
+    const now = new Date().toISOString();
+    for (const raw of records) {
+      const businessName = String(raw?.businessName || '').trim().slice(0, 160);
+      const address = String(raw?.address || '').trim().slice(0, 500);
+      const sourceKey = String(raw?.sourceKey || '').trim().slice(0, 200);
+      if (!businessName || !address) {
+        skipped.push({ businessName, reason: '缺少客户/公司名称或地址' });
+        continue;
+      }
+      const key = recordKey({ businessName, address });
+      if (existingKeys.has(key) || incomingKeys.has(key) || (sourceKey && (sourceKeys.has(sourceKey) || incomingSources.has(sourceKey)))) {
+        skipped.push({ businessName, reason: '重复客户' });
+        continue;
+      }
+      const item = {
+        id: id(), businessName,
+        contactName: String(raw.contactName || '').trim().slice(0, 120),
+        account: '', email: '', phone: '', address,
+        salesRep: String(raw.salesRep || '').trim().slice(0, 120),
+        status: '资料客户', note: String(raw.note || '').trim().slice(0, 2000),
+        active: false, referenceOnly: true, source: 'UPS历史账单', sourceKey,
+        prices: {}, createdAt: now, updatedAt: now
+      };
+      db.portalCustomers.push(item);
+      added.push(item);
+      existingKeys.add(key); incomingKeys.add(key);
+      if (sourceKey) { sourceKeys.add(sourceKey); incomingSources.add(sourceKey); }
+    }
+    if (added.length) {
+      audit(db, user, 'import-reference-customers', { collection: 'portalCustomers', recordId: '', recordLabel: 'UPS历史客户', detail: `导入 ${added.length} 位 UPS 资料客户；跳过 ${skipped.length} 条重复或不完整资料` });
+      writeDb(db);
+      notifyDataChanged('portal-customer-reference-import', { added: added.length, skipped: skipped.length });
+    }
+    return send(res, 200, { added: added.length, skipped: skipped.length, skippedRecords: skipped.slice(0, 50), data: sanitizeDbForUser(db, user) });
+  }
+
   const portalCustomerMatch = url.pathname.match(/^\/api\/portal-customers(?:\/([^/]+))?$/);
   if (portalCustomerMatch) {
     if (!canAccess(user, req.method === 'GET' ? 'ordersView' : 'ordersEdit')) return send(res, 403, { error: '没有客户管理权限' });
