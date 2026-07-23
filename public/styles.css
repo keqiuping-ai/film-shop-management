@@ -1616,6 +1616,11 @@ body.modal-lock .prospect-workspace { pointer-events: none; }
   padding: 0 10px;
   font-size: 14px;
 }
+.message-hold-voice {
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
 #internalMessagePendingImage {
   grid-column: 1 / -1;
 }

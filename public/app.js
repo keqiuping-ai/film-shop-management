@@ -78,6 +78,10 @@ let warrantyDraftPhotos = [];
 const prospectWorkspaceDrafts = new Map();
 let messageRecorder = null;
 let messageAudioChunks = [];
+let messageVoiceHeld = false;
+let messageVoiceStarting = false;
+let messageVoiceSending = false;
+let messageVoiceDiscard = false;
 let internalMessageComposing = false;
 let knownUnreadMessageIds = null;
 let messageAudioContext = null;
@@ -1733,7 +1737,11 @@ function messageModalHtml(users) {
           <button class="btn" onclick="document.getElementById('messageImageInput').click()">${lang === 'zh' ? '图片' : 'Image'}</button>
           <button class="btn" onclick="document.getElementById('messageVideoInput').click()">${lang === 'zh' ? '视频' : 'Video'}</button>
           <button class="btn" onclick="document.getElementById('messageFileInput').click()">${lang === 'zh' ? '文件' : 'File'}</button>
-          <button class="btn" id="messageVoiceBtn" onclick="toggleVoiceMessage()">${lang === 'zh' ? '语音' : 'Voice'}</button>
+          <button class="btn message-hold-voice" id="messageVoiceBtn" type="button"
+            onpointerdown="startHoldVoiceMessage(event)"
+            onpointerup="finishHoldVoiceMessage(event)"
+            onpointercancel="cancelHoldVoiceMessage(event)"
+            oncontextmenu="event.preventDefault()">${lang === 'zh' ? '按住说话' : 'Hold to talk'}</button>
           <button class="btn quad-call-tool-button" type="button" onclick="QuadCalls.enableNotifications(); ${isGroup ? 'QuadCalls.startGroup()' : `QuadCalls.startDirect('${activeUser?.id || ''}')`}">📞 ${lang === 'zh' ? '语音通话' : 'Voice call'}</button>
           <input class="hidden" id="messageImageInput" type="file" accept="image/*" onchange="sendMessageFile(this.files[0], 'image'); this.value='';" />
           <input class="hidden" id="messageVideoInput" type="file" accept="video/*" onchange="sendMessageFile(this.files[0], 'video'); this.value='';" />
@@ -2032,17 +2040,27 @@ async function sendMessageFile(file, kind) {
   }
 }
 
-async function toggleVoiceMessage() {
-  if (messageRecorder && messageRecorder.state === 'recording') {
-    messageRecorder.stop();
-    return;
-  }
+async function startHoldVoiceMessage(event) {
+  if (event?.button != null && event.button !== 0) return;
+  event?.preventDefault?.();
+  if (messageRecorder || messageVoiceStarting || messageVoiceSending) return;
   if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) {
     alert(lang === 'zh' ? '这个浏览器不支持语音录制。' : 'This browser does not support voice recording.');
     return;
   }
+  messageVoiceHeld = true;
+  messageVoiceStarting = true;
+  messageVoiceDiscard = false;
+  event?.currentTarget?.setPointerCapture?.(event.pointerId);
+  updateVoiceButton(true, lang === 'zh' ? '正在打开麦克风…' : 'Opening microphone…');
   try {
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    messageVoiceStarting = false;
+    if (!messageVoiceHeld) {
+      stream.getTracks().forEach(track => track.stop());
+      updateVoiceButton(false);
+      return;
+    }
     messageAudioChunks = [];
     messageRecorder = new MediaRecorder(stream);
     messageRecorder.ondataavailable = event => {
@@ -2053,35 +2071,61 @@ async function toggleVoiceMessage() {
       const type = messageAudioChunks[0]?.type || 'audio/webm';
       const blob = new Blob(messageAudioChunks, { type });
       messageRecorder = null;
+      messageVoiceStarting = false;
+      const discard = messageVoiceDiscard;
+      messageVoiceDiscard = false;
       updateVoiceButton(false);
-      if (!blob.size) return;
+      if (discard || !blob.size) return;
       if (blob.size > MAX_MESSAGE_ATTACHMENT_BYTES) {
         alert(lang === 'zh' ? '语音不能超过 8MB。' : 'Voice message must be 8MB or smaller.');
         return;
       }
-      const dataUrl = await readBlobAsDataUrl(blob);
-      await postInternalMessage({
-        attachment: {
-          kind: 'audio',
-          name: `voice-${Date.now()}.webm`,
-          type,
-          size: blob.size,
-          dataUrl
-        }
-      });
+      messageVoiceSending = true;
+      updateVoiceButton(false, lang === 'zh' ? '发送中…' : 'Sending…');
+      try {
+        const dataUrl = await readBlobAsDataUrl(blob);
+        const extension = type.includes('mp4') ? 'mp4' : type.includes('ogg') ? 'ogg' : 'webm';
+        await postInternalMessage({ attachment: {
+          kind: 'audio', name: `voice-${Date.now()}.${extension}`, type, size: blob.size, dataUrl
+        } });
+      } finally {
+        messageVoiceSending = false;
+        updateVoiceButton(false);
+      }
     };
-    messageRecorder.start();
-    updateVoiceButton(true);
+    messageRecorder.start(100);
+    updateVoiceButton(true, lang === 'zh' ? '松开发送' : 'Release to send');
   } catch (err) {
+    messageVoiceHeld = false;
+    messageVoiceStarting = false;
     alert(lang === 'zh' ? '无法打开麦克风，请检查浏览器权限。' : 'Could not access the microphone. Check browser permissions.');
+    updateVoiceButton(false);
   }
 }
 
-function updateVoiceButton(recording) {
+function finishHoldVoiceMessage(event) {
+  event?.preventDefault?.();
+  if (!messageVoiceHeld && !messageVoiceStarting) return;
+  messageVoiceHeld = false;
+  if (messageRecorder?.state === 'recording') messageRecorder.stop();
+}
+
+function cancelHoldVoiceMessage(event) {
+  event?.preventDefault?.();
+  messageVoiceDiscard = true;
+  messageVoiceHeld = false;
+  if (messageRecorder?.state === 'recording') messageRecorder.stop();
+  else if (!messageVoiceStarting) updateVoiceButton(false);
+}
+
+function updateVoiceButton(recording, label = '') {
   const button = document.getElementById('messageVoiceBtn');
   if (!button) return;
-  button.textContent = recording ? (lang === 'zh' ? '停止' : 'Stop') : (lang === 'zh' ? '语音' : 'Voice');
+  button.textContent = label || (recording
+    ? (lang === 'zh' ? '松开发送' : 'Release to send')
+    : (lang === 'zh' ? '按住说话' : 'Hold to talk'));
   button.classList.toggle('recording', recording);
+  button.disabled = messageVoiceSending;
 }
 
 function navIcon(id) {
