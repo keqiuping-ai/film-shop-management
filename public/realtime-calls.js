@@ -7,6 +7,9 @@
   let timer = null;
   let ringTimer = null;
   let ringContext = null;
+  let incomingNotification = null;
+  let titleTimer = null;
+  let titleBeforeIncoming = '';
   let ringTimeout = null;
   let polling = false;
   let pollTimer = null;
@@ -94,23 +97,97 @@
     </section></div>`;
     try { navigator.vibrate?.([300, 200, 300, 200, 500]); } catch {}
     startRinging();
-    if ('Notification' in window && Notification.permission === 'granted' && document.hidden) {
-      new Notification(zh() ? 'QUaD 语音来电' : 'QUaD voice call', { body: `${call.callerName || ''} ${zh() ? '正在呼叫你' : 'is calling'}`, icon: '/quad-film-icon-192.png', tag: `call-${call.id}`, requireInteraction: true });
-    }
+    startTitleAlert(call.callerName);
+    showIncomingNotification(call);
   }
 
   function ringOnce() {
     try {
       ringContext ||= new (window.AudioContext || window.webkitAudioContext)();
-      const oscillator = ringContext.createOscillator(); const gain = ringContext.createGain();
-      oscillator.frequency.value = 720; gain.gain.setValueAtTime(.0001, ringContext.currentTime);
-      gain.gain.exponentialRampToValueAtTime(.16, ringContext.currentTime + .02); gain.gain.exponentialRampToValueAtTime(.0001, ringContext.currentTime + .5);
-      oscillator.connect(gain); gain.connect(ringContext.destination); oscillator.start(); oscillator.stop(ringContext.currentTime + .55);
+      const play = () => {
+        const oscillator = ringContext.createOscillator(); const gain = ringContext.createGain();
+        oscillator.frequency.value = 720; gain.gain.setValueAtTime(.0001, ringContext.currentTime);
+        gain.gain.exponentialRampToValueAtTime(.16, ringContext.currentTime + .02); gain.gain.exponentialRampToValueAtTime(.0001, ringContext.currentTime + .5);
+        oscillator.connect(gain); gain.connect(ringContext.destination); oscillator.start(); oscillator.stop(ringContext.currentTime + .55);
+      };
+      if (ringContext.state === 'suspended') ringContext.resume().then(play).catch(() => {});
+      else play();
     } catch {}
   }
 
   function startRinging() { stopRinging(); ringOnce(); ringTimer = setInterval(ringOnce, 1500); }
   function stopRinging() { clearInterval(ringTimer); ringTimer = null; }
+
+  function startTitleAlert(callerName) {
+    stopTitleAlert();
+    titleBeforeIncoming = document.title;
+    let highlighted = false;
+    titleTimer = setInterval(() => {
+      highlighted = !highlighted;
+      document.title = highlighted
+        ? `📞 ${callerName || (zh() ? '来电' : 'Incoming call')}`
+        : titleBeforeIncoming;
+    }, 700);
+  }
+
+  function stopTitleAlert() {
+    clearInterval(titleTimer);
+    titleTimer = null;
+    if (titleBeforeIncoming) document.title = titleBeforeIncoming;
+    titleBeforeIncoming = '';
+  }
+
+  async function showIncomingNotification(call) {
+    if (!document.hidden || !('Notification' in window) || Notification.permission !== 'granted') return;
+    const tag = `call-${call.id}`;
+    const options = {
+      body: `${call.callerName || ''} ${zh() ? '正在呼叫你，点击返回接听' : 'is calling. Tap to answer'}`,
+      icon: '/quad-film-icon-192.png',
+      badge: '/quad-film-icon-192.png',
+      tag,
+      renotify: true,
+      requireInteraction: true,
+      data: { callId: call.id, url: `/?incoming-call=${encodeURIComponent(call.id)}` }
+    };
+    try {
+      const registration = await navigator.serviceWorker?.ready;
+      if (registration?.showNotification) {
+        await registration.showNotification(zh() ? 'QUaD 语音来电' : 'QUaD voice call', options);
+        return;
+      }
+    } catch {}
+    try {
+      incomingNotification?.close?.();
+      incomingNotification = new Notification(zh() ? 'QUaD 语音来电' : 'QUaD voice call', options);
+      incomingNotification.onclick = () => {
+        incomingNotification?.close?.();
+        window.focus();
+      };
+    } catch {}
+  }
+
+  function closeIncomingNotification(callId = '') {
+    incomingNotification?.close?.();
+    incomingNotification = null;
+    if (!callId) return;
+    navigator.serviceWorker?.getRegistration?.().then(registration => {
+      registration?.getNotifications?.({ tag:`call-${callId}` }).then(items => items.forEach(item => item.close())).catch(() => {});
+    }).catch(() => {});
+  }
+
+  function stopIncomingAlerts(callId = incomingCallId) {
+    stopRinging();
+    stopTitleAlert();
+    closeIncomingNotification(callId);
+  }
+
+  function unlockIncomingAlerts() {
+    try {
+      ringContext ||= new (window.AudioContext || window.webkitAudioContext)();
+      if (ringContext.state === 'suspended') ringContext.resume().catch(() => {});
+    } catch {}
+    enableNotifications().catch(() => {});
+  }
 
   function renderCall(call, statusText) {
     const layer = ensureLayer();
@@ -160,7 +237,7 @@
   }
 
   function markAnswered() {
-    if (callStartedAt) return; stopRinging(); clearTimeout(ringTimeout); ringTimeout = null;
+    if (callStartedAt) return; stopIncomingAlerts(activeCall?.id); clearTimeout(ringTimeout); ringTimeout = null;
     callStartedAt = activeCall?.answeredAt ? Date.parse(activeCall.answeredAt) : Date.now();
     if (!Number.isFinite(callStartedAt)) callStartedAt = Date.now();
     startTimer(); const label = document.getElementById('quadCallQuality'); if (label) label.textContent = zh() ? '● 通话中' : '● In call';
@@ -244,7 +321,7 @@
     if (actionBusy) return;
     actionBusy = true;
     try {
-      stopRinging();
+      stopIncomingAlerts(callId);
       const call = calls().find(item => item.id === callId);
       if (call) { activeCall = call; renderCall(call, zh() ? '正在接听…' : 'Answering…'); }
       const result = await request(`/api/voice-calls/${encodeURIComponent(callId)}`, { method:'PUT', body:JSON.stringify({ action:'accept' }) });
@@ -254,7 +331,7 @@
   }
 
   async function decline(callId) {
-    stopRinging();
+    stopIncomingAlerts(callId);
     const declinedCall = calls().find(item => item.id === callId);
     if (declinedCall) {
       calls().filter(item => waitingForMe(item) && item.callerUserId === declinedCall.callerUserId).forEach(item => {
@@ -357,7 +434,7 @@
   }
 
   function finishLocal(clear = true) {
-    clearInterval(timer); timer = null; stopRinging(); clearTimeout(ringTimeout); ringTimeout = null; callStartedAt = 0; if (room) { const old = room; room = null; old.disconnect().catch?.(() => {}); }
+    clearInterval(timer); timer = null; stopIncomingAlerts(activeCall?.id); clearTimeout(ringTimeout); ringTimeout = null; callStartedAt = 0; if (room) { const old = room; room = null; old.disconnect().catch?.(() => {}); }
     if (clear) activeCall = null; closePicker(); ensureLayer().innerHTML = '';
   }
 
@@ -390,7 +467,7 @@
     } catch (error) { alert(error.message || error); }
   }
 
-  function close() { incomingCallId = ''; activeCall = null; closePicker(); ensureLayer().innerHTML = ''; }
+  function close() { stopIncomingAlerts(incomingCallId || activeCall?.id); incomingCallId = ''; activeCall = null; closePicker(); ensureLayer().innerHTML = ''; }
 
   async function poll() {
     if (polling || !me()?.id) return; polling = true;
@@ -402,7 +479,7 @@
       const waitingCall = calls().find(waitingForMe);
       if (waitingCall) renderIncoming(waitingCall);
       else if (incomingCallId) {
-        stopRinging();
+        stopIncomingAlerts(incomingCallId);
         incomingCallId = '';
         if (!activeCall) ensureLayer().innerHTML = '';
       }
@@ -413,9 +490,9 @@
 
   function startPolling() {
     if (pollTimer) return;
-    pollTimer = setInterval(() => {
-      if (!document.hidden) poll();
-    }, 250);
+    // Incoming calls must still be discovered while QUaD is open in a
+    // background tab. Browsers may throttle the timer, but must not skip it.
+    pollTimer = setInterval(poll, 250);
   }
 
   function receiveVoiceEvent(event) {
@@ -427,7 +504,7 @@
     if (index >= 0) list[index] = call; else list.push(call);
     if (waitingForMe(call)) renderIncoming(call);
     else if (incomingCallId === call.id) {
-      stopRinging();
+      stopIncomingAlerts(call.id);
       incomingCallId = '';
       if (!activeCall) ensureLayer().innerHTML = '';
     }
@@ -453,9 +530,17 @@
     startDirect: userId => start(userId),
     startGroup: () => pickParticipants(false) };
   window.addEventListener('quad-voice-call', receiveVoiceEvent);
-  document.addEventListener('visibilitychange', () => { if (!document.hidden) poll(); });
+  document.addEventListener('pointerdown', unlockIncomingAlerts, { once:true, capture:true });
+  document.addEventListener('keydown', unlockIncomingAlerts, { once:true, capture:true });
+  document.addEventListener('visibilitychange', poll);
   window.addEventListener('focus', poll);
   window.addEventListener('pageshow', poll);
+  navigator.serviceWorker?.addEventListener?.('message', event => {
+    if (event.data?.type === 'quad-incoming-call') {
+      window.focus();
+      poll();
+    }
+  });
   startPolling();
   setTimeout(poll, 1200);
 })();

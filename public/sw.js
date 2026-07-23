@@ -1,4 +1,4 @@
-const CACHE_NAME = 'film-shop-v92-ai-boss-task-edit';
+const CACHE_NAME = 'film-shop-v93-background-call-alerts';
 const ASSETS = [
     '/',
     '/mobile.html',
@@ -46,5 +46,22 @@ self.addEventListener('fetch', event => {
         return response;
       })
       .catch(() => caches.match(event.request))
+  );
+});
+
+self.addEventListener('notificationclick', event => {
+  const data = event.notification?.data || {};
+  event.notification?.close();
+  event.waitUntil(
+    clients.matchAll({ type:'window', includeUncontrolled:true }).then(windows => {
+      const existing = windows.find(client => {
+        try { return new URL(client.url).origin === self.location.origin; } catch { return false; }
+      });
+      if (existing) {
+        existing.postMessage({ type:'quad-incoming-call', callId:data.callId || '' });
+        return existing.focus();
+      }
+      return clients.openWindow(data.url || '/');
+    })
   );
 });
