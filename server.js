@@ -4993,7 +4993,32 @@ async function api(req, res) {
       if (!isManager && !isCreator && !isAssignee && !isHelper) return send(res, 403, { error: '没有操作这个任务的权限' });
       const action = String(body.action || '').trim();
       const note = String(body.note || '').trim().slice(0, 3000);
-      if (action === 'accept' && (isAssignee || isManager)) {
+      if (action === 'edit' && isManager) {
+        const title = String(body.title || '').trim().slice(0, 180);
+        const description = String(body.description || '').trim().slice(0, 4000);
+        const assignee = (db.users || []).find(row => row.id === String(body.assigneeUserId || '') && row.active !== false);
+        const allowedStatuses = new Set(['待接单', '进行中', '需要协助', '待验收', '已退回', '已完成', '已取消']);
+        const status = String(body.status || task.status || '').trim();
+        const dueAt = validFutureAiBossDueAt(db, body.dueAt);
+        if (!title || !description) return send(res, 400, { error: '请填写任务标题和具体要求' });
+        if (!assignee) return send(res, 400, { error: '请选择有效的负责人' });
+        if (!allowedStatuses.has(status)) return send(res, 400, { error: '任务状态不正确' });
+        if (!['已完成', '已取消'].includes(status) && !dueAt) return send(res, 400, { error: '未完成任务的截止时间必须晚于当前时间' });
+        task.title = title;
+        task.description = description;
+        task.assigneeUserId = assignee.id;
+        task.assigneeName = assignee.name || assignee.email;
+        if (dueAt) task.dueAt = dueAt;
+        task.priority = ['低', '普通', '高', '紧急'].includes(body.priority) ? body.priority : '普通';
+        task.difficulty = Math.min(10, Math.max(1, Number(body.difficulty || 3)));
+        task.acceptanceCriteria = String(body.acceptanceCriteria || '').trim().slice(0, 2000);
+        task.status = status;
+        task.progress = Math.min(100, Math.max(0, Number(body.progress || 0)));
+        if (status === '已完成') task.completedAt = task.completedAt || now;
+        else delete task.completedAt;
+        if (status === '已取消') task.cancelledAt = task.cancelledAt || now;
+        else delete task.cancelledAt;
+      } else if (action === 'accept' && (isAssignee || isManager)) {
         task.status = '进行中'; task.acceptedAt = now; task.progress = Math.max(1, Number(task.progress || 0));
       } else if (action === 'progress' && (isAssignee || isHelper || isManager)) {
         task.status = '进行中'; task.progress = Math.min(99, Math.max(1, Number(body.progress || task.progress || 1)));
@@ -5011,7 +5036,9 @@ async function api(req, res) {
       } else if (action === 'cancel' && (isCreator || isManager)) {
         task.status = '已取消'; task.cancelledAt = now;
       } else return send(res, 400, { error: '当前身份不能执行这个操作' });
-      if (note) task.updates = [...(task.updates || []), { id: id(), action, note, progress: Number(task.progress || 0), byUserId: user.id, byName: user.name || user.email, at: now }];
+      if (action === 'edit') {
+        task.updates = [...(task.updates || []), { id: id(), action, note: '老板/店长修改了任务资料', progress: Number(task.progress || 0), byUserId: user.id, byName: user.name || user.email, at: now }];
+      } else if (note) task.updates = [...(task.updates || []), { id: id(), action, note, progress: Number(task.progress || 0), byUserId: user.id, byName: user.name || user.email, at: now }];
       task.updatedAt = now;
       audit(db, user, `ai-boss-task-${action}`, { collection: 'aiBossTasks', recordId: task.id, recordLabel: task.title, detail: `${action}${note ? `：${note.slice(0, 120)}` : ''}` });
       writeDb(db); notifyDataChanged(`ai-boss-task-${action}`, task.id);

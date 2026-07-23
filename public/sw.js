@@ -1,4 +1,4 @@
-const CACHE_NAME = 'film-shop-v91-fast-voice-message';
+const CACHE_NAME = 'film-shop-v92-ai-boss-task-edit';
 const ASSETS = [
     '/',
     '/mobile.html',

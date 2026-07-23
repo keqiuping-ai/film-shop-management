@@ -3527,6 +3527,7 @@ function aiBossTaskActions(task) {
   const helper = (task.helperUserIds || []).includes(user?.id);
   const creator = task.createdByUserId === user?.id;
   const buttons = [];
+  if (manager) buttons.push(`<button class="btn" onclick="openAiBossEditTask('${task.id}')">修改任务</button>`);
   if (task.status === '待接单' && (assignee || manager)) buttons.push(`<button class="btn primary" onclick="updateAiBossTask('${task.id}','accept')">接单</button>`);
   if (['进行中','已退回','需要协助'].includes(task.status) && (assignee || helper || manager)) {
     buttons.push(`<button class="btn" onclick="aiBossProgress('${task.id}')">提交进度</button>`);
@@ -3618,6 +3619,53 @@ function openAiBossTask(sourceText = '', aiDraft = null, aiProvider = '') {
     <label><span>任务难度</span><select id="aiBossDifficulty">${[[1,'简单 · 1'],[3,'普通 · 3'],[5,'复杂 · 5'],[10,'重大 · 10']].map(([value,label]) => `<option value="${value}" ${Number(aiDraft?.difficulty || 3) === value ? 'selected' : ''}>${label}</option>`).join('')}</select></label>
     <label class="wide"><span>验收标准</span><textarea id="aiBossCriteria" placeholder="例如：找到材料并拍照，说明仓位和剩余数量">${escapeHtml(aiDraft?.acceptanceCriteria || '')}</textarea></label>
   </div>`, saveAiBossTask);
+}
+
+function openAiBossEditTask(taskId) {
+  const task = (state.aiBossTasks || []).find(row => row.id === taskId);
+  if (!task || !['owner', 'manager'].includes(user?.role)) return;
+  const date = new Date(task.dueAt || '');
+  const pad = value => String(value).padStart(2, '0');
+  const dueValue = Number.isFinite(date.getTime())
+    ? `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`
+    : '';
+  const statuses = ['待接单', '进行中', '需要协助', '待验收', '已退回', '已完成', '已取消'];
+  openModal('修改督办任务', `<div class="ai-boss-form">
+    <label><span>任务标题</span><input id="aiBossEditTitle" value="${escapeHtml(task.title || '')}"></label>
+    <label class="wide"><span>具体要求</span><textarea id="aiBossEditDescription">${escapeHtml(task.description || '')}</textarea></label>
+    <label><span>负责人</span><select id="aiBossEditAssignee">${aiBossPeopleOptions(task.assigneeUserId || '')}</select></label>
+    <label><span>截止时间</span><input id="aiBossEditDueAt" type="datetime-local" value="${escapeHtml(dueValue)}"></label>
+    <label><span>优先级</span><select id="aiBossEditPriority">${['低','普通','高','紧急'].map(value => `<option ${value === (task.priority || '普通') ? 'selected' : ''}>${value}</option>`).join('')}</select></label>
+    <label><span>任务难度</span><input id="aiBossEditDifficulty" type="number" min="1" max="10" value="${Number(task.difficulty || 3)}"></label>
+    <label><span>任务状态</span><select id="aiBossEditStatus">${statuses.map(value => `<option ${value === task.status ? 'selected' : ''}>${value}</option>`).join('')}</select></label>
+    <label><span>完成进度 %</span><input id="aiBossEditProgress" type="number" min="0" max="100" value="${Number(task.progress || 0)}"></label>
+    <label class="wide"><span>验收标准</span><textarea id="aiBossEditCriteria">${escapeHtml(task.acceptanceCriteria || '')}</textarea></label>
+  </div>`, () => saveAiBossTaskEdits(task.id));
+}
+
+async function saveAiBossTaskEdits(taskId) {
+  const value = id => String(document.getElementById(id)?.value || '').trim();
+  const dueValue = value('aiBossEditDueAt');
+  const payload = {
+    action: 'edit',
+    title: value('aiBossEditTitle'),
+    description: value('aiBossEditDescription'),
+    assigneeUserId: value('aiBossEditAssignee'),
+    dueAt: dueValue ? new Date(dueValue).toISOString() : '',
+    priority: value('aiBossEditPriority'),
+    difficulty: Number(value('aiBossEditDifficulty') || 3),
+    status: value('aiBossEditStatus'),
+    progress: Number(value('aiBossEditProgress') || 0),
+    acceptanceCriteria: value('aiBossEditCriteria')
+  };
+  try {
+    state = await api(`/api/ai-boss/tasks/${taskId}`, { method:'PUT', body:JSON.stringify(payload) });
+    closeModal();
+    broadcastDataChange();
+    render();
+  } catch (err) {
+    alert(err.message);
+  }
 }
 
 async function openAiBossTaskWithAi(sourceText) {
