@@ -1,4 +1,4 @@
-const CACHE_NAME = 'film-shop-v90-hold-voice-message';
+const CACHE_NAME = 'film-shop-v91-fast-voice-message';
 const ASSETS = [
     '/',
     '/mobile.html',

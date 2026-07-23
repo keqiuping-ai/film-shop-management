@@ -80,7 +80,6 @@ let messageRecorder = null;
 let messageAudioChunks = [];
 let messageVoiceHeld = false;
 let messageVoiceStarting = false;
-let messageVoiceSending = false;
 let messageVoiceDiscard = false;
 let internalMessageComposing = false;
 let knownUnreadMessageIds = null;
@@ -2043,7 +2042,7 @@ async function sendMessageFile(file, kind) {
 async function startHoldVoiceMessage(event) {
   if (event?.button != null && event.button !== 0) return;
   event?.preventDefault?.();
-  if (messageRecorder || messageVoiceStarting || messageVoiceSending) return;
+  if (messageRecorder || messageVoiceStarting) return;
   if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) {
     alert(lang === 'zh' ? '这个浏览器不支持语音录制。' : 'This browser does not support voice recording.');
     return;
@@ -2062,7 +2061,8 @@ async function startHoldVoiceMessage(event) {
       return;
     }
     messageAudioChunks = [];
-    messageRecorder = new MediaRecorder(stream);
+    const recorderOptions = { audioBitsPerSecond: 24000 };
+    messageRecorder = new MediaRecorder(stream, recorderOptions);
     messageRecorder.ondataavailable = event => {
       if (event.data?.size) messageAudioChunks.push(event.data);
     };
@@ -2080,17 +2080,20 @@ async function startHoldVoiceMessage(event) {
         alert(lang === 'zh' ? '语音不能超过 8MB。' : 'Voice message must be 8MB or smaller.');
         return;
       }
-      messageVoiceSending = true;
-      updateVoiceButton(false, lang === 'zh' ? '发送中…' : 'Sending…');
       try {
-        const dataUrl = await readBlobAsDataUrl(blob);
         const extension = type.includes('mp4') ? 'mp4' : type.includes('ogg') ? 'ogg' : 'webm';
+        const name = `voice-${Date.now()}.${extension}`;
+        const file = new File([blob], name, { type });
+        const uploaded = await uploadCloudMedia('/api/message-media/upload', file);
         await postInternalMessage({ attachment: {
-          kind: 'audio', name: `voice-${Date.now()}.${extension}`, type, size: blob.size, dataUrl
+          kind: 'audio',
+          name: uploaded.name || name,
+          type: uploaded.type || type,
+          size: uploaded.size || blob.size,
+          url: uploaded.url
         } });
-      } finally {
-        messageVoiceSending = false;
-        updateVoiceButton(false);
+      } catch (err) {
+        alert(err.message || (lang === 'zh' ? '语音发送失败，请重试。' : 'Could not send the voice message.'));
       }
     };
     messageRecorder.start(100);
@@ -2125,7 +2128,6 @@ function updateVoiceButton(recording, label = '') {
     ? (lang === 'zh' ? '松开发送' : 'Release to send')
     : (lang === 'zh' ? '按住说话' : 'Hold to talk'));
   button.classList.toggle('recording', recording);
-  button.disabled = messageVoiceSending;
 }
 
 function navIcon(id) {
