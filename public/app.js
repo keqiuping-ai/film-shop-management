@@ -8196,6 +8196,7 @@ function openModal(title, html, onSave) {
   const deleteButton = document.getElementById('modalDelete');
   if (deleteButton) {
     deleteButton.hidden = true;
+    deleteButton.disabled = false;
     deleteButton.className = 'btn danger';
     deleteButton.textContent = lang === 'zh' ? '删除' : 'Delete';
     deleteButton.onclick = null;
