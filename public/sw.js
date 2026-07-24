@@ -1,4 +1,4 @@
-const CACHE_NAME = 'film-shop-v94-employee-profile-self-service';
+const CACHE_NAME = 'film-shop-v95-yelp-message-chronology';
 const ASSETS = [
     '/',
     '/mobile.html',

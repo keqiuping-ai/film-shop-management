@@ -1762,8 +1762,12 @@ function mergeProspectMessages(existingMessages, incomingMessages) {
     const at = Date.parse(a.timestamp || '');
     const bt = Date.parse(b.timestamp || '');
     if (Number.isFinite(at) && Number.isFinite(bt) && at !== bt) return at - bt;
+    if (Number.isFinite(at) !== Number.isFinite(bt)) return Number.isFinite(at) ? -1 : 1;
+    const aId = String(a.providerSid || a.externalEventId || a.id || '');
+    const bId = String(b.providerSid || b.externalEventId || b.id || '');
+    if (aId && bId && aId !== bId) return aId.localeCompare(bId);
     return Number(a.order || 0) - Number(b.order || 0);
-  });
+  }).map((message, order) => ({ ...message, order }));
 }
 
 function normalizeProspectIntentLevel(value) {

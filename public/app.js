@@ -5077,17 +5077,31 @@ function structuredProspectMessages(item) {
         : `${lang === 'zh' ? '客户说' : 'Customer'}${speakerName ? ` - ${speakerName}` : ''}`;
     const channel = String(message.channel || '').toLowerCase();
     const channelLabel = channel === 'yelp' ? 'Yelp' : channel === 'sms' ? 'SMS' : '';
+    const timestamp = String(message.timestamp || message.time || message.createdAt || '');
     return {
       role,
       title,
       text: cleanConversationText(message.text || message.message || message.content || ''),
       attachment: message.attachment || null,
-      messageId: String(message.id || ''),
+      messageId: String(message.id || message.externalEventId || ''),
+      timestamp,
+      tieId: String(message.providerSid || message.externalEventId || message.id || ''),
       status: String(message.status || ''),
-      meta: [formatAppDateTime(message.timestamp || message.time || message.createdAt || '') || cleanConversationText(message.timestamp || ''), channelLabel ? `${channelLabel}${message.status ? ` · ${message.status}` : ''}` : ''].filter(Boolean).join(' · '),
-      order: Number.isFinite(Number(message.order)) ? Number(message.order) : index
+      meta: [formatAppDateTime(timestamp) || cleanConversationText(timestamp), channelLabel ? `${channelLabel}${message.status ? ` · ${message.status}` : ''}` : ''].filter(Boolean).join(' · '),
+      order: Number.isFinite(Number(message.order)) ? Number(message.order) : index,
+      importOrder: index
     };
   }).filter(message => message.text || message.attachment?.url);
+}
+
+function compareProspectConversationMessages(a, b) {
+  const at = Date.parse(a.timestamp || '');
+  const bt = Date.parse(b.timestamp || '');
+  if (Number.isFinite(at) && Number.isFinite(bt) && at !== bt) return at - bt;
+  if (Number.isFinite(at) !== Number.isFinite(bt)) return Number.isFinite(at) ? -1 : 1;
+  if (a.tieId && b.tieId && a.tieId !== b.tieId) return a.tieId.localeCompare(b.tieId);
+  if (Number(a.order || 0) !== Number(b.order || 0)) return Number(a.order || 0) - Number(b.order || 0);
+  return Number(a.importOrder || 0) - Number(b.importOrder || 0);
 }
 
 function prospectConversationSegments(input) {
@@ -5099,7 +5113,7 @@ function prospectConversationSegments(input) {
       if (item.chatContext && !hasMaterializedLegacy) structured = [...prospectConversationSegments(item.chatContext), ...structured];
       const segments = [];
       structured
-        .sort((a, b) => a.order - b.order)
+        .sort(compareProspectConversationMessages)
         .forEach(message => pushConversationSegment(segments, message.role, message.title, message.text, message.meta, message.attachment, message.messageId, message.status));
       return segments;
     }
