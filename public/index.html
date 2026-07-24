@@ -7,7 +7,7 @@
   <link rel="icon" href="/quad-film-icon.png" type="image/png" />
   <link rel="apple-touch-icon" href="/quad-film-icon.png" />
   <link rel="manifest" href="/manifest.webmanifest" />
-  <link rel="stylesheet" href="/styles.css?v=73" />
+  <link rel="stylesheet" href="/styles.css?v=74" />
   <link rel="stylesheet" href="/realtime-calls.css?v=9" />
 </head>
 <body>
@@ -37,6 +37,10 @@
         </div>
       </div>
       <nav id="nav"></nav>
+      <div class="sidebar-time-zones" aria-label="北京时间和洛杉矶时间">
+        <div><span>北京时间</span><strong id="beijingSidebarTime">--/-- --:--</strong></div>
+        <div><span>洛杉矶时间</span><strong id="losAngelesSidebarTime">--/-- --:--</strong></div>
+      </div>
     </aside>
     <main>
       <div class="topbar">
@@ -97,7 +101,7 @@
   <section id="printRoot" class="print-root" aria-hidden="true"></section>
 
   <script src="/livekit-client.umd.js?v=1"></script>
-  <script src="/app.js?v=86"></script>
+  <script src="/app.js?v=87"></script>
   <script src="/realtime-calls.js?v=17"></script>
 </body>
 </html>

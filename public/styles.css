@@ -64,6 +64,8 @@ aside {
   position: sticky;
   top: 0;
   height: 100vh;
+  display:flex;
+  flex-direction:column;
 }
 .brand { display: flex; align-items: center; gap: 12px; margin-bottom: 24px; }
 .mark {
@@ -98,6 +100,34 @@ aside {
 .my-profile-entry-text { display: grid; gap: 1px; }
 .my-profile-entry-hint { color: #7fd3df; font-size: 10px; }
 nav { display: grid; gap: 7px; }
+.sidebar-time-zones {
+  display:grid;
+  gap:12px;
+  margin-top:auto;
+  padding:18px 4px 4px;
+}
+.sidebar-time-zones div {
+  padding:12px 10px;
+  border:1px solid rgba(127,211,223,.35);
+  border-radius:12px;
+  background:linear-gradient(145deg,rgba(15,124,145,.28),rgba(255,255,255,.05));
+  text-align:center;
+  box-shadow:0 10px 24px rgba(0,0,0,.16);
+}
+.sidebar-time-zones span {
+  display:block;
+  margin-bottom:4px;
+  color:#9fdce5;
+  font-size:12px;
+  font-weight:700;
+}
+.sidebar-time-zones strong {
+  display:block;
+  color:#fff;
+  font-size:18px;
+  font-variant-numeric:tabular-nums;
+  letter-spacing:.03em;
+}
 .nav-btn {
   width: 100%;
   min-height: 42px;
@@ -1964,6 +1994,9 @@ body.modal-lock .prospect-workspace { pointer-events: none; }
   .app { grid-template-columns: 1fr; }
   aside { height: auto; position: static; }
   nav { grid-template-columns: repeat(2, 1fr); }
+  .sidebar-time-zones { grid-template-columns:repeat(2,minmax(0,1fr)); margin-top:12px; padding:0; gap:8px; }
+  .sidebar-time-zones div { padding:8px; }
+  .sidebar-time-zones strong { font-size:15px; }
   .module-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .module-tile { min-height: 126px; }
   .stats, .split, .form-grid { grid-template-columns: 1fr; }

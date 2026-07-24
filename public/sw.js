@@ -1,4 +1,4 @@
-const CACHE_NAME = 'film-shop-v96-message-dual-time-zones';
+const CACHE_NAME = 'film-shop-v97-sidebar-dual-time-zones';
 const ASSETS = [
     '/',
     '/mobile.html',

@@ -58,6 +58,7 @@ let activeMessageUserId = '';
 let messageThreadResizeObserver = null;
 let messageThreadLatestTimers = [];
 let messageTimeZoneTimer = null;
+let sidebarTimeZoneTimer = null;
 let internalMessagePendingImage = null;
 let activeProspectWorkspaceId = '';
 let prospectWorkspaceReadOnly = false;
@@ -1624,6 +1625,19 @@ function updateMessageTimeZones() {
   const losAngeles = document.getElementById('losAngelesMessageTime');
   if (beijing) beijing.textContent = messageTimeInZone('Asia/Shanghai');
   if (losAngeles) losAngeles.textContent = messageTimeInZone('America/Los_Angeles');
+}
+
+function updateSidebarTimeZones() {
+  const beijing = document.getElementById('beijingSidebarTime');
+  const losAngeles = document.getElementById('losAngelesSidebarTime');
+  if (beijing) beijing.textContent = messageTimeInZone('Asia/Shanghai');
+  if (losAngeles) losAngeles.textContent = messageTimeInZone('America/Los_Angeles');
+}
+
+function startSidebarTimeZones() {
+  clearInterval(sidebarTimeZoneTimer);
+  updateSidebarTimeZones();
+  sidebarTimeZoneTimer = setInterval(updateSidebarTimeZones, 1000);
 }
 
 function startMessageTimeZones() {
@@ -8579,6 +8593,7 @@ document.documentElement.lang = lang === 'en' ? 'en' : 'zh-CN';
 if (new URLSearchParams(window.location.search).get('page') === 'customerTasks') current = 'customerTasks';
 document.getElementById('email').value = localStorage.getItem('filmShopCloud.lastEmail') || document.getElementById('email').value;
 applyStaticTranslations();
+startSidebarTimeZones();
 document.addEventListener('keydown', event => {
   if (event.key === 'Escape') closePanelZoom();
 });
