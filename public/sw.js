@@ -1,4 +1,4 @@
-const CACHE_NAME = 'film-shop-v93-background-call-alerts';
+const CACHE_NAME = 'film-shop-v94-employee-profile-self-service';
 const ASSETS = [
     '/',
     '/mobile.html',

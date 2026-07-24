@@ -1101,9 +1101,17 @@ function sanitizeDbForUser(db, user) {
     voiceCalls: voiceCallsForUser(db, user),
     personalNotes: (db.personalNotes || []).filter(item => personalNoteVisibleTo(item, user)).map(item => personalNoteForUser(db, item, user)),
     aiBossTasks: aiBossTasksForUser(db, user),
-    aiBossProfiles: (db.aiBossProfiles || []).map(profile => ['owner', 'manager'].includes(user.role)
-      ? { ...profile }
-      : { id: profile.id, userId: profile.userId, userName: profile.userName, department: profile.department, duties: profile.duties, skills: profile.skills, backupUserId: profile.backupUserId, updatedAt: profile.updatedAt }),
+    aiBossProfiles: (db.aiBossProfiles || [])
+      .filter(profile => ['owner', 'manager'].includes(user.role) || profile.userId === user.id)
+      .map(profile => ['owner', 'manager'].includes(user.role)
+        ? { ...profile }
+        : {
+            id: profile.id, userId: profile.userId, userName: profile.userName,
+            selfDuties: profile.selfDuties, selfSkills: profile.selfSkills, selfResources: profile.selfResources,
+            department: profile.department, duties: profile.duties, skills: profile.skills, resources: profile.resources,
+            authorizedActions: profile.authorizedActions, backupUserId: profile.backupUserId,
+            selfUpdatedAt: profile.selfUpdatedAt, updatedAt: profile.updatedAt
+          }),
     installers: p.installerView || p.jobsView ? db.installers.map(installer => sanitizeInstaller(installer, p)) : [],
     products: p.inventoryView || p.ordersEdit ? sanitizeProducts(db.products, canSeeCosts) : [],
     priceRules: p.pricingView ? db.priceRules.map(rule => canSeeCosts ? rule : { ...rule, materialCost: 0 }) : [],
@@ -1270,11 +1278,15 @@ function mobileSnapshot(db, user) {
       .sort((a, b) => String(b.updatedAt || b.createdAt || '').localeCompare(String(a.updatedAt || a.createdAt || ''))),
     aiBossTasks: aiBossTasksForUser(db, user)
       .sort((a, b) => String(b.updatedAt || b.createdAt || '').localeCompare(String(a.updatedAt || a.createdAt || ''))),
-    aiBossProfiles: (db.aiBossProfiles || []).map(profile => ({
-      id: profile.id, userId: profile.userId, userName: profile.userName,
-      department: profile.department, duties: profile.duties, skills: profile.skills,
-      backupUserId: profile.backupUserId, updatedAt: profile.updatedAt
-    }))
+    aiBossProfiles: (db.aiBossProfiles || [])
+      .filter(profile => ['owner', 'manager'].includes(user.role) || profile.userId === user.id)
+      .map(profile => ({
+        id: profile.id, userId: profile.userId, userName: profile.userName,
+        selfDuties: profile.selfDuties, selfSkills: profile.selfSkills, selfResources: profile.selfResources,
+        department: profile.department, duties: profile.duties, skills: profile.skills, resources: profile.resources,
+        authorizedActions: profile.authorizedActions, backupUserId: profile.backupUserId,
+        selfUpdatedAt: profile.selfUpdatedAt, updatedAt: profile.updatedAt
+      }))
   };
 }
 
@@ -1352,7 +1364,13 @@ function validFutureAiBossDueAt(db, value, now = new Date()) {
 function aiBossPrompt(db, sourceText) {
   const people = (db.users || []).filter(row => row.active !== false).map(person => {
     const profile = (db.aiBossProfiles || []).find(row => row.userId === person.id) || {};
-    return { id: person.id, name: person.name || person.email, role: person.role, department: profile.department || '', duties: profile.duties || '', skills: profile.skills || '' };
+    return {
+      id: person.id, name: person.name || person.email, role: person.role,
+      department: profile.department || '',
+      duties: [profile.selfDuties, profile.duties].filter(Boolean).join('\n'),
+      skills: [profile.selfSkills, profile.skills].filter(Boolean).join('\n'),
+      resources: [profile.selfResources, profile.resources].filter(Boolean).join('\n')
+    };
   });
   const timezone = db.settings?.timezone || 'America/Los_Angeles';
   const nowText = new Date().toLocaleString('en-CA', { timeZone:timezone, hour12:false });
@@ -5067,15 +5085,34 @@ async function api(req, res) {
 
   const aiBossProfileMatch = url.pathname.match(/^\/api\/ai-boss\/profiles\/([^/]+)$/);
   if (aiBossProfileMatch && req.method === 'PUT') {
-    if (!['owner', 'manager'].includes(user.role)) return send(res, 403, { error: '只有老板或店长可以维护员工能力档案' });
+    const isManager = ['owner', 'manager'].includes(user.role);
+    const isSelf = aiBossProfileMatch[1] === user.id;
+    if (!isManager && !isSelf) return send(res, 403, { error: '员工只能维护自己的能力档案' });
     const targetUser = (db.users || []).find(row => row.id === aiBossProfileMatch[1] && row.active !== false);
     if (!targetUser) return send(res, 404, { error: '找不到员工' });
     const body = await readBody(req); const now = new Date().toISOString();
     const existing = (db.aiBossProfiles || []).find(row => row.userId === targetUser.id) || { id: id(), userId: targetUser.id };
-    const profile = { ...existing, userName: targetUser.name || targetUser.email, department: String(body.department || '').trim().slice(0, 120), duties: String(body.duties || '').trim().slice(0, 2000), skills: String(body.skills || '').trim().slice(0, 2000), resources: String(body.resources || '').trim().slice(0, 2000), authorizedActions: String(body.authorizedActions || '').trim().slice(0, 2000), backupUserId: String(body.backupUserId || '').trim(), updatedAt: now, updatedByName: user.name || user.email };
+    const profile = { ...existing, userName: targetUser.name || targetUser.email };
+    if (isSelf) {
+      profile.selfDuties = String(body.selfDuties || '').trim().slice(0, 2000);
+      profile.selfSkills = String(body.selfSkills || '').trim().slice(0, 2000);
+      profile.selfResources = String(body.selfResources || '').trim().slice(0, 2000);
+      profile.selfUpdatedAt = now;
+      profile.selfUpdatedByName = user.name || user.email;
+    }
+    if (isManager) {
+      profile.department = String(body.department || '').trim().slice(0, 120);
+      profile.duties = String(body.duties || '').trim().slice(0, 2000);
+      profile.skills = String(body.skills || '').trim().slice(0, 2000);
+      profile.resources = String(body.resources || '').trim().slice(0, 2000);
+      profile.authorizedActions = String(body.authorizedActions || '').trim().slice(0, 2000);
+      profile.backupUserId = String(body.backupUserId || '').trim();
+      profile.updatedAt = now;
+      profile.updatedByName = user.name || user.email;
+    }
     const index = db.aiBossProfiles.findIndex(row => row.userId === targetUser.id);
     if (index >= 0) db.aiBossProfiles[index] = profile; else db.aiBossProfiles.push(profile);
-    audit(db, user, 'update-ai-boss-profile', { collection: 'aiBossProfiles', recordId: profile.id, recordLabel: profile.userName, detail: '更新员工能力档案' });
+    audit(db, user, isManager ? 'update-ai-boss-profile' : 'update-own-ai-boss-profile', { collection: 'aiBossProfiles', recordId: profile.id, recordLabel: profile.userName, detail: isManager ? '更新公司补充能力档案' : '员工更新个人能力档案' });
     writeDb(db); notifyDataChanged('update-ai-boss-profile', profile.id);
     return send(res, 200, sanitizeDbForUser(db, user));
   }

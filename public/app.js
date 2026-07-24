@@ -3529,7 +3529,7 @@ function suggestAiBossAssignee(text) {
   let best = { id: '', score: 0 };
   people.forEach(person => {
     const profile = aiBossProfile(person.id);
-    const words = normalizeSearchText([profile.department, profile.duties, profile.skills, profile.resources, profile.authorizedActions, person.role].join(' ')).split(/\s+/).filter(word => word.length > 1);
+    const words = normalizeSearchText([profile.department, profile.selfDuties, profile.selfSkills, profile.selfResources, profile.duties, profile.skills, profile.resources, profile.authorizedActions, person.role].join(' ')).split(/\s+/).filter(word => word.length > 1);
     const profileScore = words.reduce((sum, word) => sum + (normalized.includes(word) ? 3 : 0), 0);
     const learnedScore = (state.aiBossTasks || []).filter(task => task.assigneeUserId === person.id && task.status === '已完成').reduce((sum, task) => {
       const evidenceWords = normalizeSearchText(`${task.title || ''} ${task.description || ''} ${task.result || ''}`).split(/\s+/).filter(word => word.length > 1);
@@ -3604,28 +3604,37 @@ function aiBossMonthlyRanking() {
     const score = own.length ? Math.max(0, Math.round(quality * .45 + timely * .35 + Math.min(100, own.reduce((sum, task) => sum + Number(task.difficulty || 3), 0) * 5) * .2 - rework * 3)) : 0;
     return { person, count: own.length, onTime, quality: Math.round(quality), score };
   }).filter(row => row.count).sort((a,b) => b.score - a.score);
-  return `<div class="ai-boss-ranking"><h3>本月执行力排名</h3>${['owner','manager'].includes(user?.role) ? '<button class="btn ai-boss-profile-button" onclick="openAiBossProfile()">员工能力档案</button>' : ''}${rows.length ? rows.map((row,index) => `<div><strong>${index + 1}</strong><span>${escapeHtml(row.person.name || row.person.email)}</span><small>完成 ${row.count} · 按时 ${row.onTime} · 质量 ${row.quality}</small><b>${row.score}分</b></div>`).join('') : '<p class="note">本月暂时没有已验收任务。</p>'}</div>`;
+  return `<div class="ai-boss-ranking"><h3>本月执行力排名</h3><button class="btn ai-boss-profile-button" onclick="openAiBossProfile('${['owner','manager'].includes(user?.role) ? '' : escapeHtml(user?.id || '')}')">员工能力档案</button>${rows.length ? rows.map((row,index) => `<div><strong>${index + 1}</strong><span>${escapeHtml(row.person.name || row.person.email)}</span><small>完成 ${row.count} · 按时 ${row.onTime} · 质量 ${row.quality}</small><b>${row.score}分</b></div>`).join('') : '<p class="note">本月暂时没有已验收任务。</p>'}</div>`;
 }
 
 function openAiBossProfile(userId = '') {
+  const isManager = ['owner', 'manager'].includes(user?.role);
   const people = (state.users || []).filter(row => row.active !== false);
-  const employee = people.find(row => row.id === userId) || people[0];
+  const employee = people.find(row => row.id === (isManager ? userId : user?.id)) || people[0];
   if (!employee) return alert('还没有员工账号。');
   const profile = aiBossProfile(employee.id);
+  const isSelf = employee.id === user?.id;
+  const selfDisabled = isSelf ? '' : ' disabled';
+  const companyDisabled = isManager ? '' : ' disabled';
   openModal('员工能力档案', `<div class="ai-boss-form">
-    <label class="wide"><span>选择员工</span><select id="aiBossProfileUser" onchange="openAiBossProfile(this.value)">${aiBossPeopleOptions(employee.id)}</select></label>
-    <label><span>部门 / 岗位</span><input id="aiBossDepartment" value="${escapeHtml(profile.department || '')}" placeholder="例如：美国仓库"></label>
-    <label><span>备用负责人</span><select id="aiBossBackup"><option value="">未设置</option>${aiBossPeopleOptions(profile.backupUserId || '')}</select></label>
-    <label class="wide"><span>主要职责</span><textarea id="aiBossDuties" placeholder="例如：出货、库存查找、仓库开门">${escapeHtml(profile.duties || '')}</textarea></label>
-    <label class="wide"><span>技能 / 强项</span><textarea id="aiBossSkills" placeholder="例如：熟悉窗膜仓位、维修仓库门">${escapeHtml(profile.skills || '')}</textarea></label>
-    <label class="wide"><span>掌握的资源</span><textarea id="aiBossResources" placeholder="例如：知道钥匙保管人、熟悉设备位置（不要填写密码）">${escapeHtml(profile.resources || '')}</textarea></label>
-    <label class="wide"><span>正式授权事项</span><textarea id="aiBossAuthorized" placeholder="例如：允许开美国仓库、办理出库">${escapeHtml(profile.authorizedActions || '')}</textarea></label>
+    ${isManager ? `<label class="wide"><span>选择员工</span><select id="aiBossProfileUser" onchange="openAiBossProfile(this.value)">${aiBossPeopleOptions(employee.id)}</select></label>` : `<div class="wide"><strong>${escapeHtml(employee.name || employee.email)}</strong><p class="note">请如实填写自己的职责、强项和在公司掌握的资源，不要填写账号密码。</p></div>`}
+    <div class="wide"><strong>员工本人填写</strong><p class="note">${isSelf ? '以下内容由本人维护。' : '以下是员工本人填写的内容，公司补充不会覆盖这里。'}</p></div>
+    <label class="wide"><span>我的岗位职责</span><textarea id="aiBossSelfDuties" placeholder="例如：负责接待客户、报价和跟进"${selfDisabled}>${escapeHtml(profile.selfDuties || '')}</textarea></label>
+    <label class="wide"><span>我的擅长点</span><textarea id="aiBossSelfSkills" placeholder="例如：英文沟通、窗膜报价、处理售后"${selfDisabled}>${escapeHtml(profile.selfSkills || '')}</textarea></label>
+    <label class="wide"><span>我在公司掌握的资源</span><textarea id="aiBossSelfResources" placeholder="例如：熟悉供应商、设备位置和客户渠道（不要填写密码）"${selfDisabled}>${escapeHtml(profile.selfResources || '')}</textarea></label>
+    <div class="wide"><strong>公司补充</strong><p class="note">${isManager ? '由老板或店长填写，用于派单和岗位协作。' : '以下内容由老板或店长补充，本人可以查看。'}</p></div>
+    <label><span>部门 / 岗位</span><input id="aiBossDepartment" value="${escapeHtml(profile.department || '')}" placeholder="例如：美国仓库"${companyDisabled}></label>
+    <label><span>备用负责人</span><select id="aiBossBackup"${companyDisabled}><option value="">未设置</option>${aiBossPeopleOptions(profile.backupUserId || '')}</select></label>
+    <label class="wide"><span>公司补充职责</span><textarea id="aiBossDuties" placeholder="例如：出货、库存查找、仓库开门"${companyDisabled}>${escapeHtml(profile.duties || '')}</textarea></label>
+    <label class="wide"><span>公司补充技能 / 强项</span><textarea id="aiBossSkills" placeholder="例如：熟悉窗膜仓位、维修仓库门"${companyDisabled}>${escapeHtml(profile.skills || '')}</textarea></label>
+    <label class="wide"><span>公司补充资源</span><textarea id="aiBossResources" placeholder="例如：知道钥匙保管人、熟悉设备位置（不要填写密码）"${companyDisabled}>${escapeHtml(profile.resources || '')}</textarea></label>
+    <label class="wide"><span>正式授权事项</span><textarea id="aiBossAuthorized" placeholder="例如：允许开美国仓库、办理出库"${companyDisabled}>${escapeHtml(profile.authorizedActions || '')}</textarea></label>
   </div>`, () => saveAiBossProfile(employee.id));
 }
 
 async function saveAiBossProfile(userId) {
   const value = id => String(document.getElementById(id)?.value || '').trim();
-  try { state = await api(`/api/ai-boss/profiles/${userId}`, { method:'PUT', body:JSON.stringify({ department:value('aiBossDepartment'), duties:value('aiBossDuties'), skills:value('aiBossSkills'), resources:value('aiBossResources'), authorizedActions:value('aiBossAuthorized'), backupUserId:value('aiBossBackup') }) }); closeModal(); broadcastDataChange(); render(); } catch (err) { alert(err.message); }
+  try { state = await api(`/api/ai-boss/profiles/${userId}`, { method:'PUT', body:JSON.stringify({ selfDuties:value('aiBossSelfDuties'), selfSkills:value('aiBossSelfSkills'), selfResources:value('aiBossSelfResources'), department:value('aiBossDepartment'), duties:value('aiBossDuties'), skills:value('aiBossSkills'), resources:value('aiBossResources'), authorizedActions:value('aiBossAuthorized'), backupUserId:value('aiBossBackup') }) }); closeModal(); broadcastDataChange(); render(); } catch (err) { alert(err.message); }
 }
 
 function aiBossView() {
