@@ -7,7 +7,7 @@
   <link rel="icon" href="/quad-film-icon.png" type="image/png" />
   <link rel="apple-touch-icon" href="/quad-film-icon.png" />
   <link rel="manifest" href="/manifest.webmanifest" />
-  <link rel="stylesheet" href="/styles.css?v=72" />
+  <link rel="stylesheet" href="/styles.css?v=73" />
   <link rel="stylesheet" href="/realtime-calls.css?v=9" />
 </head>
 <body>
@@ -66,6 +66,10 @@
     <div class="dialog">
       <header>
         <h3 id="modalTitle">新增</h3>
+        <div class="message-time-zones" id="messageTimeZones" hidden>
+          <div><span>北京时间</span><strong id="beijingMessageTime">--/-- --:--</strong></div>
+          <div><span>洛杉矶时间</span><strong id="losAngelesMessageTime">--/-- --:--</strong></div>
+        </div>
         <div class="modal-header-actions">
           <button class="btn" id="modalHeaderAction" type="button" hidden></button>
           <button class="icon-btn" title="关闭" onclick="closeModal()">×</button>
@@ -93,7 +97,7 @@
   <section id="printRoot" class="print-root" aria-hidden="true"></section>
 
   <script src="/livekit-client.umd.js?v=1"></script>
-  <script src="/app.js?v=85"></script>
+  <script src="/app.js?v=86"></script>
   <script src="/realtime-calls.js?v=17"></script>
 </body>
 </html>

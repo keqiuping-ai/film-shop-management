@@ -57,6 +57,7 @@ let realtimeConnected = false;
 let activeMessageUserId = '';
 let messageThreadResizeObserver = null;
 let messageThreadLatestTimers = [];
+let messageTimeZoneTimer = null;
 let internalMessagePendingImage = null;
 let activeProspectWorkspaceId = '';
 let prospectWorkspaceReadOnly = false;
@@ -1605,6 +1606,41 @@ function openMessages(selectedUserId = '') {
   if (activeMessageUserId) markMessagesRead(activeMessageUserId, { forceLatest:true });
 }
 
+function messageTimeInZone(timeZone) {
+  const parts = Object.fromEntries(new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    month:'2-digit',
+    day:'2-digit',
+    hour:'2-digit',
+    minute:'2-digit',
+    hour12:false,
+    hourCycle:'h23'
+  }).formatToParts(new Date()).map(part => [part.type, part.value]));
+  return `${parts.month}/${parts.day} ${parts.hour}:${parts.minute}`;
+}
+
+function updateMessageTimeZones() {
+  const beijing = document.getElementById('beijingMessageTime');
+  const losAngeles = document.getElementById('losAngelesMessageTime');
+  if (beijing) beijing.textContent = messageTimeInZone('Asia/Shanghai');
+  if (losAngeles) losAngeles.textContent = messageTimeInZone('America/Los_Angeles');
+}
+
+function startMessageTimeZones() {
+  const clocks = document.getElementById('messageTimeZones');
+  if (clocks) clocks.hidden = false;
+  clearInterval(messageTimeZoneTimer);
+  updateMessageTimeZones();
+  messageTimeZoneTimer = setInterval(updateMessageTimeZones, 1000);
+}
+
+function stopMessageTimeZones() {
+  clearInterval(messageTimeZoneTimer);
+  messageTimeZoneTimer = null;
+  const clocks = document.getElementById('messageTimeZones');
+  if (clocks) clocks.hidden = true;
+}
+
 function internalMessageInputActive() {
   const input = document.getElementById('messageText');
   return internalMessageComposing
@@ -1669,6 +1705,7 @@ function renderMessageModal(title = (lang === 'zh' ? '站内留言' : 'Messages'
   document.getElementById('modalSave').onclick = closeModal;
   document.getElementById('modal').classList.add('open', 'message-modal-open');
   document.body.classList.add('modal-lock');
+  startMessageTimeZones();
   const restoreMessagePosition = () => {
     const list = document.getElementById('messageThread');
     if (!list || list.dataset.conversationId !== activeMessageUserId) return;
@@ -8205,6 +8242,7 @@ function roleDefaultPermissions(role) {
 }
 
 function openModal(title, html, onSave) {
+  stopMessageTimeZones();
   document.getElementById('modal').classList.remove('message-modal-open', 'confirmation-modal-open', 'personal-note-modal-open', 'warranty-modal-open');
   document.body.classList.add('modal-lock');
   const workspace = document.getElementById('prospectWorkspace');
@@ -8234,6 +8272,7 @@ function openModal(title, html, onSave) {
   document.getElementById('modal').classList.add('open');
 }
 function closeModal() {
+  stopMessageTimeZones();
   closeReplyTemplateVideoPreview();
   if (messageRecorder && messageRecorder.state === 'recording') {
     messageVoiceDiscard = true;

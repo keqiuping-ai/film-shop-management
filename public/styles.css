@@ -1433,6 +1433,37 @@ body.modal-lock .prospect-workspace { pointer-events: none; }
 }
 .message-modal-open .dialog footer { display: none; }
 .message-modal-open .dialog header h3 { font-size: 18px; }
+.message-modal-open .dialog header { min-height:72px; }
+.message-time-zones {
+  flex:1;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:clamp(18px,6vw,90px);
+  padding:0 18px;
+}
+.message-time-zones[hidden] { display:none!important; }
+.message-time-zones div {
+  min-width:170px;
+  padding:7px 16px;
+  border:1px solid #d8e4e8;
+  border-radius:12px;
+  background:#f5fafb;
+  text-align:center;
+}
+.message-time-zones span {
+  display:block;
+  margin-bottom:2px;
+  color:var(--muted);
+  font-size:12px;
+  font-weight:700;
+}
+.message-time-zones strong {
+  color:#124f5c;
+  font-size:18px;
+  font-variant-numeric:tabular-nums;
+  letter-spacing:.02em;
+}
 .message-modal-open .dialog .body {
   min-height: 0;
   overflow: hidden;
@@ -1941,6 +1972,10 @@ body.modal-lock .prospect-workspace { pointer-events: none; }
   .toolbar { justify-content: flex-start; }
   .home-quick-action { min-width: 132px; }
   .message-modal-open .dialog { width: calc(100vw - 8px); height: calc(100vh - 8px); max-height: calc(100vh - 8px); }
+  .message-modal-open .dialog header { align-items:flex-start; flex-wrap:wrap; }
+  .message-time-zones { order:3; flex-basis:100%; gap:8px; padding:0; }
+  .message-time-zones div { flex:1; min-width:0; padding:6px 8px; }
+  .message-time-zones strong { font-size:15px; }
   .message-layout { grid-template-columns: 1fr; grid-template-rows: auto minmax(0, 1fr); min-height: 0; }
   .message-people { max-height: 180px; }
   .message-thread { max-height: none; }

@@ -1,4 +1,4 @@
-const CACHE_NAME = 'film-shop-v95-yelp-message-chronology';
+const CACHE_NAME = 'film-shop-v96-message-dual-time-zones';
 const ASSETS = [
     '/',
     '/mobile.html',
