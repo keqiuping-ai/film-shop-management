@@ -81,6 +81,8 @@ let messageAudioChunks = [];
 let messageVoiceHeld = false;
 let messageVoiceStarting = false;
 let messageVoiceDiscard = false;
+let messageVoiceStartedAt = 0;
+let messageVoiceTimer = null;
 let internalMessageComposing = false;
 let knownUnreadMessageIds = null;
 let messageAudioContext = null;
@@ -94,6 +96,7 @@ const personalNoteUpdatingIds = new Set();
 const AUTO_SYNC_MS = 5 * 60 * 1000;
 const DATA_REVISION_POLL_MS = 15 * 1000;
 const MAX_MESSAGE_ATTACHMENT_BYTES = 20 * 1024 * 1024;
+const MAX_VOICE_MESSAGE_MS = 60 * 1000;
 const MAX_CLOUD_VIDEO_BYTES = 200 * 1024 * 1024;
 const MAX_CLOUD_IMAGE_BYTES = 20 * 1024 * 1024;
 const GROUP_CHAT_ID = '__all_staff__';
@@ -1604,7 +1607,10 @@ function openMessages(selectedUserId = '') {
 
 function internalMessageInputActive() {
   const input = document.getElementById('messageText');
-  return internalMessageComposing || Boolean(input && document.activeElement === input);
+  return internalMessageComposing
+    || Boolean(input && document.activeElement === input)
+    || messageVoiceStarting
+    || Boolean(messageRecorder);
 }
 
 function clearMessageThreadLatestTimers() {
@@ -1737,10 +1743,8 @@ function messageModalHtml(users) {
           <button class="btn" onclick="document.getElementById('messageVideoInput').click()">${lang === 'zh' ? '视频' : 'Video'}</button>
           <button class="btn" onclick="document.getElementById('messageFileInput').click()">${lang === 'zh' ? '文件' : 'File'}</button>
           <button class="btn message-hold-voice" id="messageVoiceBtn" type="button"
-            onpointerdown="startHoldVoiceMessage(event)"
-            onpointerup="finishHoldVoiceMessage(event)"
-            onpointercancel="cancelHoldVoiceMessage(event)"
-            oncontextmenu="event.preventDefault()">${lang === 'zh' ? '按住说话' : 'Hold to talk'}</button>
+            onclick="toggleVoiceMessageRecording(event)"
+            oncontextmenu="event.preventDefault()">${lang === 'zh' ? '点击录音（最长60秒）' : 'Tap to record (60 sec max)'}</button>
           <button class="btn quad-call-tool-button" type="button" onclick="QuadCalls.enableNotifications(); ${isGroup ? 'QuadCalls.startGroup()' : `QuadCalls.startDirect('${activeUser?.id || ''}')`}">📞 ${lang === 'zh' ? '语音通话' : 'Voice call'}</button>
           <input class="hidden" id="messageImageInput" type="file" accept="image/*" onchange="sendMessageFile(this.files[0], 'image'); this.value='';" />
           <input class="hidden" id="messageVideoInput" type="file" accept="video/*" onchange="sendMessageFile(this.files[0], 'video'); this.value='';" />
@@ -1905,6 +1909,10 @@ async function deleteMessage(messageId) {
 }
 
 async function selectMessageUser(id) {
+  if (messageRecorder || messageVoiceStarting) {
+    alert(lang === 'zh' ? '请先点击发送，结束当前录音。' : 'Tap send to finish the current recording first.');
+    return;
+  }
   if (id !== activeMessageUserId) clearInternalMessagePendingImage();
   activeMessageUserId = id;
   renderMessageModal(undefined, { forceLatest:true });
@@ -2039,9 +2047,16 @@ async function sendMessageFile(file, kind) {
   }
 }
 
-async function startHoldVoiceMessage(event) {
-  if (event?.button != null && event.button !== 0) return;
+async function toggleVoiceMessageRecording(event) {
   event?.preventDefault?.();
+  if (messageRecorder?.state === 'recording' || messageVoiceStarting) {
+    finishHoldVoiceMessage(event);
+    return;
+  }
+  await startHoldVoiceMessage(event);
+}
+
+async function startHoldVoiceMessage(event) {
   if (messageRecorder || messageVoiceStarting) return;
   if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) {
     alert(lang === 'zh' ? '这个浏览器不支持语音录制。' : 'This browser does not support voice recording.');
@@ -2050,7 +2065,6 @@ async function startHoldVoiceMessage(event) {
   messageVoiceHeld = true;
   messageVoiceStarting = true;
   messageVoiceDiscard = false;
-  event?.currentTarget?.setPointerCapture?.(event.pointerId);
   updateVoiceButton(true, lang === 'zh' ? '正在打开麦克风…' : 'Opening microphone…');
   try {
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -2072,6 +2086,8 @@ async function startHoldVoiceMessage(event) {
       const blob = new Blob(messageAudioChunks, { type });
       messageRecorder = null;
       messageVoiceStarting = false;
+      messageVoiceHeld = false;
+      stopMessageVoiceTimer();
       const discard = messageVoiceDiscard;
       messageVoiceDiscard = false;
       updateVoiceButton(false);
@@ -2097,7 +2113,9 @@ async function startHoldVoiceMessage(event) {
       }
     };
     messageRecorder.start(100);
-    updateVoiceButton(true, lang === 'zh' ? '松开发送' : 'Release to send');
+    messageVoiceStartedAt = Date.now();
+    updateMessageVoiceTimer();
+    messageVoiceTimer = setInterval(updateMessageVoiceTimer, 250);
   } catch (err) {
     messageVoiceHeld = false;
     messageVoiceStarting = false;
@@ -2113,10 +2131,30 @@ function finishHoldVoiceMessage(event) {
   if (messageRecorder?.state === 'recording') messageRecorder.stop();
 }
 
+function updateMessageVoiceTimer() {
+  if (messageRecorder?.state !== 'recording') return;
+  const elapsedSeconds = Math.min(60, Math.floor((Date.now() - messageVoiceStartedAt) / 1000));
+  const time = `00:${String(elapsedSeconds).padStart(2, '0')}`;
+  updateVoiceButton(true, lang === 'zh'
+    ? `录音 ${time} · 点击发送`
+    : `Recording ${time} · Tap to send`);
+  if (Date.now() - messageVoiceStartedAt >= MAX_VOICE_MESSAGE_MS) {
+    messageVoiceHeld = false;
+    messageRecorder.stop();
+  }
+}
+
+function stopMessageVoiceTimer() {
+  if (messageVoiceTimer) clearInterval(messageVoiceTimer);
+  messageVoiceTimer = null;
+  messageVoiceStartedAt = 0;
+}
+
 function cancelHoldVoiceMessage(event) {
   event?.preventDefault?.();
   messageVoiceDiscard = true;
   messageVoiceHeld = false;
+  stopMessageVoiceTimer();
   if (messageRecorder?.state === 'recording') messageRecorder.stop();
   else if (!messageVoiceStarting) updateVoiceButton(false);
 }
@@ -2125,8 +2163,8 @@ function updateVoiceButton(recording, label = '') {
   const button = document.getElementById('messageVoiceBtn');
   if (!button) return;
   button.textContent = label || (recording
-    ? (lang === 'zh' ? '松开发送' : 'Release to send')
-    : (lang === 'zh' ? '按住说话' : 'Hold to talk'));
+    ? (lang === 'zh' ? '点击发送' : 'Tap to send')
+    : (lang === 'zh' ? '点击录音（最长60秒）' : 'Tap to record (60 sec max)'));
   button.classList.toggle('recording', recording);
 }
 
@@ -8173,7 +8211,12 @@ function openModal(title, html, onSave) {
 }
 function closeModal() {
   closeReplyTemplateVideoPreview();
-  if (messageRecorder && messageRecorder.state === 'recording') messageRecorder.stop();
+  if (messageRecorder && messageRecorder.state === 'recording') {
+    messageVoiceDiscard = true;
+    messageVoiceHeld = false;
+    stopMessageVoiceTimer();
+    messageRecorder.stop();
+  }
   messageThreadResizeObserver?.disconnect();
   messageThreadResizeObserver = null;
   clearMessageThreadLatestTimers();
