@@ -4956,6 +4956,24 @@ async function api(req, res) {
   if (aiBossTaskMatch) {
     const taskId = aiBossTaskMatch[1] || '';
     if (req.method === 'GET') return send(res, 200, aiBossTasksForUser(db, user));
+    if (req.method === 'DELETE' && taskId) {
+      if (user.role !== 'owner') return send(res, 403, { error: '只有老板账号可以删除督办任务' });
+      const taskIndex = (db.aiBossTasks || []).findIndex(row => row.id === taskId);
+      if (taskIndex < 0) return send(res, 404, { error: '找不到任务，可能已经被删除' });
+      const [task] = db.aiBossTasks.splice(taskIndex, 1);
+      for (const call of (db.callRecords || [])) {
+        if (call.taskId === taskId) delete call.taskId;
+      }
+      audit(db, user, 'delete-ai-boss-task', {
+        collection: 'aiBossTasks',
+        recordId: task.id,
+        recordLabel: task.title,
+        before: task,
+        detail: `永久删除督办任务（原状态：${task.status || '未知'}）`
+      });
+      writeDb(db); notifyDataChanged('delete-ai-boss-task', task.id);
+      return send(res, 200, sanitizeDbForUser(db, user));
+    }
     const body = await readBody(req);
     const now = new Date().toISOString();
     if (req.method === 'POST' && !taskId) {

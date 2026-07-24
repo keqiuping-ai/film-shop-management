@@ -3641,6 +3641,12 @@ function openAiBossEditTask(taskId) {
     <label><span>完成进度 %</span><input id="aiBossEditProgress" type="number" min="0" max="100" value="${Number(task.progress || 0)}"></label>
     <label class="wide"><span>验收标准</span><textarea id="aiBossEditCriteria">${escapeHtml(task.acceptanceCriteria || '')}</textarea></label>
   </div>`, () => saveAiBossTaskEdits(task.id));
+  const deleteButton = document.getElementById('modalDelete');
+  if (deleteButton && user?.role === 'owner') {
+    deleteButton.hidden = false;
+    deleteButton.textContent = '删除任务';
+    deleteButton.onclick = () => deleteAiBossTask(task.id);
+  }
 }
 
 async function saveAiBossTaskEdits(taskId) {
@@ -3664,6 +3670,30 @@ async function saveAiBossTaskEdits(taskId) {
     broadcastDataChange();
     render();
   } catch (err) {
+    alert(err.message);
+  }
+}
+
+async function deleteAiBossTask(taskId) {
+  const task = (state.aiBossTasks || []).find(row => row.id === taskId);
+  if (!task || user?.role !== 'owner') return;
+  const confirmed = confirm(`确定永久删除任务“${task.title || '未命名任务'}”吗？\n\n无论任务是否完成，删除后都不会再显示，且无法恢复。`);
+  if (!confirmed) return;
+  const deleteButton = document.getElementById('modalDelete');
+  if (deleteButton) {
+    deleteButton.disabled = true;
+    deleteButton.textContent = '正在删除…';
+  }
+  try {
+    state = await api(`/api/ai-boss/tasks/${encodeURIComponent(taskId)}`, { method:'DELETE' });
+    closeModal();
+    broadcastDataChange();
+    render();
+  } catch (err) {
+    if (deleteButton) {
+      deleteButton.disabled = false;
+      deleteButton.textContent = '删除任务';
+    }
     alert(err.message);
   }
 }
