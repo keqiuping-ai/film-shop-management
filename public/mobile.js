@@ -2,8 +2,9 @@ const APP_TIMEZONE = 'America/Los_Angeles';
 let token = localStorage.getItem('filmShopCloud.token') || '';
 let state = null;
 let user = null;
-let tab = 'chat';
+let tab = 'home';
 let activeUserId = '';
+let chatListMode = true;
 let syncTimer = null;
 let eventSource = null;
 let syncInFlight = false;
@@ -504,6 +505,7 @@ function reimbursementDraftValue(id, fallback = '') { return reimbursementDraft[
 function hasReimbursementDraft() { return reimbursementAttachments.length > 0 || Object.values(reimbursementDraft).some(value => String(value || '').trim()); }
 
 function scheduleActiveConversationRead() {
+  if (isMobileChatViewport() && chatListMode) return;
   if (tab !== 'chat' || !activeUserId || !unreadFrom(activeUserId)) return;
   if (markReadTimer) clearTimeout(markReadTimer);
   markReadTimer = setTimeout(() => {
@@ -528,10 +530,41 @@ function renderAuth() {
 }
 
 function setTab(next) {
-  if (next === 'chat') selectNextUnreadConversation();
+  if (next === 'chat') chatListMode = true;
   tab = next;
+  document.getElementById('app')?.classList.toggle('module-open', tab !== 'home');
   document.querySelectorAll('.tabs button').forEach(button => button.classList.toggle('active', button.dataset.tab === tab));
   render();
+}
+
+function closeMobileModule() {
+  saveActiveDrafts();
+  tab = 'home';
+  chatListMode = true;
+  document.getElementById('app')?.classList.remove('module-open');
+  document.querySelectorAll('.tabs button').forEach(button => button.classList.remove('active'));
+  render();
+}
+
+function moduleBar(title, extra = '') {
+  return `<div class="mobile-module-bar"><button type="button" class="mobile-back" onclick="closeMobileModule()" aria-label="${lang === 'zh' ? '返回功能首页' : 'Back to home'}">‹</button><strong>${escapeHtml(title)}</strong>${extra || '<span></span>'}</div>`;
+}
+
+function homeHtml() {
+  const items = [
+    ['chat', '💬', t('chat'), Number(state?.unread || 0)],
+    ['notes', '📝', t('notes'), 0],
+    ['sales', '🧭', t('sales'), 0],
+    ['clock', '📍', t('clock'), 0],
+    ['supervision', '🧠', t('supervision'), 0],
+    ['leave', '🗓️', t('leave'), 0],
+    ['reimbursement', '🧾', t('reimbursement'), 0],
+    ['me', '👤', t('me'), 0]
+  ];
+  return `<section class="mobile-home">
+    <div class="mobile-home-hero"><small>QUAD FILM</small><h1>${lang === 'zh' ? '员工工作台' : 'Staff Workspace'}</h1><p>${lang === 'zh' ? '选择一项功能进入全屏操作' : 'Choose a module to open it full screen'}</p></div>
+    <div class="mobile-home-grid">${items.map(([id, icon, label, count]) => `<button type="button" class="home-app home-app-${id}" onclick="setTab('${id}')"><i>${icon}</i><strong>${escapeHtml(label)}</strong>${count ? `<b>${count > 99 ? '99+' : count}</b>` : ''}</button>`).join('')}</div>
+  </section>`;
 }
 
 function render(options = {}) {
@@ -550,18 +583,20 @@ function render(options = {}) {
     return;
   }
   view.classList.toggle('chat-view', tab === 'chat');
+  document.getElementById('app')?.classList.toggle('module-open', tab !== 'home');
+  if (tab === 'home') view.innerHTML = homeHtml();
   if (tab === 'chat') view.innerHTML = chatHtml();
-  if (tab === 'notes') view.innerHTML = notesHtml();
-  if (tab === 'sales') view.innerHTML = salesHtml();
-  if (tab === 'clock') view.innerHTML = clockHtml();
-  if (tab === 'supervision') view.innerHTML = supervisionHtml();
-  if (tab === 'leave') view.innerHTML = leaveHtml();
-  if (tab === 'reimbursement') view.innerHTML = reimbursementHtml();
-  if (tab === 'me') view.innerHTML = meHtml();
+  if (tab === 'notes') view.innerHTML = moduleBar(t('notes')) + notesHtml();
+  if (tab === 'sales') view.innerHTML = moduleBar(t('sales')) + salesHtml();
+  if (tab === 'clock') view.innerHTML = moduleBar(t('clock')) + clockHtml();
+  if (tab === 'supervision') view.innerHTML = moduleBar(t('supervision')) + supervisionHtml();
+  if (tab === 'leave') view.innerHTML = moduleBar(t('leave')) + leaveHtml();
+  if (tab === 'reimbursement') view.innerHTML = moduleBar(t('reimbursement')) + reimbursementHtml();
+  if (tab === 'me') view.innerHTML = moduleBar(t('me')) + meHtml();
   lastRenderSnapshot = snapshot;
   if (tab === 'chat') {
     const thread = document.getElementById('thread');
-    if (thread) thread.scrollTop = thread.scrollHeight;
+    if (thread && (!isMobileChatViewport() || !chatListMode)) thread.scrollTop = thread.scrollHeight;
     scheduleActiveConversationRead();
   }
 }
@@ -631,50 +666,118 @@ function conversation(otherUserId) {
   ).sort((a, b) => String(a.createdAt || '').localeCompare(String(b.createdAt || '')));
 }
 
+function isMobileChatViewport() {
+  return window.matchMedia ? window.matchMedia('(max-width: 759px)').matches : window.innerWidth < 760;
+}
+
+function messagePreview(message) {
+  if (!message) return lang === 'zh' ? '还没有消息' : 'No messages yet';
+  const text = String(message.text || '').replace(/\s+/g, ' ').trim();
+  if (text) return text;
+  const labels = { image: t('image'), video: t('video'), file: t('file'), audio: t('voice') };
+  return `[${labels[message.attachment?.kind] || t('file')}]`;
+}
+
+function conversationTime(value) {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  const now = new Date();
+  const sameDay = date.toDateString() === now.toDateString();
+  if (sameDay) return new Intl.DateTimeFormat(lang === 'zh' ? 'zh-CN' : 'en-US', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: APP_TIMEZONE }).format(date);
+  return new Intl.DateTimeFormat(lang === 'zh' ? 'zh-CN' : 'en-US', { month: '2-digit', day: '2-digit', timeZone: APP_TIMEZONE }).format(date);
+}
+
+function chatListUsers() {
+  return [{ id: GROUP_CHAT_ID, name: t('groupChat'), group: true }, ...staffUsers()]
+    .map(item => {
+      const messages = conversation(item.id);
+      return { ...item, latest: messages[messages.length - 1] || null };
+    })
+    .sort((a, b) => String(b.latest?.createdAt || '').localeCompare(String(a.latest?.createdAt || '')));
+}
+
 function chatHtml() {
-  const users = [{ id: GROUP_CHAT_ID, name: t('groupChat'), group: true }, ...staffUsers()];
+  const users = chatListUsers();
   activeUserId = activeUserId || GROUP_CHAT_ID;
   const active = users.find(item => item.id === activeUserId) || users[0];
   if (!active) return `<div class="panel"><div class="panel-body">${t('noStaff')}</div></div>`;
   activeUserId = active.id;
   const thread = conversation(activeUserId);
-  return `<div class="chat-layout">
-    <div class="people">
+  return `<div class="chat-layout ${chatListMode ? 'list-mode' : 'detail-mode'}">
+    <section class="wechat-list-pane">
+      ${moduleBar(lang === 'zh' ? '消息' : 'Messages')}
+      <div class="wechat-search"><span>⌕</span><input type="search" placeholder="${lang === 'zh' ? '搜索' : 'Search'}" oninput="filterChatList(this.value)" /></div>
+      <div class="people">
       ${users.map(item => {
         const mentioned = item.id === GROUP_CHAT_ID ? mobileUnreadMentionForUser(user) : mobileUnreadMentionForUser(item);
-        return `<button class="person ${item.id === activeUserId ? 'active' : ''}" onclick="selectChatUser('${item.id}')"><span class="mobile-avatar-badge-wrap">${avatarHtml(item)}${mentioned ? `<i class="mobile-at-badge">${item.id === GROUP_CHAT_ID ? '@我' : '@'}</i>` : ''}</span><span>${escapeHtml(item.name || item.email)}${!mentioned && unreadFrom(item.id) ? `<b>${unreadFrom(item.id)}</b>` : ''}</span></button>`;
+        const unread = unreadFrom(item.id);
+        const preview = `${item.latest?.fromUserId === user?.id ? (lang === 'zh' ? '我：' : 'Me: ') : ''}${messagePreview(item.latest)}`;
+        const search = `${item.name || item.email || ''} ${preview}`.toLocaleLowerCase();
+        return `<button class="person ${item.id === activeUserId ? 'active' : ''}" data-chat-search="${escapeHtml(search)}" onclick="selectChatUser('${item.id}')">
+          <span class="mobile-avatar-badge-wrap">${avatarHtml(item)}${mentioned ? `<i class="mobile-at-badge">@</i>` : ''}</span>
+          <span class="wechat-conversation-copy"><strong>${escapeHtml(item.name || item.email)}</strong><small>${escapeHtml(preview)}</small></span>
+          <span class="wechat-conversation-meta"><time>${conversationTime(item.latest?.createdAt)}</time>${unread ? `<b>${unread > 99 ? '99+' : unread}</b>` : ''}</span>
+        </button>`;
       }).join('')}
-    </div>
-    <div class="mobile-chat-head"><strong>${escapeHtml(active.name || active.email)}</strong></div>
-    <div class="thread" id="thread">
+      </div>
+    </section>
+    <section class="wechat-chat-pane">
+      <div class="mobile-chat-head"><button type="button" class="mobile-back" onclick="showChatList()" aria-label="${lang === 'zh' ? '返回消息列表' : 'Back to conversations'}">‹</button><span>${avatarHtml(active)}<strong>${escapeHtml(active.name || active.email)}</strong></span><button class="chat-call-head" type="button" onclick="QuadCalls.enableNotifications(); ${active.id === GROUP_CHAT_ID ? 'QuadCalls.startGroup()' : `QuadCalls.startDirect('${active.id}')`}">📞</button></div>
+      <div class="thread" id="thread">
       ${thread.length ? thread.map(messageHtml).join('') : `<p class="hint">${t('noMessages')}</p>`}
-    </div>
-    <div class="chat-tools">
+      </div>
+      <div class="chat-tools">
       <button onclick="document.getElementById('mobileImageInput').click()">${t('image')}</button>
       <button onclick="document.getElementById('mobileVideoInput').click()">${t('video')}</button>
       <button onclick="document.getElementById('mobileFileInput').click()">${t('file')}</button>
       <button id="mobileVoiceBtn" onclick="toggleVoiceMessage()">${t('voice')}</button>
-      <button class="quad-call-tool-button" type="button" onclick="QuadCalls.enableNotifications(); ${active.id === GROUP_CHAT_ID ? 'QuadCalls.startGroup()' : `QuadCalls.startDirect('${active.id}')`}">📞 ${lang === 'zh' ? '语音通话' : 'Voice call'}</button>
       <input class="hidden" id="mobileImageInput" type="file" accept="image/*" onchange="sendMessageFile(this.files[0], 'image'); this.value='';" />
       <input class="hidden" id="mobileVideoInput" type="file" accept="video/*" onchange="sendMessageFile(this.files[0], 'video'); this.value='';" />
       <input class="hidden" id="mobileFileInput" type="file" onchange="sendMessageFile(this.files[0], 'file'); this.value='';" />
-    </div>
-    <div class="chat-send">
+      </div>
+      <div class="chat-send">
       <textarea id="messageText" placeholder="${t('messagePlaceholder')}" oninput="saveActiveChatDraft(); markUserInput();" oncompositionstart="markUserInput();" oncompositionend="saveActiveChatDraft(); markUserInput();">${escapeHtml(chatDraft(activeUserId))}</textarea>
       <button class="primary" onclick="sendMessage()">${t('send')}</button>
-    </div>
+      </div>
+    </section>
   </div>`;
 }
 
-window.getQuadCallContext = () => ({ user, state });
-window.setQuadCallState = value => { state = value; };
+function filterChatList(value) {
+  const query = String(value || '').trim().toLocaleLowerCase();
+  document.querySelectorAll('[data-chat-search]').forEach(item => {
+    item.hidden = Boolean(query) && !String(item.dataset.chatSearch || '').includes(query);
+  });
+}
+
+function showChatList() {
+  saveActiveChatDraft();
+  chatListMode = true;
+  render();
+}
+
+function openActiveChatDetail() {
+  chatListMode = false;
+  render();
+}
 
 async function selectChatUser(id) {
   saveActiveChatDraft();
   activeUserId = id;
+  chatListMode = false;
   render();
   await markRead(id);
 }
+
+/*
+  The mobile chat intentionally uses a list/detail flow. Keeping this marker
+  close to the renderer makes future realtime refresh changes less likely to
+  reintroduce the old cramped horizontal contact strip.
+*/
+
+window.getQuadCallContext = () => ({ user, state });
+window.setQuadCallState = value => { state = value; };
 
 function messageHtml(message) {
   const mine = message.fromUserId === user?.id;
