@@ -5113,22 +5113,38 @@ function pushConversationSegment(segments, role, title, text, meta = '', attachm
   segments.push({ key, role: normalizedRole, title, text: value, meta, attachment, messageId, status });
 }
 
+function prospectIsYelpLeadFormMessage(message, source = '') {
+  const messageType = String(message?.messageType || message?.kind || '').trim().toLowerCase().replace(/\s+/g, ' ');
+  if (['lead-form', 'lead form', 'yelp-form', 'yelp form'].includes(messageType)) return true;
+  const channel = String(message?.channel || message?.provider || source || '').trim().toLowerCase();
+  const text = cleanConversationText(message?.text || message?.message || message?.content || message?.body || '');
+  return channel.includes('yelp') && /^\s*question\s*:\s*[\s\S]+?\banswer\s*:/i.test(text);
+}
+
 function structuredProspectMessages(item) {
   const rows = Array.isArray(item?.conversationMessages) ? item.conversationMessages : [];
   return rows.map((message, index) => {
     const speakerName = cleanConversationText(message.speakerName || message.name || message.sender || '');
-    const role = prospectSpeakerRole(
-      message.speaker || message.role || message.type || message.side || message.from || message.senderType,
-      speakerName
-    );
-    const title = role === 'shop'
+    const leadForm = prospectIsYelpLeadFormMessage(message, item?.source);
+    const role = leadForm
+      ? 'system'
+      : prospectSpeakerRole(
+          message.speaker || message.role || message.type || message.side || message.from || message.senderType,
+          speakerName
+        );
+    const title = leadForm
+      ? (lang === 'zh' ? 'Yelp 初始表单' : 'Yelp Lead Form')
+      : role === 'shop'
       ? `${lang === 'zh' ? '我们说' : 'Us'}${speakerName ? ` - ${speakerName}` : ''}`
       : role === 'system'
         ? (lang === 'zh' ? '系统记录' : 'System')
         : `${lang === 'zh' ? '客户说' : 'Customer'}${speakerName ? ` - ${speakerName}` : ''}`;
     const channel = String(message.channel || '').toLowerCase();
     const channelLabel = channel === 'yelp' ? 'Yelp' : channel === 'sms' ? 'SMS' : '';
-    const timestamp = String(message.timestamp || message.time || message.createdAt || '');
+    const timestamp = String(
+      message.timestamp || message.time || message.createdAt ||
+      (leadForm ? item?.sourceCreatedAt || (item?.date ? `${item.date}T00:00:00` : '') : '')
+    );
     return {
       role,
       title,
@@ -5150,8 +5166,8 @@ function compareProspectConversationMessages(a, b) {
   const bt = Date.parse(b.timestamp || '');
   if (Number.isFinite(at) && Number.isFinite(bt) && at !== bt) return at - bt;
   if (Number.isFinite(at) !== Number.isFinite(bt)) return Number.isFinite(at) ? -1 : 1;
-  if (a.tieId && b.tieId && a.tieId !== b.tieId) return a.tieId.localeCompare(b.tieId);
   if (Number(a.order || 0) !== Number(b.order || 0)) return Number(a.order || 0) - Number(b.order || 0);
+  if (a.tieId && b.tieId && a.tieId !== b.tieId) return a.tieId.localeCompare(b.tieId);
   return Number(a.importOrder || 0) - Number(b.importOrder || 0);
 }
 
@@ -5467,7 +5483,9 @@ function customerReplyState(item) {
     .map((message, index) => ({
       message,
       index,
-      role: String(message.direction || '').toLowerCase() === 'inbound'
+      role: prospectIsYelpLeadFormMessage(message, item?.source)
+        ? 'system'
+        : String(message.direction || '').toLowerCase() === 'inbound'
         ? 'customer'
         : String(message.direction || '').toLowerCase() === 'outbound'
           ? 'shop'

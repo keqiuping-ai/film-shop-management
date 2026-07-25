@@ -1681,6 +1681,7 @@ function normalizeProspectMessages(value) {
       order: Number.isFinite(Number(item.order)) ? Number(item.order) : index,
       externalEventId: String(item.externalEventId || item.eventId || item.id || '').trim(),
       provider: String(item.provider || item.platform || '').trim(),
+      messageType: String(item.messageType || item.kind || '').trim(),
       providerSid: String(item.providerSid || item.messageSid || '').trim(),
       status: String(item.status || '').trim(),
       from: String(item.from || '').trim(),
@@ -1688,6 +1689,15 @@ function normalizeProspectMessages(value) {
       attachment: item.attachment && typeof item.attachment === 'object' ? { ...item.attachment } : null
     };
   }).filter(Boolean);
+}
+
+function isYelpLeadFormMessage(message, source = '') {
+  const messageType = prospectTextKey(message?.messageType || message?.kind);
+  if (['lead-form', 'lead form', 'yelp-form', 'yelp form'].includes(messageType)) return true;
+  const channel = prospectTextKey(message?.channel || message?.provider || source);
+  if (!channel.includes('yelp')) return false;
+  const text = cleanImportedConversationText(message?.text || message?.message || message?.content || message?.body || '');
+  return /^\s*question\s*:\s*[\s\S]+?\banswer\s*:/i.test(text);
 }
 
 function prospectMessagesToText(messages) {
@@ -1763,10 +1773,11 @@ function mergeProspectMessages(existingMessages, incomingMessages) {
     const bt = Date.parse(b.timestamp || '');
     if (Number.isFinite(at) && Number.isFinite(bt) && at !== bt) return at - bt;
     if (Number.isFinite(at) !== Number.isFinite(bt)) return Number.isFinite(at) ? -1 : 1;
+    const orderDiff = Number(a.order || 0) - Number(b.order || 0);
+    if (orderDiff) return orderDiff;
     const aId = String(a.providerSid || a.externalEventId || a.id || '');
     const bId = String(b.providerSid || b.externalEventId || b.id || '');
-    if (aId && bId && aId !== bId) return aId.localeCompare(bId);
-    return Number(a.order || 0) - Number(b.order || 0);
+    return aId.localeCompare(bId);
   }).map((message, order) => ({ ...message, order }));
 }
 
@@ -1865,13 +1876,27 @@ function normalizeProspectInput(input, fallback = {}) {
     rawPayload: normalizeRawPayload(input.rawPayload),
     conversationMessages
   };
+  if (prospectTextKey(source).includes('yelp')) {
+    const formTimestamp = base.sourceCreatedAt || (base.date ? `${base.date}T00:00:00` : '');
+    base.conversationMessages = base.conversationMessages.map(message => isYelpLeadFormMessage(message, source)
+      ? {
+          ...message,
+          speaker: 'system',
+          speakerName: 'Yelp 表单',
+          direction: '',
+          timestamp: message.timestamp || formTimestamp,
+          messageType: 'lead-form'
+        }
+      : message);
+    base.conversationMessages = mergeProspectMessages([], base.conversationMessages);
+  }
   base.processedExternalEventIds = Array.from(new Set([
     ...(Array.isArray(fallback.processedExternalEventIds) ? fallback.processedExternalEventIds : []),
     base.externalEventId
   ].map(value => String(value || '').trim()).filter(Boolean))).slice(-500);
   base.status = base.status || (base.appointmentDate || base.appointmentTime ? '已预约' : '新意向');
   base.intentLevel = inferProspectIntent(base, input.intentLevel || fallback.intentLevel || '');
-  base.intentReason = String(input.intentReason || fallback.intentReason || inferProspectIntentReason(base, conversationMessages, base.intentLevel)).trim();
+  base.intentReason = String(input.intentReason || fallback.intentReason || inferProspectIntentReason(base, base.conversationMessages, base.intentLevel)).trim();
   return base;
 }
 
@@ -1972,6 +1997,59 @@ function applyCustomerConversationDuplicateMerge() {
   });
   writeDb(db);
   console.log(`Customer conversation duplicates merged: ${mergedRecords} records in ${mergedGroups} groups.`);
+}
+
+function applyYelpLeadFormMessageMigration() {
+  const migrationVersion = 'yelp-lead-form-message-order-2026-07-24-v1';
+  const db = readDb();
+  if (db.yelpLeadFormMessageMigrationVersion === migrationVersion) return;
+  let backupCreated = false;
+  let changedRecords = 0;
+  for (const collection of ['customerConversations', 'prospects']) {
+    for (const item of (db[collection] || [])) {
+      if (!prospectTextKey(item.source).includes('yelp') || !Array.isArray(item.conversationMessages)) continue;
+      const formTimestamp = item.sourceCreatedAt || (item.date ? `${item.date}T00:00:00` : '');
+      let changed = false;
+      const messages = item.conversationMessages.map(message => {
+        if (!isYelpLeadFormMessage(message, item.source)) return message;
+        const next = {
+          ...message,
+          speaker: 'system',
+          speakerName: 'Yelp 表单',
+          direction: '',
+          timestamp: message.timestamp || formTimestamp,
+          messageType: 'lead-form'
+        };
+        if (
+          next.speaker !== message.speaker ||
+          next.speakerName !== message.speakerName ||
+          next.direction !== message.direction ||
+          next.timestamp !== message.timestamp ||
+          next.messageType !== message.messageType
+        ) changed = true;
+        return next;
+      });
+      if (!changed) continue;
+      if (!backupCreated) {
+        createDatabaseBackup(db, 'manual', { id: 'system', name: 'System Yelp form migration' });
+        backupCreated = true;
+      }
+      item.conversationMessages = mergeProspectMessages([], messages);
+      item.updatedAt = new Date().toISOString();
+      changedRecords += 1;
+    }
+  }
+  db.yelpLeadFormMessageMigrationVersion = migrationVersion;
+  db.yelpLeadFormMessageMigrationAt = new Date().toISOString();
+  db.yelpLeadFormMessageMigrationCount = changedRecords;
+  if (changedRecords) {
+    audit(db, { id: 'system', name: 'System' }, 'normalize-yelp-lead-form-messages', {
+      collection: 'customerConversations,prospects',
+      detail: `已将 ${changedRecords} 条 Yelp 客户记录中的初始问答表单改为系统资料并按线索时间排列；原消息完整保留`
+    });
+  }
+  writeDb(db);
+  console.log(`Yelp lead-form message records normalized: ${changedRecords}.`);
 }
 
 function prospectImportRows(body) {
@@ -2839,6 +2917,7 @@ function customerServiceAgentUser(req) {
 }
 
 function customerServiceMessageRole(message) {
+  if (isYelpLeadFormMessage(message)) return 'system';
   const direction = String(message?.direction || '').toLowerCase();
   if (direction === 'inbound') return 'customer';
   if (direction === 'outbound') return 'shop';
@@ -5739,6 +5818,7 @@ applyPromotedConversationMerge();
 applyCustomerConversationPromotionEligibilityMigration();
 applyImportedCustomerEncodingMigration();
 applyCustomerConversationDuplicateMerge();
+applyYelpLeadFormMessageMigration();
 applyCustomerNumberRemoval();
 expireInternalMessageVideos();
 cleanupStaleMediaUploadParts();
