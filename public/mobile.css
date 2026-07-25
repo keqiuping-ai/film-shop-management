@@ -379,6 +379,8 @@ button {
 .thread {
   min-height: 0;
   overflow: auto;
+  overflow-anchor: none;
+  scroll-behavior: auto;
   background: #ededed;
   border: 0;
   border-radius: 0;

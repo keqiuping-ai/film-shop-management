@@ -577,6 +577,31 @@ function homeHtml() {
   </section>`;
 }
 
+function keepMobileChatAtLatest() {
+  if (tab !== 'chat' || chatListMode) return;
+  const thread = document.getElementById('thread');
+  if (!thread) return;
+  const conversationId = activeUserId;
+  const scrollToLatest = () => {
+    if (!thread.isConnected || tab !== 'chat' || chatListMode || activeUserId !== conversationId) return;
+    thread.scrollTop = thread.scrollHeight;
+  };
+
+  scrollToLatest();
+  requestAnimationFrame(() => {
+    scrollToLatest();
+    requestAnimationFrame(scrollToLatest);
+  });
+  [60, 180, 500, 1000].forEach(delay => setTimeout(scrollToLatest, delay));
+
+  thread.querySelectorAll('img, video').forEach(media => {
+    if (media.tagName === 'IMG' && media.complete) return;
+    media.addEventListener('load', scrollToLatest, { once: true });
+    media.addEventListener('loadedmetadata', scrollToLatest, { once: true });
+    media.addEventListener('error', scrollToLatest, { once: true });
+  });
+}
+
 function render(options = {}) {
   if (!state) return;
   const view = document.getElementById('view');
@@ -609,8 +634,7 @@ function render(options = {}) {
   if (tab === 'me') view.innerHTML = moduleBar(t('me')) + meHtml();
   lastRenderSnapshot = snapshot;
   if (tab === 'chat') {
-    const thread = document.getElementById('thread');
-    if (thread && (!isMobileChatViewport() || !chatListMode)) thread.scrollTop = thread.scrollHeight;
+    keepMobileChatAtLatest();
     scheduleActiveConversationRead();
   }
 }
