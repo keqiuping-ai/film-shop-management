@@ -597,8 +597,22 @@ button {
 .sales-review-visit header span { color:var(--muted); font-size:12px; }
 .sales-review-facts { display:flex; flex-wrap:wrap; gap:6px; }
 .sales-review-facts span { padding:5px 7px; border-radius:8px; color:#46515e; background:#f4f7f9; font-size:11px; }
-.sales-review-photo { display:grid; grid-template-columns:72px 1fr; gap:10px; align-items:center; color:var(--brand); text-decoration:none; font-weight:800; }
+.sales-review-photo { display:grid; width:100%; grid-template-columns:72px 1fr; gap:10px; align-items:center; color:var(--brand); text-align:left; font-weight:800; border:0; background:transparent; padding:0; }
 .sales-review-photo img { width:72px; height:56px; object-fit:cover; border-radius:9px; background:#edf2f4; }
+.sales-photo-modal { z-index:90; align-items:center; padding:12px; }
+.sales-photo-dialog { width:min(720px,100%); height:min(92dvh,900px); display:flex; flex-direction:column; overflow:hidden; padding:0; }
+.sales-photo-head { flex:0 0 auto; padding:14px 16px; border-bottom:1px solid #dde5ea; background:#fff; position:sticky; top:0; z-index:2; }
+.sales-photo-head > div { display:grid; gap:2px; }
+.sales-photo-head small { color:var(--brand); font-size:12px; }
+.sales-photo-body { min-height:0; overflow:auto; padding:14px; display:grid; gap:14px; }
+.sales-photo-body > img { display:block; width:100%; max-height:52dvh; object-fit:contain; border-radius:14px; background:#111; }
+.sales-photo-location { display:grid; gap:10px; }
+.sales-photo-location p { margin:0; padding:11px 12px; border-radius:12px; background:#f3f7f8; display:grid; gap:4px; }
+.sales-photo-location b { color:var(--brand); font-size:13px; }
+.sales-photo-location span { overflow-wrap:anywhere; }
+.sales-photo-actions { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+.sales-photo-actions a,.sales-photo-actions button { min-height:46px; border:1px solid #cad8de; border-radius:12px; background:#fff; color:var(--brand); font-weight:800; display:flex; align-items:center; justify-content:center; text-align:center; text-decoration:none; padding:8px; }
+.sales-photo-actions button { grid-column:1/-1; background:var(--brand); color:#fff; border-color:var(--brand); }
 .sales-review-visit section { display:grid; gap:5px; }
 .sales-review-visit section > p { margin:0; white-space:pre-wrap; color:#46515e; overflow-wrap:anywhere; }
 .sales-review-next { margin:0; padding:8px; border-radius:9px; background:#fff8df; font-weight:800; }

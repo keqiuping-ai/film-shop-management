@@ -1314,13 +1314,42 @@ function salesReviewVisitHtml(visit, trials) {
       <span>📍 ${matched === true ? (lang === 'en' ? 'Location verified' : '定位已核验') : matched === false ? (lang === 'en' ? 'Outside location range' : '超出门店定位范围') : (lang === 'en' ? 'No location result' : '无定位结果')}</span>
       ${Number.isFinite(Number(checkIn.distanceToAccountMeters)) ? `<span>${lang === 'en' ? 'Distance' : '距离门店'}：${Math.round(Number(checkIn.distanceToAccountMeters))}m</span>` : ''}
     </div>
-    ${checkIn.photoUrl ? `<a class="sales-review-photo" href="${escapeHtml(checkIn.photoUrl)}" target="_blank"><img src="${escapeHtml(checkIn.photoUrl)}" alt="${lang === 'en' ? 'Storefront check-in' : '到店打卡照片'}"><span>${lang === 'en' ? 'Open check-in photo' : '查看到店照片'}</span></a>` : ''}
+    ${checkIn.photoUrl ? `<button type="button" class="sales-review-photo" onclick="openSalesVisitPhoto('${visit.accountId}','${visit.id}')"><img src="${escapeHtml(checkIn.photoUrl)}" alt="${lang === 'en' ? 'Storefront check-in' : '到店打卡照片'}"><span>${lang === 'en' ? 'Photo & location details' : '查看照片和定位地址'}</span></button>` : ''}
     <section><b>${lang === 'en' ? 'Visit report' : '当时拜访情况'}</b><p>${escapeHtml(visit.reportText || (lang === 'en' ? 'No report.' : '没有填写拜访内容。'))}</p></section>
     ${visit.nextAction ? `<section><b>${lang === 'en' ? 'Next action' : '下一步动作'}</b><p>${escapeHtml(visit.nextAction)}</p></section>` : ''}
     ${visit.nextVisitAt ? `<p class="sales-review-next">⏰ ${lang === 'en' ? 'Next visit' : '下次回访'}：${escapeHtml(formatMobileDateTime(visit.nextVisitAt))}</p>` : ''}
     ${trials.length ? `<section><b>${lang === 'en' ? 'Products delivered' : '送出的试用产品'}</b><div class="sales-review-trials">${trials.map(salesReviewTrialHtml).join('')}</div></section>` : ''}
     ${summary || needs || advice ? `<section class="sales-review-ai"><b>AI ${lang === 'en' ? 'review' : '复盘分析'} · ${escapeHtml(visit.aiStatus || '')}</b>${summary ? `<p>${escapeHtml(summary)}</p>` : ''}${needs ? `<p><strong>${lang === 'en' ? 'Needs' : '客户需求'}：</strong>${escapeHtml(needs)}</p>` : ''}${advice ? `<p><strong>${lang === 'en' ? 'Advice' : '跟进建议'}：</strong>${escapeHtml(advice)}</p>` : ''}</section>` : `<p class="hint">AI：${escapeHtml(visit.aiStatus || (lang === 'en' ? 'Not analyzed' : '未分析'))}</p>`}
   </article>`;
+}
+
+function openSalesVisitPhoto(accountId, visitId) {
+  const sales = state.fieldSales || {};
+  const account = (sales.accounts || []).find(item => item.id === accountId);
+  const visit = (sales.visits || []).find(item => item.id === visitId);
+  const checkIn = visit?.checkIn || {};
+  if (!visit || !checkIn.photoUrl) return;
+  const customerMap = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(account?.address || visit.customerAddress || '')}`;
+  const overlay = document.createElement('div');
+  overlay.className = 'mobile-modal sales-photo-modal';
+  overlay.innerHTML = `<div class="mobile-dialog sales-photo-dialog">
+    <div class="dialog-head sales-photo-head"><div><small>${lang === 'en' ? 'Visit evidence' : '到店打卡凭证'}</small><strong>${escapeHtml(visit.businessName || account?.businessName || '')}</strong></div><button type="button" aria-label="${lang === 'en' ? 'Close' : '关闭'}" onclick="this.closest('.mobile-modal').remove()">×</button></div>
+    <div class="sales-photo-body">
+      <img src="${escapeHtml(checkIn.photoUrl)}" alt="${lang === 'en' ? 'Storefront check-in' : '到店打卡照片'}">
+      <div class="sales-photo-location">
+        <p><b>${lang === 'en' ? 'Customer address' : '客户登记地址'}</b><span>${escapeHtml(account?.address || visit.customerAddress || '—')}</span></p>
+        <p><b>${lang === 'en' ? 'Photo GPS address' : '拍照定位地址'}</b><span>${escapeHtml(checkIn.address || (lang === 'en' ? 'GPS address unavailable' : '未取得定位文字地址'))}</span></p>
+        <p><b>${lang === 'en' ? 'Distance' : '与客户地址距离'}</b><span>${Number.isFinite(Number(checkIn.distanceToAccountMeters)) ? `${Math.round(Number(checkIn.distanceToAccountMeters)).toLocaleString()} m` : '—'} · ${checkIn.locationMatched === true ? (lang === 'en' ? 'Verified' : '范围内') : checkIn.locationMatched === false ? (lang === 'en' ? 'Outside allowed range' : '超出允许范围') : (lang === 'en' ? 'Not verified' : '未核验')}</span></p>
+      </div>
+      <div class="sales-photo-actions">
+        <a href="${escapeHtml(customerMap)}" target="_blank">${lang === 'en' ? 'Customer address map' : '查看客户地址地图'}</a>
+        ${checkIn.mapUrl ? `<a href="${escapeHtml(checkIn.mapUrl)}" target="_blank">${lang === 'en' ? 'Photo location map' : '查看拍照位置地图'}</a>` : ''}
+        <button type="button" onclick="this.closest('.mobile-modal').remove()">${lang === 'en' ? 'Back to visit review' : '返回拜访复盘'}</button>
+      </div>
+    </div>
+  </div>`;
+  overlay.addEventListener('click', event => { if (event.target === overlay) overlay.remove(); });
+  document.body.appendChild(overlay);
 }
 
 function openSalesReviewDialog(accountId) {
