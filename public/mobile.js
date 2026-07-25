@@ -1283,8 +1283,64 @@ function salesAccountCard(account) {
     <p>📍 ${escapeHtml(account.address || '')}</p>
     ${account.contactName || account.phone ? `<p>👤 ${escapeHtml(account.contactName || '')} ${escapeHtml(account.phone || '')}</p>` : ''}
     <div class="sales-meta"><span>${lang === 'en' ? 'Next' : '下次'}：<b class="${overdue ? 'bad-text' : ''}">${escapeHtml(formatMobileDateTime(account.nextVisitAt) || '—')}</b></span><span>${lang === 'en' ? 'Cycle' : '周期'}：${Number(account.cadenceDays || 7)} ${lang === 'en' ? 'days' : '天'}</span>${latestTrial ? `<span>${lang === 'en' ? 'Trial' : '试用'}：${escapeHtml(latestTrial.status)}</span>` : ''}${latestVisit ? `<span>AI：${escapeHtml(latestVisit.aiStatus || '—')}</span>` : ''}</div>
-    <footer><a href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(account.address || '')}" target="_blank">${lang === 'en' ? 'Map' : '导航'}</a>${visit ? `<button class="primary-inline" onclick="openSalesCompleteDialog('${visit.id}')">${lang === 'en' ? 'Finish visit' : '结束拜访'}</button>` : `<button class="primary-inline" onclick="openSalesStartDialog('${account.id}')">${lang === 'en' ? 'Check in' : '到店打卡'}</button>`}</footer>
+    <footer><a href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(account.address || '')}" target="_blank">${lang === 'en' ? 'Map' : '导航'}</a><button class="sales-review-button" onclick="openSalesReviewDialog('${account.id}')">📋 ${lang === 'en' ? 'Review' : '复盘'}</button>${visit ? `<button class="primary-inline" onclick="openSalesCompleteDialog('${visit.id}')">${lang === 'en' ? 'Finish visit' : '结束拜访'}</button>` : `<button class="primary-inline" onclick="openSalesStartDialog('${account.id}')">${lang === 'en' ? 'Check in' : '到店打卡'}</button>`}</footer>
   </article>`;
+}
+
+function salesReviewTrialHtml(item) {
+  const price = value => Number(value || 0).toLocaleString(undefined, { style:'currency', currency:'USD', maximumFractionDigits:2 });
+  return `<div class="sales-review-trial">
+    <strong>${escapeHtml(item.productSku || item.productName || (lang === 'en' ? 'Trial product' : '试用产品'))}</strong>
+    ${item.productName && item.productName !== item.productSku ? `<span>${escapeHtml(item.productName)}</span>` : ''}
+    <span>${lang === 'en' ? 'Delivered' : '交付'}：${Number(item.quantity || 0)} · ${lang === 'en' ? 'Single' : '单卷'} ${price(item.singlePrice)}</span>
+    <span>${lang === 'en' ? 'Wholesale' : '批发'}：${Number(item.bulkQuantity || 0)} × ${price(item.bulkUnitPrice)} · ${escapeHtml(item.status || '')}</span>
+  </div>`;
+}
+
+function salesReviewVisitHtml(visit, trials) {
+  const analysis = visit.aiAnalysis || {};
+  const summary = lang === 'en' ? analysis.summaryEn : analysis.summaryZh;
+  const needs = lang === 'en' ? analysis.customerNeedsEn : analysis.customerNeedsZh;
+  const advice = lang === 'en' ? analysis.managerAdviceEn : analysis.managerAdviceZh;
+  const checkIn = visit.checkIn || {};
+  const matched = checkIn.locationMatched;
+  return `<article class="sales-review-visit">
+    <header><div><small>${escapeHtml(visit.outcome || visit.status || '')}</small><h4>${escapeHtml(formatMobileDateTime(visit.completedAt || visit.startedAt) || '—')}</h4></div><span>${escapeHtml(visit.userName || '')}</span></header>
+    <div class="sales-review-facts">
+      ${visit.contactMet ? `<span>👤 ${lang === 'en' ? 'Met' : '见到'}：${escapeHtml(visit.contactMet)}</span>` : ''}
+      <span>📍 ${matched === true ? (lang === 'en' ? 'Location verified' : '定位已核验') : matched === false ? (lang === 'en' ? 'Outside location range' : '超出门店定位范围') : (lang === 'en' ? 'No location result' : '无定位结果')}</span>
+      ${Number.isFinite(Number(checkIn.distanceToAccountMeters)) ? `<span>${lang === 'en' ? 'Distance' : '距离门店'}：${Math.round(Number(checkIn.distanceToAccountMeters))}m</span>` : ''}
+    </div>
+    ${checkIn.photoUrl ? `<a class="sales-review-photo" href="${escapeHtml(checkIn.photoUrl)}" target="_blank"><img src="${escapeHtml(checkIn.photoUrl)}" alt="${lang === 'en' ? 'Storefront check-in' : '到店打卡照片'}"><span>${lang === 'en' ? 'Open check-in photo' : '查看到店照片'}</span></a>` : ''}
+    <section><b>${lang === 'en' ? 'Visit report' : '当时拜访情况'}</b><p>${escapeHtml(visit.reportText || (lang === 'en' ? 'No report.' : '没有填写拜访内容。'))}</p></section>
+    ${visit.nextAction ? `<section><b>${lang === 'en' ? 'Next action' : '下一步动作'}</b><p>${escapeHtml(visit.nextAction)}</p></section>` : ''}
+    ${visit.nextVisitAt ? `<p class="sales-review-next">⏰ ${lang === 'en' ? 'Next visit' : '下次回访'}：${escapeHtml(formatMobileDateTime(visit.nextVisitAt))}</p>` : ''}
+    ${trials.length ? `<section><b>${lang === 'en' ? 'Products delivered' : '送出的试用产品'}</b><div class="sales-review-trials">${trials.map(salesReviewTrialHtml).join('')}</div></section>` : ''}
+    ${summary || needs || advice ? `<section class="sales-review-ai"><b>AI ${lang === 'en' ? 'review' : '复盘分析'} · ${escapeHtml(visit.aiStatus || '')}</b>${summary ? `<p>${escapeHtml(summary)}</p>` : ''}${needs ? `<p><strong>${lang === 'en' ? 'Needs' : '客户需求'}：</strong>${escapeHtml(needs)}</p>` : ''}${advice ? `<p><strong>${lang === 'en' ? 'Advice' : '跟进建议'}：</strong>${escapeHtml(advice)}</p>` : ''}</section>` : `<p class="hint">AI：${escapeHtml(visit.aiStatus || (lang === 'en' ? 'Not analyzed' : '未分析'))}</p>`}
+  </article>`;
+}
+
+function openSalesReviewDialog(accountId) {
+  const sales = state.fieldSales || {};
+  const account = (sales.accounts || []).find(item => item.id === accountId);
+  if (!account) return;
+  const visits = (sales.visits || [])
+    .filter(item => item.accountId === accountId && item.status === '已完成')
+    .sort((a, b) => String(b.completedAt || b.startedAt || '').localeCompare(String(a.completedAt || a.startedAt || '')));
+  const trials = sales.trialRolls || [];
+  const overlay = document.createElement('div'); overlay.className = 'mobile-modal sales-review-modal';
+  overlay.innerHTML = `<div class="mobile-dialog sales-review-dialog">
+    <div class="dialog-head"><div><small>${lang === 'en' ? 'Customer visit review' : '客户拜访复盘'}</small><strong>${escapeHtml(account.businessName)}</strong></div><button onclick="this.closest('.mobile-modal').remove()">×</button></div>
+    <div class="sales-review-account">
+      <p>📍 ${escapeHtml(account.address || '—')}</p>
+      ${account.contactName || account.phone || account.email ? `<p>👤 ${escapeHtml(account.contactName || '')} ${escapeHtml(account.phone || '')}${account.email ? ` · ${escapeHtml(account.email)}` : ''}</p>` : ''}
+      ${account.note ? `<p>📝 ${escapeHtml(account.note)}</p>` : ''}
+      <p>⏰ ${lang === 'en' ? 'Current next visit' : '当前下次回访'}：${escapeHtml(formatMobileDateTime(account.nextVisitAt) || '—')}</p>
+    </div>
+    <div class="sales-review-title"><strong>${lang === 'en' ? 'Visit history' : '历次拜访记录'}</strong><span>${visits.length} ${lang === 'en' ? 'visits' : '次'}</span></div>
+    <div class="sales-review-list">${visits.length ? visits.map(visit => salesReviewVisitHtml(visit, trials.filter(item => item.visitId === visit.id))).join('') : `<div class="sales-review-empty">${lang === 'en' ? 'No completed visits yet. The submitted report will appear here.' : '还没有已完成的拜访。业务员提交拜访结果后，会自动保存在这里。'}</div>`}</div>
+  </div>`;
+  document.body.appendChild(overlay);
 }
 
 function salesUserOptions(selectedId = '') {
