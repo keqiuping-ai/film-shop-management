@@ -43,6 +43,7 @@ let scheduleMonth = today().slice(0, 7);
 let jobMonth = today().slice(0, 7);
 let auditDate = today();
 let workTimeDate = today();
+let fieldSalesUserFilter = 'all';
 let activityHeartbeatTimer = null;
 let lastEmployeeInteractionAt = Date.now();
 let deferredInstall = null;
@@ -161,6 +162,8 @@ const dict = {
     customerTasksSub: '统一处理待回复、新客户首聊和到期跟进',
     aiBoss: '智能督办中心',
     aiBossSub: '语音交办、智能派单、过程催办、结果验收和月度排名',
+    fieldSales: '业务员管理中心',
+    fieldSalesSub: '客户分配、定位拜访审核、逾期回访、工作日报和 AI 分析',
     replyLibrary: '云端回复素材库',
     replyLibrarySub: '统一上传和维护客服常用文字、图片和短视频',
     leads: '客资提成',
@@ -415,6 +418,8 @@ const dict = {
     customerTasksSub: 'Handle replies, first contact, and scheduled follow-ups in one queue',
     aiBoss: 'Smart Supervision Center',
     aiBossSub: 'Voice assignment, smart routing, follow-up, acceptance and monthly ranking',
+    fieldSales: 'Field Sales Management',
+    fieldSalesSub: 'Assignments, verified visits, overdue follow-ups, daily reports, and AI analysis',
     replyLibrary: 'Cloud Reply Library',
     replyLibrarySub: 'Manage shared reply text, images, and short videos',
     leads: 'Lead Commissions',
@@ -645,6 +650,7 @@ const pages = [
   ['inventoryAlerts', 'inventoryAlerts', 'inventoryAlertsSub'],
   ['customerTasks', 'customerTasks', 'customerTasksSub'],
   ['aiBoss', 'aiBoss', 'aiBossSub'],
+  ['fieldSales', 'fieldSales', 'fieldSalesSub'],
   ['customerCenter', 'customerCenter', 'customerCenterSub'],
   ['replyLibrary', 'replyLibrary', 'replyLibrarySub'],
   ['prospects', 'prospects', 'prospectsSub'],
@@ -674,6 +680,7 @@ const pagePermissions = {
   inventoryAlerts: 'inventoryView',
   customerTasks: 'prospectsView',
   aiBoss: null,
+  fieldSales: 'fieldSalesManage',
   customerCenter: 'prospectsView',
   replyLibrary: 'prospectsView',
   prospects: 'prospectsView',
@@ -700,6 +707,7 @@ const writePermissions = {
   pricing: 'pricingEdit',
   inventory: 'inventoryEdit',
   workshopInventory: 'inventoryEdit',
+  fieldSales: 'fieldSalesManage',
   customerTasks: 'prospectsEdit',
   customerCenter: 'prospectsEdit',
   replyLibrary: 'prospectsEdit',
@@ -742,6 +750,9 @@ const permissionLabels = [
   ['reimbursementsView', '查看员工报销', 'View reimbursements'],
   ['reimbursementsCreate', '提交员工报销', 'Submit reimbursements'],
   ['reimbursementsApprove', '审批员工报销', 'Approve reimbursements'],
+  ['fieldSalesView', '查看本人业务客户和拜访', 'View own field-sales accounts and visits'],
+  ['fieldSalesEdit', '执行外勤拜访和提交日报', 'Perform field visits and submit reports'],
+  ['fieldSalesManage', '管理全部业务员、客户和拜访', 'Manage all field salespeople, accounts, and visits'],
   ['expensesEdit', '编辑运营成本', 'Edit operating costs'],
   ['reportsView', '查看报表', 'View reports'],
   ['fullFinanceView', '查看完整财报/成本/利润', 'View full financials / costs / profit'],
@@ -2220,7 +2231,7 @@ function updateVoiceButton(recording, label = '') {
 }
 
 function navIcon(id) {
-  return { modules:'▦', dashboard:'⌂', jobs:'▣', warranties:'◆', installers:'◉', pricing:'$', inventory:'▤', workshopInventory:'▥', inventoryAlerts:'!', customerTasks:'🎧', aiBoss:'🧠', customerCenter:'💬', replyLibrary:'☁', prospects:'★', leads:'☎', orders:'⇄', portalCustomers:'👤', shipments:'✈', schedules:'◫', workTime:'◴', expenses:'◇', reimbursements:'🧾', reports:'◌', audit:'◷', users:'◎', personalNotes:'📝', settings:'⚙' }[id] || '□';
+  return { modules:'▦', dashboard:'⌂', jobs:'▣', warranties:'◆', installers:'◉', pricing:'$', inventory:'▤', workshopInventory:'▥', inventoryAlerts:'!', customerTasks:'🎧', aiBoss:'🧠', fieldSales:'🧭', customerCenter:'💬', replyLibrary:'☁', prospects:'★', leads:'☎', orders:'⇄', portalCustomers:'👤', shipments:'✈', schedules:'◫', workTime:'◴', expenses:'◇', reimbursements:'🧾', reports:'◌', audit:'◷', users:'◎', personalNotes:'📝', settings:'⚙' }[id] || '□';
 }
 
 function moduleGrid(availablePages) {
@@ -3902,8 +3913,176 @@ function stopAiBossReminderLoop() {
   closeAiBossReminder();
 }
 
+function fieldSalesDateTime(value) {
+  if (!value) return '—';
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? escapeHtml(value) : date.toLocaleString(lang === 'zh' ? 'zh-CN' : 'en-US', { dateStyle:'short', timeStyle:'short' });
+}
+
+function fieldSalesDateTimeInput(value) {
+  const date = value ? new Date(value) : new Date(Date.now() + 7 * 86400000);
+  if (Number.isNaN(date.getTime())) return '';
+  return new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+}
+
+function fieldSalesPeopleOptions(selected = '') {
+  return (state.users || []).filter(item => item.active !== false).map(item =>
+    `<option value="${escapeHtml(item.id)}" ${item.id === selected ? 'selected' : ''}>${escapeHtml(item.name || item.email)}</option>`
+  ).join('');
+}
+
+function setFieldSalesUserFilter(value) {
+  fieldSalesUserFilter = value || 'all';
+  render();
+}
+
+function fieldSalesFiltered(rows, key) {
+  return fieldSalesUserFilter === 'all' ? rows : rows.filter(row => row[key] === fieldSalesUserFilter);
+}
+
+function fieldSalesStatusPill(label, kind = 'info') {
+  return `<span class="pill ${kind}">${escapeHtml(label || '—')}</span>`;
+}
+
+function fieldSalesAccountTable(accounts) {
+  if (!accounts.length) return `<div class="empty-state">${lang === 'zh' ? '暂无符合条件的业务客户。' : 'No matching field-sales accounts.'}</div>`;
+  const now = Date.now();
+  return `<div class="table-wrap"><table><thead><tr>
+    <th>${lang === 'zh' ? '客户门店' : 'Account'}</th><th>${lang === 'zh' ? '联系人' : 'Contact'}</th>
+    <th>${lang === 'zh' ? '负责人' : 'Owner'}</th><th>${lang === 'zh' ? '阶段' : 'Stage'}</th>
+    <th>${lang === 'zh' ? '上次拜访' : 'Last visit'}</th><th>${lang === 'zh' ? '下次回访' : 'Next visit'}</th><th></th>
+  </tr></thead><tbody>${accounts.map(account => {
+    const nextAt = new Date(account.nextVisitAt || '').getTime();
+    const overdue = Number.isFinite(nextAt) && nextAt < now && !['成交','暂停','无效'].includes(account.stage);
+    return `<tr>
+      <td><strong>${escapeHtml(account.businessName)}</strong><small class="field-sales-muted">${escapeHtml(account.address || '')}</small></td>
+      <td>${escapeHtml(account.contactName || '—')}<small class="field-sales-muted">${escapeHtml(account.phone || account.email || '')}</small></td>
+      <td>${escapeHtml(account.assignedUserName || '未分配')}</td>
+      <td>${fieldSalesStatusPill(account.stage || '待拜访', account.stage === '成交' ? 'good' : 'info')}</td>
+      <td>${fieldSalesDateTime(account.lastVisitAt)}</td>
+      <td>${overdue ? fieldSalesStatusPill(lang === 'zh' ? '已逾期' : 'Overdue', 'bad') : ''}<small class="field-sales-muted">${fieldSalesDateTime(account.nextVisitAt)}</small></td>
+      <td><button class="btn" onclick="openFieldSalesAccount('${account.id}')">${lang === 'zh' ? '管理' : 'Manage'}</button></td>
+    </tr>`;
+  }).join('')}</tbody></table></div>`;
+}
+
+function fieldSalesVisitCards(visits) {
+  if (!visits.length) return `<div class="empty-state">${lang === 'zh' ? '还没有拜访记录。' : 'No visit records yet.'}</div>`;
+  return `<div class="field-sales-card-grid">${visits.slice(0, 60).map(visit => {
+    const check = visit.checkIn || {};
+    const matched = check.locationMatched !== false;
+    const analysis = visit.aiAnalysis || {};
+    return `<article class="field-sales-card">
+      <header><div><strong>${escapeHtml(visit.businessName || '')}</strong><small>${escapeHtml(visit.userName || '')} · ${fieldSalesDateTime(visit.startedAt)}</small></div>${fieldSalesStatusPill(visit.status || '—', visit.status === '已完成' ? 'good' : 'warn')}</header>
+      <div class="field-sales-proof">
+        ${check.photoUrl ? `<a href="${escapeHtml(check.photoUrl)}" target="_blank"><img src="${escapeHtml(check.photoUrl)}" alt="check in"></a>` : '<span>无门店照片</span>'}
+        ${visit.ownerPhotoUrl ? `<a href="${escapeHtml(visit.ownerPhotoUrl)}" target="_blank"><img src="${escapeHtml(visit.ownerPhotoUrl)}" alt="owner"></a>` : ''}
+      </div>
+      <p><b>${lang === 'zh' ? '定位核验：' : 'Location: '}</b>${fieldSalesStatusPill(matched ? (lang === 'zh' ? '范围内' : 'Matched') : (lang === 'zh' ? '异常' : 'Mismatch'), matched ? 'good' : 'bad')} ${Number.isFinite(Number(check.distanceToAccountMeters)) ? `${Math.round(Number(check.distanceToAccountMeters))}m` : ''} ${check.mapUrl ? `<a href="${escapeHtml(check.mapUrl)}" target="_blank">${lang === 'zh' ? '查看地图' : 'Map'}</a>` : ''}</p>
+      <p><b>${lang === 'zh' ? '拜访结果：' : 'Result: '}</b>${escapeHtml(visit.reportText || (visit.status === '进行中' ? '进行中，尚未提交结果' : '—'))}</p>
+      ${visit.nextAction ? `<p><b>${lang === 'zh' ? '下一步：' : 'Next: '}</b>${escapeHtml(visit.nextAction)}</p>` : ''}
+      ${analysis.managerAdviceZh || analysis.managerAdviceEn ? `<div class="field-sales-ai"><b>AI ${lang === 'zh' ? '主管建议' : 'manager advice'}</b><p>${escapeHtml(lang === 'zh' ? (analysis.managerAdviceZh || analysis.managerAdviceEn) : (analysis.managerAdviceEn || analysis.managerAdviceZh))}</p></div>` : ''}
+      <footer>${visit.status === '已完成' && visit.aiStatus !== '已完成' ? `<button class="btn primary" onclick="analyzeFieldSalesVisit('${visit.id}')">AI ${lang === 'zh' ? '分析' : 'Analyze'}</button>` : `<small>AI: ${escapeHtml(visit.aiStatus || '—')}</small>`}</footer>
+    </article>`;
+  }).join('')}</div>`;
+}
+
+function fieldSalesReportCards(reports) {
+  if (!reports.length) return `<div class="empty-state">${lang === 'zh' ? '还没有工作日报。' : 'No daily reports yet.'}</div>`;
+  return `<div class="field-sales-card-grid">${reports.slice(0, 40).map(report => {
+    const analysis = report.aiAnalysis || {};
+    return `<article class="field-sales-card">
+      <header><div><strong>${escapeHtml(report.userName || '')}</strong><small>${escapeHtml(report.date || '')} · ${Number((report.visitIds || []).length)} ${lang === 'zh' ? '次拜访' : 'visits'}</small></div>${fieldSalesStatusPill(report.aiStatus || '待分析', report.aiStatus === '已完成' ? 'good' : 'warn')}</header>
+      <p><b>${lang === 'zh' ? '工作总结：' : 'Summary: '}</b>${escapeHtml(report.summary || '—')}</p>
+      ${report.blockers ? `<p><b>${lang === 'zh' ? '问题/协助：' : 'Blockers: '}</b>${escapeHtml(report.blockers)}</p>` : ''}
+      ${report.plan ? `<p><b>${lang === 'zh' ? '下一步计划：' : 'Plan: '}</b>${escapeHtml(report.plan)}</p>` : ''}
+      ${analysis.performanceSummaryZh || analysis.performanceSummaryEn ? `<div class="field-sales-ai"><b>AI ${lang === 'zh' ? '绩效分析' : 'performance review'}</b><p>${escapeHtml(lang === 'zh' ? (analysis.performanceSummaryZh || analysis.performanceSummaryEn) : (analysis.performanceSummaryEn || analysis.performanceSummaryZh))}</p><p>${escapeHtml(lang === 'zh' ? (analysis.coachingZh || '') : (analysis.coachingEn || ''))}</p></div>` : ''}
+      <footer>${report.aiStatus !== '已完成' && report.summary ? `<button class="btn primary" onclick="analyzeFieldSalesReport('${report.id}')">AI ${lang === 'zh' ? '分析' : 'Analyze'}</button>` : ''}</footer>
+    </article>`;
+  }).join('')}</div>`;
+}
+
+function fieldSalesTrialTable(rows) {
+  if (!rows.length) return `<div class="empty-state">${lang === 'zh' ? '还没有试用膜记录。' : 'No trial-roll records yet.'}</div>`;
+  return `<div class="table-wrap"><table><thead><tr><th>${lang === 'zh' ? '客户' : 'Account'}</th><th>${lang === 'zh' ? '业务员' : 'Salesperson'}</th><th>${lang === 'zh' ? '产品/数量' : 'Product / Qty'}</th><th>${lang === 'zh' ? '试用跟进' : 'Follow-up'}</th><th>${lang === 'zh' ? '报价方案' : 'Offer'}</th><th>${lang === 'zh' ? '状态' : 'Status'}</th></tr></thead><tbody>${rows.map(row => `<tr>
+    <td>${escapeHtml(row.businessName || '')}</td><td>${escapeHtml(row.userName || '')}</td><td>${escapeHtml(row.productName || row.productSku || '')} × ${Number(row.quantity || 0)}</td>
+    <td>${fieldSalesDateTime(row.followUpAt)}</td><td>$${Number(row.singlePrice || 0)} / ${Number(row.bulkQuantity || 0)}+ × $${Number(row.bulkUnitPrice || 0)}</td><td>${fieldSalesStatusPill(row.status || '—', 'warn')}</td>
+  </tr>`).join('')}</tbody></table></div>`;
+}
+
+function fieldSalesManagementView() {
+  const data = state.fieldSales || {};
+  if (!data.enabled || !data.canManage) return `<div class="empty-state">${lang === 'zh' ? '当前账号没有业务员管理权限。' : 'This account cannot manage field sales.'}</div>`;
+  const accounts = fieldSalesFiltered(data.accounts || [], 'assignedUserId');
+  const visits = fieldSalesFiltered(data.visits || [], 'userId');
+  const reports = fieldSalesFiltered(data.dailyReports || [], 'userId');
+  const trials = fieldSalesFiltered(data.trialRolls || [], 'userId');
+  const day = today();
+  const overdue = accounts.filter(item => item.nextVisitAt && new Date(item.nextVisitAt).getTime() < Date.now() && !['成交','暂停','无效'].includes(item.stage)).length;
+  const todayVisits = visits.filter(item => {
+    const startedAt = new Date(item.startedAt || '');
+    return !Number.isNaN(startedAt.getTime()) && localDateString(startedAt) === day;
+  }).length;
+  const locationIssues = visits.filter(item => item.checkIn && item.checkIn.locationMatched === false).length;
+  const activeVisits = visits.filter(item => item.status === '进行中').length;
+  const people = (state.users || []).filter(item => item.active !== false && (item.permissions?.fieldSalesView || item.permissions?.fieldSalesEdit || ['owner','manager','sales'].includes(item.role)));
+  return `<div class="field-sales-management">
+    <section class="field-sales-hero"><div><span>QUaD FIELD SALES</span><h2>${lang === 'zh' ? '业务员管理中心' : 'Field Sales Management'}</h2><p>${lang === 'zh' ? '电脑端统一监督：谁去了、是否到店、谈了什么、下一步什么时候完成。' : 'Desktop supervision for assignments, verified visits, results, and next actions.'}</p></div><button class="btn primary" onclick="openFieldSalesAccount()">${lang === 'zh' ? '+ 新增 / 分配客户' : '+ Add / Assign account'}</button></section>
+    <div class="field-sales-toolbar"><label>${lang === 'zh' ? '查看业务员' : 'Salesperson'}<select onchange="setFieldSalesUserFilter(this.value)"><option value="all">${lang === 'zh' ? '全部业务员' : 'All salespeople'}</option>${people.map(item => `<option value="${escapeHtml(item.id)}" ${fieldSalesUserFilter === item.id ? 'selected' : ''}>${escapeHtml(item.name || item.email)}</option>`).join('')}</select></label><small>${lang === 'zh' ? '手机端数据会自动同步到这里' : 'Mobile activity syncs here automatically'}</small></div>
+    <div class="grid stats field-sales-stats"><div class="stat"><span>${lang === 'zh' ? '负责客户' : 'Accounts'}</span><strong>${accounts.length}</strong></div><div class="stat"><span>${lang === 'zh' ? '今日拜访' : 'Visits today'}</span><strong>${todayVisits}</strong></div><div class="stat"><span>${lang === 'zh' ? '逾期回访' : 'Overdue'}</span><strong class="${overdue ? 'field-sales-danger' : ''}">${overdue}</strong></div><div class="stat"><span>${lang === 'zh' ? '进行中' : 'In progress'}</span><strong>${activeVisits}</strong></div><div class="stat"><span>${lang === 'zh' ? '定位异常' : 'Location issues'}</span><strong class="${locationIssues ? 'field-sales-danger' : ''}">${locationIssues}</strong></div></div>
+    ${panel(lang === 'zh' ? '客户分配与回访计划' : 'Assignments and follow-up plan', `<button class="btn primary" onclick="openFieldSalesAccount()">${lang === 'zh' ? '新增客户' : 'New account'}</button>`, fieldSalesAccountTable(accounts))}
+    ${panel(lang === 'zh' ? '定位拜访审核' : 'Verified visit review', '', fieldSalesVisitCards(visits))}
+    ${panel(lang === 'zh' ? '业务员工作日报与 AI 分析' : 'Daily reports and AI analysis', '', fieldSalesReportCards(reports))}
+    ${panel(lang === 'zh' ? '试用膜与批发转化跟进' : 'Trial rolls and wholesale conversion', '', fieldSalesTrialTable(trials))}
+  </div>`;
+}
+
+function openFieldSalesAccount(accountId = '') {
+  const account = (state.fieldSales?.accounts || []).find(item => item.id === accountId) || {};
+  openModal(accountId ? (lang === 'zh' ? '管理业务客户' : 'Manage field-sales account') : (lang === 'zh' ? '新增并分配业务客户' : 'Add and assign account'), `<div class="ai-boss-form">
+    <label><span>${lang === 'zh' ? '客户门店名称' : 'Business name'}</span><input id="fieldSalesBusinessName" value="${escapeHtml(account.businessName || '')}"></label>
+    <label><span>${lang === 'zh' ? '负责人' : 'Assigned salesperson'}</span><select id="fieldSalesAssigned">${fieldSalesPeopleOptions(account.assignedUserId || '')}</select></label>
+    <label class="wide"><span>${lang === 'zh' ? '门店地址' : 'Store address'}</span><input id="fieldSalesAddress" value="${escapeHtml(account.address || '')}"></label>
+    <label><span>${lang === 'zh' ? '联系人' : 'Contact name'}</span><input id="fieldSalesContact" value="${escapeHtml(account.contactName || '')}"></label>
+    <label><span>${lang === 'zh' ? '电话' : 'Phone'}</span><input id="fieldSalesPhone" value="${escapeHtml(account.phone || '')}"></label>
+    <label><span>Email</span><input id="fieldSalesEmail" value="${escapeHtml(account.email || '')}"></label>
+    <label><span>${lang === 'zh' ? '客户阶段' : 'Stage'}</span><select id="fieldSalesStage">${['待拜访','拜访中','持续跟进','试用中','报价中','成交','暂停','无效'].map(value => `<option ${value === (account.stage || '待拜访') ? 'selected' : ''}>${value}</option>`).join('')}</select></label>
+    <label><span>${lang === 'zh' ? '回访周期（天）' : 'Cadence (days)'}</span><input id="fieldSalesCadence" type="number" min="1" max="365" value="${Number(account.cadenceDays || 7)}"></label>
+    <label><span>${lang === 'zh' ? '下次回访时间' : 'Next visit'}</span><input id="fieldSalesNextVisit" type="datetime-local" value="${fieldSalesDateTimeInput(account.nextVisitAt)}"></label>
+    <label class="wide"><span>${lang === 'zh' ? '客户备注' : 'Notes'}</span><textarea id="fieldSalesNote">${escapeHtml(account.note || '')}</textarea></label>
+  </div>`, () => saveFieldSalesAccount(accountId));
+}
+
+async function saveFieldSalesAccount(accountId = '') {
+  const nextVisitValue = document.getElementById('fieldSalesNextVisit')?.value || '';
+  const body = {
+    businessName: value('fieldSalesBusinessName'), address: value('fieldSalesAddress'),
+    contactName: value('fieldSalesContact'), phone: value('fieldSalesPhone'), email: value('fieldSalesEmail'),
+    assignedUserId: value('fieldSalesAssigned'), stage: value('fieldSalesStage'),
+    cadenceDays: Number(value('fieldSalesCadence') || 7), note: value('fieldSalesNote'),
+    nextVisitAt: nextVisitValue ? new Date(nextVisitValue).toISOString() : ''
+  };
+  if (!body.businessName || !body.address) return alert(lang === 'zh' ? '请填写客户门店名称和地址。' : 'Business name and address are required.');
+  try {
+    await api(accountId ? `/api/field-sales/accounts/${accountId}` : '/api/field-sales/accounts', { method:accountId ? 'PUT' : 'POST', body:JSON.stringify(body) });
+    closeModal();
+    await sync();
+    current = 'fieldSales';
+    render();
+  } catch (error) { alert(error.message); }
+}
+
+async function analyzeFieldSalesVisit(id) {
+  try { await api(`/api/field-sales/visits/${id}/analyze`, { method:'POST', body:'{}' }); await sync(); } catch (error) { alert(error.message); }
+}
+
+async function analyzeFieldSalesReport(id) {
+  try { await api(`/api/field-sales/daily-reports/${id}/analyze`, { method:'POST', body:'{}' }); await sync(); } catch (error) { alert(error.message); }
+}
+
 const views = {
   aiBoss() { return aiBossView(); },
+  fieldSales() { return fieldSalesManagementView(); },
   personalNotes() { return personalNotesView(); },
   dashboard() {
     const dashboardJobs = filteredJobs(false);
@@ -8330,7 +8509,7 @@ function roleDefaultPermissions(role) {
     owner: all,
     manager: all,
     frontdesk: { ...none, jobsView: true, jobsCreate: true, pricingView: true, ordersView: true, ordersEdit: true, shipmentsView: true, schedulesView: true, leadsView: true, leadsEdit: true, prospectsView: true, prospectsEdit: true, reimbursementsView: true, reimbursementsCreate: true },
-    sales: { ...none, jobsView: true, jobsCreate: true, pricingView: true, ordersView: true, ordersEdit: true, shipmentsView: true, schedulesView: true, leadsView: true, leadsEdit: true, prospectsView: true, prospectsEdit: true, reimbursementsView: true, reimbursementsCreate: true },
+    sales: { ...none, jobsView: true, jobsCreate: true, pricingView: true, ordersView: true, ordersEdit: true, shipmentsView: true, schedulesView: true, leadsView: true, leadsEdit: true, prospectsView: true, prospectsEdit: true, reimbursementsView: true, reimbursementsCreate: true, fieldSalesView: true, fieldSalesEdit: true },
     clerk: { ...none, jobsView: true, jobsCreate: true, jobsEdit: true, pricingView: true, inventoryView: true, ordersView: true, ordersEdit: true, shipmentsView: true, shipmentsEdit: true, schedulesView: true, schedulesEdit: true, leadsView: true, leadsEdit: true, prospectsView: true, prospectsEdit: true, expensesView: true, expensesEdit: true, reimbursementsView: true, reimbursementsCreate: true },
     warehouse: { ...none, inventoryView: true, inventoryEdit: true, ordersView: true, shipmentsView: true, shipmentsEdit: true, schedulesView: true, reimbursementsView: true, reimbursementsCreate: true },
     installer: { ...none, jobsView: true, reimbursementsView: true, reimbursementsCreate: true },

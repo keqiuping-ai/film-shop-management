@@ -1112,6 +1112,7 @@ function sanitizeDbForUser(db, user) {
     voiceCalls: voiceCallsForUser(db, user),
     personalNotes: (db.personalNotes || []).filter(item => personalNoteVisibleTo(item, user)).map(item => personalNoteForUser(db, item, user)),
     aiBossTasks: aiBossTasksForUser(db, user),
+    fieldSales: fieldSalesSnapshot(db, user),
     aiBossProfiles: (db.aiBossProfiles || [])
       .filter(profile => ['owner', 'manager'].includes(user.role) || profile.userId === user.id)
       .map(profile => ['owner', 'manager'].includes(user.role)
@@ -4327,20 +4328,35 @@ async function api(req, res) {
       account.updatedAt = now;
     }
     if (body.trialDelivered === true) {
-      const product = (db.products || []).find(item => item.sku === body.productSku || item.id === body.productId);
-      db.salesTrialRolls.unshift({
-        id: id(), accountId: visit.accountId, businessName: visit.businessName,
-        visitId: visit.id, userId: visit.userId, userName: visit.userName,
-        productId: product?.id || '', productSku: product?.sku || String(body.productSku || '').slice(0, 80),
-        productName: product?.name || String(body.productName || '试用膜').slice(0, 180),
-        quantity: Math.max(1, Number(body.trialQuantity || db.settings?.fieldSalesTrialQuantity || 1)),
-        status: '试用中', deliveredAt: now,
-        followUpAt: String(body.trialFollowUpAt || '').trim() || addDaysIso(db, 7, 17),
-        singlePrice: Number(body.singlePrice || db.settings?.fieldSalesSinglePrice || 800),
-        bulkQuantity: Number(body.bulkQuantity || db.settings?.fieldSalesBulkQuantity || 10),
-        bulkUnitPrice: Number(body.bulkUnitPrice || db.settings?.fieldSalesBulkUnitPrice || 500),
-        inventoryStatus: '待仓库确认', createdAt: now, updatedAt: now
-      });
+      const trialNumber = (value, fallback, minimum) => {
+        const parsed = Number(value);
+        return Math.max(minimum, Number.isFinite(parsed) ? parsed : Number(fallback));
+      };
+      const requestedItems = Array.isArray(body.trialItems) && body.trialItems.length
+        ? body.trialItems.slice(0, 20)
+        : [{ productId:body.productId, productSku:body.productSku, productName:body.productName, quantity:body.trialQuantity, singlePrice:body.singlePrice, bulkQuantity:body.bulkQuantity, bulkUnitPrice:body.bulkUnitPrice }];
+      const validItems = requestedItems.filter(item => String(item?.productSku || '').trim());
+      if (!validItems.length) {
+        return send(res, 400, { error:'已勾选交付试用膜，请至少填写一个产品型号' });
+      }
+      for (const item of validItems) {
+        const requestedSku = String(item?.productSku || '').trim().slice(0, 80);
+        if (!requestedSku) continue;
+        const product = (db.products || []).find(row => row.sku === requestedSku || row.id === item?.productId);
+        db.salesTrialRolls.unshift({
+          id: id(), accountId: visit.accountId, businessName: visit.businessName,
+          visitId: visit.id, userId: visit.userId, userName: visit.userName,
+          productId: product?.id || '', productSku: product?.sku || requestedSku,
+          productName: product?.name || String(item?.productName || requestedSku || '试用膜').slice(0, 180),
+          quantity: trialNumber(item?.quantity, db.settings?.fieldSalesTrialQuantity || 1, 1),
+          status: '试用中', deliveredAt: now,
+          followUpAt: String(body.trialFollowUpAt || '').trim() || addDaysIso(db, 7, 17),
+          singlePrice: trialNumber(item?.singlePrice, db.settings?.fieldSalesSinglePrice ?? 800, 0),
+          bulkQuantity: trialNumber(item?.bulkQuantity, db.settings?.fieldSalesBulkQuantity ?? 10, 1),
+          bulkUnitPrice: trialNumber(item?.bulkUnitPrice, db.settings?.fieldSalesBulkUnitPrice ?? 500, 0),
+          inventoryStatus: '待仓库确认', createdAt: now, updatedAt: now
+        });
+      }
     }
     const daily = (db.salesDailyReports || []).find(item => item.userId === visit.userId && item.date === dateInTimezone(db.settings?.timezone || 'America/Los_Angeles', 0));
     if (daily) {

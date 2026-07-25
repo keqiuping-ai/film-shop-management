@@ -1208,14 +1208,49 @@ async function startSalesVisit(button, accountId) {
   } catch (error) { alert(error.message || t('locationFailed')); button.disabled = false; button.textContent = lang === 'en' ? 'Check in now' : '确认到店打卡'; }
 }
 
-function salesProductOptions() {
-  return `<option value="">${lang === 'en' ? 'Choose product (optional)' : '选择试用产品（可不选）'}</option>${(state.fieldSales?.products || []).map(item => `<option value="${escapeHtml(item.sku)}">${escapeHtml(item.sku)} · ${escapeHtml(item.name)}</option>`).join('')}`;
+function salesProductDatalist() {
+  return `<datalist id="salesProductModels">${(state.fieldSales?.products || []).map(item =>
+    `<option value="${escapeHtml(item.sku)}">${escapeHtml(item.name || '')}</option>`
+  ).join('')}</datalist>`;
+}
+
+function salesTrialRowHtml(values = {}) {
+  const campaign = state.fieldSales?.campaign || {};
+  return `<div class="sales-trial-row">
+    <label class="sales-trial-model">${lang === 'en' ? 'Product model' : '产品型号'}<input class="sales-trial-sku" list="salesProductModels" value="${escapeHtml(values.productSku || '')}" placeholder="${lang === 'en' ? 'Search or enter a model' : '搜索或直接填写型号'}"></label>
+    <label>${lang === 'en' ? 'Qty' : '数量'}<input class="sales-trial-qty" type="number" min="1" value="${Number(values.quantity || 1)}"></label>
+    <label>${lang === 'en' ? 'Single price' : '单卷价'}<input class="sales-trial-single" type="number" min="0" step="0.01" value="${Number(values.singlePrice ?? campaign.singlePrice ?? 800)}"></label>
+    <label>${lang === 'en' ? 'Bulk qty' : '批发数量'}<input class="sales-trial-bulk-qty" type="number" min="1" value="${Number(values.bulkQuantity ?? campaign.bulkQuantity ?? 10)}"></label>
+    <label>${lang === 'en' ? 'Bulk unit' : '批发单价'}<input class="sales-trial-bulk-price" type="number" min="0" step="0.01" value="${Number(values.bulkUnitPrice ?? campaign.bulkUnitPrice ?? 500)}"></label>
+    <button class="sales-trial-remove" type="button" onclick="removeSalesTrialRow(this)" aria-label="${lang === 'en' ? 'Remove row' : '删除这一行'}">×</button>
+  </div>`;
+}
+
+function addSalesTrialRow() {
+  const rows = document.getElementById('salesTrialRows');
+  if (!rows || rows.children.length >= 20) return;
+  rows.insertAdjacentHTML('beforeend', salesTrialRowHtml());
+}
+
+function removeSalesTrialRow(button) {
+  const rows = document.getElementById('salesTrialRows');
+  button.closest('.sales-trial-row')?.remove();
+  if (rows && !rows.children.length) addSalesTrialRow();
+}
+
+function readSalesTrialItems() {
+  return [...document.querySelectorAll('#salesTrialRows .sales-trial-row')].map(row => ({
+    productSku: row.querySelector('.sales-trial-sku')?.value.trim() || '',
+    quantity: Number(row.querySelector('.sales-trial-qty')?.value || 1),
+    singlePrice: Number(row.querySelector('.sales-trial-single')?.value || 0),
+    bulkQuantity: Number(row.querySelector('.sales-trial-bulk-qty')?.value || 1),
+    bulkUnitPrice: Number(row.querySelector('.sales-trial-bulk-price')?.value || 0)
+  })).filter(item => item.productSku);
 }
 
 function openSalesCompleteDialog(visitId) {
   const visit = (state.fieldSales?.visits || []).find(item => item.id === visitId);
   if (!visit) return;
-  const campaign = state.fieldSales?.campaign || {};
   const overlay = document.createElement('div'); overlay.className = 'mobile-modal';
   overlay.innerHTML = `<div class="mobile-dialog"><div class="dialog-head"><strong>${lang === 'en' ? 'Visit report' : '提交拜访结果'}</strong><button onclick="this.closest('.mobile-modal').remove()">×</button></div>
     <p><b>${escapeHtml(visit.businessName)}</b></p>
@@ -1224,8 +1259,8 @@ function openSalesCompleteDialog(visitId) {
     <label>${lang === 'en' ? 'Next action' : '下一步动作'}<textarea id="salesNextAction"></textarea></label>
     <label>${lang === 'en' ? 'Next visit' : '下次回访时间'}<input id="salesNextVisit" type="datetime-local" value="${localDateTimeValue()}"></label>
     <label class="consent-row"><input id="salesTrialDelivered" type="checkbox" onchange="document.getElementById('salesTrialFields').classList.toggle('hidden',!this.checked)">${lang === 'en' ? 'Trial roll delivered' : '本次已交付试用膜'}</label>
-    <div id="salesTrialFields" class="hidden"><label>${lang === 'en' ? 'Product' : '试用产品'}<select id="salesTrialProduct">${salesProductOptions()}</select></label>
-      <div class="sales-price-grid"><label>${lang === 'en' ? 'Single price' : '单卷价'}<input id="salesSinglePrice" type="number" value="${Number(campaign.singlePrice || 800)}"></label><label>${lang === 'en' ? 'Bulk qty' : '批发数量'}<input id="salesBulkQty" type="number" value="${Number(campaign.bulkQuantity || 10)}"></label><label>${lang === 'en' ? 'Bulk unit' : '批发单价'}<input id="salesBulkPrice" type="number" value="${Number(campaign.bulkUnitPrice || 500)}"></label></div>
+    <div id="salesTrialFields" class="hidden">${salesProductDatalist()}<div class="sales-trial-head"><strong>${lang === 'en' ? 'Trial products and pricing' : '试用型号与对应价格'}</strong><button type="button" onclick="addSalesTrialRow()">＋ ${lang === 'en' ? 'Add model' : '增加型号'}</button></div>
+      <div id="salesTrialRows">${salesTrialRowHtml()}</div>
     </div>
     <p class="hint">${lang === 'en' ? 'The report is saved immediately. AI bilingual analysis is queued when configured.' : '提交后立即保存；已配置 AI 时会进入中英文分析队列。'}</p>
     <div class="dialog-actions"><button onclick="this.closest('.mobile-modal').remove()">${t('cancel')}</button><button class="primary" onclick="completeSalesVisit(this,'${visit.id}')">${lang === 'en' ? 'Submit result' : '提交结果'}</button></div></div>`;
@@ -1234,17 +1269,19 @@ function openSalesCompleteDialog(visitId) {
 
 async function completeSalesVisit(button, visitId) {
   try {
+    const trialDelivered = document.getElementById('salesTrialDelivered').checked;
+    const trialItems = readSalesTrialItems();
+    if (trialDelivered && !trialItems.length) {
+      return alert(lang === 'en' ? 'Add at least one trial product model.' : '请至少填写一个试用产品型号。');
+    }
     button.disabled = true;
     state = await api(`/api/field-sales/visits/${visitId}/complete`, { method:'PUT', body:JSON.stringify({
       reportText:document.getElementById('salesReportText').value,
       outcome:document.getElementById('salesOutcome').value,
       nextAction:document.getElementById('salesNextAction').value,
       nextVisitAt:document.getElementById('salesNextVisit').value,
-      trialDelivered:document.getElementById('salesTrialDelivered').checked,
-      productSku:document.getElementById('salesTrialProduct')?.value || '',
-      singlePrice:document.getElementById('salesSinglePrice')?.value,
-      bulkQuantity:document.getElementById('salesBulkQty')?.value,
-      bulkUnitPrice:document.getElementById('salesBulkPrice')?.value
+      trialDelivered,
+      trialItems
     }) });
     user = state.user; button.closest('.mobile-modal').remove(); render();
     const savedVisit = (state.fieldSales?.visits || []).find(item => item.id === visitId);

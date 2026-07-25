@@ -540,6 +540,17 @@ button {
 .bad-text { color:var(--bad); }
 .sales-price-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:7px; }
 .sales-price-grid label { min-width:0; font-size:12px; }
+.sales-trial-head { display:flex; align-items:center; justify-content:space-between; gap:8px; margin:10px 0 8px; }
+.sales-trial-head button { min-height:36px; padding:0 10px; color:var(--brand); background:white; border:1px solid #9dd7df; border-radius:9px; font-weight:800; }
+#salesTrialRows { display:grid; gap:10px; }
+.sales-trial-row { position:relative; display:grid; grid-template-columns:2fr repeat(4,minmax(76px,1fr)); gap:7px; padding:10px 38px 10px 10px; border:1px solid #b9dfe8; border-radius:12px; background:#f5fbfc; }
+.sales-trial-row label { min-width:0; font-size:11px; }
+.sales-trial-row input { min-width:0; width:100%; }
+.sales-trial-remove { position:absolute; top:8px; right:7px; width:28px; min-height:28px; padding:0; border-radius:50%; color:#b42318; background:white; border:1px solid #fecaca; font-size:20px; }
+@media (max-width:620px) {
+  .sales-trial-row { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .sales-trial-row .sales-trial-model { grid-column:1/-1; }
+}
 .supervision-hero {
   display: grid;
   gap: 10px;
