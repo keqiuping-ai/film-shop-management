@@ -28,6 +28,8 @@ const MAX_MESSAGE_ATTACHMENT_BYTES = 8 * 1024 * 1024;
 const GROUP_CHAT_ID = '__all_staff__';
 let lastChatUserId = '';
 let noteSaving = false;
+let activeMobileNoteId = '';
+let mobileNoteListMode = true;
 let supervisionReminderTimer = null;
 let supervisionReminderSessionUserId = '';
 let supervisionReminderActivityCheckAt = 0;
@@ -531,6 +533,7 @@ function renderAuth() {
 
 function setTab(next) {
   if (next === 'chat') chatListMode = true;
+  if (next === 'notes') mobileNoteListMode = true;
   tab = next;
   document.getElementById('app')?.classList.toggle('module-open', tab !== 'home');
   document.querySelectorAll('.tabs button').forEach(button => button.classList.toggle('active', button.dataset.tab === tab));
@@ -541,6 +544,7 @@ function closeMobileModule() {
   saveActiveDrafts();
   tab = 'home';
   chatListMode = true;
+  mobileNoteListMode = true;
   document.getElementById('app')?.classList.remove('module-open');
   document.querySelectorAll('.tabs button').forEach(button => button.classList.remove('active'));
   render();
@@ -1016,20 +1020,62 @@ function notesHtml() {
     if (a.status !== b.status) return a.status === 'pending' ? -1 : 1;
     return String(b.updatedAt || b.createdAt || '').localeCompare(String(a.updatedAt || a.createdAt || ''));
   });
-  return `<div class="notes-head"><div><strong>${t('myNotes')}</strong><p>${t('notesPrivate')}</p></div><div><button onclick="openNoteEditor('', 'memo')">＋ ${t('newMemo')}</button><button class="primary-inline" onclick="openNoteEditor('', 'task')">＋ ${t('newTask')}</button></div></div>
-    <div class="note-grid">${notes.length ? notes.map(noteCardHtml).join('') : `<div class="panel-body hint">${t('noNotes')}</div>`}</div>`;
+  if (!notes.some(item => item.id === activeMobileNoteId)) activeMobileNoteId = notes[0]?.id || '';
+  const selected = notes.find(item => item.id === activeMobileNoteId);
+  const list = notes.map(noteListItemHtml).join('');
+  return `<div class="mobile-notes-browser ${mobileNoteListMode ? 'list-mode' : 'detail-mode'}">
+    <section class="mobile-notes-list-pane">
+      <div class="notes-head"><div><strong>${t('myNotes')}</strong><p>${t('notesPrivate')}</p></div><div><button onclick="openNoteEditor('', 'memo')">＋ ${t('newMemo')}</button><button class="primary-inline" onclick="openNoteEditor('', 'task')">＋ ${t('newTask')}</button></div></div>
+      <label class="mobile-notes-search"><span>⌕</span><input type="search" placeholder="${lang === 'zh' ? '搜索备忘录' : 'Search notes'}" oninput="filterMobileNotes(this.value)"></label>
+      <div class="mobile-note-list">${list || `<div class="panel-body hint">${t('noNotes')}</div>`}</div>
+    </section>
+    <section class="mobile-notes-detail-pane">${selected ? mobileNoteDetailHtml(selected) : `<div class="mobile-note-empty">${t('noNotes')}</div>`}</section>
+  </div>`;
 }
 
-function noteCardHtml(item) {
+function noteListItemHtml(item) {
+  const preview = String(item.content || '').replace(/\s+/g, ' ').trim();
+  const completed = item.status === 'completed';
+  const search = [item.title, item.content, item.ownerName, item.type === 'task' ? t('todo') : t('memo')].filter(Boolean).join(' ');
+  return `<button type="button" class="mobile-note-list-item ${item.id === activeMobileNoteId ? 'active' : ''} ${completed ? 'completed' : ''}" data-search="${escapeHtml(search)}" onclick="selectMobileNote('${item.id}')">
+    <span class="mobile-note-list-icon">${item.type === 'task' ? '✓' : '▤'}</span>
+    <span class="mobile-note-list-copy"><strong>${escapeHtml(item.title || (lang === 'zh' ? '未命名' : 'Untitled'))}</strong><span>${escapeHtml(preview || (item.type === 'task' ? t('todo') : t('memo')))}</span><small>${fmtDateTime(item.updatedAt || item.createdAt || item.remindAt)}</small></span>
+    <b>›</b>
+  </button>`;
+}
+
+function mobileNoteDetailHtml(item) {
   const completed = item.status === 'completed';
   const canEdit = item.canEdit !== false && (!item.ownerUserId || item.ownerUserId === user?.id);
   const share = item.shareScope === 'all' ? (lang === 'zh' ? '👥 全体员工' : '👥 All staff') : item.shareScope === 'users' ? (lang === 'zh' ? '↗ 指定员工' : '↗ Selected staff') : (lang === 'zh' ? '🔒 仅自己' : '🔒 Private');
-  return `<article class="note-card ${completed ? 'completed' : ''}" data-note-id="${item.id}">
-    <div class="note-card-top"><span>${item.type === 'task' ? t('todo') : t('memo')}</span><div>${canEdit ? `${item.type === 'task' && !completed ? `<button onclick="finishNote('${item.id}')">${t('finish')}</button>` : ''}<button onclick="openNoteEditor('${item.id}')">✎</button><button onclick="deleteNote('${item.id}')">×</button>` : (lang === 'zh' ? '只读' : 'Read only')}</div></div>
-    <h3>${escapeHtml(item.title)}</h3>${item.content ? `<p>${escapeHtml(item.content)}</p>` : ''}
-    ${item.type === 'task' ? `<time>${completed ? '✓ ' + t('completed') : '⏰ ' + t('due') + ' ' + fmtDateTime(item.snoozedUntil || item.remindAt)}</time>` : ''}
-    <small>${canEdit ? '' : `${lang === 'zh' ? '来自' : 'From'} ${escapeHtml(item.ownerName || '')} · `}${share}</small>
+  return `<article class="mobile-note-detail ${completed ? 'completed' : ''}">
+    <header><button type="button" class="mobile-note-detail-back" onclick="showMobileNoteList()">‹ ${lang === 'zh' ? '记事本' : 'Notes'}</button><div>${canEdit ? `${item.type === 'task' && !completed ? `<button onclick="finishNote('${item.id}')">${t('finish')}</button>` : ''}<button onclick="openNoteEditor('${item.id}')">✎</button><button class="danger-text" onclick="deleteNote('${item.id}')">×</button>` : `<span>${lang === 'zh' ? '只读' : 'Read only'}</span>`}</div></header>
+    <div class="mobile-note-paper">
+      <small>${fmtDateTime(item.updatedAt || item.createdAt || item.remindAt)}</small>
+      <h2>${escapeHtml(item.title || (lang === 'zh' ? '未命名' : 'Untitled'))}</h2>
+      ${item.type === 'task' ? `<time>${completed ? '✓ ' + t('completed') : '⏰ ' + t('due') + ' ' + fmtDateTime(item.snoozedUntil || item.remindAt)}</time>` : ''}
+      <div class="mobile-note-content">${item.content ? escapeHtml(item.content).replace(/\n/g, '<br>') : `<span>${lang === 'zh' ? '没有更多内容' : 'No additional details'}</span>`}</div>
+      <footer>${canEdit ? '' : `${lang === 'zh' ? '来自' : 'From'} ${escapeHtml(item.ownerName || '')} · `}${share}</footer>
+    </div>
   </article>`;
+}
+
+function selectMobileNote(noteId) {
+  activeMobileNoteId = noteId || '';
+  mobileNoteListMode = false;
+  render();
+}
+
+function showMobileNoteList() {
+  mobileNoteListMode = true;
+  render();
+}
+
+function filterMobileNotes(value = '') {
+  const keyword = String(value || '').trim().toLowerCase();
+  document.querySelectorAll('.mobile-note-list-item').forEach(button => {
+    button.hidden = Boolean(keyword) && !String(button.dataset.search || '').toLowerCase().includes(keyword);
+  });
 }
 
 function openNoteEditor(noteId = '', type = 'memo') {
@@ -1072,6 +1118,8 @@ async function saveNote(noteId, type, button) {
     const result = await api(`/api/personal-notes${noteId ? `/${noteId}` : ''}`, { method: noteId ? 'PUT' : 'POST', body: JSON.stringify(body) });
     const list = (state.personalNotes || []).filter(note => note.id !== result.item.id && note.id !== noteId);
     state.personalNotes = [result.item, ...list];
+    activeMobileNoteId = result.item.id;
+    mobileNoteListMode = false;
     render();
   } catch (err) { alert(err.message); }
   finally { noteSaving = false; }
@@ -1092,6 +1140,8 @@ async function deleteNote(noteId) {
   if (!confirm(t('confirmDeleteNote'))) return;
   const before = [...(state.personalNotes || [])];
   state.personalNotes = before.filter(note => note.id !== noteId);
+  if (activeMobileNoteId === noteId) activeMobileNoteId = state.personalNotes[0]?.id || '';
+  mobileNoteListMode = true;
   render();
   try { await api(`/api/personal-notes/${noteId}`, { method: 'DELETE' }); }
   catch (err) { state.personalNotes = before; render(); alert(err.message); }
