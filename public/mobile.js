@@ -367,7 +367,7 @@ async function sync(options = {}) {
     state = await api('/api/mobile/bootstrap');
     user = state.user;
     renderAuth();
-    render({ preserveActiveInput: !options.force || userRecentlyEditing() });
+    render({ preserveActiveInput: !options.force });
     ensureSyncTimer();
     startRealtimeSync();
     startSupervisionReminderLoop();
@@ -578,7 +578,7 @@ function render(options = {}) {
     hasActiveDraft()
   );
   const snapshot = renderSnapshot();
-  if (userIsEditing) {
+  if (userIsEditing && view.childElementCount > 0) {
     lastRenderSnapshot = snapshot;
     return;
   }
