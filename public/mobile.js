@@ -19,6 +19,12 @@ let reimbursementAttachments = [];
 let deferredInstall = null;
 let messageRecorder = null;
 let messageAudioChunks = [];
+let messageRecordingStream = null;
+let messageVoiceHeld = false;
+let messageVoiceStarting = false;
+let messageVoiceStartedAt = 0;
+let messageVoiceTimer = null;
+let messageVoiceFeedbackTimer = null;
 let supervisionRecorder = null;
 let supervisionAudioChunks = [];
 let supervisionRecordingStream = null;
@@ -582,6 +588,10 @@ function render(options = {}) {
     hasActiveDraft()
   );
   const snapshot = renderSnapshot();
+  if ((messageRecorder || messageVoiceStarting) && view.childElementCount > 0) {
+    lastRenderSnapshot = snapshot;
+    return;
+  }
   if (userIsEditing && view.childElementCount > 0) {
     lastRenderSnapshot = snapshot;
     return;
@@ -735,7 +745,13 @@ function chatHtml() {
       <button onclick="document.getElementById('mobileImageInput').click()">${t('image')}</button>
       <button onclick="document.getElementById('mobileVideoInput').click()">${t('video')}</button>
       <button onclick="document.getElementById('mobileFileInput').click()">${t('file')}</button>
-      <button id="mobileVoiceBtn" onclick="toggleVoiceMessage()">${t('voice')}</button>
+      <button id="mobileVoiceBtn" class="mobile-hold-voice" type="button"
+        onpointerdown="startVoiceMessage(event)"
+        onpointerup="finishVoiceMessage(event)"
+        onpointercancel="cancelVoiceMessage(event)"
+        onlostpointercapture="finishVoiceMessage(event)"
+        oncontextmenu="event.preventDefault()"
+        aria-label="${lang === 'zh' ? '按住说话，松开发送' : 'Hold to talk, release to send'}">${lang === 'zh' ? '🎙️ 按住说话' : '🎙️ Hold to talk'}</button>
       <input class="hidden" id="mobileImageInput" type="file" accept="image/*" onchange="sendMessageFile(this.files[0], 'image'); this.value='';" />
       <input class="hidden" id="mobileVideoInput" type="file" accept="video/*" onchange="sendMessageFile(this.files[0], 'video'); this.value='';" />
       <input class="hidden" id="mobileFileInput" type="file" onchange="sendMessageFile(this.files[0], 'file'); this.value='';" />
@@ -921,14 +937,14 @@ async function optimizeMobileImage(file) {
   return new File([blob], String(file.name || 'image').replace(/\.[^.]+$/, '') + '.jpg', { type: 'image/jpeg' });
 }
 
-async function postMessage({ text = '', attachment = null }) {
+async function postMessage({ text = '', attachment = null }, targetUserId = activeUserId) {
   await api('/api/messages', {
     method: 'POST',
-    body: JSON.stringify(activeUserId === GROUP_CHAT_ID ? { groupId: 'all-staff', text, attachment } : { toUserId: activeUserId, text, attachment })
+    body: JSON.stringify(targetUserId === GROUP_CHAT_ID ? { groupId: 'all-staff', text, attachment } : { toUserId: targetUserId, text, attachment })
   });
   state = await api('/api/mobile/bootstrap');
   renderAuth();
-  render({ preserveActiveInput: false });
+  if (!messageRecorder && !messageVoiceStarting) render({ preserveActiveInput: false });
 }
 
 async function sendMessageFile(file, kind) {
@@ -961,46 +977,133 @@ async function sendMessageFile(file, kind) {
   }
 }
 
-async function toggleVoiceMessage() {
+function updateMobileVoiceButton(mode = 'idle', label = '') {
   const button = document.getElementById('mobileVoiceBtn');
-  if (messageRecorder && messageRecorder.state === 'recording') {
-    messageRecorder.stop();
-    if (button) button.textContent = t('voice');
+  if (!button) return;
+  button.classList.toggle('recording', mode === 'recording' || mode === 'starting');
+  button.classList.toggle('sending', mode === 'sending');
+  button.textContent = label || (lang === 'zh' ? '🎙️ 按住说话' : '🎙️ Hold to talk');
+}
+
+function showMobileVoiceFeedback(message, mode = 'success') {
+  let feedback = document.getElementById('mobileVoiceFeedback');
+  if (!feedback) {
+    feedback = document.createElement('div');
+    feedback.id = 'mobileVoiceFeedback';
+    feedback.className = 'mobile-voice-feedback';
+    feedback.setAttribute('role', 'status');
+    document.body.appendChild(feedback);
+  }
+  clearTimeout(messageVoiceFeedbackTimer);
+  feedback.className = `mobile-voice-feedback ${mode} show`;
+  feedback.textContent = message;
+  messageVoiceFeedbackTimer = setTimeout(() => feedback.classList.remove('show'), mode === 'sending' ? 5000 : 1800);
+}
+
+function updateMobileVoiceTimer() {
+  if (messageRecorder?.state !== 'recording') return;
+  const seconds = Math.min(60, Math.floor((Date.now() - messageVoiceStartedAt) / 1000));
+  updateMobileVoiceButton('recording', lang === 'zh'
+    ? `🔴 正在说话 ${seconds}秒 · 松开发送`
+    : `🔴 Recording ${seconds}s · Release to send`);
+  if (seconds >= 60) finishVoiceMessage();
+}
+
+function stopMobileVoiceTimer() {
+  clearInterval(messageVoiceTimer);
+  messageVoiceTimer = null;
+  messageVoiceStartedAt = 0;
+}
+
+async function startVoiceMessage(event) {
+  event?.preventDefault?.();
+  if (messageRecorder || messageVoiceStarting) return;
+  if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) {
+    alert(lang === 'zh' ? '这个浏览器不支持语音录制。' : 'This browser does not support voice recording.');
     return;
   }
+  messageVoiceHeld = true;
+  messageVoiceStarting = true;
+  try { event?.currentTarget?.setPointerCapture?.(event.pointerId); } catch {}
+  updateMobileVoiceButton('starting', lang === 'zh' ? '🎙️ 正在打开麦克风…' : '🎙️ Opening microphone…');
   try {
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    messageVoiceStarting = false;
+    if (!messageVoiceHeld) {
+      stream.getTracks().forEach(track => track.stop());
+      updateMobileVoiceButton();
+      return;
+    }
+    const targetUserId = activeUserId;
+    messageRecordingStream = stream;
     messageAudioChunks = [];
-    messageRecorder = new MediaRecorder(stream);
+    const mimeType = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4'].find(type => MediaRecorder.isTypeSupported(type)) || '';
+    messageRecorder = new MediaRecorder(stream, { ...(mimeType ? { mimeType } : {}), audioBitsPerSecond: 24000 });
     messageRecorder.ondataavailable = event => {
       if (event.data?.size) messageAudioChunks.push(event.data);
     };
     messageRecorder.onstop = async () => {
       stream.getTracks().forEach(track => track.stop());
-      const type = messageAudioChunks[0]?.type || 'audio/webm';
+      const type = messageRecorder?.mimeType || messageAudioChunks[0]?.type || 'audio/webm';
       const blob = new Blob(messageAudioChunks, { type });
       messageRecorder = null;
+      messageRecordingStream = null;
+      messageVoiceStarting = false;
+      messageVoiceHeld = false;
+      stopMobileVoiceTimer();
       if (!blob.size) return;
       if (blob.size > MAX_MESSAGE_ATTACHMENT_BYTES) {
+        updateMobileVoiceButton();
         alert(t('voiceLimit'));
         return;
       }
-      const dataUrl = await fileToDataUrl(blob);
-      await postMessage({
-        attachment: {
-          kind: 'audio',
-          name: `voice-${Date.now()}.webm`,
-          type,
-          size: blob.size,
-          dataUrl
-        }
-      });
+      updateMobileVoiceButton('sending', lang === 'zh' ? '⏳ 正在发送…' : '⏳ Sending…');
+      showMobileVoiceFeedback(lang === 'zh' ? '录音完成，正在发送…' : 'Recording complete. Sending…', 'sending');
+      navigator.vibrate?.(35);
+      try {
+        const extension = type.includes('mp4') ? 'mp4' : type.includes('ogg') ? 'ogg' : 'webm';
+        const dataUrl = await fileToDataUrl(blob);
+        await postMessage({
+          attachment: {
+            kind: 'audio',
+            name: `voice-${Date.now()}.${extension}`,
+            type,
+            size: blob.size,
+            dataUrl
+          }
+        }, targetUserId);
+        showMobileVoiceFeedback(lang === 'zh' ? '✓ 语音已发送' : '✓ Voice message sent');
+        navigator.vibrate?.([35, 30, 70]);
+      } catch (err) {
+        showMobileVoiceFeedback(lang === 'zh' ? '发送失败，请重试' : 'Send failed. Please retry.', 'error');
+        alert(err.message);
+      } finally {
+        if (!messageRecorder && !messageVoiceStarting) updateMobileVoiceButton();
+      }
     };
-    messageRecorder.start();
-    if (button) button.textContent = t('stop');
+    messageRecorder.start(100);
+    messageVoiceStartedAt = Date.now();
+    updateMobileVoiceTimer();
+    messageVoiceTimer = setInterval(updateMobileVoiceTimer, 250);
   } catch {
+    messageVoiceHeld = false;
+    messageVoiceStarting = false;
+    messageRecordingStream?.getTracks().forEach(track => track.stop());
+    messageRecordingStream = null;
+    updateMobileVoiceButton();
     alert(t('micDenied'));
   }
+}
+
+function finishVoiceMessage(event) {
+  event?.preventDefault?.();
+  if (!messageVoiceHeld && !messageVoiceStarting) return;
+  messageVoiceHeld = false;
+  if (messageRecorder?.state === 'recording') messageRecorder.stop();
+}
+
+function cancelVoiceMessage(event) {
+  finishVoiceMessage(event);
 }
 
 async function deleteMessage(messageId) {
