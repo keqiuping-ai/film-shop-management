@@ -3987,6 +3987,18 @@ function fieldSalesVisitCards(visits) {
   }).join('')}</div>`;
 }
 
+function fieldSalesLocationIssueCards(attempts) {
+  if (!attempts.length) return `<div class="empty-state">${lang === 'zh' ? '没有发现地址不符的打卡。' : 'No rejected location check-ins.'}</div>`;
+  return `<div class="field-sales-card-grid">${attempts.slice(0, 60).map(item => `<article class="field-sales-card">
+    <header><div><strong>${escapeHtml(item.businessName || '')}</strong><small>${escapeHtml(item.userName || '')} · ${fieldSalesDateTime(item.attemptedAt)}</small></div>${fieldSalesStatusPill(lang === 'zh' ? '已拦截' : 'Blocked', 'bad')}</header>
+    ${item.photoUrl ? `<div class="field-sales-proof"><a href="${escapeHtml(item.photoUrl)}" target="_blank"><img src="${escapeHtml(item.photoUrl)}" alt="rejected check in"></a></div>` : ''}
+    <p><b>${lang === 'zh' ? '客户地址：' : 'Customer address: '}</b>${escapeHtml(item.customerAddress || '—')}</p>
+    <p><b>${lang === 'zh' ? '打卡位置：' : 'Check-in location: '}</b>${escapeHtml(item.checkInAddress || '—')}</p>
+    <p class="field-sales-danger"><b>${lang === 'zh' ? '偏差距离：' : 'Distance: '}</b>${Math.round(Number(item.distanceToAccountMeters || 0))}m / ${lang === 'zh' ? '允许' : 'allowed'} ${Math.round(Number(item.allowedRadiusMeters || 0))}m</p>
+    ${item.mapUrl ? `<footer><a class="btn" href="${escapeHtml(item.mapUrl)}" target="_blank">${lang === 'zh' ? '查看现场地图' : 'Open map'}</a></footer>` : ''}
+  </article>`).join('')}</div>`;
+}
+
 function fieldSalesReportCards(reports) {
   if (!reports.length) return `<div class="empty-state">${lang === 'zh' ? '还没有工作日报。' : 'No daily reports yet.'}</div>`;
   return `<div class="field-sales-card-grid">${reports.slice(0, 40).map(report => {
@@ -4017,13 +4029,14 @@ function fieldSalesManagementView() {
   const visits = fieldSalesFiltered(data.visits || [], 'userId');
   const reports = fieldSalesFiltered(data.dailyReports || [], 'userId');
   const trials = fieldSalesFiltered(data.trialRolls || [], 'userId');
+  const checkInAttempts = fieldSalesFiltered(data.checkInAttempts || [], 'userId');
   const day = today();
   const overdue = accounts.filter(item => item.nextVisitAt && new Date(item.nextVisitAt).getTime() < Date.now() && !['成交','暂停','无效'].includes(item.stage)).length;
   const todayVisits = visits.filter(item => {
     const startedAt = new Date(item.startedAt || '');
     return !Number.isNaN(startedAt.getTime()) && localDateString(startedAt) === day;
   }).length;
-  const locationIssues = visits.filter(item => item.checkIn && item.checkIn.locationMatched === false).length;
+  const locationIssues = visits.filter(item => item.checkIn && item.checkIn.locationMatched === false).length + checkInAttempts.length;
   const activeVisits = visits.filter(item => item.status === '进行中').length;
   const people = (state.users || []).filter(item => item.active !== false && (item.permissions?.fieldSalesView || item.permissions?.fieldSalesEdit || ['owner','manager','sales'].includes(item.role)));
   return `<div class="field-sales-management">
@@ -4032,6 +4045,7 @@ function fieldSalesManagementView() {
     <div class="grid stats field-sales-stats"><div class="stat"><span>${lang === 'zh' ? '负责客户' : 'Accounts'}</span><strong>${accounts.length}</strong></div><div class="stat"><span>${lang === 'zh' ? '今日拜访' : 'Visits today'}</span><strong>${todayVisits}</strong></div><div class="stat"><span>${lang === 'zh' ? '逾期回访' : 'Overdue'}</span><strong class="${overdue ? 'field-sales-danger' : ''}">${overdue}</strong></div><div class="stat"><span>${lang === 'zh' ? '进行中' : 'In progress'}</span><strong>${activeVisits}</strong></div><div class="stat"><span>${lang === 'zh' ? '定位异常' : 'Location issues'}</span><strong class="${locationIssues ? 'field-sales-danger' : ''}">${locationIssues}</strong></div></div>
     ${panel(lang === 'zh' ? '客户分配与回访计划' : 'Assignments and follow-up plan', `<button class="btn primary" onclick="openFieldSalesAccount()">${lang === 'zh' ? '新增客户' : 'New account'}</button>`, fieldSalesAccountTable(accounts))}
     ${panel(lang === 'zh' ? '定位拜访审核' : 'Verified visit review', '', fieldSalesVisitCards(visits))}
+    ${panel(lang === 'zh' ? '打卡地址异常（已拦截）' : 'Rejected location check-ins', '', fieldSalesLocationIssueCards(checkInAttempts))}
     ${panel(lang === 'zh' ? '业务员工作日报与 AI 分析' : 'Daily reports and AI analysis', '', fieldSalesReportCards(reports))}
     ${panel(lang === 'zh' ? '试用膜与批发转化跟进' : 'Trial rolls and wholesale conversion', '', fieldSalesTrialTable(trials))}
   </div>`;

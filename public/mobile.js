@@ -1262,13 +1262,16 @@ function salesHtml() {
   const active = visits.filter(item => item.status === '进行中' && item.userId === user?.id);
   const latestReport = (sales.dailyReports || [])[0];
   const reportAnalysis = latestReport?.aiAnalysis || {};
+  const latestLocationIssues = latestReport
+    ? (sales.checkInAttempts || []).filter(item => (latestReport.checkInAttemptIds || []).includes(item.id))
+    : [];
   return `<section class="sales-hero">
     <div><small>QUaD FIELD SALES</small><h2>${lang === 'en' ? 'Field Sales Center' : '业务员管理中心'}</h2><p>${lang === 'en' ? 'Visit, check in, follow up, and convert.' : '到店有定位、拜访有过程、跟进有结果'}</p></div>
     <div class="sales-actions"><button onclick="openSalesAccountDialog()">＋ ${lang === 'en' ? 'Customer' : '新增客户'}</button><button onclick="openSalesDailyReport()">📝 ${lang === 'en' ? 'Daily report' : '工作日报'}</button></div>
   </section>
   <div class="sales-kpis"><div><b>${accounts.length}</b><span>${lang === 'en' ? 'Customers' : '负责客户'}</span></div><div><b>${completedToday}</b><span>${lang === 'en' ? 'Visits today' : '今日拜访'}</span></div><div class="${overdue ? 'danger' : ''}"><b>${overdue}</b><span>${lang === 'en' ? 'Overdue' : '逾期回访'}</span></div></div>
   ${active.length ? `<div class="sales-active"><strong>${lang === 'en' ? 'Active visit' : '正在拜访'}</strong>${active.map(item => `<button onclick="openSalesCompleteDialog('${item.id}')">${escapeHtml(item.businessName)} · ${lang === 'en' ? 'Finish report' : '结束并提交报告'}</button>`).join('')}</div>` : ''}
-  ${latestReport ? `<div class="sales-active"><strong>${lang === 'en' ? 'Latest daily report' : '最近工作日报'} · AI ${escapeHtml(latestReport.aiStatus || '—')}</strong>${reportAnalysis.performanceSummaryZh ? `<p>${escapeHtml(lang === 'en' ? reportAnalysis.performanceSummaryEn : reportAnalysis.performanceSummaryZh)}</p>` : ''}</div>` : ''}
+  ${latestReport ? `<div class="sales-active"><strong>${lang === 'en' ? 'Latest daily report' : '最近工作日报'} · AI ${escapeHtml(latestReport.aiStatus || '—')}</strong>${latestLocationIssues.length ? `<p class="bad-text">⚠️ ${lang === 'en' ? `${latestLocationIssues.length} rejected location check-in(s) were recorded.` : `发现 ${latestLocationIssues.length} 次打卡位置与客户地址不符，已写入 AI 工作报告。`}</p>` : ''}${reportAnalysis.performanceSummaryZh ? `<p>${escapeHtml(lang === 'en' ? reportAnalysis.performanceSummaryEn : reportAnalysis.performanceSummaryZh)}</p>` : ''}</div>` : ''}
   <div class="sales-list">${accounts.length ? accounts.map(salesAccountCard).join('') : `<div class="panel-body hint">${lang === 'en' ? 'No field customers yet.' : '还没有外勤客户，点击“新增客户”开始。'}</div>`}</div>`;
 }
 

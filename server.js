@@ -292,6 +292,7 @@ function seedDb() {
     reimbursements: [],
     salesAccounts: [],
     salesVisits: [],
+    salesCheckInAttempts: [],
     salesTrialRolls: [],
     salesDailyReports: [],
     portalCustomers: [],
@@ -360,6 +361,7 @@ function readDb() {
   if (!Array.isArray(db.reimbursements)) db.reimbursements = [];
   if (!Array.isArray(db.salesAccounts)) db.salesAccounts = [];
   if (!Array.isArray(db.salesVisits)) db.salesVisits = [];
+  if (!Array.isArray(db.salesCheckInAttempts)) db.salesCheckInAttempts = [];
   if (!Array.isArray(db.salesTrialRolls)) db.salesTrialRolls = [];
   if (!Array.isArray(db.salesDailyReports)) db.salesDailyReports = [];
   if (!Array.isArray(db.portalCustomers)) db.portalCustomers = [];
@@ -1234,6 +1236,16 @@ function distanceMeters(lat1, lng1, lat2, lng2) {
   return Math.round(earthRadius * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
 }
 
+function hasValidCoordinates(lat, lng) {
+  if (lat === null || lat === undefined || lng === null || lng === undefined) return false;
+  if (String(lat).trim() === '' || String(lng).trim() === '') return false;
+  const latitude = Number(lat);
+  const longitude = Number(lng);
+  return Number.isFinite(latitude) && Number.isFinite(longitude)
+    && latitude >= -90 && latitude <= 90
+    && longitude >= -180 && longitude <= 180;
+}
+
 async function reverseGeocode(lat, lng) {
   const timeout = AbortSignal.timeout ? AbortSignal.timeout(4500) : undefined;
   try {
@@ -1249,6 +1261,34 @@ async function reverseGeocode(lat, lng) {
     return String(body.display_name || '').trim().slice(0, 300);
   } catch {
     return '';
+  }
+}
+
+async function forwardGeocode(address) {
+  const query = String(address || '').trim();
+  if (!query) return null;
+  const timeout = AbortSignal.timeout ? AbortSignal.timeout(6000) : undefined;
+  try {
+    const response = await fetch(`https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&countrycodes=us&addressdetails=1&q=${encodeURIComponent(query)}`, {
+      headers: {
+        'User-Agent': 'QUAD-FILM-Management/1.0 contact@quadfilmus.com',
+        Accept: 'application/json'
+      },
+      signal: timeout
+    });
+    if (!response.ok) return null;
+    const body = await response.json().catch(() => []);
+    const match = Array.isArray(body) ? body[0] : null;
+    const lat = Number(match?.lat);
+    const lng = Number(match?.lon);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+    return {
+      lat,
+      lng,
+      displayName: String(match?.display_name || query).trim().slice(0, 300)
+    };
+  } catch {
+    return null;
   }
 }
 
@@ -1285,11 +1325,15 @@ function fieldSalesSnapshot(db, user) {
   const visits = (db.salesVisits || [])
     .filter(item => accountIds.has(item.accountId) && (canManage || fieldSalesVisible(item, user)))
     .sort((a, b) => String(b.startedAt || b.createdAt || '').localeCompare(String(a.startedAt || a.createdAt || '')));
+  const checkInAttempts = (db.salesCheckInAttempts || [])
+    .filter(item => accountIds.has(item.accountId) && (canManage || item.userId === user.id))
+    .sort((a, b) => String(b.attemptedAt || '').localeCompare(String(a.attemptedAt || '')));
   return {
     enabled: canUseFieldSales(user),
     canManage,
     accounts,
     visits: visits.slice(0, 500),
+    checkInAttempts: checkInAttempts.slice(0, 500),
     trialRolls: (db.salesTrialRolls || [])
       .filter(item => accountIds.has(item.accountId) && (canManage || fieldSalesVisible(item, user)))
       .sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')))
@@ -1471,6 +1515,13 @@ Customer: ${visit.businessName}
 Report: ${visit.reportText}
 Outcome: ${visit.outcome || ''}
 Next action: ${visit.nextAction || ''}
+Location verification: ${JSON.stringify({
+  matched: visit.checkIn?.locationMatched,
+  distanceMeters: visit.checkIn?.distanceToAccountMeters,
+  allowedRadiusMeters: visit.checkIn?.allowedRadiusMeters,
+  customerAddress: visit.customerAddress || '',
+  checkInAddress: visit.checkIn?.address || ''
+})}
 Return exactly these fields: summaryZh, summaryEn, customerNeedsZh, customerNeedsEn, objectionsZh, objectionsEn, nextActionsZh, nextActionsEn, riskLevel, managerAdviceZh, managerAdviceEn. riskLevel must be low, medium, or high. Be concise and factual.`;
   let content = '';
   if (provider === 'openai') {
@@ -1491,11 +1542,23 @@ Return exactly these fields: summaryZh, summaryEn, customerNeedsZh, customerNeed
   return { provider, analysis: parseAiBossDraft(content) };
 }
 
-async function createFieldSalesDailyAnalysis(report, visits, requestedProvider = '') {
+async function createFieldSalesDailyAnalysis(report, visits, checkInAttempts = [], requestedProvider = '') {
   const provider = requestedProvider === 'deepseek' ? 'deepseek' : requestedProvider === 'openai' ? 'openai' : (process.env.OPENAI_API_KEY ? 'openai' : 'deepseek');
   const visitDigest = visits.map(item => ({
     customer: item.businessName, outcome: item.outcome, report: item.reportText,
-    nextAction: item.nextAction, completedAt: item.completedAt
+    nextAction: item.nextAction, completedAt: item.completedAt,
+    locationMatched: item.checkIn?.locationMatched,
+    distanceMeters: item.checkIn?.distanceToAccountMeters,
+    allowedRadiusMeters: item.checkIn?.allowedRadiusMeters
+  }));
+  const locationIncidents = checkInAttempts.map(item => ({
+    customer: item.businessName,
+    customerAddress: item.customerAddress,
+    checkInAddress: item.checkInAddress,
+    distanceMeters: item.distanceToAccountMeters,
+    allowedRadiusMeters: item.allowedRadiusMeters,
+    attemptedAt: item.attemptedAt,
+    status: item.status
   }));
   const prompt = `You are QUaD Film's bilingual field-sales manager. Analyze this salesperson daily report and return JSON only.
 Salesperson: ${report.userName}
@@ -1504,6 +1567,7 @@ Summary: ${report.summary || ''}
 Problems/support needed: ${report.blockers || ''}
 Next plan: ${report.plan || ''}
 Verified visits: ${JSON.stringify(visitDigest)}
+Rejected location check-ins: ${JSON.stringify(locationIncidents)}
 Return exactly these fields: performanceSummaryZh, performanceSummaryEn, customerPatternsZh, customerPatternsEn, coachingZh, coachingEn, followUpsZh, followUpsEn, riskLevel. riskLevel must be low, medium, or high. Be concise, factual, and do not invent visits.`;
   let content = '';
   if (provider === 'openai') {
@@ -3233,6 +3297,19 @@ function dateInTimezone(timezone, addDays = 0) {
   return `${map.year}-${map.month}-${map.day}`;
 }
 
+function instantDateInTimezone(value, timezone) {
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return '';
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: timezone || 'America/Los_Angeles',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  }).formatToParts(date);
+  const map = Object.fromEntries(parts.map(part => [part.type, part.value]));
+  return `${map.year}-${map.month}-${map.day}`;
+}
+
 function scheduleTypeName(type) {
   return {
     work: '上班',
@@ -4195,6 +4272,9 @@ async function api(req, res) {
       : user.id;
     const cadenceDays = Math.min(365, Math.max(1, Number(body.cadenceDays || 7)));
     const now = new Date().toISOString();
+    const geocoded = hasValidCoordinates(body.lat, body.lng)
+      ? { lat: Number(body.lat), lng: Number(body.lng), displayName: address }
+      : await forwardGeocode(address);
     const account = {
       id: id(), businessName, address,
       contactName: String(body.contactName || '').trim().slice(0, 120),
@@ -4206,8 +4286,11 @@ async function api(req, res) {
       cadenceDays,
       stage: String(body.stage || '待拜访').trim().slice(0, 40),
       note: String(body.note || '').trim().slice(0, 3000),
-      lat: Number.isFinite(Number(body.lat)) ? Number(body.lat) : null,
-      lng: Number.isFinite(Number(body.lng)) ? Number(body.lng) : null,
+      lat: geocoded?.lat ?? null,
+      lng: geocoded?.lng ?? null,
+      geocodedAddress: geocoded?.displayName || '',
+      locationSource: geocoded ? 'customer-address-geocode' : 'address-pending',
+      locationVerifiedAt: geocoded ? now : '',
       lastVisitAt: '',
       nextVisitAt: String(body.nextVisitAt || '').trim() || addDaysIso(db, 0, 17),
       createdByUserId: user.id,
@@ -4229,13 +4312,16 @@ async function api(req, res) {
     if (index < 0 || !fieldSalesVisible(db.salesAccounts[index], user)) return send(res, 404, { error: '找不到这个业务客户' });
     const body = await readBody(req);
     const before = db.salesAccounts[index];
+    const nextAddress = String(body.address ?? before.address).trim().slice(0, 300);
+    const addressChanged = nextAddress !== String(before.address || '').trim();
+    const geocoded = addressChanged ? await forwardGeocode(nextAddress) : null;
     const assignedUserId = canManageFieldSales(user) && (db.users || []).some(item => item.id === body.assignedUserId)
       ? String(body.assignedUserId)
       : before.assignedUserId;
     const next = {
       ...before,
       businessName: String(body.businessName ?? before.businessName).trim().slice(0, 180),
-      address: String(body.address ?? before.address).trim().slice(0, 300),
+      address: nextAddress,
       contactName: String(body.contactName ?? before.contactName).trim().slice(0, 120),
       phone: String(body.phone ?? before.phone).trim().slice(0, 80),
       email: String(body.email ?? before.email).trim().slice(0, 180),
@@ -4247,6 +4333,13 @@ async function api(req, res) {
       nextVisitAt: String(body.nextVisitAt ?? before.nextVisitAt).trim(),
       updatedAt: new Date().toISOString()
     };
+    if (addressChanged) {
+      next.lat = geocoded?.lat ?? null;
+      next.lng = geocoded?.lng ?? null;
+      next.geocodedAddress = geocoded?.displayName || '';
+      next.locationSource = geocoded ? 'customer-address-geocode' : 'address-pending';
+      next.locationVerifiedAt = geocoded ? next.updatedAt : '';
+    }
     if (!next.businessName || !next.address) return send(res, 400, { error: '客户门店名称和地址不能为空' });
     db.salesAccounts[index] = next;
     audit(db, user, 'update-field-sales-account', { collection: 'salesAccounts', recordId: next.id, recordLabel: next.businessName, before, after: next, detail: `修改外勤客户 ${next.businessName}` });
@@ -4268,19 +4361,64 @@ async function api(req, res) {
     const existing = (db.salesVisits || []).find(item => item.accountId === account.id && item.userId === user.id && item.status === '进行中');
     if (existing) return send(res, 200, { visit: existing, ...mobileSnapshot(db, user) });
     const address = await reverseGeocode(lat, lng);
-    if (!Number.isFinite(Number(account.lat)) || !Number.isFinite(Number(account.lng))) {
-      account.lat = lat; account.lng = lng; account.locationVerifiedAt = new Date().toISOString();
+    if (!hasValidCoordinates(account.lat, account.lng)) {
+      const geocoded = await forwardGeocode(account.address);
+      if (geocoded) {
+        account.lat = geocoded.lat;
+        account.lng = geocoded.lng;
+        account.geocodedAddress = geocoded.displayName;
+        account.locationSource = 'customer-address-geocode';
+        account.locationVerifiedAt = new Date().toISOString();
+      }
     }
+    if (!hasValidCoordinates(account.lat, account.lng)) {
+      return send(res, 422, {
+        error: `客户地址“${account.address}”暂时无法定位，不能打卡。请先补充完整门牌号、城市、州和邮编。`,
+        code: 'FIELD_SALES_CUSTOMER_ADDRESS_UNRESOLVED',
+        customerAddress: account.address
+      });
+    }
+    const allowedRadiusMeters = Math.max(50, Number(db.settings?.fieldSalesVisitRadiusMeters || 250));
     const distanceToAccountMeters = distanceMeters(lat, lng, Number(account.lat), Number(account.lng));
+    if (distanceToAccountMeters > allowedRadiusMeters) {
+      const attempt = {
+        id: id(), accountId: account.id, businessName: account.businessName,
+        customerAddress: account.address,
+        customerLat: Number(account.lat), customerLng: Number(account.lng),
+        userId: user.id, userName: user.name || user.email,
+        lat, lng, accuracy: Number.isFinite(accuracy) ? Math.round(accuracy) : 0,
+        checkInAddress: address, mapUrl: mapUrlForLatLng(lat, lng), photoUrl,
+        distanceToAccountMeters, allowedRadiusMeters,
+        status: '位置不符', attemptedAt: new Date().toISOString()
+      };
+      db.salesCheckInAttempts.unshift(attempt);
+      audit(db, user, 'reject-field-sales-check-in', {
+        collection: 'salesCheckInAttempts', recordId: attempt.id, recordLabel: account.businessName,
+        after: attempt, detail: `${attempt.userName} 在距离客户地址 ${distanceToAccountMeters} 米处尝试打卡，已拦截`
+      });
+      writeDb(db);
+      notifyDataChanged('field-sales-location-mismatch', attempt.id);
+      return send(res, 409, {
+        error: `当前位置距离客户地址约 ${distanceToAccountMeters} 米，超过允许范围 ${allowedRadiusMeters} 米，不能打卡。请到达客户门店后重试；若客户地址有误，请先修改地址。`,
+        code: 'FIELD_SALES_LOCATION_MISMATCH',
+        distanceMeters: distanceToAccountMeters,
+        allowedRadiusMeters,
+        customerAddress: account.address,
+        currentAddress: address,
+        attemptId: attempt.id
+      });
+    }
     const visit = {
       id: id(), accountId: account.id, businessName: account.businessName,
+      customerAddress: account.address,
       userId: user.id, userName: user.name || user.email,
       status: '进行中', startedAt: new Date().toISOString(), completedAt: '',
       checkIn: {
         lat, lng, accuracy: Number.isFinite(accuracy) ? Math.round(accuracy) : 0,
         address, mapUrl: mapUrlForLatLng(lat, lng), photoUrl,
         distanceToAccountMeters,
-        locationMatched: distanceToAccountMeters <= Number(db.settings?.fieldSalesVisitRadiusMeters || 250),
+        allowedRadiusMeters,
+        locationMatched: true,
         locationConsent: true
       },
       contactMet: String(body.contactMet || '').trim().slice(0, 120),
@@ -4416,6 +4554,9 @@ async function api(req, res) {
     report.summary = summary;
     report.plan = String(body.plan || '').trim().slice(0, 6000);
     report.blockers = String(body.blockers || '').trim().slice(0, 6000);
+    report.checkInAttemptIds = (db.salesCheckInAttempts || [])
+      .filter(item => item.userId === user.id && instantDateInTimezone(item.attemptedAt, db.settings?.timezone || 'America/Los_Angeles') === date)
+      .map(item => item.id);
     report.aiStatus = (process.env.OPENAI_API_KEY || process.env.DEEPSEEK_API_KEY) ? '待分析' : '未配置';
     report.updatedAt = new Date().toISOString();
     audit(db, user, 'submit-field-sales-daily-report', { collection: 'salesDailyReports', recordId: report.id, recordLabel: `${report.userName} ${date}`, after: report, detail: `${report.userName} 提交业务日报` });
@@ -4433,7 +4574,11 @@ async function api(req, res) {
     try {
       const body = await readBody(req);
       const visits = (db.salesVisits || []).filter(item => (report.visitIds || []).includes(item.id));
-      const result = await createFieldSalesDailyAnalysis(report, visits, String(body.provider || ''));
+      const checkInAttempts = (db.salesCheckInAttempts || []).filter(item =>
+        item.userId === report.userId
+        && instantDateInTimezone(item.attemptedAt, db.settings?.timezone || 'America/Los_Angeles') === report.date
+      );
+      const result = await createFieldSalesDailyAnalysis(report, visits, checkInAttempts, String(body.provider || ''));
       report.aiStatus = '已完成';
       report.aiProvider = result.provider;
       report.aiAnalysis = result.analysis;
