@@ -45,6 +45,7 @@ const I18N = {
     refresh: '刷新',
     chat: '留言',
     notes: '记事本',
+    sales: '业务',
     clock: '打卡',
     leave: '请假',
     reimbursement: '报销',
@@ -142,6 +143,7 @@ const I18N = {
     refresh: 'Refresh',
     chat: 'Messages',
     notes: 'Notes',
+    sales: 'Sales',
     clock: 'Clock',
     leave: 'Leave',
     reimbursement: 'Expense',
@@ -251,6 +253,7 @@ function applyLanguage() {
   setText('refreshButton', t('refresh'));
   setText('tabChat', t('chat'));
   setText('tabNotes', t('notes'));
+  setText('tabSales', t('sales'));
   setText('tabClock', t('clock'));
   setText('tabSupervision', t('supervision'));
   setText('tabLeave', t('leave'));
@@ -549,6 +552,7 @@ function render(options = {}) {
   view.classList.toggle('chat-view', tab === 'chat');
   if (tab === 'chat') view.innerHTML = chatHtml();
   if (tab === 'notes') view.innerHTML = notesHtml();
+  if (tab === 'sales') view.innerHTML = salesHtml();
   if (tab === 'clock') view.innerHTML = clockHtml();
   if (tab === 'supervision') view.innerHTML = supervisionHtml();
   if (tab === 'leave') view.innerHTML = leaveHtml();
@@ -570,6 +574,7 @@ function renderSnapshot() {
     activeUserId,
     messageCount: (state?.messages || []).length,
     noteCount: (state?.personalNotes || []).length,
+    salesAccountCount: (state?.fieldSales?.accounts || []).length,
     leaveCount: (state?.leaveRequests || []).length,
     clockCount: (state?.clockRecords || []).length,
     supervisionCount: (state?.aiBossTasks || []).length,
@@ -987,6 +992,193 @@ async function deleteNote(noteId) {
   render();
   try { await api(`/api/personal-notes/${noteId}`, { method: 'DELETE' }); }
   catch (err) { state.personalNotes = before; render(); alert(err.message); }
+}
+
+function salesHtml() {
+  const sales = state.fieldSales || {};
+  if (!sales.enabled) return `<div class="panel"><div class="panel-body hint">${lang === 'en' ? 'This account has no field sales access.' : '当前账号没有业务员管理权限。'}</div></div>`;
+  const now = Date.now();
+  const accounts = sales.accounts || [];
+  const visits = sales.visits || [];
+  const today = new Intl.DateTimeFormat('en-CA', { timeZone: APP_TIMEZONE, year:'numeric', month:'2-digit', day:'2-digit' }).format(new Date());
+  const completedToday = visits.filter(item => item.status === '已完成' && item.completedAt && new Intl.DateTimeFormat('en-CA', { timeZone: APP_TIMEZONE, year:'numeric', month:'2-digit', day:'2-digit' }).format(new Date(item.completedAt)) === today).length;
+  const overdue = accounts.filter(item => item.nextVisitAt && new Date(item.nextVisitAt).getTime() < now).length;
+  const active = visits.filter(item => item.status === '进行中' && item.userId === user?.id);
+  const latestReport = (sales.dailyReports || [])[0];
+  const reportAnalysis = latestReport?.aiAnalysis || {};
+  return `<section class="sales-hero">
+    <div><small>QUaD FIELD SALES</small><h2>${lang === 'en' ? 'Field Sales Center' : '业务员管理中心'}</h2><p>${lang === 'en' ? 'Visit, check in, follow up, and convert.' : '到店有定位、拜访有过程、跟进有结果'}</p></div>
+    <div class="sales-actions"><button onclick="openSalesAccountDialog()">＋ ${lang === 'en' ? 'Customer' : '新增客户'}</button><button onclick="openSalesDailyReport()">📝 ${lang === 'en' ? 'Daily report' : '工作日报'}</button></div>
+  </section>
+  <div class="sales-kpis"><div><b>${accounts.length}</b><span>${lang === 'en' ? 'Customers' : '负责客户'}</span></div><div><b>${completedToday}</b><span>${lang === 'en' ? 'Visits today' : '今日拜访'}</span></div><div class="${overdue ? 'danger' : ''}"><b>${overdue}</b><span>${lang === 'en' ? 'Overdue' : '逾期回访'}</span></div></div>
+  ${active.length ? `<div class="sales-active"><strong>${lang === 'en' ? 'Active visit' : '正在拜访'}</strong>${active.map(item => `<button onclick="openSalesCompleteDialog('${item.id}')">${escapeHtml(item.businessName)} · ${lang === 'en' ? 'Finish report' : '结束并提交报告'}</button>`).join('')}</div>` : ''}
+  ${latestReport ? `<div class="sales-active"><strong>${lang === 'en' ? 'Latest daily report' : '最近工作日报'} · AI ${escapeHtml(latestReport.aiStatus || '—')}</strong>${reportAnalysis.performanceSummaryZh ? `<p>${escapeHtml(lang === 'en' ? reportAnalysis.performanceSummaryEn : reportAnalysis.performanceSummaryZh)}</p>` : ''}</div>` : ''}
+  <div class="sales-list">${accounts.length ? accounts.map(salesAccountCard).join('') : `<div class="panel-body hint">${lang === 'en' ? 'No field customers yet.' : '还没有外勤客户，点击“新增客户”开始。'}</div>`}</div>`;
+}
+
+function salesAccountCard(account) {
+  const visit = (state.fieldSales?.visits || []).find(item => item.accountId === account.id && item.status === '进行中' && item.userId === user?.id);
+  const dueAt = account.nextVisitAt ? new Date(account.nextVisitAt) : null;
+  const overdue = dueAt && Number.isFinite(dueAt.getTime()) && dueAt.getTime() < Date.now();
+  const latestTrial = (state.fieldSales?.trialRolls || []).find(item => item.accountId === account.id);
+  const latestVisit = (state.fieldSales?.visits || []).find(item => item.accountId === account.id && item.status === '已完成');
+  return `<article class="sales-card ${overdue ? 'overdue' : ''}">
+    <header><div><small>${escapeHtml(account.stage || '待拜访')}</small><h3>${escapeHtml(account.businessName)}</h3></div><span>${escapeHtml(account.assignedUserName || '')}</span></header>
+    <p>📍 ${escapeHtml(account.address || '')}</p>
+    ${account.contactName || account.phone ? `<p>👤 ${escapeHtml(account.contactName || '')} ${escapeHtml(account.phone || '')}</p>` : ''}
+    <div class="sales-meta"><span>${lang === 'en' ? 'Next' : '下次'}：<b class="${overdue ? 'bad-text' : ''}">${escapeHtml(formatMobileDateTime(account.nextVisitAt) || '—')}</b></span><span>${lang === 'en' ? 'Cycle' : '周期'}：${Number(account.cadenceDays || 7)} ${lang === 'en' ? 'days' : '天'}</span>${latestTrial ? `<span>${lang === 'en' ? 'Trial' : '试用'}：${escapeHtml(latestTrial.status)}</span>` : ''}${latestVisit ? `<span>AI：${escapeHtml(latestVisit.aiStatus || '—')}</span>` : ''}</div>
+    <footer><a href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(account.address || '')}" target="_blank">${lang === 'en' ? 'Map' : '导航'}</a>${visit ? `<button class="primary-inline" onclick="openSalesCompleteDialog('${visit.id}')">${lang === 'en' ? 'Finish visit' : '结束拜访'}</button>` : `<button class="primary-inline" onclick="openSalesStartDialog('${account.id}')">${lang === 'en' ? 'Check in' : '到店打卡'}</button>`}</footer>
+  </article>`;
+}
+
+function salesUserOptions(selectedId = '') {
+  return (state.users || []).filter(item => item.active !== false).map(item => `<option value="${item.id}" ${item.id === selectedId ? 'selected' : ''}>${escapeHtml(item.name || item.email)}</option>`).join('');
+}
+
+function openSalesAccountDialog() {
+  const sales = state.fieldSales || {};
+  const overlay = document.createElement('div'); overlay.className = 'mobile-modal';
+  overlay.innerHTML = `<div class="mobile-dialog"><div class="dialog-head"><strong>${lang === 'en' ? 'New field customer' : '新增业务客户'}</strong><button onclick="this.closest('.mobile-modal').remove()">×</button></div>
+    <label>${lang === 'en' ? 'Business name' : '客户门店名称'}<input id="salesBusinessName"></label>
+    <label>${lang === 'en' ? 'Address' : '门店地址'}<input id="salesAddress"></label>
+    <label>${lang === 'en' ? 'Contact' : '联系人'}<input id="salesContact"></label>
+    <label>${lang === 'en' ? 'Phone' : '电话'}<input id="salesPhone" inputmode="tel"></label>
+    <label>Email<input id="salesEmail" type="email"></label>
+    ${sales.canManage ? `<label>${lang === 'en' ? 'Salesperson' : '负责业务员'}<select id="salesAssignee">${salesUserOptions(user?.id)}</select></label>` : ''}
+    <label>${lang === 'en' ? 'Visit every (days)' : '回访周期（天）'}<input id="salesCadence" type="number" min="1" value="7"></label>
+    <label>${lang === 'en' ? 'Notes' : '客户备注'}<textarea id="salesNote"></textarea></label>
+    <div class="dialog-actions"><button onclick="this.closest('.mobile-modal').remove()">${t('cancel')}</button><button class="primary" onclick="createSalesAccount(this)">${t('save')}</button></div></div>`;
+  document.body.appendChild(overlay);
+}
+
+async function createSalesAccount(button) {
+  try {
+    button.disabled = true;
+    state = await api('/api/field-sales/accounts', { method:'POST', body:JSON.stringify({
+      businessName: document.getElementById('salesBusinessName').value,
+      address: document.getElementById('salesAddress').value,
+      contactName: document.getElementById('salesContact').value,
+      phone: document.getElementById('salesPhone').value,
+      email: document.getElementById('salesEmail').value,
+      assignedUserId: document.getElementById('salesAssignee')?.value || user?.id,
+      cadenceDays: document.getElementById('salesCadence').value,
+      note: document.getElementById('salesNote').value
+    }) });
+    button.closest('.mobile-modal').remove(); user = state.user; render();
+  } catch (error) { alert(error.message); button.disabled = false; }
+}
+
+function openSalesStartDialog(accountId) {
+  const account = (state.fieldSales?.accounts || []).find(item => item.id === accountId);
+  if (!account) return;
+  const overlay = document.createElement('div'); overlay.className = 'mobile-modal';
+  overlay.innerHTML = `<div class="mobile-dialog"><div class="dialog-head"><strong>${lang === 'en' ? 'Visit check-in' : '客户拜访打卡'}</strong><button onclick="this.closest('.mobile-modal').remove()">×</button></div>
+    <p><b>${escapeHtml(account.businessName)}</b><br><span class="hint">${escapeHtml(account.address)}</span></p>
+    <label>${lang === 'en' ? 'Storefront live photo (required)' : '现场门店照片（必拍）'}<input id="salesVisitPhoto" type="file" accept="image/*" capture="environment"></label>
+    <label>${lang === 'en' ? 'Person met' : '本次见到的人'}<input id="salesContactMet"></label>
+    <label class="consent-row"><input id="salesLocationConsent" type="checkbox">${lang === 'en' ? 'I agree to use my current location for this visit.' : '我同意本次拜访使用手机实时定位'}</label>
+    <p class="hint">${lang === 'en' ? 'Location is collected only when you check in.' : '系统只在本次到店打卡时获取一次定位，不会后台持续跟踪。'}</p>
+    <div class="dialog-actions"><button onclick="this.closest('.mobile-modal').remove()">${t('cancel')}</button><button class="primary" onclick="startSalesVisit(this,'${account.id}')">${lang === 'en' ? 'Check in now' : '确认到店打卡'}</button></div></div>`;
+  document.body.appendChild(overlay);
+}
+
+async function uploadSalesPhoto(file) {
+  const optimized = await optimizeMobileImage(file);
+  return api('/api/message-media/upload', { method:'POST', body:JSON.stringify({ name:optimized.name, type:optimized.type, dataUrl:await fileToDataUrl(optimized) }) });
+}
+
+async function startSalesVisit(button, accountId) {
+  const photo = document.getElementById('salesVisitPhoto')?.files?.[0];
+  if (!photo) return alert(lang === 'en' ? 'Take a storefront photo first.' : '请先现场拍摄客户门店照片。');
+  if (!document.getElementById('salesLocationConsent')?.checked) return alert(t('needConsent'));
+  try {
+    button.disabled = true; button.textContent = lang === 'en' ? 'Locating…' : '正在定位…';
+    const position = await getPosition();
+    button.textContent = lang === 'en' ? 'Uploading…' : '正在上传照片…';
+    const uploaded = await uploadSalesPhoto(photo);
+    state = await api('/api/field-sales/visits/start', { method:'POST', body:JSON.stringify({
+      accountId, locationConsent:true, lat:position.coords.latitude, lng:position.coords.longitude,
+      accuracy:position.coords.accuracy, photoUrl:uploaded.url,
+      contactMet:document.getElementById('salesContactMet')?.value || ''
+    }) });
+    user = state.user; button.closest('.mobile-modal').remove(); render();
+  } catch (error) { alert(error.message || t('locationFailed')); button.disabled = false; button.textContent = lang === 'en' ? 'Check in now' : '确认到店打卡'; }
+}
+
+function salesProductOptions() {
+  return `<option value="">${lang === 'en' ? 'Choose product (optional)' : '选择试用产品（可不选）'}</option>${(state.fieldSales?.products || []).map(item => `<option value="${escapeHtml(item.sku)}">${escapeHtml(item.sku)} · ${escapeHtml(item.name)}</option>`).join('')}`;
+}
+
+function openSalesCompleteDialog(visitId) {
+  const visit = (state.fieldSales?.visits || []).find(item => item.id === visitId);
+  if (!visit) return;
+  const campaign = state.fieldSales?.campaign || {};
+  const overlay = document.createElement('div'); overlay.className = 'mobile-modal';
+  overlay.innerHTML = `<div class="mobile-dialog"><div class="dialog-head"><strong>${lang === 'en' ? 'Visit report' : '提交拜访结果'}</strong><button onclick="this.closest('.mobile-modal').remove()">×</button></div>
+    <p><b>${escapeHtml(visit.businessName)}</b></p>
+    <label>${lang === 'en' ? 'Visit result' : '拜访过程和结果'}<textarea id="salesReportText" placeholder="${lang === 'en' ? 'Customer needs, objections, decision maker, result…' : '客户需求、异议、决策人、沟通过程和结果…'}"></textarea></label>
+    <label>${lang === 'en' ? 'Outcome' : '本次结果'}<select id="salesOutcome"><option>继续跟进</option><option>已送试用</option><option>有采购意向</option><option>已成交</option><option>暂不需要</option></select></label>
+    <label>${lang === 'en' ? 'Next action' : '下一步动作'}<textarea id="salesNextAction"></textarea></label>
+    <label>${lang === 'en' ? 'Next visit' : '下次回访时间'}<input id="salesNextVisit" type="datetime-local" value="${localDateTimeValue()}"></label>
+    <label class="consent-row"><input id="salesTrialDelivered" type="checkbox" onchange="document.getElementById('salesTrialFields').classList.toggle('hidden',!this.checked)">${lang === 'en' ? 'Trial roll delivered' : '本次已交付试用膜'}</label>
+    <div id="salesTrialFields" class="hidden"><label>${lang === 'en' ? 'Product' : '试用产品'}<select id="salesTrialProduct">${salesProductOptions()}</select></label>
+      <div class="sales-price-grid"><label>${lang === 'en' ? 'Single price' : '单卷价'}<input id="salesSinglePrice" type="number" value="${Number(campaign.singlePrice || 800)}"></label><label>${lang === 'en' ? 'Bulk qty' : '批发数量'}<input id="salesBulkQty" type="number" value="${Number(campaign.bulkQuantity || 10)}"></label><label>${lang === 'en' ? 'Bulk unit' : '批发单价'}<input id="salesBulkPrice" type="number" value="${Number(campaign.bulkUnitPrice || 500)}"></label></div>
+    </div>
+    <p class="hint">${lang === 'en' ? 'The report is saved immediately. AI bilingual analysis is queued when configured.' : '提交后立即保存；已配置 AI 时会进入中英文分析队列。'}</p>
+    <div class="dialog-actions"><button onclick="this.closest('.mobile-modal').remove()">${t('cancel')}</button><button class="primary" onclick="completeSalesVisit(this,'${visit.id}')">${lang === 'en' ? 'Submit result' : '提交结果'}</button></div></div>`;
+  document.body.appendChild(overlay);
+}
+
+async function completeSalesVisit(button, visitId) {
+  try {
+    button.disabled = true;
+    state = await api(`/api/field-sales/visits/${visitId}/complete`, { method:'PUT', body:JSON.stringify({
+      reportText:document.getElementById('salesReportText').value,
+      outcome:document.getElementById('salesOutcome').value,
+      nextAction:document.getElementById('salesNextAction').value,
+      nextVisitAt:document.getElementById('salesNextVisit').value,
+      trialDelivered:document.getElementById('salesTrialDelivered').checked,
+      productSku:document.getElementById('salesTrialProduct')?.value || '',
+      singlePrice:document.getElementById('salesSinglePrice')?.value,
+      bulkQuantity:document.getElementById('salesBulkQty')?.value,
+      bulkUnitPrice:document.getElementById('salesBulkPrice')?.value
+    }) });
+    user = state.user; button.closest('.mobile-modal').remove(); render();
+    const savedVisit = (state.fieldSales?.visits || []).find(item => item.id === visitId);
+    if (savedVisit?.aiStatus === '待分析') {
+      api(`/api/field-sales/visits/${visitId}/analyze`, { method:'POST', body:'{}' })
+        .then(next => { state = next; user = state.user; render(); })
+        .catch(() => sync({ force:true }));
+    }
+  } catch (error) { alert(error.message); button.disabled = false; }
+}
+
+function openSalesDailyReport() {
+  const overlay = document.createElement('div'); overlay.className = 'mobile-modal';
+  overlay.innerHTML = `<div class="mobile-dialog"><div class="dialog-head"><strong>${lang === 'en' ? 'Daily sales report' : '业务员工作日报'}</strong><button onclick="this.closest('.mobile-modal').remove()">×</button></div>
+    <label>${lang === 'en' ? 'Today summary' : '今天完成了什么'}<textarea id="salesDailySummary"></textarea></label>
+    <label>${lang === 'en' ? 'Problems / support needed' : '客户问题／需要公司协助'}<textarea id="salesDailyBlockers"></textarea></label>
+    <label>${lang === 'en' ? 'Tomorrow plan' : '下一步计划'}<textarea id="salesDailyPlan"></textarea></label>
+    <div class="dialog-actions"><button onclick="this.closest('.mobile-modal').remove()">${t('cancel')}</button><button class="primary" onclick="submitSalesDailyReport(this)">${t('save')}</button></div></div>`;
+  document.body.appendChild(overlay);
+}
+
+async function submitSalesDailyReport(button) {
+  try {
+    button.disabled = true;
+    state = await api('/api/field-sales/daily-reports', { method:'POST', body:JSON.stringify({
+      summary:document.getElementById('salesDailySummary').value,
+      blockers:document.getElementById('salesDailyBlockers').value,
+      plan:document.getElementById('salesDailyPlan').value
+    }) });
+    user = state.user; button.closest('.mobile-modal').remove(); render();
+    const report = (state.fieldSales?.dailyReports || []).find(item => item.userId === user?.id);
+    if (report?.aiStatus === '待分析') {
+      api(`/api/field-sales/daily-reports/${report.id}/analyze`, { method:'POST', body:'{}' })
+        .then(next => { state = next; user = state.user; render(); })
+        .catch(() => sync({ force:true }));
+    }
+  } catch (error) { alert(error.message); button.disabled = false; }
 }
 
 function clockHtml() {

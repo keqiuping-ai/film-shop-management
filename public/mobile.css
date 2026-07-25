@@ -160,7 +160,7 @@ button {
   bottom: 0;
   z-index: 6;
   display: grid;
-  grid-template-columns: repeat(7, 1fr);
+  grid-template-columns: repeat(8, 1fr);
   gap: 3px;
   padding: 8px 10px calc(8px + env(safe-area-inset-bottom));
   background: white;
@@ -402,6 +402,33 @@ button {
 }
 .clock-in { background: var(--good); border-color: var(--good); }
 .clock-out { background: var(--brand); border-color: var(--brand); }
+.sales-hero { display:grid; gap:12px; padding:18px; margin-bottom:12px; border-radius:18px; color:white; background:linear-gradient(145deg,#0c4151,#13809a); box-shadow:0 12px 28px rgba(7,56,67,.2); }
+.sales-hero h2 { margin:4px 0; font-size:25px; }
+.sales-hero p { margin:0; color:#d5f3f6; }
+.sales-actions { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+.sales-actions button { color:white; background:rgba(255,255,255,.14); border-color:rgba(255,255,255,.4); }
+.sales-kpis { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin-bottom:12px; }
+.sales-kpis div { display:grid; gap:3px; padding:13px 8px; border:1px solid var(--line); border-radius:13px; background:white; text-align:center; }
+.sales-kpis b { color:var(--brand); font-size:24px; }
+.sales-kpis span { color:var(--muted); font-size:12px; }
+.sales-kpis .danger { background:#fff1f2; border-color:#fecdd3; }
+.sales-kpis .danger b { color:var(--bad); }
+.sales-active { display:grid; gap:8px; padding:12px; margin-bottom:12px; border:1px solid #86d4df; border-radius:13px; background:#eefbfc; }
+.sales-active button { color:white; background:var(--brand); border-color:var(--brand); }
+.sales-list { display:grid; gap:10px; }
+.sales-card { padding:14px; border:1px solid #b9dfe8; border-left:6px solid var(--brand); border-radius:14px; background:white; box-shadow:0 7px 18px rgba(20,30,40,.06); }
+.sales-card.overdue { border-left-color:var(--bad); background:#fffafa; }
+.sales-card header { display:flex; justify-content:space-between; gap:10px; }
+.sales-card header small { color:var(--brand); font-weight:900; }
+.sales-card header h3 { margin:4px 0 0; font-size:19px; }
+.sales-card header > span { color:var(--muted); font-size:12px; }
+.sales-card p { margin:9px 0; color:#46515e; }
+.sales-meta { display:grid; gap:5px; padding:10px; border-radius:10px; background:#f4f7f9; font-size:12px; }
+.sales-card footer { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:11px; }
+.sales-card footer a { display:grid; place-items:center; min-height:42px; border:1px solid var(--line); border-radius:10px; color:var(--brand); text-decoration:none; font-weight:800; }
+.bad-text { color:var(--bad); }
+.sales-price-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:7px; }
+.sales-price-grid label { min-width:0; font-size:12px; }
 .supervision-hero {
   display: grid;
   gap: 10px;

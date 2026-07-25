@@ -290,6 +290,10 @@ function seedDb() {
     aiBossProfiles: [],
     voiceCalls: [],
     reimbursements: [],
+    salesAccounts: [],
+    salesVisits: [],
+    salesTrialRolls: [],
+    salesDailyReports: [],
     portalCustomers: [],
     warranties: [],
     customerServiceReps: [
@@ -354,6 +358,10 @@ function readDb() {
   if (!Array.isArray(db.aiBossProfiles)) db.aiBossProfiles = [];
   if (!Array.isArray(db.voiceCalls)) db.voiceCalls = [];
   if (!Array.isArray(db.reimbursements)) db.reimbursements = [];
+  if (!Array.isArray(db.salesAccounts)) db.salesAccounts = [];
+  if (!Array.isArray(db.salesVisits)) db.salesVisits = [];
+  if (!Array.isArray(db.salesTrialRolls)) db.salesTrialRolls = [];
+  if (!Array.isArray(db.salesDailyReports)) db.salesDailyReports = [];
   if (!Array.isArray(db.portalCustomers)) db.portalCustomers = [];
   if (!Array.isArray(db.warranties)) db.warranties = [];
   if (!Array.isArray(db.messages)) db.messages = [];
@@ -1016,6 +1024,9 @@ function defaultPermissions(role) {
     reimbursementsView: false,
     reimbursementsCreate: false,
     reimbursementsApprove: false,
+    fieldSalesView: false,
+    fieldSalesEdit: false,
+    fieldSalesManage: false,
     reportsView: false,
     fullFinanceView: false,
     usersManage: false,
@@ -1026,7 +1037,7 @@ function defaultPermissions(role) {
     owner: all,
     manager: all,
     frontdesk: { ...none, jobsView: true, jobsCreate: true, pricingView: true, ordersView: true, ordersEdit: true, shipmentsView: true, schedulesView: true, leadsView: true, leadsEdit: true, prospectsView: true, prospectsEdit: true, reimbursementsView: true, reimbursementsCreate: true },
-    sales: { ...none, jobsView: true, jobsCreate: true, pricingView: true, ordersView: true, ordersEdit: true, shipmentsView: true, schedulesView: true, leadsView: true, leadsEdit: true, prospectsView: true, prospectsEdit: true, reimbursementsView: true, reimbursementsCreate: true },
+    sales: { ...none, jobsView: true, jobsCreate: true, pricingView: true, ordersView: true, ordersEdit: true, shipmentsView: true, schedulesView: true, leadsView: true, leadsEdit: true, prospectsView: true, prospectsEdit: true, reimbursementsView: true, reimbursementsCreate: true, fieldSalesView: true, fieldSalesEdit: true },
     clerk: { ...none, jobsView: true, jobsCreate: true, jobsEdit: true, pricingView: true, inventoryView: true, ordersView: true, ordersEdit: true, shipmentsView: true, shipmentsEdit: true, schedulesView: true, schedulesEdit: true, leadsView: true, leadsEdit: true, prospectsView: true, prospectsEdit: true, expensesView: true, expensesEdit: true, reimbursementsView: true, reimbursementsCreate: true },
     warehouse: { ...none, inventoryView: true, inventoryEdit: true, ordersView: true, shipmentsView: true, shipmentsEdit: true, schedulesView: true, reimbursementsView: true, reimbursementsCreate: true },
     installer: { ...none, jobsView: true, reimbursementsView: true, reimbursementsCreate: true },
@@ -1245,6 +1256,61 @@ function canApproveLeave(user) {
   return user?.role === 'owner' || user?.role === 'manager' || p.schedulesEdit || p.usersManage;
 }
 
+function canManageFieldSales(user) {
+  return ['owner', 'manager'].includes(user?.role) || Boolean(effectivePermissions(user).fieldSalesManage);
+}
+
+function canUseFieldSales(user) {
+  const permissions = effectivePermissions(user);
+  return canManageFieldSales(user) || Boolean(permissions.fieldSalesView || permissions.fieldSalesEdit);
+}
+
+function fieldSalesVisible(item, user) {
+  if (canManageFieldSales(user)) return true;
+  return [item?.assignedUserId, item?.userId, item?.createdByUserId].includes(user?.id);
+}
+
+function addDaysIso(db, days, hour = 17) {
+  const timezone = db?.settings?.timezone || 'America/Los_Angeles';
+  return zonedDateTimeToIso(timezone, dateInTimezone(timezone, Number(days || 0)), hour, 0);
+}
+
+function fieldSalesSnapshot(db, user) {
+  const canManage = canManageFieldSales(user);
+  const accounts = (db.salesAccounts || [])
+    .filter(item => fieldSalesVisible(item, user))
+    .sort((a, b) => String(a.nextVisitAt || '9999').localeCompare(String(b.nextVisitAt || '9999')));
+  const accountIds = new Set(accounts.map(item => item.id));
+  const visits = (db.salesVisits || [])
+    .filter(item => accountIds.has(item.accountId) && (canManage || fieldSalesVisible(item, user)))
+    .sort((a, b) => String(b.startedAt || b.createdAt || '').localeCompare(String(a.startedAt || a.createdAt || '')));
+  return {
+    enabled: canUseFieldSales(user),
+    canManage,
+    accounts,
+    visits: visits.slice(0, 500),
+    trialRolls: (db.salesTrialRolls || [])
+      .filter(item => accountIds.has(item.accountId) && (canManage || fieldSalesVisible(item, user)))
+      .sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')))
+      .slice(0, 500),
+    dailyReports: (db.salesDailyReports || [])
+      .filter(item => canManage || item.userId === user.id)
+      .sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')))
+      .slice(0, 200),
+    products: (db.products || []).map(item => ({
+      id: item.id, sku: item.sku, name: item.name, unit: item.unit,
+      price: Number(item.price || 0), wholesale: Number(item.wholesale || 0), qty: Number(item.qty || 0)
+    })),
+    campaign: {
+      trialQuantity: Number(db.settings?.fieldSalesTrialQuantity || 1),
+      singlePrice: Number(db.settings?.fieldSalesSinglePrice || 800),
+      bulkQuantity: Number(db.settings?.fieldSalesBulkQuantity || 10),
+      bulkUnitPrice: Number(db.settings?.fieldSalesBulkUnitPrice || 500),
+      visitRadiusMeters: Number(db.settings?.fieldSalesVisitRadiusMeters || 250)
+    }
+  };
+}
+
 function mobileSnapshot(db, user) {
   const userId = user?.id || '';
   const approver = canApproveLeave(user);
@@ -1286,7 +1352,8 @@ function mobileSnapshot(db, user) {
         department: profile.department, duties: profile.duties, skills: profile.skills, resources: profile.resources,
         authorizedActions: profile.authorizedActions, backupUserId: profile.backupUserId,
         selfUpdatedAt: profile.selfUpdatedAt, updatedAt: profile.updatedAt
-      }))
+      })),
+    fieldSales: fieldSalesSnapshot(db, user)
   };
 }
 
@@ -1394,6 +1461,66 @@ async function createAiBossDraft(db, sourceText, requestedProvider) {
     body: JSON.stringify({ model: process.env.OPENAI_TASK_MODEL || 'gpt-5-mini', messages: [{ role: 'user', content: prompt }], response_format: { type: 'json_object' } })
   });
   return { provider, draft: parseAiBossDraft(value?.choices?.[0]?.message?.content) };
+}
+
+async function createFieldSalesAnalysis(visit, requestedProvider = '') {
+  const provider = requestedProvider === 'deepseek' ? 'deepseek' : requestedProvider === 'openai' ? 'openai' : (process.env.OPENAI_API_KEY ? 'openai' : 'deepseek');
+  const prompt = `You are QUaD Film's bilingual field-sales coach. Analyze this visit report and return JSON only.
+Customer: ${visit.businessName}
+Report: ${visit.reportText}
+Outcome: ${visit.outcome || ''}
+Next action: ${visit.nextAction || ''}
+Return exactly these fields: summaryZh, summaryEn, customerNeedsZh, customerNeedsEn, objectionsZh, objectionsEn, nextActionsZh, nextActionsEn, riskLevel, managerAdviceZh, managerAdviceEn. riskLevel must be low, medium, or high. Be concise and factual.`;
+  let content = '';
+  if (provider === 'openai') {
+    if (!process.env.OPENAI_API_KEY) throw new Error('OpenAI API Key 尚未配置');
+    const value = await fetchAiJson('https://api.openai.com/v1/chat/completions', {
+      method:'POST', headers:{ 'Content-Type':'application/json', Authorization:`Bearer ${process.env.OPENAI_API_KEY}` },
+      body:JSON.stringify({ model:process.env.OPENAI_TASK_MODEL || 'gpt-5-mini', messages:[{ role:'user', content:prompt }], response_format:{ type:'json_object' } })
+    });
+    content = value?.choices?.[0]?.message?.content || '';
+  } else {
+    if (!process.env.DEEPSEEK_API_KEY) throw new Error('DeepSeek API Key 尚未配置');
+    const value = await fetchAiJson('https://api.deepseek.com/chat/completions', {
+      method:'POST', headers:{ 'Content-Type':'application/json', Authorization:`Bearer ${process.env.DEEPSEEK_API_KEY}` },
+      body:JSON.stringify({ model:process.env.DEEPSEEK_MODEL || 'deepseek-v4-flash', messages:[{ role:'user', content:prompt }], response_format:{ type:'json_object' }, temperature:0.2 })
+    });
+    content = value?.choices?.[0]?.message?.content || '';
+  }
+  return { provider, analysis: parseAiBossDraft(content) };
+}
+
+async function createFieldSalesDailyAnalysis(report, visits, requestedProvider = '') {
+  const provider = requestedProvider === 'deepseek' ? 'deepseek' : requestedProvider === 'openai' ? 'openai' : (process.env.OPENAI_API_KEY ? 'openai' : 'deepseek');
+  const visitDigest = visits.map(item => ({
+    customer: item.businessName, outcome: item.outcome, report: item.reportText,
+    nextAction: item.nextAction, completedAt: item.completedAt
+  }));
+  const prompt = `You are QUaD Film's bilingual field-sales manager. Analyze this salesperson daily report and return JSON only.
+Salesperson: ${report.userName}
+Date: ${report.date}
+Summary: ${report.summary || ''}
+Problems/support needed: ${report.blockers || ''}
+Next plan: ${report.plan || ''}
+Verified visits: ${JSON.stringify(visitDigest)}
+Return exactly these fields: performanceSummaryZh, performanceSummaryEn, customerPatternsZh, customerPatternsEn, coachingZh, coachingEn, followUpsZh, followUpsEn, riskLevel. riskLevel must be low, medium, or high. Be concise, factual, and do not invent visits.`;
+  let content = '';
+  if (provider === 'openai') {
+    if (!process.env.OPENAI_API_KEY) throw new Error('OpenAI API Key 尚未配置');
+    const value = await fetchAiJson('https://api.openai.com/v1/chat/completions', {
+      method:'POST', headers:{ 'Content-Type':'application/json', Authorization:`Bearer ${process.env.OPENAI_API_KEY}` },
+      body:JSON.stringify({ model:process.env.OPENAI_TASK_MODEL || 'gpt-5-mini', messages:[{ role:'user', content:prompt }], response_format:{ type:'json_object' } })
+    });
+    content = value?.choices?.[0]?.message?.content || '';
+  } else {
+    if (!process.env.DEEPSEEK_API_KEY) throw new Error('DeepSeek API Key 尚未配置');
+    const value = await fetchAiJson('https://api.deepseek.com/chat/completions', {
+      method:'POST', headers:{ 'Content-Type':'application/json', Authorization:`Bearer ${process.env.DEEPSEEK_API_KEY}` },
+      body:JSON.stringify({ model:process.env.DEEPSEEK_MODEL || 'deepseek-v4-flash', messages:[{ role:'user', content:prompt }], response_format:{ type:'json_object' }, temperature:0.2 })
+    });
+    content = value?.choices?.[0]?.message?.content || '';
+  }
+  return { provider, analysis: parseAiBossDraft(content) };
 }
 
 function sanitizeMessageAttachment(input) {
@@ -4054,6 +4181,259 @@ async function api(req, res) {
 
   if (req.method === 'GET' && url.pathname === '/api/mobile/bootstrap') {
     return send(res, 200, mobileSnapshot(db, user), undefined, req);
+  }
+
+  if (req.method === 'POST' && url.pathname === '/api/field-sales/accounts') {
+    if (!canUseFieldSales(user)) return send(res, 403, { error: '当前账号没有业务员管理权限' });
+    const body = await readBody(req);
+    const businessName = String(body.businessName || '').trim().slice(0, 180);
+    const address = String(body.address || '').trim().slice(0, 300);
+    if (!businessName || !address) return send(res, 400, { error: '请填写客户门店名称和地址' });
+    const assignedUserId = canManageFieldSales(user) && (db.users || []).some(item => item.id === body.assignedUserId)
+      ? String(body.assignedUserId)
+      : user.id;
+    const cadenceDays = Math.min(365, Math.max(1, Number(body.cadenceDays || 7)));
+    const now = new Date().toISOString();
+    const account = {
+      id: id(), businessName, address,
+      contactName: String(body.contactName || '').trim().slice(0, 120),
+      phone: String(body.phone || '').trim().slice(0, 80),
+      email: String(body.email || '').trim().slice(0, 180),
+      language: body.language === 'en' ? 'en' : body.language === 'zh' ? 'zh' : 'auto',
+      assignedUserId,
+      assignedUserName: (db.users || []).find(item => item.id === assignedUserId)?.name || '',
+      cadenceDays,
+      stage: String(body.stage || '待拜访').trim().slice(0, 40),
+      note: String(body.note || '').trim().slice(0, 3000),
+      lat: Number.isFinite(Number(body.lat)) ? Number(body.lat) : null,
+      lng: Number.isFinite(Number(body.lng)) ? Number(body.lng) : null,
+      lastVisitAt: '',
+      nextVisitAt: String(body.nextVisitAt || '').trim() || addDaysIso(db, 0, 17),
+      createdByUserId: user.id,
+      createdByName: user.name || user.email,
+      createdAt: now, updatedAt: now
+    };
+    db.salesAccounts.unshift(account);
+    audit(db, user, 'create-field-sales-account', { collection: 'salesAccounts', recordId: account.id, recordLabel: businessName, after: account, detail: `新增外勤客户 ${businessName}` });
+    writeDb(db);
+    notifyDataChanged('field-sales-account-created', account.id);
+    return send(res, 201, mobileSnapshot(db, user));
+  }
+
+  const fieldSalesAccountMatch = url.pathname.match(/^\/api\/field-sales\/accounts\/([^/]+)$/);
+  if (req.method === 'PUT' && fieldSalesAccountMatch) {
+    if (!canUseFieldSales(user)) return send(res, 403, { error: '当前账号没有业务员管理权限' });
+    const accountId = decodeURIComponent(fieldSalesAccountMatch[1]);
+    const index = (db.salesAccounts || []).findIndex(item => item.id === accountId);
+    if (index < 0 || !fieldSalesVisible(db.salesAccounts[index], user)) return send(res, 404, { error: '找不到这个业务客户' });
+    const body = await readBody(req);
+    const before = db.salesAccounts[index];
+    const assignedUserId = canManageFieldSales(user) && (db.users || []).some(item => item.id === body.assignedUserId)
+      ? String(body.assignedUserId)
+      : before.assignedUserId;
+    const next = {
+      ...before,
+      businessName: String(body.businessName ?? before.businessName).trim().slice(0, 180),
+      address: String(body.address ?? before.address).trim().slice(0, 300),
+      contactName: String(body.contactName ?? before.contactName).trim().slice(0, 120),
+      phone: String(body.phone ?? before.phone).trim().slice(0, 80),
+      email: String(body.email ?? before.email).trim().slice(0, 180),
+      assignedUserId,
+      assignedUserName: (db.users || []).find(item => item.id === assignedUserId)?.name || before.assignedUserName || '',
+      cadenceDays: Math.min(365, Math.max(1, Number(body.cadenceDays ?? before.cadenceDays ?? 7))),
+      stage: String(body.stage ?? before.stage).trim().slice(0, 40),
+      note: String(body.note ?? before.note).trim().slice(0, 3000),
+      nextVisitAt: String(body.nextVisitAt ?? before.nextVisitAt).trim(),
+      updatedAt: new Date().toISOString()
+    };
+    if (!next.businessName || !next.address) return send(res, 400, { error: '客户门店名称和地址不能为空' });
+    db.salesAccounts[index] = next;
+    audit(db, user, 'update-field-sales-account', { collection: 'salesAccounts', recordId: next.id, recordLabel: next.businessName, before, after: next, detail: `修改外勤客户 ${next.businessName}` });
+    writeDb(db);
+    notifyDataChanged('field-sales-account-updated', next.id);
+    return send(res, 200, mobileSnapshot(db, user));
+  }
+
+  if (req.method === 'POST' && url.pathname === '/api/field-sales/visits/start') {
+    if (!canUseFieldSales(user)) return send(res, 403, { error: '当前账号没有业务员管理权限' });
+    const body = await readBody(req);
+    const account = (db.salesAccounts || []).find(item => item.id === body.accountId && fieldSalesVisible(item, user));
+    if (!account) return send(res, 404, { error: '找不到这个业务客户' });
+    if (body.locationConsent !== true) return send(res, 400, { error: '请先同意本次拜访使用手机定位' });
+    const lat = Number(body.lat); const lng = Number(body.lng); const accuracy = Number(body.accuracy || 0);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return send(res, 400, { error: '没有获取到实时定位，不能开始拜访' });
+    const photoUrl = String(body.photoUrl || '').trim();
+    if (!photoUrl.includes('/customer-media/')) return send(res, 400, { error: '请现场拍摄客户门店照片' });
+    const existing = (db.salesVisits || []).find(item => item.accountId === account.id && item.userId === user.id && item.status === '进行中');
+    if (existing) return send(res, 200, { visit: existing, ...mobileSnapshot(db, user) });
+    const address = await reverseGeocode(lat, lng);
+    if (!Number.isFinite(Number(account.lat)) || !Number.isFinite(Number(account.lng))) {
+      account.lat = lat; account.lng = lng; account.locationVerifiedAt = new Date().toISOString();
+    }
+    const distanceToAccountMeters = distanceMeters(lat, lng, Number(account.lat), Number(account.lng));
+    const visit = {
+      id: id(), accountId: account.id, businessName: account.businessName,
+      userId: user.id, userName: user.name || user.email,
+      status: '进行中', startedAt: new Date().toISOString(), completedAt: '',
+      checkIn: {
+        lat, lng, accuracy: Number.isFinite(accuracy) ? Math.round(accuracy) : 0,
+        address, mapUrl: mapUrlForLatLng(lat, lng), photoUrl,
+        distanceToAccountMeters,
+        locationMatched: distanceToAccountMeters <= Number(db.settings?.fieldSalesVisitRadiusMeters || 250),
+        locationConsent: true
+      },
+      contactMet: String(body.contactMet || '').trim().slice(0, 120),
+      createdAt: new Date().toISOString(), updatedAt: new Date().toISOString()
+    };
+    db.salesVisits.unshift(visit);
+    account.stage = account.stage === '待拜访' ? '拜访中' : account.stage;
+    account.updatedAt = new Date().toISOString();
+    audit(db, user, 'start-field-sales-visit', { collection: 'salesVisits', recordId: visit.id, recordLabel: account.businessName, after: visit, detail: `${visit.userName} 到店打卡 ${account.businessName}` });
+    writeDb(db);
+    notifyDataChanged('field-sales-visit-started', visit.id);
+    return send(res, 201, { visit, ...mobileSnapshot(db, user) });
+  }
+
+  const fieldSalesVisitMatch = url.pathname.match(/^\/api\/field-sales\/visits\/([^/]+)\/complete$/);
+  if (req.method === 'PUT' && fieldSalesVisitMatch) {
+    if (!canUseFieldSales(user)) return send(res, 403, { error: '当前账号没有业务员管理权限' });
+    const visitId = decodeURIComponent(fieldSalesVisitMatch[1]);
+    const visitIndex = (db.salesVisits || []).findIndex(item => item.id === visitId);
+    if (visitIndex < 0 || (!canManageFieldSales(user) && db.salesVisits[visitIndex].userId !== user.id)) return send(res, 404, { error: '找不到本次拜访' });
+    const body = await readBody(req);
+    const reportText = String(body.reportText || '').trim().slice(0, 12000);
+    if (!reportText) return send(res, 400, { error: '请填写本次拜访结果' });
+    const visit = db.salesVisits[visitIndex];
+    const account = (db.salesAccounts || []).find(item => item.id === visit.accountId);
+    const now = new Date().toISOString();
+    const cadenceDays = Math.min(365, Math.max(1, Number(body.cadenceDays || account?.cadenceDays || 7)));
+    const nextVisitAt = String(body.nextVisitAt || '').trim() || addDaysIso(db, cadenceDays, 17);
+    const next = {
+      ...visit, status: '已完成', completedAt: now, updatedAt: now,
+      reportText,
+      outcome: String(body.outcome || '继续跟进').trim().slice(0, 60),
+      customerNeeds: String(body.customerNeeds || '').trim().slice(0, 5000),
+      objections: String(body.objections || '').trim().slice(0, 5000),
+      nextAction: String(body.nextAction || '').trim().slice(0, 3000),
+      nextVisitAt,
+      ownerPhotoUrl: String(body.ownerPhotoUrl || '').includes('/customer-media/') ? String(body.ownerPhotoUrl) : '',
+      aiStatus: (process.env.OPENAI_API_KEY || process.env.DEEPSEEK_API_KEY) ? '待分析' : '未配置',
+      aiProvider: process.env.OPENAI_API_KEY ? 'openai' : process.env.DEEPSEEK_API_KEY ? 'deepseek' : ''
+    };
+    db.salesVisits[visitIndex] = next;
+    if (account) {
+      account.lastVisitAt = now; account.nextVisitAt = nextVisitAt; account.cadenceDays = cadenceDays;
+      account.stage = String(body.stage || (account.stage === '拜访中' ? '持续跟进' : account.stage) || '持续跟进').trim().slice(0, 40);
+      account.updatedAt = now;
+    }
+    if (body.trialDelivered === true) {
+      const product = (db.products || []).find(item => item.sku === body.productSku || item.id === body.productId);
+      db.salesTrialRolls.unshift({
+        id: id(), accountId: visit.accountId, businessName: visit.businessName,
+        visitId: visit.id, userId: visit.userId, userName: visit.userName,
+        productId: product?.id || '', productSku: product?.sku || String(body.productSku || '').slice(0, 80),
+        productName: product?.name || String(body.productName || '试用膜').slice(0, 180),
+        quantity: Math.max(1, Number(body.trialQuantity || db.settings?.fieldSalesTrialQuantity || 1)),
+        status: '试用中', deliveredAt: now,
+        followUpAt: String(body.trialFollowUpAt || '').trim() || addDaysIso(db, 7, 17),
+        singlePrice: Number(body.singlePrice || db.settings?.fieldSalesSinglePrice || 800),
+        bulkQuantity: Number(body.bulkQuantity || db.settings?.fieldSalesBulkQuantity || 10),
+        bulkUnitPrice: Number(body.bulkUnitPrice || db.settings?.fieldSalesBulkUnitPrice || 500),
+        inventoryStatus: '待仓库确认', createdAt: now, updatedAt: now
+      });
+    }
+    const daily = (db.salesDailyReports || []).find(item => item.userId === visit.userId && item.date === dateInTimezone(db.settings?.timezone || 'America/Los_Angeles', 0));
+    if (daily) {
+      daily.visitIds = [...new Set([...(daily.visitIds || []), visit.id])];
+      daily.updatedAt = now;
+    } else {
+      db.salesDailyReports.unshift({
+        id: id(), userId: visit.userId, userName: visit.userName,
+        date: dateInTimezone(db.settings?.timezone || 'America/Los_Angeles', 0),
+        visitIds: [visit.id], summary: '', createdAt: now, updatedAt: now
+      });
+    }
+    audit(db, user, 'complete-field-sales-visit', { collection: 'salesVisits', recordId: next.id, recordLabel: next.businessName, after: next, detail: `${next.userName} 完成拜访 ${next.businessName}` });
+    writeDb(db);
+    notifyDataChanged('field-sales-visit-completed', next.id);
+    return send(res, 200, mobileSnapshot(db, user));
+  }
+
+  const fieldSalesAnalyzeMatch = url.pathname.match(/^\/api\/field-sales\/visits\/([^/]+)\/analyze$/);
+  if (req.method === 'POST' && fieldSalesAnalyzeMatch) {
+    if (!canUseFieldSales(user)) return send(res, 403, { error: '当前账号没有业务员管理权限' });
+    const visitId = decodeURIComponent(fieldSalesAnalyzeMatch[1]);
+    const visit = (db.salesVisits || []).find(item => item.id === visitId);
+    if (!visit || (!canManageFieldSales(user) && visit.userId !== user.id)) return send(res, 404, { error: '找不到本次拜访' });
+    try {
+      const body = await readBody(req);
+      const result = await createFieldSalesAnalysis(visit, String(body.provider || ''));
+      visit.aiStatus = '已完成';
+      visit.aiProvider = result.provider;
+      visit.aiAnalysis = result.analysis;
+      visit.aiAnalyzedAt = new Date().toISOString();
+      visit.updatedAt = visit.aiAnalyzedAt;
+      audit(db, user, 'analyze-field-sales-visit', { collection:'salesVisits', recordId:visit.id, recordLabel:visit.businessName, detail:`AI 双语分析拜访记录 ${visit.businessName}` });
+      writeDb(db);
+      notifyDataChanged('field-sales-visit-analyzed', visit.id);
+      return send(res, 200, mobileSnapshot(db, user));
+    } catch (error) {
+      visit.aiStatus = '分析失败';
+      visit.aiError = String(error.message || error).slice(0, 220);
+      visit.updatedAt = new Date().toISOString();
+      writeDb(db);
+      return send(res, 502, { error: `AI 业务分析失败：${visit.aiError}` });
+    }
+  }
+
+  if (req.method === 'POST' && url.pathname === '/api/field-sales/daily-reports') {
+    if (!canUseFieldSales(user)) return send(res, 403, { error: '当前账号没有业务员管理权限' });
+    const body = await readBody(req);
+    const summary = String(body.summary || '').trim().slice(0, 12000);
+    if (!summary) return send(res, 400, { error: '请填写今天的工作报告' });
+    const date = String(body.date || dateInTimezone(db.settings?.timezone || 'America/Los_Angeles', 0)).slice(0, 10);
+    let report = (db.salesDailyReports || []).find(item => item.userId === user.id && item.date === date);
+    if (!report) {
+      report = { id: id(), userId: user.id, userName: user.name || user.email, date, visitIds: [], createdAt: new Date().toISOString() };
+      db.salesDailyReports.unshift(report);
+    }
+    report.summary = summary;
+    report.plan = String(body.plan || '').trim().slice(0, 6000);
+    report.blockers = String(body.blockers || '').trim().slice(0, 6000);
+    report.aiStatus = (process.env.OPENAI_API_KEY || process.env.DEEPSEEK_API_KEY) ? '待分析' : '未配置';
+    report.updatedAt = new Date().toISOString();
+    audit(db, user, 'submit-field-sales-daily-report', { collection: 'salesDailyReports', recordId: report.id, recordLabel: `${report.userName} ${date}`, after: report, detail: `${report.userName} 提交业务日报` });
+    writeDb(db);
+    notifyDataChanged('field-sales-daily-report', report.id);
+    return send(res, 201, mobileSnapshot(db, user));
+  }
+
+  const fieldSalesDailyAnalyzeMatch = url.pathname.match(/^\/api\/field-sales\/daily-reports\/([^/]+)\/analyze$/);
+  if (req.method === 'POST' && fieldSalesDailyAnalyzeMatch) {
+    if (!canUseFieldSales(user)) return send(res, 403, { error: '当前账号没有业务员管理权限' });
+    const reportId = decodeURIComponent(fieldSalesDailyAnalyzeMatch[1]);
+    const report = (db.salesDailyReports || []).find(item => item.id === reportId);
+    if (!report || (!canManageFieldSales(user) && report.userId !== user.id)) return send(res, 404, { error: '找不到这份业务日报' });
+    try {
+      const body = await readBody(req);
+      const visits = (db.salesVisits || []).filter(item => (report.visitIds || []).includes(item.id));
+      const result = await createFieldSalesDailyAnalysis(report, visits, String(body.provider || ''));
+      report.aiStatus = '已完成';
+      report.aiProvider = result.provider;
+      report.aiAnalysis = result.analysis;
+      report.aiAnalyzedAt = new Date().toISOString();
+      report.updatedAt = report.aiAnalyzedAt;
+      audit(db, user, 'analyze-field-sales-daily-report', { collection:'salesDailyReports', recordId:report.id, recordLabel:`${report.userName} ${report.date}`, detail:`AI 双语分析业务日报 ${report.userName}` });
+      writeDb(db);
+      notifyDataChanged('field-sales-daily-report-analyzed', report.id);
+      return send(res, 200, mobileSnapshot(db, user));
+    } catch (error) {
+      report.aiStatus = '分析失败';
+      report.aiError = String(error.message || error).slice(0, 220);
+      report.updatedAt = new Date().toISOString();
+      writeDb(db);
+      return send(res, 502, { error: `AI 日报分析失败：${report.aiError}` });
+    }
   }
 
   const personalNoteMatch = url.pathname.match(/^\/api\/personal-notes(?:\/([^/]+))?$/);
