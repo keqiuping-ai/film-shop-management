@@ -4693,8 +4693,23 @@ function inventoryAlertTable(actions = true, limit = null, useSearch = false) {
 
 function movementTable() {
   const rows = sortByDateDesc(state.movements || []).slice(0, 60);
-  return `<div class="table-wrap"><table><thead><tr><th>${t('date')}</th><th>${t('sku')}</th><th>${t('type')}</th><th>${t('qty')}</th><th>${t('note')}</th></tr></thead><tbody>
-  ${rows.map(m => `<tr><td>${m.date}</td><td>${escapeHtml(m.sku)}</td><td>${m.type === 'in' ? `<span class="pill good">${t('in')}</span>` : `<span class="pill warn">${t('out')}</span>`}</td><td>${Number(m.qty || 0).toLocaleString()}</td><td>${escapeHtml(m.note || '')}</td></tr>`).join('')}
+  const canReverse = hasPerm('inventoryEdit');
+  return `<div class="table-wrap"><table><thead><tr><th>${t('date')}</th><th>${t('sku')}</th><th>${t('type')}</th><th>${t('qty')}</th><th>${t('note')}</th>${canReverse ? '<th></th>' : ''}</tr></thead><tbody>
+  ${rows.map(m => {
+    const reversed = Boolean(m.reversedAt);
+    const type = reversed
+      ? `<span class="pill">${lang === 'zh' ? '已撤销' : 'Reversed'}</span>`
+      : m.type === 'in'
+        ? `<span class="pill good">${t('in')}</span>`
+        : `<span class="pill warn">${t('out')}</span>`;
+    const note = reversed
+      ? `${escapeHtml(m.note || '')}${m.note ? '<br>' : ''}<span class="note">${lang === 'zh' ? '误操作已撤销，库存已同步修正' : 'Mistaken entry reversed; stock corrected'}</span>`
+      : escapeHtml(m.note || '');
+    const action = canReverse
+      ? `<td>${m.type === 'in' && !reversed ? `<button class="btn" onclick="reverseMovement('${escapeJs(m.id)}','${escapeJs(m.sku)}',${Number(m.qty || 0)})">${lang === 'zh' ? '撤销误入库' : 'Reverse mistaken entry'}</button>` : ''}</td>`
+      : '';
+    return `<tr><td>${escapeHtml(m.date || '')}</td><td>${escapeHtml(m.sku)}</td><td>${type}</td><td>${Number(m.qty || 0).toLocaleString()}</td><td>${note}</td>${action}</tr>`;
+  }).join('')}
   </tbody></table></div>`;
 }
 
@@ -5121,12 +5136,21 @@ function prospectIsYelpLeadFormMessage(message, source = '') {
   return channel.includes('yelp') && /^\s*question\s*:\s*[\s\S]+?\banswer\s*:/i.test(text);
 }
 
+function prospectIsYelpSystemNotificationMessage(message, source = '') {
+  const messageType = String(message?.messageType || message?.kind || '').trim().toLowerCase().replace(/\s+/g, ' ');
+  if (['system-notification', 'system notification', 'yelp-notification', 'yelp notification'].includes(messageType)) return true;
+  const channel = String(message?.channel || message?.provider || source || '').trim().toLowerCase();
+  const text = cleanConversationText(message?.text || message?.message || message?.content || message?.body || '');
+  return channel.includes('yelp') && /^\s*automatic message\s*:/i.test(text);
+}
+
 function structuredProspectMessages(item) {
   const rows = Array.isArray(item?.conversationMessages) ? item.conversationMessages : [];
   return rows.map((message, index) => {
     const speakerName = cleanConversationText(message.speakerName || message.name || message.sender || '');
     const leadForm = prospectIsYelpLeadFormMessage(message, item?.source);
-    const role = leadForm
+    const systemNotification = prospectIsYelpSystemNotificationMessage(message, item?.source);
+    const role = leadForm || systemNotification
       ? 'system'
       : prospectSpeakerRole(
           message.speaker || message.role || message.type || message.side || message.from || message.senderType,
@@ -5134,6 +5158,8 @@ function structuredProspectMessages(item) {
         );
     const title = leadForm
       ? (lang === 'zh' ? 'Yelp 初始表单' : 'Yelp Lead Form')
+      : systemNotification
+        ? (lang === 'zh' ? 'Yelp 系统通知' : 'Yelp System Notice')
       : role === 'shop'
       ? `${lang === 'zh' ? '我们说' : 'Us'}${speakerName ? ` - ${speakerName}` : ''}`
       : role === 'system'
@@ -5177,7 +5203,32 @@ function prospectConversationSegments(input) {
     let structured = structuredProspectMessages(item);
     if (structured.length) {
       const hasMaterializedLegacy = (item.conversationMessages || []).some(message => message.source === 'legacy-conversation');
-      if (item.chatContext && !hasMaterializedLegacy) structured = [...prospectConversationSegments(item.chatContext), ...structured];
+      if (item.chatContext && !hasMaterializedLegacy) {
+        const legacyTimestamp = item.sourceCreatedAt || (item.date ? `${item.date}T00:00:00` : '');
+        const legacy = prospectConversationSegments(item.chatContext).map((message, index) => {
+          const leadForm = prospectIsYelpLeadFormMessage(
+            { channel: item.source, text: message.text, messageType: message.messageType },
+            item.source
+          );
+          const systemNotification = prospectIsYelpSystemNotificationMessage(
+            { channel: item.source, text: message.text, messageType: message.messageType },
+            item.source
+          );
+          return {
+            ...message,
+            role: leadForm || systemNotification ? 'system' : message.role,
+            title: leadForm
+              ? (lang === 'zh' ? 'Yelp 初始表单' : 'Yelp Lead Form')
+              : systemNotification
+                ? (lang === 'zh' ? 'Yelp 系统通知' : 'Yelp System Notice')
+                : message.title,
+            timestamp: leadForm ? legacyTimestamp : '',
+            order: index,
+            importOrder: index
+          };
+        });
+        structured = [...legacy, ...structured];
+      }
       const segments = [];
       structured
         .sort(compareProspectConversationMessages)
@@ -5483,7 +5534,7 @@ function customerReplyState(item) {
     .map((message, index) => ({
       message,
       index,
-      role: prospectIsYelpLeadFormMessage(message, item?.source)
+      role: prospectIsYelpLeadFormMessage(message, item?.source) || prospectIsYelpSystemNotificationMessage(message, item?.source)
         ? 'system'
         : String(message.direction || '').toLowerCase() === 'inbound'
         ? 'customer'
@@ -7984,6 +8035,21 @@ async function removeItem(collection, id) {
     state = await api(`/api/${collection}/${id}`, { method: 'DELETE' });
     broadcastDataChange();
     render();
+  } catch (err) {
+    alert(err.message);
+  }
+}
+
+async function reverseMovement(id, sku, qty) {
+  const message = lang === 'zh'
+    ? `确定撤销这笔误入库吗？\n${sku}：${Number(qty || 0).toLocaleString()}\n\n撤销后库存会同步减少，原流水会保留并标记为“已撤销”。`
+    : `Reverse this mistaken inventory entry?\n${sku}: ${Number(qty || 0).toLocaleString()}\n\nStock will be reduced and the original movement will remain marked as reversed.`;
+  if (!confirm(message)) return;
+  try {
+    state = await api(`/api/movements/${encodeURIComponent(id)}/reverse`, { method: 'POST' });
+    broadcastDataChange();
+    render();
+    alert(lang === 'zh' ? '误入库已撤销，库存已经同步修正。' : 'Mistaken entry reversed and stock corrected.');
   } catch (err) {
     alert(err.message);
   }

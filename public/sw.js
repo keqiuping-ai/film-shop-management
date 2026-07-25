@@ -1,4 +1,4 @@
-const CACHE_NAME = 'film-shop-v98-yelp-form-order';
+const CACHE_NAME = 'film-shop-v99-yelp-legacy-form-order';
 const ASSETS = [
     '/',
     '/mobile.html',

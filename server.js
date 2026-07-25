@@ -1700,6 +1700,15 @@ function isYelpLeadFormMessage(message, source = '') {
   return /^\s*question\s*:\s*[\s\S]+?\banswer\s*:/i.test(text);
 }
 
+function isYelpSystemNotificationMessage(message, source = '') {
+  const messageType = prospectTextKey(message?.messageType || message?.kind);
+  if (['system-notification', 'system notification', 'yelp-notification', 'yelp notification'].includes(messageType)) return true;
+  const channel = prospectTextKey(message?.channel || message?.provider || source);
+  if (!channel.includes('yelp')) return false;
+  const text = cleanImportedConversationText(message?.text || message?.message || message?.content || message?.body || '');
+  return /^\s*automatic message\s*:/i.test(text);
+}
+
 function prospectMessagesToText(messages) {
   return normalizeProspectMessages(messages).map(item => {
     const label = item.speaker === 'shop' ? '我们' : item.speaker === 'system' ? '系统' : '客户';
@@ -1878,16 +1887,24 @@ function normalizeProspectInput(input, fallback = {}) {
   };
   if (prospectTextKey(source).includes('yelp')) {
     const formTimestamp = base.sourceCreatedAt || (base.date ? `${base.date}T00:00:00` : '');
-    base.conversationMessages = base.conversationMessages.map(message => isYelpLeadFormMessage(message, source)
-      ? {
+    base.conversationMessages = base.conversationMessages.map(message => {
+      if (isYelpLeadFormMessage(message, source)) return {
           ...message,
           speaker: 'system',
           speakerName: 'Yelp 表单',
           direction: '',
           timestamp: message.timestamp || formTimestamp,
           messageType: 'lead-form'
-        }
-      : message);
+        };
+      if (isYelpSystemNotificationMessage(message, source)) return {
+        ...message,
+        speaker: 'system',
+        speakerName: 'Yelp 系统通知',
+        direction: '',
+        messageType: 'system-notification'
+      };
+      return message;
+    });
     base.conversationMessages = mergeProspectMessages([], base.conversationMessages);
   }
   base.processedExternalEventIds = Array.from(new Set([
@@ -2000,7 +2017,7 @@ function applyCustomerConversationDuplicateMerge() {
 }
 
 function applyYelpLeadFormMessageMigration() {
-  const migrationVersion = 'yelp-lead-form-message-order-2026-07-24-v1';
+  const migrationVersion = 'yelp-message-classification-2026-07-24-v2';
   const db = readDb();
   if (db.yelpLeadFormMessageMigrationVersion === migrationVersion) return;
   let backupCreated = false;
@@ -2011,15 +2028,25 @@ function applyYelpLeadFormMessageMigration() {
       const formTimestamp = item.sourceCreatedAt || (item.date ? `${item.date}T00:00:00` : '');
       let changed = false;
       const messages = item.conversationMessages.map(message => {
-        if (!isYelpLeadFormMessage(message, item.source)) return message;
-        const next = {
-          ...message,
-          speaker: 'system',
-          speakerName: 'Yelp 表单',
-          direction: '',
-          timestamp: message.timestamp || formTimestamp,
-          messageType: 'lead-form'
-        };
+        let next = message;
+        if (isYelpLeadFormMessage(message, item.source)) {
+          next = {
+            ...message,
+            speaker: 'system',
+            speakerName: 'Yelp 表单',
+            direction: '',
+            timestamp: message.timestamp || formTimestamp,
+            messageType: 'lead-form'
+          };
+        } else if (isYelpSystemNotificationMessage(message, item.source)) {
+          next = {
+            ...message,
+            speaker: 'system',
+            speakerName: 'Yelp 系统通知',
+            direction: '',
+            messageType: 'system-notification'
+          };
+        }
         if (
           next.speaker !== message.speaker ||
           next.speakerName !== message.speakerName ||
@@ -2917,7 +2944,7 @@ function customerServiceAgentUser(req) {
 }
 
 function customerServiceMessageRole(message) {
-  if (isYelpLeadFormMessage(message)) return 'system';
+  if (isYelpLeadFormMessage(message) || isYelpSystemNotificationMessage(message)) return 'system';
   const direction = String(message?.direction || '').toLowerCase();
   if (direction === 'inbound') return 'customer';
   if (direction === 'outbound') return 'shop';
@@ -5200,6 +5227,44 @@ async function api(req, res) {
     return send(res, 200, sanitizeDbForUser(db, user));
   }
 
+  const reverseMovementMatch = url.pathname.match(/^\/api\/movements\/([^/]+)\/reverse$/);
+  if (reverseMovementMatch && req.method === 'POST') {
+    if (!canAccess(user, 'inventoryEdit')) return send(res, 403, { error: '没有库存修改权限' });
+    const movementId = reverseMovementMatch[1];
+    const movement = (db.movements || []).find(row => row.id === movementId);
+    if (!movement) return send(res, 404, { error: '找不到这条出入库流水' });
+    if (movement.reversedAt) return send(res, 400, { error: '这条入库流水已经撤销，不能重复操作' });
+    if (movement.type !== 'in') return send(res, 400, { error: '目前只允许撤销误操作的入库流水；出库请通过对应订单处理' });
+    const product = (db.products || []).find(row => row.sku === movement.sku);
+    if (!product) return send(res, 404, { error: '找不到这条流水对应的库存商品' });
+    const qty = Number(movement.qty || 0);
+    const beforeQty = Number(product.qty || 0);
+    if (!Number.isFinite(qty) || qty <= 0) return send(res, 400, { error: '这条流水的数量不正确，不能自动撤销' });
+    if (beforeQty < qty) {
+      return send(res, 400, { error: `当前库存只有 ${beforeQty}，少于本次误入库的 ${qty}，不能自动撤销` });
+    }
+    const now = new Date().toISOString();
+    product.qty = beforeQty - qty;
+    movement.reversedAt = now;
+    movement.reversedBy = user.name || user.email || '';
+    movement.reversedByUserId = user.id;
+    movement.reversalReason = '误操作撤销';
+    movement.stockBeforeReversal = beforeQty;
+    movement.stockAfterReversal = product.qty;
+    audit(db, user, 'reverse-inventory-movement', {
+      collection: 'movements',
+      recordId: movement.id,
+      recordLabel: movement.sku,
+      before: { sku: movement.sku, qty: beforeQty },
+      after: { sku: movement.sku, qty: product.qty },
+      snapshot: { ...movement },
+      detail: `撤销误入库 ${movement.sku} ${qty}；库存 ${beforeQty} → ${product.qty}`
+    });
+    writeDb(db);
+    notifyDataChanged('reverse-inventory-movement', movement.id);
+    return send(res, 200, sanitizeDbForUser(db, user));
+  }
+
   const match = url.pathname.match(/^\/api\/([a-zA-Z]+)(?:\/([^/]+))?$/);
   if (!match) return send(res, 404, { error: 'Not found' });
   const [, collection, recordId] = match;
@@ -5562,6 +5627,9 @@ async function api(req, res) {
   if (req.method === 'DELETE' && recordId) {
     if (collection === 'workshopMovements') {
       return send(res, 400, { error: '贴膜间库存流水不能删除。请用反向流水修正，保证库存台账完整。' });
+    }
+    if (collection === 'movements') {
+      return send(res, 400, { error: '库存流水不能直接删除。误操作的入库请使用“撤销误入库”，系统会同步修正库存并保留记录。' });
     }
     if (collection === 'users') {
       const existing = db.users.find(x => x.id === recordId);
