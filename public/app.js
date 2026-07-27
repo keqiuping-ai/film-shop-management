@@ -5396,7 +5396,12 @@ function prospectConversationSegments(input) {
     let structured = structuredProspectMessages(item);
     if (structured.length) {
       const hasMaterializedLegacy = (item.conversationMessages || []).some(message => message.source === 'legacy-conversation');
-      if (item.chatContext && !hasMaterializedLegacy) {
+      const isYelpConversation = String(item.source || '').trim().toLowerCase().includes('yelp');
+      // Yelp chatContext is an accumulated import snapshot (lead fields plus copies
+      // of messages), not an additional message stream. Rendering it beside the
+      // structured events creates fake alternating speakers and, because snapshot
+      // rows have no source timestamp, incorrectly places them after the latest chat.
+      if (item.chatContext && !hasMaterializedLegacy && !isYelpConversation) {
         const legacyTimestamp = item.sourceCreatedAt || (item.date ? `${item.date}T00:00:00` : '');
         const legacy = prospectConversationSegments(item.chatContext).map((message, index) => {
           const leadForm = prospectIsYelpLeadFormMessage(
