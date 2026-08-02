@@ -846,7 +846,10 @@ function messageHtml(message) {
 function avatarHtml(item) {
   if (item?.group) return '<span class="avatar group-avatar">群</span>';
   const name = String(item?.name || item?.email || '?').trim();
-  if (item?.avatarDataUrl) return `<img class="avatar" src="${escapeHtml(item.avatarDataUrl)}" alt="${escapeHtml(name)}" />`;
+  const avatar = item?.id === 'customer-codex'
+    ? '/quad-film-icon-192.png'
+    : item?.avatarDataUrl;
+  if (avatar) return `<img class="avatar" src="${escapeHtml(avatar)}" alt="${escapeHtml(name)}" />`;
   return `<span class="avatar">${escapeHtml(name.slice(0, 1).toUpperCase())}</span>`;
 }
 

@@ -36,6 +36,7 @@ const CUSTOMER_CODEX_USER = Object.freeze({
   role: 'ai-customer-service',
   active: true,
   virtual: true,
+  avatarDataUrl: '/quad-film-icon-192.png',
   voiceCallEnabled: false
 });
 const sessions = new Map();

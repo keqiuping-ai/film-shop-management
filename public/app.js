@@ -4295,7 +4295,9 @@ function panel(title, action, content) {
 }
 
 function userAvatarHtml(person, size = 'small') {
-  const avatar = person?.avatarDataUrl || '';
+  const avatar = person?.id === 'customer-codex'
+    ? '/quad-film-icon-192.png'
+    : (person?.avatarDataUrl || '');
   const name = person?.name || person?.email || '';
   const initial = String(name || '?').trim().charAt(0).toUpperCase() || '?';
   if (avatar) return `<img class="employee-avatar ${size}" src="${escapeHtml(avatar)}" alt="${escapeHtml(name)}" />`;
