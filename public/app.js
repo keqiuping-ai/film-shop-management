@@ -757,6 +757,7 @@ const permissionLabels = [
   ['reportsView', '查看报表', 'View reports'],
   ['fullFinanceView', '查看完整财报/成本/利润', 'View full financials / costs / profit'],
   ['usersManage', '管理员工账号和权限', 'Manage users and permissions'],
+  ['customerCodexChat', '允许与客服 Codex 沟通', 'Communicate with Customer Service Codex'],
   ['settingsEdit', '修改系统设置/检查升级', 'Edit settings / check updates']
 ];
 
@@ -8532,7 +8533,7 @@ function roleDefaultPermissions(role) {
   const all = Object.fromEntries(permissionLabels.map(([key]) => [key, true]));
   const byRole = {
     owner: all,
-    manager: all,
+    manager: { ...all, customerCodexChat: false },
     frontdesk: { ...none, jobsView: true, jobsCreate: true, pricingView: true, ordersView: true, ordersEdit: true, shipmentsView: true, schedulesView: true, leadsView: true, leadsEdit: true, prospectsView: true, prospectsEdit: true, reimbursementsView: true, reimbursementsCreate: true },
     sales: { ...none, jobsView: true, jobsCreate: true, pricingView: true, ordersView: true, ordersEdit: true, shipmentsView: true, schedulesView: true, leadsView: true, leadsEdit: true, prospectsView: true, prospectsEdit: true, reimbursementsView: true, reimbursementsCreate: true, fieldSalesView: true, fieldSalesEdit: true },
     clerk: { ...none, jobsView: true, jobsCreate: true, jobsEdit: true, pricingView: true, inventoryView: true, ordersView: true, ordersEdit: true, shipmentsView: true, shipmentsEdit: true, schedulesView: true, schedulesEdit: true, leadsView: true, leadsEdit: true, prospectsView: true, prospectsEdit: true, expensesView: true, expensesEdit: true, reimbursementsView: true, reimbursementsCreate: true },

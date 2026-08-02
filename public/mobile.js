@@ -660,7 +660,11 @@ function staffUsers() {
 }
 
 function mobileMessageUsers() {
-  return (state.messageUsers || state.users || []).filter(item => item.id !== user?.id && item.active !== false);
+  return (state.messageUsers || state.users || []).filter(item =>
+    item.id !== user?.id &&
+    item.active !== false &&
+    (item.id !== 'customer-codex' || Boolean(user?.permissions?.customerCodexChat))
+  );
 }
 
 function unreadFrom(userId) {

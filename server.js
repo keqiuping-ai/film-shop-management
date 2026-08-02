@@ -1041,12 +1041,13 @@ function defaultPermissions(role) {
     reportsView: false,
     fullFinanceView: false,
     usersManage: false,
+    customerCodexChat: false,
     settingsEdit: false
   };
   const all = Object.fromEntries(Object.keys(none).map(k => [k, true]));
   const byRole = {
     owner: all,
-    manager: all,
+    manager: { ...all, customerCodexChat: false },
     frontdesk: { ...none, jobsView: true, jobsCreate: true, pricingView: true, ordersView: true, ordersEdit: true, shipmentsView: true, schedulesView: true, leadsView: true, leadsEdit: true, prospectsView: true, prospectsEdit: true, reimbursementsView: true, reimbursementsCreate: true },
     sales: { ...none, jobsView: true, jobsCreate: true, pricingView: true, ordersView: true, ordersEdit: true, shipmentsView: true, schedulesView: true, leadsView: true, leadsEdit: true, prospectsView: true, prospectsEdit: true, reimbursementsView: true, reimbursementsCreate: true, fieldSalesView: true, fieldSalesEdit: true },
     clerk: { ...none, jobsView: true, jobsCreate: true, jobsEdit: true, pricingView: true, inventoryView: true, ordersView: true, ordersEdit: true, shipmentsView: true, shipmentsEdit: true, schedulesView: true, schedulesEdit: true, leadsView: true, leadsEdit: true, prospectsView: true, prospectsEdit: true, expensesView: true, expensesEdit: true, reimbursementsView: true, reimbursementsCreate: true },
@@ -1069,8 +1070,9 @@ function safeUser(user) {
   return safe;
 }
 
-function messageUsersFor(db) {
-  return [CUSTOMER_CODEX_USER, ...(db.users || []).filter(item => item.active !== false).map(safeUser)];
+function messageUsersFor(db, user) {
+  const codexUsers = effectivePermissions(user).customerCodexChat ? [CUSTOMER_CODEX_USER] : [];
+  return [...codexUsers, ...(db.users || []).filter(item => item.active !== false).map(safeUser)];
 }
 
 function normalizeAvatarDataUrl(value) {
@@ -1122,7 +1124,7 @@ function sanitizeDbForUser(db, user) {
   return {
     settings: db.settings,
     users: p.usersManage || p.schedulesView || p.reportsView ? db.users.map(safeUser) : [safeUser(user)],
-    messageUsers: messageUsersFor(db),
+    messageUsers: messageUsersFor(db, user),
     messages: messagesForUser(db, user),
     voiceCalls: voiceCallsForUser(db, user),
     personalNotes: (db.personalNotes || []).filter(item => personalNoteVisibleTo(item, user)).map(item => personalNoteForUser(db, item, user)),
@@ -1166,8 +1168,13 @@ function sanitizeDbForUser(db, user) {
 
 function messagesForUser(db, user) {
   const userId = user?.id || '';
+  const canChatWithCustomerCodex = Boolean(effectivePermissions(user).customerCodexChat);
   return (db.messages || [])
-    .filter(message => message.scope === 'group' || message.fromUserId === userId || message.toUserId === userId)
+    .filter(message => {
+      const involvesCustomerCodex = message.fromUserId === CUSTOMER_CODEX_USER.id || message.toUserId === CUSTOMER_CODEX_USER.id;
+      if (involvesCustomerCodex && !canChatWithCustomerCodex) return false;
+      return message.scope === 'group' || message.fromUserId === userId || message.toUserId === userId;
+    })
     .sort((a, b) => String(a.createdAt || '').localeCompare(String(b.createdAt || '')))
     .slice(-500);
 }
@@ -1190,7 +1197,7 @@ function aiBossTasksForUser(db, user) {
 
 function unreadMessageCount(db, user) {
   const userId = user?.id || '';
-  return (db.messages || []).filter(message => {
+  return messagesForUser(db, user).filter(message => {
     if (message.fromUserId === userId) return false;
     if (message.scope === 'group') return !(message.readByUserIds || []).includes(userId);
     return message.toUserId === userId && !message.readAt;
@@ -1377,7 +1384,7 @@ function mobileSnapshot(db, user) {
   return {
     user: safeUser(user),
     users: db.users.filter(item => item.active !== false).map(safeUser),
-    messageUsers: messageUsersFor(db),
+    messageUsers: messageUsersFor(db, user),
     messages: messagesForUser(db, user),
     voiceCalls: voiceCallsForUser(db, user),
     unread: unreadMessageCount(db, user),
@@ -3152,9 +3159,15 @@ function customerCodexChannelAuthorized(req) {
 }
 
 function customerCodexMessages(db) {
+  const permittedUserIds = new Set((db.users || [])
+    .filter(user => user.active !== false && effectivePermissions(user).customerCodexChat)
+    .map(user => user.id));
   return (db.messages || [])
     .filter(message => message.scope === 'direct' && (
       message.fromUserId === CUSTOMER_CODEX_USER.id || message.toUserId === CUSTOMER_CODEX_USER.id
+    ))
+    .filter(message => permittedUserIds.has(
+      message.fromUserId === CUSTOMER_CODEX_USER.id ? message.toUserId : message.fromUserId
     ))
     .sort((a, b) => String(a.createdAt || '').localeCompare(String(b.createdAt || '')));
 }
@@ -3916,6 +3929,7 @@ async function api(req, res) {
       const externalMessageId = String(body.externalMessageId || body.requestId || '').trim().slice(0, 160);
       const recipient = (db.users || []).find(item => item.id === toUserId && item.active !== false);
       if (!recipient) return send(res, 400, { error: '回复对象不存在或未启用' });
+      if (!canAccess(recipient, 'customerCodexChat')) return send(res, 403, { error: '该员工没有与客服 Codex 沟通权限' });
       if (!text) return send(res, 400, { error: '回复内容不能为空' });
       if (text.length > 2000) return send(res, 400, { error: '回复内容不能超过 2000 个字' });
       if (!externalMessageId || !/^[a-zA-Z0-9._:-]{8,160}$/.test(externalMessageId)) {
@@ -5307,7 +5321,7 @@ async function api(req, res) {
   if (url.pathname === '/api/messages') {
     if (req.method === 'GET') {
       return send(res, 200, {
-        users: messageUsersFor(db),
+        users: messageUsersFor(db, user),
         messages: messagesForUser(db, user),
         unread: unreadMessageCount(db, user)
       });
@@ -5320,6 +5334,9 @@ async function api(req, res) {
       const text = String(body.text || '').trim();
       const attachment = sanitizeMessageAttachment(body.attachment);
       if (attachment?.error) return send(res, 400, { error: attachment.error });
+      if (!isGroup && toUserId === CUSTOMER_CODEX_USER.id && !canAccess(user, 'customerCodexChat')) {
+        return send(res, 403, { error: '你没有与客服 Codex 沟通的权限，请联系老板授权' });
+      }
       const recipient = isGroup
         ? null
         : (toUserId === CUSTOMER_CODEX_USER.id
