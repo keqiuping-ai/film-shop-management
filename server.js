@@ -29,6 +29,15 @@ const INTERNAL_MESSAGE_VIDEO_RETENTION_MS = 5 * 24 * 60 * 60 * 1000;
 const MAX_TWILIO_IMAGE_BYTES = 4.5 * 1024 * 1024;
 const MEDIA_UPLOAD_CHUNK_BYTES = 4 * 1024 * 1024;
 const CUSTOM_PRINTED_FILM_SKU = 'CUSTOM-PRINTED-FILM';
+const CUSTOMER_CODEX_USER = Object.freeze({
+  id: 'customer-codex',
+  name: '客服 Codex',
+  email: 'customer-codex@system.local',
+  role: 'ai-customer-service',
+  active: true,
+  virtual: true,
+  voiceCallEnabled: false
+});
 const sessions = new Map();
 const eventClients = new Set();
 const warrantyLookupAttempts = new Map();
@@ -1060,6 +1069,10 @@ function safeUser(user) {
   return safe;
 }
 
+function messageUsersFor(db) {
+  return [CUSTOMER_CODEX_USER, ...(db.users || []).filter(item => item.active !== false).map(safeUser)];
+}
+
 function normalizeAvatarDataUrl(value) {
   const avatar = String(value || '').trim();
   if (!avatar) return '';
@@ -1109,7 +1122,7 @@ function sanitizeDbForUser(db, user) {
   return {
     settings: db.settings,
     users: p.usersManage || p.schedulesView || p.reportsView ? db.users.map(safeUser) : [safeUser(user)],
-    messageUsers: db.users.filter(item => item.active !== false).map(safeUser),
+    messageUsers: messageUsersFor(db),
     messages: messagesForUser(db, user),
     voiceCalls: voiceCallsForUser(db, user),
     personalNotes: (db.personalNotes || []).filter(item => personalNoteVisibleTo(item, user)).map(item => personalNoteForUser(db, item, user)),
@@ -1364,6 +1377,7 @@ function mobileSnapshot(db, user) {
   return {
     user: safeUser(user),
     users: db.users.filter(item => item.active !== false).map(safeUser),
+    messageUsers: messageUsersFor(db),
     messages: messagesForUser(db, user),
     voiceCalls: voiceCallsForUser(db, user),
     unread: unreadMessageCount(db, user),
@@ -3118,6 +3132,33 @@ function customerServiceAgentTokens() {
     .filter(Boolean);
 }
 
+function customerCodexChannelTokens() {
+  return [process.env.CUSTOMER_CODEX_CHANNEL_TOKEN, process.env.CUSTOMER_CODEX_CHANNEL_TOKENS]
+    .filter(Boolean)
+    .join('\n')
+    .split(/[\n,;]+/)
+    .map(value => String(value || '').trim())
+    .filter(Boolean);
+}
+
+function customerCodexChannelAuthorized(req) {
+  const configuredTokens = customerCodexChannelTokens();
+  if (!configuredTokens.length) return false;
+  const providedToken = String(
+    req.headers['x-codex-token'] ||
+    String(req.headers.authorization || '').replace(/^Bearer\s+/i, '')
+  ).trim();
+  return configuredTokens.some(token => secureEqualString(providedToken, token));
+}
+
+function customerCodexMessages(db) {
+  return (db.messages || [])
+    .filter(message => message.scope === 'direct' && (
+      message.fromUserId === CUSTOMER_CODEX_USER.id || message.toUserId === CUSTOMER_CODEX_USER.id
+    ))
+    .sort((a, b) => String(a.createdAt || '').localeCompare(String(b.createdAt || '')));
+}
+
 function customerServiceAgentUser(req) {
   const configuredTokens = customerServiceAgentTokens();
   if (!configuredTokens.length) return null;
@@ -3850,6 +3891,73 @@ async function api(req, res) {
       return send(res, 200, { ok: true, task: safeCustomerServiceTask({ item, collection, taskType: customerServiceTaskType(item) }) });
     }
     return send(res, 404, { error: '客服助手接口不存在' });
+  }
+
+  if (url.pathname.startsWith('/api/integrations/customer-codex/messages')) {
+    if (!customerCodexChannelAuthorized(req)) {
+      return send(res, 401, { error: '客服 Codex 通道令牌无效或尚未配置' });
+    }
+    if (req.method === 'GET' && url.pathname === '/api/integrations/customer-codex/messages') {
+      const limit = Math.min(200, Math.max(1, Number(url.searchParams.get('limit') || 100)));
+      const after = String(url.searchParams.get('after') || '').trim();
+      const allMessages = customerCodexMessages(db);
+      const afterIndex = after ? allMessages.findIndex(message => message.id === after) : -1;
+      const selected = (afterIndex >= 0 ? allMessages.slice(afterIndex + 1) : allMessages).slice(-limit);
+      return send(res, 200, {
+        channel: { id: CUSTOMER_CODEX_USER.id, name: CUSTOMER_CODEX_USER.name },
+        messages: selected,
+        nextCursor: selected[selected.length - 1]?.id || after || ''
+      }, undefined, req);
+    }
+    if (req.method === 'POST' && url.pathname === '/api/integrations/customer-codex/messages') {
+      const body = await readBody(req);
+      const toUserId = String(body.toUserId || '').trim();
+      const text = String(body.text || '').trim();
+      const externalMessageId = String(body.externalMessageId || body.requestId || '').trim().slice(0, 160);
+      const recipient = (db.users || []).find(item => item.id === toUserId && item.active !== false);
+      if (!recipient) return send(res, 400, { error: '回复对象不存在或未启用' });
+      if (!text) return send(res, 400, { error: '回复内容不能为空' });
+      if (text.length > 2000) return send(res, 400, { error: '回复内容不能超过 2000 个字' });
+      if (!externalMessageId || !/^[a-zA-Z0-9._:-]{8,160}$/.test(externalMessageId)) {
+        return send(res, 400, { error: '请提供至少 8 位的唯一 externalMessageId' });
+      }
+      const duplicate = customerCodexMessages(db).find(message => message.externalMessageId === externalMessageId);
+      if (duplicate) return send(res, 200, { ok: true, duplicate: true, message: duplicate });
+      const message = {
+        id: id(), scope: 'direct', groupId: '',
+        fromUserId: CUSTOMER_CODEX_USER.id, fromName: CUSTOMER_CODEX_USER.name,
+        toUserId: recipient.id, toName: recipient.name || recipient.email,
+        text, attachment: null, createdAt: new Date().toISOString(), readAt: '', readByUserIds: [],
+        integration: 'customer-codex', externalMessageId
+      };
+      db.messages.push(message);
+      db.messages = db.messages.slice(-5000);
+      audit(db, CUSTOMER_CODEX_USER, 'customer-codex-reply', {
+        collection: 'messages', recordId: message.id, recordLabel: `${message.fromName} -> ${message.toName}`,
+        detail: `客服 Codex 回复 ${message.toName}`
+      });
+      writeDb(db);
+      notifyDataChanged('customer-codex-reply', message.id, [recipient.id]);
+      return send(res, 201, { ok: true, duplicate: false, message });
+    }
+    if (req.method === 'POST' && url.pathname === '/api/integrations/customer-codex/messages/read') {
+      const body = await readBody(req);
+      const requested = new Set((Array.isArray(body.messageIds) ? body.messageIds : []).map(String));
+      let updated = 0;
+      const readAt = new Date().toISOString();
+      customerCodexMessages(db).forEach(message => {
+        if (message.toUserId === CUSTOMER_CODEX_USER.id && requested.has(message.id) && !message.readAt) {
+          message.readAt = readAt;
+          updated += 1;
+        }
+      });
+      if (updated) {
+        writeDb(db);
+        notifyDataChanged('customer-codex-read', { updated });
+      }
+      return send(res, 200, { ok: true, updated });
+    }
+    return send(res, 404, { error: '客服 Codex 通道接口不存在' });
   }
 
   if (req.method === 'POST' && url.pathname === '/api/warranty/lookup') {
@@ -5199,7 +5307,7 @@ async function api(req, res) {
   if (url.pathname === '/api/messages') {
     if (req.method === 'GET') {
       return send(res, 200, {
-        users: db.users.filter(item => item.active !== false).map(safeUser),
+        users: messageUsersFor(db),
         messages: messagesForUser(db, user),
         unread: unreadMessageCount(db, user)
       });
@@ -5212,7 +5320,11 @@ async function api(req, res) {
       const text = String(body.text || '').trim();
       const attachment = sanitizeMessageAttachment(body.attachment);
       if (attachment?.error) return send(res, 400, { error: attachment.error });
-      const recipient = isGroup ? null : db.users.find(item => item.id === toUserId && item.active !== false);
+      const recipient = isGroup
+        ? null
+        : (toUserId === CUSTOMER_CODEX_USER.id
+          ? CUSTOMER_CODEX_USER
+          : db.users.find(item => item.id === toUserId && item.active !== false));
       if (!isGroup && !recipient) return send(res, 400, { error: '收件人不存在或未启用' });
       if (!text && !attachment) return send(res, 400, { error: '留言内容不能为空' });
       if (text.length > 2000) return send(res, 400, { error: '留言内容不能超过 2000 个字' });

@@ -659,6 +659,10 @@ function staffUsers() {
   return (state.users || []).filter(item => item.id !== user?.id && item.active !== false);
 }
 
+function mobileMessageUsers() {
+  return (state.messageUsers || state.users || []).filter(item => item.id !== user?.id && item.active !== false);
+}
+
 function unreadFrom(userId) {
   if (userId === GROUP_CHAT_ID) {
     return (state.messages || []).filter(message => message.scope === 'group' && message.fromUserId !== user?.id && !(message.readByUserIds || []).includes(user?.id)).length;
@@ -682,7 +686,7 @@ function mobileUnreadMentionForUser(targetUser) {
 }
 
 function unreadChatUsers() {
-  return [{ id: GROUP_CHAT_ID }, ...staffUsers()].filter(item => unreadFrom(item.id) > 0);
+  return [{ id: GROUP_CHAT_ID }, ...mobileMessageUsers()].filter(item => unreadFrom(item.id) > 0);
 }
 
 function selectNextUnreadConversation() {
@@ -727,7 +731,7 @@ function conversationTime(value) {
 }
 
 function chatListUsers() {
-  return [{ id: GROUP_CHAT_ID, name: t('groupChat'), group: true }, ...staffUsers()]
+  return [{ id: GROUP_CHAT_ID, name: t('groupChat'), group: true }, ...mobileMessageUsers()]
     .map(item => {
       const messages = conversation(item.id);
       return { ...item, latest: messages[messages.length - 1] || null };
@@ -761,7 +765,7 @@ function chatHtml() {
       </div>
     </section>
     <section class="wechat-chat-pane">
-      <div class="mobile-chat-head"><button type="button" class="mobile-back" onclick="showChatList()" aria-label="${lang === 'zh' ? '返回消息列表' : 'Back to conversations'}">‹</button><span>${avatarHtml(active)}<strong>${escapeHtml(active.name || active.email)}</strong></span><button class="chat-call-head" type="button" onclick="QuadCalls.enableNotifications(); ${active.id === GROUP_CHAT_ID ? 'QuadCalls.startGroup()' : `QuadCalls.startDirect('${active.id}')`}">📞</button></div>
+      <div class="mobile-chat-head"><button type="button" class="mobile-back" onclick="showChatList()" aria-label="${lang === 'zh' ? '返回消息列表' : 'Back to conversations'}">‹</button><span>${avatarHtml(active)}<strong>${escapeHtml(active.name || active.email)}</strong></span>${active.id === GROUP_CHAT_ID || (active.virtual !== true && active.voiceCallEnabled !== false) ? `<button class="chat-call-head" type="button" onclick="QuadCalls.enableNotifications(); ${active.id === GROUP_CHAT_ID ? 'QuadCalls.startGroup()' : `QuadCalls.startDirect('${active.id}')`}">📞</button>` : ''}</div>
       <div class="thread" id="thread">
       ${thread.length ? thread.map(messageHtml).join('') : `<p class="hint">${t('noMessages')}</p>`}
       </div>

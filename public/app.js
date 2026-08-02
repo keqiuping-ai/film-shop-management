@@ -1509,6 +1509,8 @@ function messageUsers() {
     .sort((left, right) => {
       if (left.id === user?.id) return -1;
       if (right.id === user?.id) return 1;
+      if (left.id === 'customer-codex') return -1;
+      if (right.id === 'customer-codex') return 1;
       return String(left.name || left.email || '').localeCompare(String(right.name || right.email || ''), lang === 'zh' ? 'zh-CN' : 'en');
     });
 }
@@ -1517,6 +1519,10 @@ function messageUserDisplayName(item) {
   const name = item?.name || item?.email || '';
   if (item?.id !== user?.id) return name;
   return lang === 'zh' ? `我自己（${name}）` : `Me (${name})`;
+}
+
+function messageUserCanCall(item) {
+  return item && item.virtual !== true && item.voiceCallEnabled !== false;
 }
 
 function unreadMessages() {
@@ -1807,7 +1813,7 @@ function messageModalHtml(users) {
           <button class="btn message-hold-voice" id="messageVoiceBtn" type="button"
             onclick="toggleVoiceMessageRecording(event)"
             oncontextmenu="event.preventDefault()">${lang === 'zh' ? '点击录音（最长60秒）' : 'Tap to record (60 sec max)'}</button>
-          <button class="btn quad-call-tool-button" type="button" onclick="QuadCalls.enableNotifications(); ${isGroup ? 'QuadCalls.startGroup()' : `QuadCalls.startDirect('${activeUser?.id || ''}')`}">📞 ${lang === 'zh' ? '语音通话' : 'Voice call'}</button>
+          ${isGroup || messageUserCanCall(activeUser) ? `<button class="btn quad-call-tool-button" type="button" onclick="QuadCalls.enableNotifications(); ${isGroup ? 'QuadCalls.startGroup()' : `QuadCalls.startDirect('${activeUser?.id || ''}')`}">📞 ${lang === 'zh' ? '语音通话' : 'Voice call'}</button>` : ''}
           <input class="hidden" id="messageImageInput" type="file" accept="image/*" onchange="sendMessageFile(this.files[0], 'image'); this.value='';" />
           <input class="hidden" id="messageVideoInput" type="file" accept="video/*" onchange="sendMessageFile(this.files[0], 'video'); this.value='';" />
           <input class="hidden" id="messageFileInput" type="file" onchange="sendMessageFile(this.files[0], 'file'); this.value='';" />
