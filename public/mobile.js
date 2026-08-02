@@ -32,6 +32,8 @@ let supervisionStopRequested = false;
 let lang = localStorage.getItem('filmShopCloud.lang') || 'zh';
 const MAX_MESSAGE_ATTACHMENT_BYTES = 8 * 1024 * 1024;
 const GROUP_CHAT_ID = '__all_staff__';
+const CUSTOMER_CODEX_ID = 'customer-codex';
+const CUSTOMER_CODEX_GROUP_ID = 'customer-codex-room';
 let lastChatUserId = '';
 let noteSaving = false;
 let activeMobileNoteId = '';
@@ -669,7 +671,15 @@ function mobileMessageUsers() {
 
 function unreadFrom(userId) {
   if (userId === GROUP_CHAT_ID) {
-    return (state.messages || []).filter(message => message.scope === 'group' && message.fromUserId !== user?.id && !(message.readByUserIds || []).includes(user?.id)).length;
+    return (state.messages || []).filter(message => message.groupId === 'all-staff' && message.fromUserId !== user?.id && !(message.readByUserIds || []).includes(user?.id)).length;
+  }
+  if (userId === CUSTOMER_CODEX_ID) {
+    return (state.messages || []).filter(message =>
+      (message.groupId === CUSTOMER_CODEX_GROUP_ID || message.fromUserId === CUSTOMER_CODEX_ID || message.toUserId === CUSTOMER_CODEX_ID) &&
+      message.fromUserId !== user?.id &&
+      !(message.readByUserIds || []).includes(user?.id) &&
+      !message.readAt
+    ).length;
   }
   return (state.messages || []).filter(message => message.fromUserId === userId && message.toUserId === user?.id && !message.readAt).length;
 }
@@ -703,8 +713,15 @@ function selectNextUnreadConversation() {
 
 function conversation(otherUserId) {
   if (otherUserId === GROUP_CHAT_ID) {
-    return (state.messages || []).filter(message => message.scope === 'group')
+    return (state.messages || []).filter(message => message.groupId === 'all-staff')
       .sort((a, b) => String(a.createdAt || '').localeCompare(String(b.createdAt || '')));
+  }
+  if (otherUserId === CUSTOMER_CODEX_ID) {
+    return (state.messages || []).filter(message =>
+      message.groupId === CUSTOMER_CODEX_GROUP_ID ||
+      message.fromUserId === CUSTOMER_CODEX_ID ||
+      message.toUserId === CUSTOMER_CODEX_ID
+    ).sort((a, b) => String(a.createdAt || '').localeCompare(String(b.createdAt || '')));
   }
   return (state.messages || []).filter(message =>
     (message.fromUserId === user?.id && message.toUserId === otherUserId) ||
@@ -834,7 +851,7 @@ window.setQuadCallState = value => { state = value; };
 function messageHtml(message) {
   const mine = message.fromUserId === user?.id;
   const read = mine && message.scope !== 'group' ? ` · ${message.readAt ? t('read') : t('unread')}` : '';
-  const sender = (state.users || []).find(item => item.id === message.fromUserId) || { name: message.fromName || '' };
+  const sender = (state.messageUsers || state.users || []).find(item => item.id === message.fromUserId) || { name: message.fromName || '' };
   return `<div class="message-line ${mine ? 'mine' : ''}">${!mine ? avatarHtml(sender) : ''}<div class="bubble ${mine ? 'mine' : ''}">
     ${mine ? `<button class="delete" onclick="deleteMessage('${message.id}')">×</button>` : ''}
     ${message.text ? `<div>${escapeHtml(message.text || '')}</div>` : ''}
@@ -912,7 +929,9 @@ async function markRead(fromUserId) {
   try {
     const body = await api('/api/messages/read', {
       method: 'PUT',
-      body: JSON.stringify(fromUserId === GROUP_CHAT_ID ? { groupId: 'all-staff' } : { fromUserId })
+      body: JSON.stringify(fromUserId === GROUP_CHAT_ID
+        ? { groupId: 'all-staff' }
+        : (fromUserId === CUSTOMER_CODEX_ID ? { groupId: CUSTOMER_CODEX_GROUP_ID } : { fromUserId }))
     });
     state = { ...state, ...body };
     renderAuth();
@@ -973,9 +992,11 @@ async function optimizeMobileImage(file) {
 }
 
 async function postMessage({ text = '', attachment = null }, targetUserId = activeUserId) {
+  const isGroup = targetUserId === GROUP_CHAT_ID || targetUserId === CUSTOMER_CODEX_ID;
+  const groupId = targetUserId === CUSTOMER_CODEX_ID ? CUSTOMER_CODEX_GROUP_ID : 'all-staff';
   await api('/api/messages', {
     method: 'POST',
-    body: JSON.stringify(targetUserId === GROUP_CHAT_ID ? { groupId: 'all-staff', text, attachment } : { toUserId: targetUserId, text, attachment })
+    body: JSON.stringify(isGroup ? { groupId, text, attachment } : { toUserId: targetUserId, text, attachment })
   });
   state = await api('/api/mobile/bootstrap');
   renderAuth();

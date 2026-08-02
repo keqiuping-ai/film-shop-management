@@ -103,6 +103,8 @@ const MAX_VOICE_MESSAGE_MS = 60 * 1000;
 const MAX_CLOUD_VIDEO_BYTES = 200 * 1024 * 1024;
 const MAX_CLOUD_IMAGE_BYTES = 20 * 1024 * 1024;
 const GROUP_CHAT_ID = '__all_staff__';
+const CUSTOMER_CODEX_ID = 'customer-codex';
+const CUSTOMER_CODEX_GROUP_ID = 'customer-codex-room';
 const replyTemplateCategories = [
   { id: 'uncategorized', zh: '未分类', en: 'Uncategorized' },
   { id: 'auto-window-film', zh: '汽车窗膜', en: 'Auto Window Tint' },
@@ -1580,7 +1582,12 @@ function playMessageSound() {
 }
 
 function unreadCountFromUser(userId) {
-  if (userId === GROUP_CHAT_ID) return unreadMessages().filter(message => message.scope === 'group').length;
+  if (userId === GROUP_CHAT_ID) return unreadMessages().filter(message => message.groupId === 'all-staff').length;
+  if (userId === CUSTOMER_CODEX_ID) return unreadMessages().filter(message =>
+    message.groupId === CUSTOMER_CODEX_GROUP_ID ||
+    message.fromUserId === CUSTOMER_CODEX_ID ||
+    message.toUserId === CUSTOMER_CODEX_ID
+  ).length;
   return unreadMessages().filter(message => message.scope !== 'group' && message.fromUserId === userId).length;
 }
 
@@ -1790,7 +1797,7 @@ function messageModalHtml(users) {
         <span class="message-person-identity"><span class="message-group-avatar">群</span><span>${lang === 'zh' ? '全体员工群聊' : 'All Staff Group'}</span></span>
         ${mentionedMe ? `<strong class="message-mention-me">${lang === 'zh' ? '@我' : '@me'}</strong>` : (groupUnread ? `<strong>${groupUnread > 99 ? '99+' : groupUnread}</strong>` : '')}
       </button>
-      ${users.length ? `<div class="message-people-label">${lang === 'zh' ? '私聊' : 'Direct messages'}</div>` : ''}
+      ${users.length ? `<div class="message-people-label">${lang === 'zh' ? '联系人与群聊' : 'Contacts and groups'}</div>` : ''}
       ${users.map(item => {
         const unread = unreadCountFromUser(item.id);
         const mentioned = unreadMentionForUser(item);
@@ -1889,8 +1896,15 @@ window.setQuadCallState = value => { state = value; };
 
 function conversationMessages(otherUserId) {
   if (otherUserId === GROUP_CHAT_ID) {
-    return (state.messages || []).filter(message => message.scope === 'group')
+    return (state.messages || []).filter(message => message.groupId === 'all-staff')
       .sort((a, b) => String(a.createdAt || '').localeCompare(String(b.createdAt || '')));
+  }
+  if (otherUserId === CUSTOMER_CODEX_ID) {
+    return (state.messages || []).filter(message =>
+      message.groupId === CUSTOMER_CODEX_GROUP_ID ||
+      message.fromUserId === CUSTOMER_CODEX_ID ||
+      message.toUserId === CUSTOMER_CODEX_ID
+    ).sort((a, b) => String(a.createdAt || '').localeCompare(String(b.createdAt || '')));
   }
   return (state.messages || []).filter(message =>
     (message.fromUserId === user?.id && message.toUserId === otherUserId) ||
@@ -1900,7 +1914,7 @@ function conversationMessages(otherUserId) {
 
 function messageBubbleHtml(message) {
   const mine = message.fromUserId === user?.id;
-  const sender = (state.users || []).find(item => item.id === message.fromUserId) || { name: message.fromName || '' };
+  const sender = (state.messageUsers || state.users || []).find(item => item.id === message.fromUserId) || { name: message.fromName || '' };
   const time = message.createdAt ? new Date(message.createdAt).toLocaleString([], { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) : '';
   const attachmentOnly = !String(message.text || '').trim() && message.attachment;
   const readStatus = mine
@@ -1994,7 +2008,9 @@ async function markMessagesRead(fromUserId, options = {}) {
   try {
     state = await api('/api/messages/read', {
       method: 'PUT',
-      body: JSON.stringify(fromUserId === GROUP_CHAT_ID ? { groupId: 'all-staff' } : { fromUserId })
+      body: JSON.stringify(fromUserId === GROUP_CHAT_ID
+        ? { groupId: 'all-staff' }
+        : (fromUserId === CUSTOMER_CODEX_ID ? { groupId: CUSTOMER_CODEX_GROUP_ID } : { fromUserId }))
     });
     updateMessageBadge();
     if (document.getElementById('modal')?.classList.contains('open') && !internalMessageInputActive()) {
@@ -2038,28 +2054,30 @@ async function sendInternalMessage() {
 async function postInternalMessage({ text = '', attachment = null, restoreTextOnError = false }) {
   if (!activeMessageUserId || (!String(text || '').trim() && !attachment)) return false;
   const recipientId = activeMessageUserId;
+  const isGroup = recipientId === GROUP_CHAT_ID || recipientId === CUSTOMER_CODEX_ID;
+  const groupId = recipientId === CUSTOMER_CODEX_ID ? CUSTOMER_CODEX_GROUP_ID : 'all-staff';
   const pendingId = `pending-${Date.now()}-${Math.random().toString(36).slice(2)}`;
   const pendingMessage = {
     id: pendingId,
     pending: true,
-    scope: recipientId === GROUP_CHAT_ID ? 'group' : 'direct',
-    groupId: recipientId === GROUP_CHAT_ID ? 'all-staff' : '',
+    scope: isGroup ? 'group' : 'direct',
+    groupId: isGroup ? groupId : '',
     fromUserId: user?.id,
     fromName: user?.name || user?.email || '',
-    toUserId: recipientId === GROUP_CHAT_ID ? '' : recipientId,
+    toUserId: isGroup ? '' : recipientId,
     text: String(text || '').trim(),
     attachment,
     createdAt: new Date().toISOString(),
     readAt: '',
-    readByUserIds: recipientId === GROUP_CHAT_ID ? [user?.id] : []
+    readByUserIds: isGroup ? [user?.id] : []
   };
   state.messages = [...(state.messages || []), pendingMessage];
   renderMessageModal(undefined, { forceLatest:true });
   try {
     state = await api('/api/messages', {
       method: 'POST',
-      body: JSON.stringify(recipientId === GROUP_CHAT_ID
-        ? { groupId: 'all-staff', text: String(text || '').trim(), attachment }
+      body: JSON.stringify(isGroup
+        ? { groupId, text: String(text || '').trim(), attachment }
         : { toUserId: recipientId, text: String(text || '').trim(), attachment })
     });
     broadcastDataChange();

@@ -29,9 +29,10 @@ const INTERNAL_MESSAGE_VIDEO_RETENTION_MS = 5 * 24 * 60 * 60 * 1000;
 const MAX_TWILIO_IMAGE_BYTES = 4.5 * 1024 * 1024;
 const MEDIA_UPLOAD_CHUNK_BYTES = 4 * 1024 * 1024;
 const CUSTOM_PRINTED_FILM_SKU = 'CUSTOM-PRINTED-FILM';
+const CUSTOMER_CODEX_GROUP_ID = 'customer-codex-room';
 const CUSTOMER_CODEX_USER = Object.freeze({
   id: 'customer-codex',
-  name: '客服 Codex',
+  name: '客服 Codex 群',
   email: 'customer-codex@system.local',
   role: 'ai-customer-service',
   active: true,
@@ -1172,9 +1173,13 @@ function messagesForUser(db, user) {
   const canChatWithCustomerCodex = Boolean(effectivePermissions(user).customerCodexChat);
   return (db.messages || [])
     .filter(message => {
-      const involvesCustomerCodex = message.fromUserId === CUSTOMER_CODEX_USER.id || message.toUserId === CUSTOMER_CODEX_USER.id;
-      if (involvesCustomerCodex && !canChatWithCustomerCodex) return false;
-      return message.scope === 'group' || message.fromUserId === userId || message.toUserId === userId;
+      const involvesCustomerCodex = message.groupId === CUSTOMER_CODEX_GROUP_ID
+        || message.fromUserId === CUSTOMER_CODEX_USER.id
+        || message.toUserId === CUSTOMER_CODEX_USER.id;
+      if (involvesCustomerCodex) return canChatWithCustomerCodex;
+      return (message.scope === 'group' && message.groupId === 'all-staff')
+        || message.fromUserId === userId
+        || message.toUserId === userId;
     })
     .sort((a, b) => String(a.createdAt || '').localeCompare(String(b.createdAt || '')))
     .slice(-500);
@@ -3160,16 +3165,10 @@ function customerCodexChannelAuthorized(req) {
 }
 
 function customerCodexMessages(db) {
-  const permittedUserIds = new Set((db.users || [])
-    .filter(user => user.active !== false && effectivePermissions(user).customerCodexChat)
-    .map(user => user.id));
   return (db.messages || [])
-    .filter(message => message.scope === 'direct' && (
-      message.fromUserId === CUSTOMER_CODEX_USER.id || message.toUserId === CUSTOMER_CODEX_USER.id
-    ))
-    .filter(message => permittedUserIds.has(
-      message.fromUserId === CUSTOMER_CODEX_USER.id ? message.toUserId : message.fromUserId
-    ))
+    .filter(message => message.groupId === CUSTOMER_CODEX_GROUP_ID
+      || message.fromUserId === CUSTOMER_CODEX_USER.id
+      || message.toUserId === CUSTOMER_CODEX_USER.id)
     .sort((a, b) => String(a.createdAt || '').localeCompare(String(b.createdAt || '')));
 }
 
@@ -3917,20 +3916,20 @@ async function api(req, res) {
       const allMessages = customerCodexMessages(db);
       const afterIndex = after ? allMessages.findIndex(message => message.id === after) : -1;
       const selected = (afterIndex >= 0 ? allMessages.slice(afterIndex + 1) : allMessages).slice(-limit);
+      const members = (db.users || [])
+        .filter(item => item.active !== false && canAccess(item, 'customerCodexChat'))
+        .map(safeUser);
       return send(res, 200, {
-        channel: { id: CUSTOMER_CODEX_USER.id, name: CUSTOMER_CODEX_USER.name },
+        channel: { id: CUSTOMER_CODEX_GROUP_ID, name: CUSTOMER_CODEX_USER.name, scope: 'group' },
+        members,
         messages: selected,
         nextCursor: selected[selected.length - 1]?.id || after || ''
       }, undefined, req);
     }
     if (req.method === 'POST' && url.pathname === '/api/integrations/customer-codex/messages') {
       const body = await readBody(req);
-      const toUserId = String(body.toUserId || '').trim();
       const text = String(body.text || '').trim();
       const externalMessageId = String(body.externalMessageId || body.requestId || '').trim().slice(0, 160);
-      const recipient = (db.users || []).find(item => item.id === toUserId && item.active !== false);
-      if (!recipient) return send(res, 400, { error: '回复对象不存在或未启用' });
-      if (!canAccess(recipient, 'customerCodexChat')) return send(res, 403, { error: '该员工没有与客服 Codex 沟通权限' });
       if (!text) return send(res, 400, { error: '回复内容不能为空' });
       if (text.length > 2000) return send(res, 400, { error: '回复内容不能超过 2000 个字' });
       if (!externalMessageId || !/^[a-zA-Z0-9._:-]{8,160}$/.test(externalMessageId)) {
@@ -3939,20 +3938,21 @@ async function api(req, res) {
       const duplicate = customerCodexMessages(db).find(message => message.externalMessageId === externalMessageId);
       if (duplicate) return send(res, 200, { ok: true, duplicate: true, message: duplicate });
       const message = {
-        id: id(), scope: 'direct', groupId: '',
+        id: id(), scope: 'group', groupId: CUSTOMER_CODEX_GROUP_ID,
         fromUserId: CUSTOMER_CODEX_USER.id, fromName: CUSTOMER_CODEX_USER.name,
-        toUserId: recipient.id, toName: recipient.name || recipient.email,
+        toUserId: '', toName: CUSTOMER_CODEX_USER.name,
         text, attachment: null, createdAt: new Date().toISOString(), readAt: '', readByUserIds: [],
         integration: 'customer-codex', externalMessageId
       };
       db.messages.push(message);
       db.messages = db.messages.slice(-5000);
       audit(db, CUSTOMER_CODEX_USER, 'customer-codex-reply', {
-        collection: 'messages', recordId: message.id, recordLabel: `${message.fromName} -> ${message.toName}`,
-        detail: `客服 Codex 回复 ${message.toName}`
+        collection: 'messages', recordId: message.id, recordLabel: CUSTOMER_CODEX_USER.name,
+        detail: '客服 Codex 回复共享群聊'
       });
       writeDb(db);
-      notifyDataChanged('customer-codex-reply', message.id, [recipient.id]);
+      const memberIds = (db.users || []).filter(item => item.active !== false && canAccess(item, 'customerCodexChat')).map(item => item.id);
+      notifyDataChanged('customer-codex-reply', message.id, memberIds);
       return send(res, 201, { ok: true, duplicate: false, message });
     }
     if (req.method === 'POST' && url.pathname === '/api/integrations/customer-codex/messages/read') {
@@ -3961,8 +3961,11 @@ async function api(req, res) {
       let updated = 0;
       const readAt = new Date().toISOString();
       customerCodexMessages(db).forEach(message => {
-        if (message.toUserId === CUSTOMER_CODEX_USER.id && requested.has(message.id) && !message.readAt) {
-          message.readAt = readAt;
+        if (message.fromUserId !== CUSTOMER_CODEX_USER.id && requested.has(message.id)) {
+          message.readByUserIds = Array.isArray(message.readByUserIds) ? message.readByUserIds : [];
+          if (message.readByUserIds.includes(CUSTOMER_CODEX_USER.id)) return;
+          message.readByUserIds.push(CUSTOMER_CODEX_USER.id);
+          if (message.scope === 'direct' && !message.readAt) message.readAt = readAt;
           updated += 1;
         }
       });
@@ -5331,11 +5334,12 @@ async function api(req, res) {
       const body = await readBody(req);
       const toUserId = String(body.toUserId || '').trim();
       const groupId = String(body.groupId || '').trim();
-      const isGroup = groupId === 'all-staff';
+      const isCustomerCodexGroup = groupId === CUSTOMER_CODEX_GROUP_ID || toUserId === CUSTOMER_CODEX_USER.id;
+      const isGroup = groupId === 'all-staff' || isCustomerCodexGroup;
       const text = String(body.text || '').trim();
       const attachment = sanitizeMessageAttachment(body.attachment);
       if (attachment?.error) return send(res, 400, { error: attachment.error });
-      if (!isGroup && toUserId === CUSTOMER_CODEX_USER.id && !canAccess(user, 'customerCodexChat')) {
+      if (isCustomerCodexGroup && !canAccess(user, 'customerCodexChat')) {
         return send(res, 403, { error: '你没有与客服 Codex 沟通的权限，请联系老板授权' });
       }
       const recipient = isGroup
@@ -5351,11 +5355,11 @@ async function api(req, res) {
       const message = {
         id: id(),
         scope: isGroup ? 'group' : 'direct',
-        groupId: isGroup ? 'all-staff' : '',
+        groupId: isCustomerCodexGroup ? CUSTOMER_CODEX_GROUP_ID : (isGroup ? 'all-staff' : ''),
         fromUserId: user.id,
         fromName: user.name || user.email,
         toUserId: isGroup ? '' : recipient.id,
-        toName: isGroup ? '全体员工' : (recipient.name || recipient.email),
+        toName: isCustomerCodexGroup ? CUSTOMER_CODEX_USER.name : (isGroup ? '全体员工' : (recipient.name || recipient.email)),
         text,
         attachment,
         createdAt,
@@ -5371,7 +5375,10 @@ async function api(req, res) {
         detail: `发送站内留言给 ${message.toName}`
       });
       writeDb(db);
-      notifyDataChanged('send-message', message.id);
+      const recipientIds = isCustomerCodexGroup
+        ? (db.users || []).filter(item => item.active !== false && canAccess(item, 'customerCodexChat')).map(item => item.id)
+        : undefined;
+      notifyDataChanged('send-message', message.id, recipientIds);
       return send(res, 200, sanitizeDbForUser(db, user));
     }
   }
@@ -5537,8 +5544,9 @@ async function api(req, res) {
     const groupId = String(body.groupId || '').trim();
     let changed = 0;
     (db.messages || []).forEach(message => {
-      if (groupId === 'all-staff') {
-        if (message.scope !== 'group' || message.fromUserId === user.id) return;
+      if (groupId === 'all-staff' || groupId === CUSTOMER_CODEX_GROUP_ID) {
+        if (message.scope !== 'group' || message.groupId !== groupId || message.fromUserId === user.id) return;
+        if (groupId === CUSTOMER_CODEX_GROUP_ID && !canAccess(user, 'customerCodexChat')) return;
         message.readByUserIds = Array.isArray(message.readByUserIds) ? message.readByUserIds : [];
         if (message.readByUserIds.includes(user.id)) return;
         message.readByUserIds.push(user.id);
