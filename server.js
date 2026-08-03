@@ -5228,8 +5228,6 @@ async function api(req, res) {
     if (!['customerConversations', 'prospects'].includes(collection)) return send(res, 400, { error: '客户类型不正确' });
     const item = (db[collection] || []).find(row => row.id === recordId);
     if (!item) return send(res, 404, { error: '找不到客户记录' });
-    const requiredChannel = customerServiceRequiredReplyChannel(item);
-    if (requiredChannel && requiredChannel !== 'sms') return send(res, 409, { error: '客户最后通过 Yelp 联系，请继续在 Yelp 回复，不能同时切换到短信' });
     const phoneDigits = normalizedPhone(item.phone);
     if (phoneDigits.length !== 10) return send(res, 400, { error: '客户电话格式不正确，请先填写美国 10 位手机号码' });
     if (!text && !attachment?.url) return send(res, 400, { error: '短信内容或附件不能为空' });

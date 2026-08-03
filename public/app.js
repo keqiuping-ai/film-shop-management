@@ -6217,7 +6217,7 @@ function renderProspectWorkspace() {
           <div class="prospect-compose-row">
             <select id="prospectReplyChannel" onchange="updateProspectReplyChannel()" aria-label="${lang === 'zh' ? '回复渠道' : 'Reply channel'}">
               <option value="yelp" ${defaultReplyChannel === 'yelp' ? 'selected' : ''} ${canReplyYelp && (!requiredReplyChannel || requiredReplyChannel === 'yelp') ? '' : 'disabled'}>${lang === 'zh' ? 'Yelp 站内消息' : 'Yelp message'}</option>
-              <option value="sms" ${defaultReplyChannel === 'sms' ? 'selected' : ''} ${canReplySms && (!requiredReplyChannel || requiredReplyChannel === 'sms') ? '' : 'disabled'}>${lang === 'zh' ? '手机短信' : 'SMS'}</option>
+              <option value="sms" ${defaultReplyChannel === 'sms' ? 'selected' : ''} ${canReplySms ? '' : 'disabled'}>${lang === 'zh' ? '手机短信' : 'SMS'}</option>
             </select>
             <textarea id="prospectReplyInput" oninput="prospectReplyRevision += 1" onpaste="handleProspectReplyPaste(event)" placeholder="${lang === 'zh' ? '输入或粘贴文字、截图、图片…' : 'Write or paste text, screenshots, or images…'}"></textarea>
             <button id="prospectSendSmsButton" class="btn primary" onclick="sendProspectMessage()" ${hasPerm('prospectsEdit') ? '' : 'disabled'}>${defaultReplyChannel === 'yelp' ? (lang === 'zh' ? '通过 Yelp 发送' : 'Send via Yelp') : (lang === 'zh' ? '发送短信' : 'Send SMS')}</button>
@@ -6706,7 +6706,6 @@ function updateProspectReplyChannel() {
   const { item } = activeCustomerWorkspaceItem();
   const requiredChannel = requiredProspectReplyChannel(item);
   const select = document.getElementById('prospectReplyChannel');
-  if (select && requiredChannel && select.value !== requiredChannel) select.value = requiredChannel;
   const channel = select?.value || requiredChannel || 'sms';
   rememberProspectReplyChannel(channel);
   const button = document.getElementById('prospectSendSmsButton');
@@ -6716,9 +6715,11 @@ function updateProspectReplyChannel() {
     ? (lang === 'zh' ? '通过 Yelp 发送' : 'Send via Yelp')
     : (lang === 'zh' ? '发送短信' : 'Send SMS');
   if (status) status.textContent = requiredChannel
-    ? (channel === 'yelp'
-      ? (lang === 'zh' ? '客户最后从 Yelp 联系，已锁定通过 Yelp 回复' : 'Locked to Yelp because the customer last contacted you on Yelp')
-      : (lang === 'zh' ? '客户最后从短信联系，已锁定通过短信回复 · 发送号码：+1 725-241-2586' : 'Locked to SMS because the customer last contacted you by SMS'))
+    ? (channel === requiredChannel
+      ? (channel === 'yelp'
+        ? (lang === 'zh' ? '客户最后从 Yelp 联系；当前默认通过 Yelp 回复，可主动切换到短信' : 'The customer last contacted you on Yelp. Yelp remains the default, but you can switch to SMS.')
+        : (lang === 'zh' ? '客户最后从短信联系，当前通过短信回复 · 发送号码：+1 725-241-2586' : 'The customer last contacted you by SMS · Sender: +1 725-241-2586'))
+      : (lang === 'zh' ? '已手动切换到手机短信 · 发送号码：+1 725-241-2586' : 'Manually switched to SMS · Sender: +1 725-241-2586'))
     : (channel === 'yelp'
       ? (lang === 'zh' ? '这条回复会通过 Zapier 发回客户的 Yelp 对话' : 'This reply will be sent to the Yelp conversation through Zapier')
       : (lang === 'zh' ? '通过 Twilio 发送和接收短信 · 发送号码：+1 725-241-2586' : 'Send and receive SMS through Twilio · Sender: +1 725-241-2586'));
