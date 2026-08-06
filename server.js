@@ -2617,6 +2617,14 @@ function promoteEligibleCustomerConversation(db, item, user) {
   return promoted;
 }
 
+function customerRecordHasGeneratedJob(db, item, collection = '') {
+  if (!item) return false;
+  const jobs = (db.jobs || []).filter(job => !job.deletedAt);
+  if (item.convertedJobId && jobs.some(job => job.id === item.convertedJobId)) return true;
+  const prospectId = collection === 'customerConversations' ? item.promotedProspectId : item.id;
+  return Boolean(prospectId && jobs.some(job => job.sourceProspectId === prospectId));
+}
+
 function mergeConversationMessages(target, source) {
   const combined = [...(Array.isArray(target.conversationMessages) ? target.conversationMessages : [])];
   const keys = new Set(combined.map(message => String(message.providerSid || message.id || `${message.timestamp}|${message.direction}|${message.text}`)));
@@ -3251,7 +3259,7 @@ function customerServiceTaskRows(db, filter = 'active') {
     ...(db.customerConversations || []).filter(item => !item.promotedProspectId || !promotedIds.has(item.promotedProspectId)).map(item => ({ item, collection: 'customerConversations' })),
     ...(db.prospects || []).map(item => ({ item, collection: 'prospects' }))
   ];
-  const movedStatuses = new Set(['已预约', '已到店', '已转施工单', '无效', '暂时无需回复']);
+  const movedStatuses = new Set(['已预约', '已到店', '无效', '暂时无需回复']);
   const priority = { reply: 0, followup: 1, first: 2, future: 3 };
   if (filter === 'sent') {
     return rows
@@ -3266,7 +3274,9 @@ function customerServiceTaskRows(db, filter = 'active') {
       });
   }
   return rows
-    .filter(({ item }) => !movedStatuses.has(String(item.status || '')) && !item.convertedJobId)
+    .filter(({ item, collection }) => !movedStatuses.has(String(item.status || ''))
+      && !(String(item.status || '') === '已转施工单' && customerRecordHasGeneratedJob(db, item, collection))
+      && !customerRecordHasGeneratedJob(db, item, collection))
     .map(row => ({ ...row, taskType: customerServiceTaskType(row.item) }))
     .filter(row => row.taskType && (filter === 'all' || (filter === 'active' && row.taskType !== 'future') || row.taskType === filter))
     .sort((a, b) => {
@@ -6258,6 +6268,9 @@ async function api(req, res) {
       next.updatedBy = user.name || user.email;
       next.updatedByUserId = user.id;
       next.updatedAt = now;
+      if (String(next.status || '') === '已转施工单' && !customerRecordHasGeneratedJob(db, next, collection)) {
+        return send(res, 400, { error: '不能只把客户状态改成“已转施工单”。请使用“生成施工单”，保存成功后系统会自动转换状态。' });
+      }
     }
     if (collection === 'replyTemplates') {
       const type = ['text', 'image', 'video'].includes(String(next.type)) ? String(next.type) : '';

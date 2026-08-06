@@ -5546,7 +5546,9 @@ function customerPhoneMatchKey(value) {
 }
 
 function prospectHasGeneratedJob(item) {
-  if (item.convertedJobId) return true;
+  if (item.convertedJobId && (state.jobs || []).some(job => job.id === item.convertedJobId && !job.deletedAt)) return true;
+  const promotedProspectId = item.promotedProspectId || '';
+  if (promotedProspectId && (state.jobs || []).some(job => job.sourceProspectId === promotedProspectId && !job.deletedAt)) return true;
   const phoneKey = customerPhoneMatchKey(item.phone);
   const prospectDate = String(item.date || item.appointmentDate || '').slice(0, 10);
   const nameKey = normalizeCustomerLookupText(item.customer || '');
@@ -5741,7 +5743,7 @@ function allCustomerCenterRows() {
 }
 
 function customerCenterRows() {
-  const movedStatuses = new Set(['已预约', '已到店', '已转施工单']);
+  const movedStatuses = new Set(['已预约', '已到店']);
   return allCustomerCenterRows().filter(item => {
     const status = String(item.status || '');
     if (customerCenterShowInvalid) return status === '无效';
@@ -6136,7 +6138,7 @@ function renderProspectWorkspace() {
   const services = serviceOptions();
   const owners = customerServiceOptions();
   const intents = prospectIntentOptions();
-  const statuses = prospectStatusOptions();
+  const statuses = prospectStatusOptions(false);
   const canReplyYelp = String(item.source || '').trim().toLowerCase() === 'yelp' && Boolean(String(item.externalId || '').trim());
   const canReplySms = customerPhoneMatchKey(item.phone).length === 10;
   const requiredReplyChannel = requiredProspectReplyChannel(item);
@@ -6152,6 +6154,7 @@ function renderProspectWorkspace() {
       </div>
       <div class="prospect-workspace-actions">
         ${collection === 'customerConversations' && item.promotedProspectId ? `<span class="pill good">${lang === 'zh' ? '已转入预约到店客户' : 'Promoted to appointment / arrival'}</span>` : ''}
+        ${String(item.status || '') === '已转施工单' && !prospectHasGeneratedJob(item) ? `<span class="pill bad">${lang === 'zh' ? '转换异常：尚未生成施工单' : 'Conversion incomplete: no job created'}</span>` : ''}
         ${hasPerm('prospectsEdit') && !prospectWorkspaceReadOnly ? `<button class="btn primary prospect-header-save" onclick="saveProspectWorkspaceDetails()">${lang === 'zh' ? '保存客户资料' : 'Save customer details'}</button>` : ''}
         <button class="prospect-workspace-close" onclick="closeProspectWorkspace()" aria-label="${lang === 'zh' ? '关闭聊天工作台' : 'Close chat workspace'}">×</button>
       </div>
@@ -8644,10 +8647,14 @@ function salesOrderMovementOptions(sku = '') {
   ])];
 }
 function leadSourceOptions() { return ['Yelp','Google Maps','Meta / Facebook','Instagram','Website','Phone Call','Walk-in','Referral','Other']; }
-function prospectStatusOptions() {
-  return lang === 'zh'
-    ? ['新意向','已邀约','暂时无需回复','已预约','已到店','已转施工单','未接通','无效']
-    : [['新意向','New Intent'],['已邀约','Invited'],['暂时无需回复','No Reply Needed'],['已预约','Appointment Set'],['已到店','Arrived'],['已转施工单','Converted to Job'],['未接通','No Answer'],['无效','Invalid']];
+function prospectStatusOptions(includeConverted = true) {
+  const options = lang === 'zh'
+    ? ['新意向','已邀约','暂时无需回复','已预约','已到店','未接通','无效']
+    : [['新意向','New Intent'],['已邀约','Invited'],['暂时无需回复','No Reply Needed'],['已预约','Appointment Set'],['已到店','Arrived'],['未接通','No Answer'],['无效','Invalid']];
+  if (!includeConverted) return options;
+  const converted = lang === 'zh' ? '已转施工单' : ['已转施工单','Converted to Job'];
+  options.splice(5, 0, converted);
+  return options;
 }
 function normalizeProspectIntentValue(value) {
   const text = String(value || '').trim();
