@@ -1,6 +1,5 @@
-const CACHE_NAME = 'film-shop-v102-ai-task-batch';
+const CACHE_NAME = 'film-shop-v103-no-cache-html';
 const ASSETS = [
-    '/',
     '/mobile.html',
     '/warranty.html',
     '/warranty.css',
@@ -36,10 +35,15 @@ self.addEventListener('activate', event => {
 
 self.addEventListener('fetch', event => {
   if (event.request.url.includes('/api/')) return;
+  if (event.request.mode === 'navigate') {
+    event.respondWith(fetch(event.request).catch(() => caches.match('/')));
+    return;
+  }
   event.respondWith(
     fetch(event.request)
       .then(response => {
-        if (event.request.method === 'GET' && response.ok) {
+        const contentType = response.headers.get('content-type') || '';
+        if (event.request.method === 'GET' && response.ok && !contentType.includes('text/html')) {
           const copy = response.clone();
           caches.open(CACHE_NAME).then(cache => cache.put(event.request, copy));
         }
