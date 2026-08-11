@@ -6232,7 +6232,7 @@ function renderProspectWorkspace() {
   const statuses = prospectStatusOptions(false);
   const canReplyYelp = String(item.source || '').trim().toLowerCase() === 'yelp' && Boolean(String(item.externalId || '').trim());
   const canReplySms = customerPhoneMatchKey(item.phone).length === 10;
-  const isMetaSource = prospectTextKey(item.source) === 'meta';
+  const isMetaSource = normalizeSourceKey(item.source) === 'meta';
   const requiredReplyChannel = requiredProspectReplyChannel(item);
   const defaultReplyChannel = (requiredReplyChannel === 'yelp' && canReplyYelp) || (requiredReplyChannel === 'sms' && canReplySms)
     ? requiredReplyChannel
