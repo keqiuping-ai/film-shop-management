@@ -1,4 +1,4 @@
-const CACHE_NAME = 'film-shop-v104-customer-row-click-fix';
+const CACHE_NAME = 'film-shop-v105-workspace-fit';
 const ASSETS = [
     '/mobile.html',
     '/warranty.html',
