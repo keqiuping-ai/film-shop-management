@@ -6,7 +6,7 @@
 
 - 只识别 Railway 环境变量 `CUSTOMER_SERVICE_AGENT_TOKEN`（也可用 `CUSTOMER_SERVICE_AGENT_TOKENS` 配置多个令牌）。
 - 令牌不能读取财务、库存、员工、施工单、设置或完整数据库。
-- 当前为 `direct-send` 模式：助手可以领取任务、读取必要的客户沟通上下文、提交建议回复和跟进时间，也可以通过 Yelp（Zapier）或 Twilio 直接发送纯文字回复。
+- 当前为 `direct-send` 模式：助手可以领取任务、读取必要的客户沟通上下文、提交建议回复和跟进时间，也可以通过 Yelp（Zapier）、Meta Messenger 或 Twilio 直接发送纯文字回复。
 - 每次直接发送必须先领取任务，并使用唯一 `requestId`；重复提交相同编号不会重复发送。
 - 不要把令牌写入代码、GitHub、聊天记录或截图。
 
@@ -75,16 +75,17 @@ POST /api/agent/customer-tasks/{collection}/{id}/draft
 
 ```json
 {
-  "availableChannels": ["yelp", "sms"],
+  "availableChannels": ["yelp", "meta", "sms"],
   "preferredChannel": "yelp"
 }
 ```
 
 - Yelp 客资带有效 Lead ID 时可用 `yelp`。
+- Meta / Facebook 客户带有效 PSID 时可用 `meta`。
 - 客户有美国 10 位手机号时可用 `sms`。
-- Yelp 客资默认优先在原 Yelp 对话内回复；只有业务上明确需要切换到短信时才选 `sms`。
+- Yelp 或 Meta 客资默认优先在原平台对话内回复；只有业务上明确需要切换到短信时才选 `sms`。
 
-## 直接发送 Yelp 或 Twilio 回复
+## 直接发送 Yelp、Meta 或 Twilio 回复
 
 先领取任务，再调用：
 

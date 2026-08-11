@@ -1519,7 +1519,7 @@ function render() {
   updateMessageBadge();
   enhanceExpandablePanels();
   enhanceEditableTableRows(document.getElementById('view'));
-  if (current === 'settings') setTimeout(loadCustomerAiSettings, 0);
+  if (current === 'settings') setTimeout(() => { loadCustomerAiSettings(); loadMetaSettings(); }, 0);
   if (activeProspectWorkspaceId && !preserveProspectWorkspaceRender) renderProspectWorkspace();
   preserveProspectWorkspaceRender = false;
 }
@@ -4330,6 +4330,26 @@ const views = {
           </div>
           <p class="note" style="margin:8px 0 0">${lang === 'zh' ? '钥匙只在保存时提交一次，服务器加密后存在数据卷里，页面不会显示明文。如果 Railway 环境变量 OPENAI_API_KEY 已配置，系统会优先使用环境变量。' : 'The key is submitted only when saving, encrypted on the server data volume, and never shown in plain text. If Railway OPENAI_API_KEY is configured, it takes priority.'}</p>
         </div>
+        <div class="wide" style="border:1px solid var(--border);border-radius:14px;padding:16px;background:var(--soft)">
+          <div class="panel-head" style="padding:0;border:0;margin-bottom:10px">
+            <h3 style="margin:0">${lang === 'zh' ? 'Meta / Facebook 私信接入' : 'Meta / Facebook Messaging'}</h3>
+            <button class="btn" type="button" onclick="loadMetaSettings()">${lang === 'zh' ? '刷新状态' : 'Refresh'}</button>
+          </div>
+          <div class="form-grid">
+            <label>${lang === 'zh' ? 'Page Access Token' : 'Page Access Token'}<input id="metaPageAccessToken" type="password" autocomplete="off" placeholder="${lang === 'zh' ? '粘贴 Facebook Page Access Token' : 'Paste Facebook Page Access Token'}" /></label>
+            <label>${lang === 'zh' ? 'Webhook Verify Token' : 'Webhook Verify Token'}<input id="metaVerifyToken" type="password" autocomplete="off" placeholder="${lang === 'zh' ? '自己设置的验证口令' : 'Your custom verify token'}" /></label>
+            <label>${lang === 'zh' ? 'App Secret（建议填写）' : 'App Secret (recommended)'}<input id="metaAppSecret" type="password" autocomplete="off" placeholder="${lang === 'zh' ? '用于校验 Meta 签名' : 'Used to verify Meta signatures'}" /></label>
+            <label>${lang === 'zh' ? 'Graph API 版本' : 'Graph API Version'}<input id="metaGraphVersion" value="v23.0" placeholder="v23.0" /></label>
+            <label class="wide">${lang === 'zh' ? 'Messenger Webhook URL' : 'Messenger Webhook URL'}<input id="metaMessengerWebhookUrl" readonly placeholder="${lang === 'zh' ? '保存后显示' : 'Shown after saving'}" /></label>
+            <label class="wide">${lang === 'zh' ? 'Lead Ads Webhook URL' : 'Lead Ads Webhook URL'}<input id="metaLeadAdsWebhookUrl" readonly placeholder="${lang === 'zh' ? '保存后显示' : 'Shown after saving'}" /></label>
+            <div class="wide">
+              <button class="btn primary" type="button" onclick="saveMetaSettings()">${lang === 'zh' ? '保存Meta设置' : 'Save Meta Settings'}</button>
+              <button class="btn" type="button" onclick="clearMetaSettings()">${lang === 'zh' ? '清除系统内Meta密钥' : 'Clear Saved Meta Keys'}</button>
+              <span id="metaSettingsStatus" class="note" style="margin-left:10px">${lang === 'zh' ? '正在读取状态...' : 'Loading status...'}</span>
+            </div>
+          </div>
+          <p class="note" style="margin:8px 0 0">${lang === 'zh' ? '保存后，在 Meta Developers 后台把 Messenger Webhook URL 填到 Webhooks，并订阅 messages/messaging_postbacks；Lead Ads 表单继续使用 Lead Ads Webhook URL。私信发送仍需员工人工确认后点击发送。' : 'After saving, add the Messenger Webhook URL in Meta Developers Webhooks and subscribe to messages/messaging_postbacks. Lead Ads can continue using the Lead Ads Webhook URL. Replies still require a human click before sending.'}</p>
+        </div>
         <label>${t('oldPassword')}<input id="oldPassword" type="password" /></label>
         <label>${t('newPassword')}<input id="newPassword" type="password" /></label>
         <div class="wide">
@@ -4738,6 +4758,13 @@ function canonicalSourceLabel(value) {
     referral: 'Referral'
   };
   return labels[key] || raw;
+}
+
+function prospectMetaPsid(item) {
+  const direct = String(item?.metaPsid || item?.psid || '').trim();
+  if (direct) return direct;
+  const match = String(item?.externalId || '').trim().match(/^meta-(?:messenger|psid):(.+)$/i);
+  return match ? match[1].trim() : '';
 }
 
 function normalizeSourceKey(value) {
@@ -5429,7 +5456,7 @@ function structuredProspectMessages(item) {
         ? (lang === 'zh' ? '系统记录' : 'System')
         : `${lang === 'zh' ? '客户说' : 'Customer'}${speakerName ? ` - ${speakerName}` : ''}`;
     const channel = String(message.channel || '').toLowerCase();
-    const channelLabel = channel === 'yelp' ? 'Yelp' : channel === 'sms' ? 'SMS' : '';
+    const channelLabel = channel === 'yelp' ? 'Yelp' : channel === 'sms' ? 'SMS' : channel === 'meta' ? 'Meta' : '';
     const timestamp = String(
       message.timestamp || message.time || message.createdAt ||
       (leadForm ? item?.sourceCreatedAt || (item?.date ? `${item.date}T00:00:00` : '') : '')
@@ -6151,17 +6178,20 @@ function restoreProspectWorkspaceDraft() {
   });
 }
 
-function savedProspectReplyChannel(canReplyYelp, canReplySms) {
+function savedProspectReplyChannel(canReplyYelp, canReplySms, canReplyMeta = false) {
   const key = activeProspectWorkspaceId;
   let channel = prospectReplyChannels.get(key);
   if (!channel && key) channel = localStorage.getItem(`filmShopCloud.replyChannel.${key}`) || '';
   if (channel === 'yelp' && canReplyYelp) return channel;
+  if (channel === 'meta' && canReplyMeta) return channel;
   if (channel === 'sms' && canReplySms) return channel;
-  return canReplyYelp ? 'yelp' : 'sms';
+  if (canReplyYelp) return 'yelp';
+  if (canReplyMeta) return 'meta';
+  return 'sms';
 }
 
 function rememberProspectReplyChannel(channel) {
-  if (!activeProspectWorkspaceId || !['yelp', 'sms'].includes(channel)) return;
+  if (!activeProspectWorkspaceId || !['yelp', 'sms', 'meta'].includes(channel)) return;
   prospectReplyChannels.set(activeProspectWorkspaceId, channel);
   localStorage.setItem(`filmShopCloud.replyChannel.${activeProspectWorkspaceId}`, channel);
 }
@@ -6172,7 +6202,7 @@ function requiredProspectReplyChannel(item) {
     .filter(row => {
       const direction = String(row.message.direction || '').toLowerCase();
       const role = direction === 'inbound' ? 'customer' : prospectSpeakerRole(row.message.speaker || row.message.role || row.message.senderType, row.message.speakerName || row.message.name || '');
-      return role === 'customer' && ['yelp', 'sms'].includes(String(row.message.channel || '').toLowerCase());
+      return role === 'customer' && ['yelp', 'sms', 'meta'].includes(String(row.message.channel || '').toLowerCase());
     })
     .sort((a, b) => (Number.isFinite(a.at) && Number.isFinite(b.at) && a.at !== b.at) ? a.at - b.at : a.index - b.index);
   return String(inbound[inbound.length - 1]?.message?.channel || '').toLowerCase();
@@ -6233,10 +6263,11 @@ function renderProspectWorkspace() {
   const canReplyYelp = String(item.source || '').trim().toLowerCase() === 'yelp' && Boolean(String(item.externalId || '').trim());
   const canReplySms = customerPhoneMatchKey(item.phone).length === 10;
   const isMetaSource = normalizeSourceKey(item.source) === 'meta';
+  const canReplyMeta = isMetaSource && Boolean(prospectMetaPsid(item));
   const requiredReplyChannel = requiredProspectReplyChannel(item);
-  const defaultReplyChannel = (requiredReplyChannel === 'yelp' && canReplyYelp) || (requiredReplyChannel === 'sms' && canReplySms)
+  const defaultReplyChannel = (requiredReplyChannel === 'yelp' && canReplyYelp) || (requiredReplyChannel === 'sms' && canReplySms) || (requiredReplyChannel === 'meta' && canReplyMeta)
     ? requiredReplyChannel
-    : savedProspectReplyChannel(canReplyYelp, canReplySms);
+    : savedProspectReplyChannel(canReplyYelp, canReplySms, canReplyMeta);
   workspace.innerHTML = `
     <header class="prospect-workspace-header">
       <div class="prospect-workspace-customer">
@@ -6294,9 +6325,11 @@ function renderProspectWorkspace() {
           <div class="prospect-sms-status" id="prospectChannelStatus">${canReplyYelp
             ? (lang === 'zh' ? '通过 Yelp 站内消息回复；也可以切换到手机短信' : 'Reply in Yelp, or switch to SMS')
             : isMetaSource
-              ? (canReplySms
-                ? (lang === 'zh' ? 'Meta / Facebook 来源客户；Meta 私信待接入，当前先通过短信回复 · 发送号码：+1 725-241-2586' : 'Meta / Facebook lead. Meta messaging is pending; reply by SMS for now · Sender: +1 725-241-2586')
-                : (lang === 'zh' ? 'Meta / Facebook 来源客户；Meta 私信待接入，且未填写可用手机号' : 'Meta / Facebook lead. Meta messaging is pending and no usable phone is available.'))
+              ? (canReplyMeta
+                ? (lang === 'zh' ? '通过 Meta / Facebook 私信回复；也可以切换到手机短信' : 'Reply through Meta / Facebook messages, or switch to SMS')
+                : (canReplySms
+                  ? (lang === 'zh' ? 'Meta / Facebook 来源客户；缺少 Meta PSID，当前先通过短信回复 · 发送号码：+1 725-241-2586' : 'Meta / Facebook lead without PSID. Reply by SMS for now · Sender: +1 725-241-2586')
+                  : (lang === 'zh' ? 'Meta / Facebook 来源客户；缺少 Meta PSID，且未填写可用手机号' : 'Meta / Facebook lead without PSID and no usable phone is available.')))
             : (lang === 'zh' ? '通过 Twilio 发送和接收短信 · 发送号码：+1 725-241-2586' : 'Send and receive SMS through Twilio · Sender: +1 725-241-2586')}</div>
           <div class="prospect-attachment-tools">
             <button type="button" onclick="document.getElementById('prospectImageInput').click()">🖼️ ${lang === 'zh' ? '图片' : 'Image'}</button>
@@ -6317,11 +6350,11 @@ function renderProspectWorkspace() {
           <div class="prospect-compose-row">
             <select id="prospectReplyChannel" onchange="updateProspectReplyChannel()" aria-label="${lang === 'zh' ? '回复渠道' : 'Reply channel'}">
               <option value="yelp" ${defaultReplyChannel === 'yelp' ? 'selected' : ''} ${canReplyYelp && (!requiredReplyChannel || requiredReplyChannel === 'yelp') ? '' : 'disabled'}>${lang === 'zh' ? 'Yelp 站内消息' : 'Yelp message'}</option>
-              ${isMetaSource ? `<option value="meta" ${!canReplyYelp && !canReplySms ? 'selected' : ''} disabled>${lang === 'zh' ? 'Meta 私信（待接入）' : 'Meta messages (pending)'}</option>` : ''}
+              ${isMetaSource ? `<option value="meta" ${defaultReplyChannel === 'meta' ? 'selected' : ''} ${canReplyMeta && (!requiredReplyChannel || requiredReplyChannel === 'meta') ? '' : 'disabled'}>${canReplyMeta ? (lang === 'zh' ? 'Meta 私信' : 'Meta message') : (lang === 'zh' ? 'Meta 私信（缺少PSID）' : 'Meta message (missing PSID)')}</option>` : ''}
               <option value="sms" ${defaultReplyChannel === 'sms' ? 'selected' : ''} ${canReplySms ? '' : 'disabled'}>${lang === 'zh' ? '手机短信' : 'SMS'}</option>
             </select>
             <textarea id="prospectReplyInput" oninput="prospectReplyRevision += 1" onpaste="handleProspectReplyPaste(event)" placeholder="${lang === 'zh' ? '输入或粘贴文字、截图、图片…' : 'Write or paste text, screenshots, or images…'}"></textarea>
-            <button id="prospectSendSmsButton" class="btn primary" onclick="sendProspectMessage()" ${hasPerm('prospectsEdit') ? '' : 'disabled'}>${defaultReplyChannel === 'yelp' ? (lang === 'zh' ? '通过 Yelp 发送' : 'Send via Yelp') : (lang === 'zh' ? '发送短信' : 'Send SMS')}</button>
+            <button id="prospectSendSmsButton" class="btn primary" onclick="sendProspectMessage()" ${hasPerm('prospectsEdit') ? '' : 'disabled'}>${defaultReplyChannel === 'yelp' ? (lang === 'zh' ? '通过 Yelp 发送' : 'Send via Yelp') : defaultReplyChannel === 'meta' ? (lang === 'zh' ? '通过 Meta 发送' : 'Send via Meta') : (lang === 'zh' ? '发送短信' : 'Send SMS')}</button>
           </div>
         </footer>
       </section>
@@ -6856,20 +6889,22 @@ function updateProspectReplyChannel() {
   if (button) button.textContent = channel === 'yelp'
     ? (lang === 'zh' ? '通过 Yelp 发送' : 'Send via Yelp')
     : channel === 'meta'
-      ? (lang === 'zh' ? 'Meta 待接入' : 'Meta pending')
+      ? (lang === 'zh' ? '通过 Meta 发送' : 'Send via Meta')
     : (lang === 'zh' ? '发送短信' : 'Send SMS');
   if (status) status.textContent = channel === 'meta'
-    ? (lang === 'zh' ? 'Meta 私信发送接口尚未接入；请先用短信回复或等待 Meta Messaging 打通。' : 'Meta messaging is not connected yet. Use SMS for now or connect Meta Messaging later.')
+    ? (lang === 'zh' ? '这条回复会通过 Meta / Facebook 私信发送给客户' : 'This reply will be sent through Meta / Facebook messages')
     : requiredChannel
     ? (channel === requiredChannel
       ? (channel === 'yelp'
         ? (lang === 'zh' ? '客户最后从 Yelp 联系；当前默认通过 Yelp 回复，可主动切换到短信' : 'The customer last contacted you on Yelp. Yelp remains the default, but you can switch to SMS.')
-        : (lang === 'zh' ? '客户最后从短信联系，当前通过短信回复 · 发送号码：+1 725-241-2586' : 'The customer last contacted you by SMS · Sender: +1 725-241-2586'))
+        : channel === 'meta'
+          ? (lang === 'zh' ? '客户最后从 Meta 私信联系；当前通过 Meta 回复' : 'The customer last contacted you through Meta messages')
+          : (lang === 'zh' ? '客户最后从短信联系，当前通过短信回复 · 发送号码：+1 725-241-2586' : 'The customer last contacted you by SMS · Sender: +1 725-241-2586'))
       : (lang === 'zh' ? '已手动切换到手机短信 · 发送号码：+1 725-241-2586' : 'Manually switched to SMS · Sender: +1 725-241-2586'))
     : (channel === 'yelp'
       ? (lang === 'zh' ? '这条回复会通过 Zapier 发回客户的 Yelp 对话' : 'This reply will be sent to the Yelp conversation through Zapier')
       : (lang === 'zh' ? '通过 Twilio 发送和接收短信 · 发送号码：+1 725-241-2586' : 'Send and receive SMS through Twilio · Sender: +1 725-241-2586'));
-  attachmentButtons.forEach(control => { control.disabled = channel === 'yelp'; });
+  attachmentButtons.forEach(control => { control.disabled = channel === 'yelp' || channel === 'meta'; });
 }
 
 async function sendProspectMessage() {
@@ -6879,14 +6914,14 @@ async function sendProspectMessage() {
   const channel = document.getElementById('prospectReplyChannel')?.value || 'sms';
   const text = String(input?.value || '').trim();
   if (!item || (!text && !prospectPendingAttachment)) return;
-  if (channel === 'meta') return alert(lang === 'zh' ? 'Meta 私信发送接口尚未接入，请先切换到手机短信。' : 'Meta messaging is not connected yet. Switch to SMS for now.');
+  if (channel === 'meta' && prospectPendingAttachment) return alert(lang === 'zh' ? 'Meta 私信第一版只发送文字；如需发送图片或视频，请切换到手机短信。' : 'Meta currently supports text replies here. Switch to SMS for attachments.');
   if (channel === 'yelp' && prospectPendingAttachment) return alert(lang === 'zh' ? 'Yelp 通道第一版只发送文字；如需发送图片或视频，请切换到手机短信。' : 'Yelp currently supports text replies here. Switch to SMS for attachments.');
   if (button) {
     button.disabled = true;
     button.textContent = lang === 'zh' ? '发送中…' : 'Sending…';
   }
   try {
-    const result = await api(channel === 'yelp' ? '/api/yelp/send' : '/api/twilio/send', {
+    const result = await api(channel === 'yelp' ? '/api/yelp/send' : channel === 'meta' ? '/api/meta/send' : '/api/twilio/send', {
       method: 'POST',
       body: JSON.stringify({ collection, id: item.id, text, attachment: channel === 'sms' ? prospectPendingAttachment : null })
     });
@@ -6903,6 +6938,8 @@ async function sendProspectMessage() {
       button.disabled = false;
       button.textContent = channel === 'yelp'
         ? (lang === 'zh' ? '通过 Yelp 发送' : 'Send via Yelp')
+        : channel === 'meta'
+          ? (lang === 'zh' ? '通过 Meta 发送' : 'Send via Meta')
         : (lang === 'zh' ? '发送短信' : 'Send SMS');
     }
   }
@@ -8580,13 +8617,96 @@ async function sendTomorrowScheduleReminder() {
   }
 }
 
+function renderMetaSettingsStatus(info) {
+  const status = document.getElementById('metaSettingsStatus');
+  const graphVersion = document.getElementById('metaGraphVersion');
+  const messengerWebhook = document.getElementById('metaMessengerWebhookUrl');
+  const leadAdsWebhook = document.getElementById('metaLeadAdsWebhookUrl');
+  if (graphVersion && info?.graphVersion) graphVersion.value = info.graphVersion;
+  if (messengerWebhook && info?.webhookUrl) messengerWebhook.value = info.webhookUrl;
+  if (leadAdsWebhook && info?.leadAdsWebhookUrl) leadAdsWebhook.value = info.leadAdsWebhookUrl;
+  if (!status) return;
+  if (!info) {
+    status.textContent = lang === 'zh' ? '状态读取失败' : 'Failed to load status';
+    return;
+  }
+  const token = info.pageAccessTokenMask ? ` Page ${info.pageAccessTokenMask}` : '';
+  const verify = info.verifyTokenMask ? ` Verify ${info.verifyTokenMask}` : '';
+  status.textContent = lang === 'zh'
+    ? `状态：${info.messengerReady ? '已配置' : '未完整配置'}｜签名校验：${info.signatureCheckEnabled ? '已开启' : '未开启'}${token}${verify}`
+    : `Status: ${info.messengerReady ? 'Configured' : 'Incomplete'} | Signature check: ${info.signatureCheckEnabled ? 'On' : 'Off'}${token}${verify}`;
+}
+
+async function loadMetaSettings() {
+  const status = document.getElementById('metaSettingsStatus');
+  if (status) status.textContent = lang === 'zh' ? '正在读取状态...' : 'Loading status...';
+  try {
+    renderMetaSettingsStatus(await api('/api/meta/settings'));
+  } catch (err) {
+    if (status) status.textContent = err.message;
+  }
+}
+
+async function saveMetaSettings() {
+  const pageAccessTokenInput = document.getElementById('metaPageAccessToken');
+  const verifyTokenInput = document.getElementById('metaVerifyToken');
+  const appSecretInput = document.getElementById('metaAppSecret');
+  const pageAccessToken = String(pageAccessTokenInput?.value || '').trim();
+  const verifyToken = String(verifyTokenInput?.value || '').trim();
+  const appSecret = String(appSecretInput?.value || '').trim();
+  if (!pageAccessToken && !verifyToken && !appSecret) return alert(lang === 'zh' ? '请至少填写一个要保存的 Meta 配置。' : 'Enter at least one Meta setting to save.');
+  try {
+    const info = await api('/api/meta/settings', {
+      method: 'PUT',
+      body: JSON.stringify({
+        pageAccessToken,
+        verifyToken,
+        appSecret,
+        graphVersion: String(document.getElementById('metaGraphVersion')?.value || 'v23.0').trim()
+      })
+    });
+    if (pageAccessTokenInput) pageAccessTokenInput.value = '';
+    if (verifyTokenInput) verifyTokenInput.value = '';
+    if (appSecretInput) appSecretInput.value = '';
+    renderMetaSettingsStatus(info);
+    alert(lang === 'zh' ? 'Meta 设置已加密保存。' : 'Meta settings encrypted and saved.');
+  } catch (err) {
+    alert(err.message);
+  }
+}
+
+async function clearMetaSettings() {
+  const message = lang === 'zh'
+    ? '确定清除系统内保存的 Meta Token、Verify Token 和 App Secret 吗？如果 Railway 环境变量已配置，系统仍会继续使用环境变量。'
+    : 'Clear saved Meta Token, Verify Token, and App Secret? Railway env vars will still take priority if configured.';
+  if (!confirm(message)) return;
+  try {
+    const info = await api('/api/meta/settings', {
+      method: 'PUT',
+      body: JSON.stringify({
+        clearPageAccessToken: true,
+        clearVerifyToken: true,
+        clearAppSecret: true,
+        graphVersion: String(document.getElementById('metaGraphVersion')?.value || 'v23.0').trim()
+      })
+    });
+    renderMetaSettingsStatus(info);
+    alert(lang === 'zh' ? '系统内保存的 Meta 密钥已清除。' : 'Saved Meta keys cleared.');
+  } catch (err) {
+    alert(err.message);
+  }
+}
+
 async function showSystemInfo() {
   try {
     const info = await api('/api/system/info');
     const aiText = info.ai
       ? `\n客户AI：${info.ai.configured ? '已配置' : '未配置'}\nAI来源：${info.ai.source || '—'}\nAI模型：${info.ai.model || '—'}`
       : '';
-    alert(`当前版本：${info.app.version}\n构建号：${info.app.build}\n升级通道：${info.update.channel}\n远程升级：${info.update.allowRemoteUpgrade ? '已开启' : '未开启'}${aiText}`);
+    const metaText = info.meta
+      ? `\nMeta私信：${info.meta.messengerReady ? '已配置' : '未完整配置'}\nMeta Webhook：${info.meta.webhookUrl || '—'}`
+      : '';
+    alert(`当前版本：${info.app.version}\n构建号：${info.app.build}\n升级通道：${info.update.channel}\n远程升级：${info.update.allowRemoteUpgrade ? '已开启' : '未开启'}${aiText}${metaText}`);
   } catch (err) {
     alert(err.message);
   }

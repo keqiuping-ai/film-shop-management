@@ -1189,6 +1189,9 @@ function sanitizeDbForUser(db, user) {
   const canApproveReimbursements = Boolean(p.reimbursementsApprove);
   const safeSettings = { ...(db.settings || {}) };
   delete safeSettings.openAiCustomerReplyKeyEncrypted;
+  delete safeSettings.metaPageAccessTokenEncrypted;
+  delete safeSettings.metaAppSecretEncrypted;
+  delete safeSettings.metaWebhookVerifyTokenEncrypted;
   return {
     settings: safeSettings,
     users: p.usersManage || p.schedulesView || p.reportsView ? db.users.map(safeUser) : [safeUser(user)],
@@ -1606,6 +1609,45 @@ function customerAiSettingsStatus(db) {
     customOpenAiBaseUrl: Boolean(process.env.OPENAI_API_BASE_URL),
     updatedAt: db?.settings?.openAiCustomerReplyKeyUpdatedAt || '',
     updatedBy: db?.settings?.openAiCustomerReplyKeyUpdatedBy || ''
+  };
+}
+
+function savedMetaPageAccessToken(db) {
+  return String(process.env.META_PAGE_ACCESS_TOKEN || process.env.FACEBOOK_PAGE_ACCESS_TOKEN || decryptSecret(db?.settings?.metaPageAccessTokenEncrypted) || '').trim();
+}
+
+function savedMetaAppSecret(db) {
+  return String(process.env.META_APP_SECRET || decryptSecret(db?.settings?.metaAppSecretEncrypted) || '').trim();
+}
+
+function savedMetaVerifyToken(db) {
+  return String(process.env.META_WEBHOOK_VERIFY_TOKEN || decryptSecret(db?.settings?.metaWebhookVerifyTokenEncrypted) || '').trim();
+}
+
+function metaSettingsStatus(db, req = null) {
+  const pageToken = savedMetaPageAccessToken(db);
+  const appSecret = savedMetaAppSecret(db);
+  const verifyToken = savedMetaVerifyToken(db);
+  const envPageToken = String(process.env.META_PAGE_ACCESS_TOKEN || process.env.FACEBOOK_PAGE_ACCESS_TOKEN || '').trim();
+  const envAppSecret = String(process.env.META_APP_SECRET || '').trim();
+  const envVerifyToken = String(process.env.META_WEBHOOK_VERIFY_TOKEN || '').trim();
+  const baseUrl = req ? requestPublicBaseUrl(req) : '';
+  return {
+    configured: Boolean(pageToken && verifyToken),
+    messengerReady: Boolean(pageToken && verifyToken),
+    signatureCheckEnabled: Boolean(appSecret),
+    source: envPageToken || envAppSecret || envVerifyToken ? 'env+settings' : pageToken || appSecret || verifyToken ? 'settings' : '',
+    graphVersion: String(process.env.META_GRAPH_API_VERSION || db?.settings?.metaGraphApiVersion || 'v23.0').trim(),
+    pageAccessTokenMask: maskSecret(pageToken),
+    appSecretMask: maskSecret(appSecret),
+    verifyTokenMask: maskSecret(verifyToken),
+    pageAccessTokenSource: envPageToken ? 'env' : pageToken ? 'settings' : '',
+    appSecretSource: envAppSecret ? 'env' : appSecret ? 'settings' : '',
+    verifyTokenSource: envVerifyToken ? 'env' : verifyToken ? 'settings' : '',
+    webhookUrl: baseUrl ? `${baseUrl}/api/meta/messenger/webhook` : '',
+    leadAdsWebhookUrl: baseUrl ? `${baseUrl}/api/meta/lead-ads/webhook` : '',
+    updatedAt: db?.settings?.metaMessengerUpdatedAt || '',
+    updatedBy: db?.settings?.metaMessengerUpdatedBy || ''
   };
 }
 
@@ -2677,12 +2719,21 @@ function readRawBody(req, limit = 1_000_000) {
   });
 }
 
-function metaLeadConfig() {
+function metaLeadConfig(db = null) {
   return {
-    verifyToken: String(process.env.META_WEBHOOK_VERIFY_TOKEN || '').trim(),
-    appSecret: String(process.env.META_APP_SECRET || '').trim(),
-    pageAccessToken: String(process.env.META_PAGE_ACCESS_TOKEN || process.env.FACEBOOK_PAGE_ACCESS_TOKEN || '').trim(),
-    graphVersion: String(process.env.META_GRAPH_API_VERSION || 'v23.0').trim()
+    verifyToken: savedMetaVerifyToken(db),
+    appSecret: savedMetaAppSecret(db),
+    pageAccessToken: savedMetaPageAccessToken(db),
+    graphVersion: String(process.env.META_GRAPH_API_VERSION || db?.settings?.metaGraphApiVersion || 'v23.0').trim()
+  };
+}
+
+function metaMessengerConfig(db = null) {
+  return {
+    verifyToken: savedMetaVerifyToken(db),
+    appSecret: savedMetaAppSecret(db),
+    pageAccessToken: savedMetaPageAccessToken(db),
+    graphVersion: String(process.env.META_GRAPH_API_VERSION || db?.settings?.metaGraphApiVersion || 'v23.0').trim()
   };
 }
 
@@ -2791,8 +2842,194 @@ async function fetchMetaLeadDetail(leadId, pageAccessToken, graphVersion) {
   return body;
 }
 
+function metaPsidFromItem(item) {
+  const direct = String(item?.metaPsid || item?.psid || '').trim();
+  if (direct) return direct;
+  const external = String(item?.externalId || '').trim();
+  const match = external.match(/^meta-(?:messenger|psid):(.+)$/i);
+  return match ? match[1].trim() : '';
+}
+
+function findMetaConversation(db, pageId, psid) {
+  const expectedExternalId = psid ? `meta-messenger:${psid}` : '';
+  const collections = ['customerConversations', 'prospects'];
+  for (const collection of collections) {
+    const item = (db[collection] || []).find(row => {
+      const rowPsid = metaPsidFromItem(row);
+      return rowPsid && rowPsid === psid;
+    });
+    if (item) return { collection, item };
+    const byExternal = expectedExternalId ? (db[collection] || []).find(row => String(row.externalId || '') === expectedExternalId) : null;
+    if (byExternal) return { collection, item: byExternal };
+  }
+  return null;
+}
+
+function metaMessageText(message = {}) {
+  const text = String(message.text || '').trim();
+  const attachmentSummary = (Array.isArray(message.attachments) ? message.attachments : [])
+    .map(item => String(item?.type || '').trim())
+    .filter(Boolean)
+    .join(', ');
+  return text || (attachmentSummary ? `Meta attachment: ${attachmentSummary}` : '');
+}
+
+function appendMetaMessengerMessage(item, message, pageId, psid, direction = 'inbound', speakerName = '') {
+  const mid = String(message.mid || message.message_id || message.id || '').trim();
+  const timestamp = message.timestamp
+    ? new Date(Number(message.timestamp)).toISOString()
+    : new Date().toISOString();
+  const text = metaMessageText(message);
+  if (!text) return false;
+  const row = {
+    id: mid ? `meta-${mid}` : `meta-${id()}`,
+    externalEventId: mid ? `meta-${mid}` : '',
+    speaker: direction === 'outbound' ? 'shop' : 'customer',
+    speakerName: speakerName || (direction === 'outbound' ? 'Meta Page' : 'Meta Customer'),
+    direction,
+    channel: 'meta',
+    provider: 'meta-messenger',
+    providerSid: mid,
+    text,
+    timestamp,
+    status: direction === 'outbound' ? 'sent' : 'received',
+    from: direction === 'outbound' ? pageId : psid,
+    to: direction === 'outbound' ? psid : pageId,
+    attachment: null
+  };
+  const before = Array.isArray(item.conversationMessages) ? item.conversationMessages : [];
+  const after = mergeProspectMessages(before, [row]);
+  const changed = after.length !== before.length;
+  item.conversationMessages = after;
+  item.metaPsid = psid || item.metaPsid || '';
+  item.externalId = item.externalId || (psid ? `meta-messenger:${psid}` : '');
+  item.externalBusinessId = item.externalBusinessId || pageId || '';
+  item.source = item.source || 'Meta / Facebook';
+  item.updatedAt = timestamp;
+  item.sourceUpdatedAt = timestamp;
+  item.lastMetaAt = timestamp;
+  item.lastMetaDirection = direction;
+  return changed;
+}
+
+async function fetchMetaUserProfile(psid, pageAccessToken, graphVersion) {
+  if (!psid || !pageAccessToken) return {};
+  const fields = 'first_name,last_name,name,profile_pic';
+  const endpoint = `https://graph.facebook.com/${encodeURIComponent(graphVersion)}/${encodeURIComponent(psid)}?fields=${encodeURIComponent(fields)}&access_token=${encodeURIComponent(pageAccessToken)}`;
+  const response = await fetch(endpoint);
+  if (!response.ok) return {};
+  return response.json().catch(() => ({}));
+}
+
+async function handleMetaMessengerWebhook(req, res, db, url) {
+  const config = metaMessengerConfig(db);
+  if (req.method === 'GET') {
+    const mode = String(url.searchParams.get('hub.mode') || '');
+    const token = String(url.searchParams.get('hub.verify_token') || '');
+    const challenge = String(url.searchParams.get('hub.challenge') || '');
+    if (mode === 'subscribe' && config.verifyToken && secureEqualString(token, config.verifyToken)) {
+      return send(res, 200, challenge, 'text/plain; charset=utf-8');
+    }
+    return send(res, 403, { error: 'Meta Messenger webhook verification failed' });
+  }
+  if (req.method !== 'POST') return send(res, 405, { error: 'Method not allowed' });
+  const raw = await readRawBody(req);
+  if (!verifyMetaWebhookSignature(req, raw, config.appSecret)) {
+    return send(res, 403, { error: 'Meta Messenger webhook signature verification failed' });
+  }
+  const payload = raw ? JSON.parse(raw) : {};
+  let imported = 0;
+  let updated = 0;
+  let skipped = 0;
+  for (const entry of Array.isArray(payload.entry) ? payload.entry : []) {
+    const pageId = String(entry.id || '').trim();
+    for (const event of Array.isArray(entry.messaging) ? entry.messaging : []) {
+      const psid = String(event?.sender?.id || '').trim();
+      const recipientId = String(event?.recipient?.id || pageId || '').trim();
+      if (!psid || !event.message || event.message.is_echo) {
+        skipped += 1;
+        continue;
+      }
+      const text = metaMessageText(event.message);
+      if (!text) {
+        skipped += 1;
+        continue;
+      }
+      let match = findMetaConversation(db, recipientId || pageId, psid);
+      if (!match) {
+        const profile = config.pageAccessToken ? await fetchMetaUserProfile(psid, config.pageAccessToken, config.graphVersion) : {};
+        const customer = String(profile.name || [profile.first_name, profile.last_name].filter(Boolean).join(' ') || 'Meta Customer').trim();
+        const item = {
+          id: id(),
+          date: new Date().toISOString().slice(0, 10),
+          source: 'Meta / Facebook',
+          customer,
+          phone: '',
+          vehicle: '',
+          need: text.slice(0, 600),
+          service: 'tint',
+          ownerId: '',
+          ownerName: '',
+          status: '新意向',
+          intentLevel: '普通',
+          externalId: `meta-messenger:${psid}`,
+          externalBusinessId: recipientId || pageId,
+          metaPsid: psid,
+          profileUrl: psid ? `https://business.facebook.com/latest/inbox/all?asset_id=${encodeURIComponent(recipientId || pageId)}` : '',
+          sourceCreatedAt: new Date().toISOString(),
+          sourceUpdatedAt: new Date().toISOString(),
+          chatContext: '',
+          conversationMessages: [],
+          rawPayload: { firstMessengerEvent: event }
+        };
+        db.customerConversations.unshift(item);
+        match = { collection: 'customerConversations', item };
+        imported += 1;
+      }
+      if (appendMetaMessengerMessage(match.item, event.message, recipientId || pageId, psid, 'inbound', match.item.customer || 'Meta Customer')) {
+        updated += 1;
+      } else {
+        skipped += 1;
+      }
+    }
+  }
+  if (imported || updated) {
+    audit(db, { id: 'meta-messenger-webhook', name: 'Meta Messenger Webhook' }, 'receive-meta-messenger-message', {
+      collection: 'customerConversations',
+      detail: `Meta Messenger imported ${imported}, updated ${updated}, skipped ${skipped}`
+    });
+    writeDb(db);
+    notifyDataChanged('receive-meta-messenger-message', { imported, updated, skipped });
+  }
+  return send(res, 200, { ok: true, imported, updated, skipped });
+}
+
+async function sendMetaMessengerReply(db, item, text) {
+  const config = metaMessengerConfig(db);
+  if (!config.pageAccessToken) throw new Error('Meta Page Access Token 尚未配置，请先在设置里填写');
+  const psid = metaPsidFromItem(item);
+  if (!psid) throw new Error('这条客户记录没有 Meta PSID，不能通过 Meta 私信回复');
+  const endpoint = `https://graph.facebook.com/${encodeURIComponent(config.graphVersion)}/me/messages?access_token=${encodeURIComponent(config.pageAccessToken)}`;
+  const response = await fetch(endpoint, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      recipient: { id: psid },
+      messaging_type: 'RESPONSE',
+      message: { text }
+    })
+  });
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(body?.error?.message || `Meta 私信发送失败 (${response.status})`);
+  return {
+    recipientId: String(body.recipient_id || psid),
+    messageId: String(body.message_id || ''),
+    status: 'sent'
+  };
+}
+
 async function handleMetaLeadWebhook(req, res, db, url) {
-  const config = metaLeadConfig();
+  const config = metaLeadConfig(db);
   if (req.method === 'GET') {
     const mode = String(url.searchParams.get('hub.mode') || '');
     const token = String(url.searchParams.get('hub.verify_token') || '');
@@ -3606,7 +3843,7 @@ function customerServiceAgentSends(item) {
 function customerServiceRequiredReplyChannel(item) {
   const inbound = (Array.isArray(item?.conversationMessages) ? item.conversationMessages : [])
     .map((message, index) => ({ message, index, at: new Date(message.timestamp || message.time || message.createdAt || 0).getTime() }))
-    .filter(row => customerServiceMessageRole(row.message) === 'customer' && ['yelp', 'sms'].includes(String(row.message.channel || '').toLowerCase()))
+    .filter(row => customerServiceMessageRole(row.message) === 'customer' && ['yelp', 'sms', 'meta'].includes(String(row.message.channel || '').toLowerCase()))
     .sort((a, b) => (Number.isFinite(a.at) && Number.isFinite(b.at) && a.at !== b.at) ? a.at - b.at : a.index - b.index);
   return String(inbound[inbound.length - 1]?.message?.channel || '').toLowerCase();
 }
@@ -3614,6 +3851,7 @@ function customerServiceRequiredReplyChannel(item) {
 function customerServiceAvailableChannels(item) {
   const channels = [];
   if (prospectTextKey(item?.source) === 'yelp' && String(item?.externalId || '').trim()) channels.push('yelp');
+  if (prospectTextKey(item?.source).includes('meta') && metaPsidFromItem(item)) channels.push('meta');
   if (normalizedPhone(item?.phone).length === 10) channels.push('sms');
   const required = customerServiceRequiredReplyChannel(item);
   return required && channels.includes(required) ? [required] : channels;
@@ -4157,6 +4395,10 @@ async function api(req, res) {
     return handleMetaLeadWebhook(req, res, db, url);
   }
 
+  if (url.pathname === '/api/meta/messenger/webhook') {
+    return handleMetaMessengerWebhook(req, res, db, url);
+  }
+
   if (req.method === 'POST' && url.pathname === '/api/login') {
     const body = await readBody(req);
     const user = db.users.find(u => u.email.toLowerCase() === String(body.email || '').toLowerCase() && u.active);
@@ -4247,6 +4489,14 @@ async function api(req, res) {
           item.lastYelpAt = sentAt;
           item.lastYelpDirection = 'outbound';
           sendRecord = { requestId, channel, sid: '', status: String(sent.status || 'accepted'), sentAt, agentName: agent.name };
+        } else if (channel === 'meta') {
+          const sent = await sendMetaMessengerReply(db, item, text);
+          appendMetaMessengerMessage(item, {
+            mid: sent.messageId || requestId,
+            text,
+            timestamp: Date.parse(sentAt)
+          }, String(item.externalBusinessId || ''), metaPsidFromItem(item), 'outbound', agent.name);
+          sendRecord = { requestId, channel, sid: String(sent.messageId || ''), status: String(sent.status || 'sent'), sentAt, agentName: agent.name };
         } else {
           const phoneDigits = normalizedPhone(item.phone);
           const to = `+1${phoneDigits}`;
@@ -5379,7 +5629,8 @@ async function api(req, res) {
         port: PORT,
         publicUrl: config.publicUrl || null
       },
-      ai: customerAiSettingsStatus(db)
+      ai: customerAiSettingsStatus(db),
+      meta: metaSettingsStatus(db, req)
     });
   }
 
@@ -5422,6 +5673,49 @@ async function api(req, res) {
     });
     writeDb(db);
     notifyDataChanged('update-customer-ai-settings', 'customer-ai');
+    return send(res, 200, after);
+  }
+
+  if (req.method === 'GET' && url.pathname === '/api/meta/settings') {
+    if (!canAccess(user, 'settingsEdit')) return send(res, 403, { error: '没有查看 Meta 设置权限' });
+    return send(res, 200, metaSettingsStatus(db, req));
+  }
+
+  if (req.method === 'PUT' && url.pathname === '/api/meta/settings') {
+    if (!canAccess(user, 'settingsEdit')) return send(res, 403, { error: '没有修改 Meta 设置权限' });
+    const body = await readBody(req);
+    const pageAccessToken = String(body.pageAccessToken || '').trim();
+    const appSecret = String(body.appSecret || '').trim();
+    const verifyToken = String(body.verifyToken || '').trim();
+    const graphVersion = String(body.graphVersion || metaSettingsStatus(db).graphVersion || 'v23.0').trim().slice(0, 20);
+    if (pageAccessToken && pageAccessToken.length < 20) return send(res, 400, { error: 'Meta Page Access Token 太短，请检查后再保存' });
+    if (appSecret && appSecret.length < 16) return send(res, 400, { error: 'Meta App Secret 太短，请检查后再保存' });
+    if (verifyToken && verifyToken.length < 8) return send(res, 400, { error: 'Meta Verify Token 至少 8 位，请设置一个自定义验证口令' });
+    if (!/^v\d+\.\d+$/.test(graphVersion)) return send(res, 400, { error: 'Graph API 版本格式应类似 v23.0' });
+
+    const before = metaSettingsStatus(db, req);
+    db.settings = db.settings || {};
+    db.settings.metaGraphApiVersion = graphVersion;
+    if (body.clearPageAccessToken) delete db.settings.metaPageAccessTokenEncrypted;
+    else if (pageAccessToken) db.settings.metaPageAccessTokenEncrypted = encryptSecret(pageAccessToken);
+    if (body.clearAppSecret) delete db.settings.metaAppSecretEncrypted;
+    else if (appSecret) db.settings.metaAppSecretEncrypted = encryptSecret(appSecret);
+    if (body.clearVerifyToken) delete db.settings.metaWebhookVerifyTokenEncrypted;
+    else if (verifyToken) db.settings.metaWebhookVerifyTokenEncrypted = encryptSecret(verifyToken);
+    db.settings.metaMessengerUpdatedAt = new Date().toISOString();
+    db.settings.metaMessengerUpdatedBy = user.name || user.email;
+    const after = metaSettingsStatus(db, req);
+    audit(db, user, 'update-meta-settings', {
+      collection: 'settings',
+      recordId: 'meta-messenger',
+      recordLabel: 'Meta Messenger',
+      before,
+      after,
+      changedFields: diffRecords(before, after),
+      detail: '更新 Meta Messenger / Lead Ads 设置'
+    });
+    writeDb(db);
+    notifyDataChanged('update-meta-settings', 'meta-messenger');
     return send(res, 200, after);
   }
 
@@ -5494,6 +5788,11 @@ async function api(req, res) {
     delete body.openAiCustomerReplyKeyUpdatedAt;
     delete body.openAiCustomerReplyKeyUpdatedBy;
     delete body.openAiCustomerReplyModel;
+    delete body.metaPageAccessTokenEncrypted;
+    delete body.metaAppSecretEncrypted;
+    delete body.metaWebhookVerifyTokenEncrypted;
+    delete body.metaMessengerUpdatedAt;
+    delete body.metaMessengerUpdatedBy;
     if (Object.prototype.hasOwnProperty.call(body, 'callForwardNumber') || Object.prototype.hasOwnProperty.call(body, 'callForwardEnabled')) {
       const forwardNumber = normalizeForwardingPhone(body.callForwardNumber);
       if (body.callForwardEnabled && !forwardNumber) return send(res, 400, { error: '请输入有效的电话转接号码' });
@@ -5726,6 +6025,55 @@ async function api(req, res) {
     writeDb(db);
     notifyDataChanged('send-customer-yelp-message', item.id);
     return send(res, 200, { ok: true, requestId, data: sanitizeDbForUser(db, user) });
+  }
+
+  if (req.method === 'POST' && url.pathname === '/api/meta/send') {
+    if (!canAccess(user, 'prospectsEdit')) return send(res, 403, { error: '没有发送 Meta 私信的权限' });
+    const body = await readBody(req);
+    const collection = String(body.collection || '').trim();
+    const recordId = String(body.id || '').trim();
+    const text = String(body.text || '').trim();
+    if (!['customerConversations', 'prospects'].includes(collection)) return send(res, 400, { error: '客户类型不正确' });
+    const item = (db[collection] || []).find(row => row.id === recordId);
+    if (!item) return send(res, 404, { error: '找不到客户记录' });
+    const requiredChannel = customerServiceRequiredReplyChannel(item);
+    if (requiredChannel && requiredChannel !== 'meta') return send(res, 409, { error: `客户最后通过 ${requiredChannel === 'sms' ? '手机短信' : 'Yelp'} 联系，请继续使用原通道回复` });
+    if (!metaPsidFromItem(item)) return send(res, 400, { error: '这条客户记录没有 Meta PSID，不能通过 Meta 私信回复' });
+    if (!text) return send(res, 400, { error: 'Meta 私信内容不能为空' });
+    if (text.length > 1600) return send(res, 400, { error: 'Meta 私信内容不能超过 1600 个字符' });
+    const sent = await sendMetaMessengerReply(db, item, text);
+    const now = new Date().toISOString();
+    appendMetaMessengerMessage(item, {
+      mid: sent.messageId || `quad-meta-${id()}`,
+      text,
+      timestamp: Date.parse(now)
+    }, String(item.externalBusinessId || ''), metaPsidFromItem(item), 'outbound', user.name || user.email);
+    if (item.followUpDate) {
+      item.lastFollowUpCompletedAt = now;
+      item.lastFollowUpReason = item.followUpReason || '';
+      delete item.followUpDate;
+      delete item.followUpTime;
+      delete item.followUpReason;
+      delete item.followUpCompletedAt;
+    }
+    delete item.agentReplyDraft;
+    delete item.taskClaimedByUserId;
+    delete item.taskClaimedByName;
+    delete item.taskClaimedAt;
+    audit(db, user, 'send-customer-meta-message', {
+      collection,
+      recordId: item.id,
+      recordLabel: item.customer || item.externalId,
+      detail: `通过 Meta Messenger 向 ${metaPsidFromItem(item)} 发送私信`
+    });
+    writeDb(db);
+    notifyDataChanged('send-customer-meta-message', item.id);
+    return send(res, 200, {
+      ok: true,
+      messageId: String(sent.messageId || ''),
+      status: String(sent.status || 'sent'),
+      data: sanitizeDbForUser(db, user)
+    });
   }
 
   if (req.method === 'POST' && url.pathname === '/api/twilio/send') {
