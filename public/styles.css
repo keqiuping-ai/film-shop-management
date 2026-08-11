@@ -1038,7 +1038,7 @@ tr:hover td { background: #fbfcfd; }
 .customer-task-card footer>div { display:flex; gap:7px; }
 .customer-task-empty { grid-column:1/-1; min-height:190px; display:grid; place-content:center; gap:8px; padding:30px; border:1px dashed #afc1ca; border-radius:16px; background:#f8fafb; color:var(--muted); text-align:center; }
 .customer-task-empty strong { color:var(--ink); font-size:20px; }
-.customer-agent-draft { display:grid; gap:5px; padding:10px 12px; border:1px solid #e7c45f; border-radius:11px; background:#fffbed; color:#4f421c; }
+.customer-agent-draft { display:grid; gap:5px; max-height:120px; overflow:auto; padding:10px 12px; border:1px solid #e7c45f; border-radius:11px; background:#fffbed; color:#4f421c; }
 .customer-agent-draft strong { color:#795500; }
 .customer-agent-draft span { color:#7c8790; font-size:12px; }
 .customer-agent-draft p { margin:0; white-space:pre-wrap; line-height:1.45; }
@@ -1102,7 +1102,7 @@ body.modal-lock .prospect-workspace { pointer-events: none; }
 .prospect-header-save { min-height: 38px; white-space: nowrap; }
 .sales-order-search { margin-bottom: 12px; }
 .sales-order-search input { width: min(720px, 100%); min-height: 42px; }
-.prospect-workspace-conversation { position: relative; min-width: 0; min-height: 0; overflow: hidden; display: grid; grid-template-rows: minmax(0, 1fr) 210px; padding-bottom: 12px; box-sizing: border-box; }
+.prospect-workspace-conversation { position: relative; min-width: 0; min-height: 0; overflow: hidden; display: grid; grid-template-rows: minmax(0, 1fr) auto; box-sizing: border-box; }
 
 @media (max-height: 900px) and (min-width: 761px) {
   .prospect-workspace-header { min-height: 54px; padding: 7px 14px; }
@@ -1159,7 +1159,7 @@ body.modal-lock .prospect-workspace { pointer-events: none; }
 .prospect-message-delete { position: absolute; top: 8px; right: 9px; width: 25px; height: 25px; padding: 0; border: 1px solid rgba(255,255,255,.55); border-radius: 50%; background: rgba(0,0,0,.18); color: #fff; font-size: 18px; line-height: 21px; cursor: pointer; }
 .prospect-message-delete:hover { background: #b42318; }
 .prospect-chat-empty { margin: auto; color: var(--muted); }
-.prospect-workspace-composer { position: relative; z-index: 2; align-self: start; transform: translateY(-18px); min-width: 0; min-height: 0; height: 170px; box-sizing: border-box; padding: 8px max(20px, calc((100vw - 1460px) / 2)) 10px; background: #fff; border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 8px 24px rgba(15, 23, 42, .08); display: grid; grid-template-rows: auto auto minmax(0, 1fr); gap: 5px; }
+.prospect-workspace-composer { position: relative; z-index: 2; min-width: 0; min-height: 0; max-height: 40vh; box-sizing: border-box; padding: 8px max(20px, calc((100vw - 1460px) / 2)) 10px; background: #fff; border-top: 1px solid var(--line); box-shadow: 0 -8px 24px rgba(15, 23, 42, .07); display: grid; grid-template-rows: auto auto auto minmax(62px, 1fr); gap: 5px; }
 .prospect-sms-status { margin: 0; color: var(--muted); font-size: 13px; }
 .prospect-attachment-tools { min-height: 28px; margin: 0; display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
 .prospect-attachment-tools > button { padding: 5px 9px; border: 1px solid var(--line); border-radius: 7px; background: #f8fafb; color: var(--ink); cursor: pointer; }
@@ -1169,7 +1169,7 @@ body.modal-lock .prospect-workspace { pointer-events: none; }
 .prospect-attachment-tools > button.reply-reference-button:hover { background: #d9f0f4; }
 #prospectAttachmentPreview { color: var(--primary); font-size: 12px; font-weight: 700; }
 #prospectAttachmentPreview button { margin-left: 3px; border: 0; background: none; color: #b42318; font-size: 18px; cursor: pointer; }
-.prospect-compose-row { min-height: 0; display: grid; grid-template-columns: 150px minmax(0, 1fr) auto; gap: 12px; align-items: stretch; }
+.prospect-compose-row { min-height: 62px; display: grid; grid-template-columns: 150px minmax(0, 1fr) auto; gap: 12px; align-items: stretch; }
 .prospect-compose-row select { min-height: 52px; padding: 0 10px; border: 1px solid var(--line); border-radius: 8px; background: #fff; color: var(--ink); font-weight: 700; }
 .prospect-compose-row textarea { width: 100%; min-height: 0; max-height: none; box-sizing: border-box; padding: 9px 12px; font-size: 14px; line-height: 1.35; resize: none; }
 .prospect-compose-row .btn { min-width: 118px; min-height: 52px; font-size: 16px; }
@@ -1247,8 +1247,9 @@ body.modal-lock .prospect-workspace { pointer-events: none; }
   .prospect-sidebar-pair { grid-template-columns: 1fr 1fr; }
   .prospect-workspace-chat { padding: 14px 12px; scroll-padding-bottom: 14px; }
   .prospect-chat-message { width: 88%; }
-  .prospect-workspace-conversation { grid-template-rows: minmax(0, 1fr) 270px; padding-bottom: 10px; }
-  .prospect-workspace-composer { height: 250px; padding: 8px 12px 10px; border-radius: 10px; transform: none; }
+  .prospect-workspace-conversation { grid-template-rows: minmax(0, 1fr) auto; padding-bottom: 0; }
+  .prospect-workspace-composer { max-height: 46vh; padding: 8px 12px 10px; }
+  .customer-agent-draft { max-height: 105px; }
   .prospect-compose-row { grid-template-columns: 1fr; grid-template-rows: 42px minmax(70px, 1fr) 42px; }
   .prospect-compose-row textarea { min-height: 80px; }
   .prospect-attachment-tools .prospect-tool-divider { display: none; }
