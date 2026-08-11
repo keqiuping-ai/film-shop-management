@@ -145,6 +145,42 @@ function readSessionSecret() {
   return fs.readFileSync(SESSION_SECRET_FILE, 'utf8').trim();
 }
 
+function secretEncryptionKey() {
+  return crypto.createHash('sha256').update(`${readSessionSecret()}:quad-secret-store:v1`).digest();
+}
+
+function encryptSecret(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv('aes-256-gcm', secretEncryptionKey(), iv);
+  const encrypted = Buffer.concat([cipher.update(raw, 'utf8'), cipher.final()]);
+  return `v1:${iv.toString('base64url')}:${cipher.getAuthTag().toString('base64url')}:${encrypted.toString('base64url')}`;
+}
+
+function decryptSecret(value) {
+  const parts = String(value || '').split(':');
+  if (parts.length !== 4 || parts[0] !== 'v1') return '';
+  try {
+    const iv = Buffer.from(parts[1], 'base64url');
+    const authTag = Buffer.from(parts[2], 'base64url');
+    const encrypted = Buffer.from(parts[3], 'base64url');
+    const decipher = crypto.createDecipheriv('aes-256-gcm', secretEncryptionKey(), iv);
+    decipher.setAuthTag(authTag);
+    return Buffer.concat([decipher.update(encrypted), decipher.final()]).toString('utf8');
+  } catch {
+    return '';
+  }
+}
+
+function maskSecret(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  const last = raw.slice(-4);
+  const prefix = raw.startsWith('sk-proj-') ? 'sk-proj-' : raw.startsWith('sk-') ? 'sk-' : '';
+  return `${prefix}••••${last}`;
+}
+
 function signSessionPayload(payload) {
   return crypto.createHmac('sha256', readSessionSecret()).update(payload).digest('base64url');
 }
@@ -806,6 +842,34 @@ function applySabrinaCustomerServiceRep() {
   console.log('Sabrina customer service rep added.');
 }
 
+function applyFreyaCustomerServiceRep() {
+  const importVersion = 'customer-service-freya-frontdesk-2026-08-08';
+  const db = readDb();
+  if (db.freyaCustomerServiceRepVersion === importVersion) return;
+  if (!Array.isArray(db.customerServiceReps)) db.customerServiceReps = [];
+  let rep = db.customerServiceReps.find(item =>
+    /^freya$/i.test(String(item.name || '').trim())
+  );
+  if (!rep) {
+    rep = { id: id(), invitePay: 0, closePay: 0 };
+    db.customerServiceReps.push(rep);
+  }
+  Object.assign(rep, {
+    name: 'Freya',
+    role: '前台',
+    plan: rep.plan || 'onlineTier',
+    arrivalTarget: Number(rep.arrivalTarget || 20),
+    closeTarget: Number(rep.closeTarget || 50),
+    minCloseAmount: Number(rep.minCloseAmount || 0),
+    active: true
+  });
+  db.freyaCustomerServiceRepVersion = importVersion;
+  db.freyaCustomerServiceRepImportedAt = new Date().toISOString();
+  audit(db, { id: 'system', name: 'System' }, 'upsert-customer-service-rep', 'Added Freya to front desk follow-up rep list');
+  writeDb(db);
+  console.log('Freya front desk customer service rep added.');
+}
+
 function applyInventoryImport() {
   const importFile = path.join(ROOT, 'imports', 'wangmeng-inventory-2026-06-25.json');
   if (!fs.existsSync(importFile)) return;
@@ -863,7 +927,7 @@ function applyJobLedgerImport() {
     vehicle: String(job.vehicle || '').trim() || '未填写车型',
     vin: String(job.vin || '').trim(),
     salesRep: String(job.salesRep || '').trim(),
-    service: ['tint', 'ppf', 'wrap', 'ceramic'].includes(job.service) ? job.service : 'tint',
+    service: ['tint', 'ppf', 'wrap', 'vinylWrap', 'ceramic'].includes(job.service) ? job.service : 'tint',
     vehicleClass: String(job.vehicleClass || '小型轿车').trim(),
     package: String(job.package || '贴膜服务').trim(),
     installerId: String(job.installerId || '').trim(),
@@ -1123,8 +1187,10 @@ function sanitizeDbForUser(db, user) {
   const p = effectivePermissions(user);
   const canSeeCosts = user?.role === 'owner';
   const canApproveReimbursements = Boolean(p.reimbursementsApprove);
+  const safeSettings = { ...(db.settings || {}) };
+  delete safeSettings.openAiCustomerReplyKeyEncrypted;
   return {
-    settings: db.settings,
+    settings: safeSettings,
     users: p.usersManage || p.schedulesView || p.reportsView ? db.users.map(safeUser) : [safeUser(user)],
     messageUsers: messageUsersFor(db, user),
     messages: messagesForUser(db, user),
@@ -1459,6 +1525,113 @@ function parseAiBossDraft(text) {
   return JSON.parse(raw.slice(start, end + 1));
 }
 
+function customerAiReplyPrompt(task, channel = '') {
+  const lastMessages = (task.messages || []).slice(-18).map(message => ({
+    role: message.role,
+    channel: message.channel,
+    at: message.timestamp,
+    text: message.text
+  }));
+  const preferredChannel = channel || task.preferredChannel || task.availableChannels?.[0] || '';
+  return `You are the built-in AI customer service assistant for QUAD Film / QD Auto Image, a Las Vegas automotive window tint, PPF, TPU color PPF/color change, vinyl wrap, and architectural film shop.
+
+Write a customer-facing English reply draft for an employee to review before sending.
+
+Shop facts:
+- Address: 3359 W Oquendo Rd, Las Vegas, NV 89118.
+- Main public contact name/signature: Sabrina / QD Auto Image / 725-304-1424.
+- The shop can invite customers to visit to compare film samples in person.
+- Do not invent exact prices, discounts, stock, legal tint compliance, installation duration, or appointment availability if not present in the record.
+- If the customer asks about complaint, refund, legal responsibility, uncertain price, warranty dispute, or a firm delivery/appointment promise, do not make a commitment; set disposition to "needs_human".
+
+Customer task:
+${JSON.stringify({
+  source: task.source,
+  channel: preferredChannel,
+  customer: task.customer,
+  phone: task.phone,
+  vehicle: task.vehicle,
+  need: task.need,
+  status: task.status,
+  intentLevel: task.intentLevel,
+  taskType: task.taskType,
+  followUp: task.followUp,
+  availableChannels: task.availableChannels
+}, null, 2)}
+
+Recent conversation:
+${JSON.stringify(lastMessages, null, 2)}
+
+Return JSON only with exactly these fields:
+- replyText: English text ready to paste to the customer. Keep it concise, warm, and professional. End with one clear question that moves toward visit, quote details, or scheduling.
+- disposition: one of "ready_for_review", "needs_human", "no_reply_needed".
+- note: short Chinese note for the employee explaining why.
+- riskLevel: one of "low", "medium", "high".
+- followUpReason: short Chinese follow-up reason if useful, otherwise empty string.`;
+}
+
+function normalizeCustomerAiDraft(value) {
+  const draft = {
+    replyText: String(value?.replyText || '').trim().slice(0, 1600),
+    disposition: ['ready_for_review', 'needs_human', 'no_reply_needed'].includes(value?.disposition) ? value.disposition : 'ready_for_review',
+    note: String(value?.note || '').trim().slice(0, 1000),
+    riskLevel: ['low', 'medium', 'high'].includes(value?.riskLevel) ? value.riskLevel : 'medium',
+    followUpReason: String(value?.followUpReason || '').trim().slice(0, 500)
+  };
+  if (draft.disposition === 'ready_for_review' && !draft.replyText) {
+    draft.disposition = 'needs_human';
+    draft.note = draft.note || 'AI 没有生成可发送文字，需要人工处理。';
+  }
+  return draft;
+}
+
+function customerAiReplyModel(db) {
+  return String(process.env.OPENAI_CUSTOMER_REPLY_MODEL || db?.settings?.openAiCustomerReplyModel || 'gpt-5.6-luna').trim();
+}
+
+function openAiCustomerReplyKey(db) {
+  return String(process.env.OPENAI_API_KEY || decryptSecret(db?.settings?.openAiCustomerReplyKeyEncrypted) || '').trim();
+}
+
+function customerAiSettingsStatus(db) {
+  const envKey = String(process.env.OPENAI_API_KEY || '').trim();
+  const savedKey = decryptSecret(db?.settings?.openAiCustomerReplyKeyEncrypted);
+  const activeKey = envKey || savedKey;
+  return {
+    configured: Boolean(activeKey),
+    source: envKey ? 'env' : savedKey ? 'settings' : '',
+    provider: 'openai',
+    model: customerAiReplyModel(db),
+    keyMask: maskSecret(activeKey),
+    customOpenAiBaseUrl: Boolean(process.env.OPENAI_API_BASE_URL),
+    updatedAt: db?.settings?.openAiCustomerReplyKeyUpdatedAt || '',
+    updatedBy: db?.settings?.openAiCustomerReplyKeyUpdatedBy || ''
+  };
+}
+
+async function createCustomerAiReplyDraft(db, row, requestedChannel = '') {
+  const apiKey = openAiCustomerReplyKey(db);
+  if (!apiKey) throw new Error('OpenAI API Key 尚未配置，暂时不能生成系统内 AI 客服回复');
+  const task = safeCustomerServiceTask(row);
+  const prompt = customerAiReplyPrompt(task, requestedChannel);
+  const openAiBaseUrl = String(process.env.OPENAI_API_BASE_URL || 'https://api.openai.com/v1').replace(/\/+$/, '');
+  const model = customerAiReplyModel(db);
+  const value = await fetchAiJson(`${openAiBaseUrl}/chat/completions`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
+    body: JSON.stringify({
+      model,
+      messages: [{ role: 'user', content: prompt }],
+      response_format: { type: 'json_object' }
+    })
+  });
+  return {
+    provider: 'openai',
+    model,
+    draft: normalizeCustomerAiDraft(parseAiBossDraft(value?.choices?.[0]?.message?.content))
+  };
+}
+
 function zonedDateTimeToIso(timeZone, dateValue, hour = 17, minute = 0) {
   const [year, month, day] = String(dateValue || '').split('-').map(Number);
   if (![year, month, day, hour, minute].every(Number.isFinite)) return '';
@@ -1530,7 +1703,7 @@ async function createAiBossDraft(db, sourceText, requestedProvider) {
   if (!process.env.OPENAI_API_KEY) throw new Error('OpenAI API Key 尚未配置');
   const value = await fetchAiJson('https://api.openai.com/v1/chat/completions', {
     method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${process.env.OPENAI_API_KEY}` },
-    body: JSON.stringify({ model: process.env.OPENAI_TASK_MODEL || 'gpt-5-mini', messages: [{ role: 'user', content: prompt }], response_format: { type: 'json_object' } })
+    body: JSON.stringify({ model: process.env.OPENAI_TASK_MODEL || 'gpt-5.6', messages: [{ role: 'user', content: prompt }], response_format: { type: 'json_object' } })
   });
   return { provider, draft: parseAiBossDraft(value?.choices?.[0]?.message?.content) };
 }
@@ -1555,7 +1728,7 @@ Return exactly these fields: summaryZh, summaryEn, customerNeedsZh, customerNeed
     if (!process.env.OPENAI_API_KEY) throw new Error('OpenAI API Key 尚未配置');
     const value = await fetchAiJson('https://api.openai.com/v1/chat/completions', {
       method:'POST', headers:{ 'Content-Type':'application/json', Authorization:`Bearer ${process.env.OPENAI_API_KEY}` },
-      body:JSON.stringify({ model:process.env.OPENAI_TASK_MODEL || 'gpt-5-mini', messages:[{ role:'user', content:prompt }], response_format:{ type:'json_object' } })
+      body:JSON.stringify({ model:process.env.OPENAI_TASK_MODEL || 'gpt-5.6', messages:[{ role:'user', content:prompt }], response_format:{ type:'json_object' } })
     });
     content = value?.choices?.[0]?.message?.content || '';
   } else {
@@ -1601,7 +1774,7 @@ Return exactly these fields: performanceSummaryZh, performanceSummaryEn, custome
     if (!process.env.OPENAI_API_KEY) throw new Error('OpenAI API Key 尚未配置');
     const value = await fetchAiJson('https://api.openai.com/v1/chat/completions', {
       method:'POST', headers:{ 'Content-Type':'application/json', Authorization:`Bearer ${process.env.OPENAI_API_KEY}` },
-      body:JSON.stringify({ model:process.env.OPENAI_TASK_MODEL || 'gpt-5-mini', messages:[{ role:'user', content:prompt }], response_format:{ type:'json_object' } })
+      body:JSON.stringify({ model:process.env.OPENAI_TASK_MODEL || 'gpt-5.6', messages:[{ role:'user', content:prompt }], response_format:{ type:'json_object' } })
     });
     content = value?.choices?.[0]?.message?.content || '';
   } else {
@@ -1663,7 +1836,7 @@ function sanitizeJob(job, p, canSeeCosts) {
 
 function normalizeJobServices(job) {
   job.scheduleDate = String(job.scheduleDate || '').trim();
-  const allowed = new Set(['tint', 'ppf', 'wrap', 'ceramic']);
+  const allowed = new Set(['tint', 'ppf', 'wrap', 'vinylWrap', 'ceramic']);
   const raw = Array.isArray(job.services) ? job.services : String(job.services || job.service || '').split(',');
   const services = [...new Set(raw.map(value => String(value || '').trim()).filter(value => allowed.has(value)))];
   job.services = services.length ? services : ['tint'];
@@ -2485,6 +2658,180 @@ function readRawBody(req, limit = 1_000_000) {
   });
 }
 
+function metaLeadConfig() {
+  return {
+    verifyToken: String(process.env.META_WEBHOOK_VERIFY_TOKEN || '').trim(),
+    appSecret: String(process.env.META_APP_SECRET || '').trim(),
+    pageAccessToken: String(process.env.META_PAGE_ACCESS_TOKEN || process.env.FACEBOOK_PAGE_ACCESS_TOKEN || '').trim(),
+    graphVersion: String(process.env.META_GRAPH_API_VERSION || 'v23.0').trim()
+  };
+}
+
+function verifyMetaWebhookSignature(req, rawBody, appSecret) {
+  if (!appSecret) return true;
+  const signature = String(req.headers['x-hub-signature-256'] || '').trim();
+  const match = signature.match(/^sha256=(.+)$/i);
+  if (!match) return false;
+  const expected = crypto.createHmac('sha256', appSecret).update(rawBody).digest('hex');
+  return secureEqualString(match[1], expected);
+}
+
+function metaFieldMap(fieldData = []) {
+  const fields = {};
+  for (const field of Array.isArray(fieldData) ? fieldData : []) {
+    const name = String(field?.name || '').trim();
+    const values = Array.isArray(field?.values) ? field.values : [];
+    const value = values.map(item => String(item || '').trim()).filter(Boolean).join(', ');
+    if (name && value) fields[name] = value;
+  }
+  return fields;
+}
+
+function normalizedMetaFieldName(name) {
+  return prospectTextKey(String(name || '').replace(/[_-]+/g, ' '));
+}
+
+function pickMetaField(fields, patterns) {
+  for (const [name, value] of Object.entries(fields || {})) {
+    const normalized = normalizedMetaFieldName(name);
+    if (patterns.some(pattern => pattern.test(normalized))) return value;
+  }
+  return '';
+}
+
+function metaLeadToCustomerConversation(lead, webhookChange = {}) {
+  const fields = metaFieldMap(lead?.field_data);
+  const customer = pickMetaField(fields, [/^full name$/, /^name$/, /姓名|客户/]);
+  const phone = pickMetaField(fields, [/phone/, /手机号|电话/]);
+  const email = pickMetaField(fields, [/email/, /邮箱/]);
+  const city = pickMetaField(fields, [/city/, /城市|地区/]);
+  const vehicle = pickMetaField(fields, [/vehicle/, /car/, /车型|车辆/]);
+  const excludedKeys = new Set(Object.entries(fields)
+    .filter(([name]) => {
+      const normalized = normalizedMetaFieldName(name);
+      return /^(full name|name|phone number|phone|email|city)$/.test(normalized)
+        || /姓名|客户|手机号|电话|邮箱|城市|地区/.test(normalized);
+    })
+    .map(([name]) => name));
+  const answerLines = Object.entries(fields).map(([name, value]) => `${name}: ${value}`);
+  const needLines = Object.entries(fields)
+    .filter(([name]) => !excludedKeys.has(name))
+    .map(([name, value]) => `${name}: ${value}`);
+  const createdAt = String(lead?.created_time || webhookChange?.created_time || new Date().toISOString());
+  const leadId = String(lead?.id || webhookChange?.leadgen_id || '').trim();
+  return {
+    externalId: leadId ? `meta-leadgen:${leadId}` : '',
+    externalEventId: leadId ? `meta-leadgen:${leadId}:${String(webhookChange?.time || webhookChange?.created_time || '')}` : '',
+    externalBusinessId: String(webhookChange?.page_id || lead?.page_id || '').trim(),
+    source: 'Meta / Facebook',
+    customer: customer || 'Meta Lead',
+    phone,
+    email,
+    vehicle,
+    need: needLines.join('\n') || 'Meta Lead Ads 表单线索',
+    chatContext: [
+      city ? `City: ${city}` : '',
+      ...answerLines
+    ].filter(Boolean).join('\n'),
+    conversationMessages: [{
+      id: leadId ? `meta-lead-form-${leadId}` : id(),
+      externalEventId: leadId ? `meta-lead-form-${leadId}` : '',
+      speaker: 'system',
+      speakerName: 'Meta Lead Form',
+      direction: '',
+      channel: 'meta',
+      provider: 'meta-lead-ads',
+      messageType: 'lead-form',
+      text: answerLines.join('\n') || 'Meta Lead Ads 表单提交',
+      timestamp: createdAt
+    }],
+    profileUrl: leadId ? `https://business.facebook.com/latest/leads_center?lead_id=${encodeURIComponent(leadId)}` : '',
+    sourceCreatedAt: createdAt,
+    sourceUpdatedAt: createdAt,
+    rawPayload: { lead, webhookChange }
+  };
+}
+
+async function fetchMetaLeadDetail(leadId, pageAccessToken, graphVersion) {
+  const fields = [
+    'id',
+    'created_time',
+    'ad_id',
+    'ad_name',
+    'adset_id',
+    'adset_name',
+    'campaign_id',
+    'campaign_name',
+    'form_id',
+    'field_data'
+  ].join(',');
+  const endpoint = `https://graph.facebook.com/${encodeURIComponent(graphVersion)}/${encodeURIComponent(leadId)}?fields=${encodeURIComponent(fields)}&access_token=${encodeURIComponent(pageAccessToken)}`;
+  const response = await fetch(endpoint);
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(body?.error?.message || `Meta lead fetch failed ${response.status}`);
+  return body;
+}
+
+async function handleMetaLeadWebhook(req, res, db, url) {
+  const config = metaLeadConfig();
+  if (req.method === 'GET') {
+    const mode = String(url.searchParams.get('hub.mode') || '');
+    const token = String(url.searchParams.get('hub.verify_token') || '');
+    const challenge = String(url.searchParams.get('hub.challenge') || '');
+    if (mode === 'subscribe' && config.verifyToken && secureEqualString(token, config.verifyToken)) {
+      return send(res, 200, challenge, 'text/plain; charset=utf-8');
+    }
+    return send(res, 403, { error: 'Meta webhook verification failed' });
+  }
+  if (req.method !== 'POST') return send(res, 405, { error: 'Method not allowed' });
+  const raw = await readRawBody(req);
+  if (!verifyMetaWebhookSignature(req, raw, config.appSecret)) {
+    return send(res, 403, { error: 'Meta webhook signature verification failed' });
+  }
+  const payload = raw ? JSON.parse(raw) : {};
+  const changes = [];
+  for (const entry of Array.isArray(payload.entry) ? payload.entry : []) {
+    for (const change of Array.isArray(entry.changes) ? entry.changes : []) {
+      if (String(change?.field || '') !== 'leadgen') continue;
+      const value = change.value || {};
+      if (value.leadgen_id) changes.push({ ...value, time: entry.time, page_id: value.page_id || entry.id });
+    }
+  }
+  if (!changes.length) return send(res, 200, { ok: true, imported: 0, updated: 0, skipped: 0 });
+  if (!config.pageAccessToken) {
+    return send(res, 500, { error: 'META_PAGE_ACCESS_TOKEN is not configured' });
+  }
+  const items = [];
+  for (const change of changes.slice(0, 50)) {
+    const lead = await fetchMetaLeadDetail(String(change.leadgen_id), config.pageAccessToken, config.graphVersion);
+    items.push(metaLeadToCustomerConversation(lead, change));
+  }
+  const user = {
+    id: 'meta-lead-webhook',
+    name: 'Meta Lead Ads Webhook',
+    email: 'meta-leads@system.local',
+    role: 'importer',
+    active: true,
+    importOnly: true,
+    importPlatform: 'Meta / Facebook',
+    permissions: { prospectsView: true, prospectsEdit: true }
+  };
+  const result = importCustomerConversations(db, user, {
+    source: 'Meta / Facebook',
+    importSource: 'meta-webhook',
+    sourceDevice: 'meta-lead-ads-webhook',
+    items
+  });
+  writeDb(db);
+  notifyDataChanged('meta-lead-webhook', {
+    imported: result.imported,
+    updated: result.updated,
+    skipped: result.skipped,
+    duplicateCount: result.duplicateCount
+  });
+  return send(res, 200, { ok: true, ...result });
+}
+
 function readBinaryBody(req, limit) {
   return new Promise((resolve, reject) => {
     const chunks = [];
@@ -3259,7 +3606,8 @@ function customerServiceTaskRows(db, filter = 'active') {
     ...(db.customerConversations || []).filter(item => !item.promotedProspectId || !promotedIds.has(item.promotedProspectId)).map(item => ({ item, collection: 'customerConversations' })),
     ...(db.prospects || []).map(item => ({ item, collection: 'prospects' }))
   ];
-  const movedStatuses = new Set(['已预约', '已到店', '无效', '暂时无需回复']);
+  const hiddenStatuses = new Set(['无效', '暂时无需回复']);
+  const appointmentStatuses = new Set(['已预约', '已到店']);
   const priority = { reply: 0, followup: 1, first: 2, future: 3 };
   if (filter === 'sent') {
     return rows
@@ -3274,10 +3622,13 @@ function customerServiceTaskRows(db, filter = 'active') {
       });
   }
   return rows
-    .filter(({ item, collection }) => !movedStatuses.has(String(item.status || ''))
-      && !(String(item.status || '') === '已转施工单' && customerRecordHasGeneratedJob(db, item, collection))
-      && !customerRecordHasGeneratedJob(db, item, collection))
     .map(row => ({ ...row, taskType: customerServiceTaskType(row.item) }))
+    .filter(({ item, collection, taskType }) => {
+      const status = String(item.status || '');
+      if (hiddenStatuses.has(status)) return false;
+      if (appointmentStatuses.has(status) && taskType !== 'reply') return false;
+      return !customerRecordHasGeneratedJob(db, item, collection);
+    })
     .filter(row => row.taskType && (filter === 'all' || (filter === 'active' && row.taskType !== 'future') || row.taskType === filter))
     .sort((a, b) => {
       const typeDiff = priority[a.taskType] - priority[b.taskType];
@@ -3783,6 +4134,10 @@ async function api(req, res) {
   const db = readDb();
   const url = new URL(req.url, `http://${req.headers.host}`);
 
+  if (url.pathname === '/api/meta/lead-ads/webhook') {
+    return handleMetaLeadWebhook(req, res, db, url);
+  }
+
   if (req.method === 'POST' && url.pathname === '/api/login') {
     const body = await readBody(req);
     const user = db.users.find(u => u.email.toLowerCase() === String(body.email || '').toLowerCase() && u.active);
@@ -4247,6 +4602,43 @@ async function api(req, res) {
 
   if (req.method === 'GET' && url.pathname === '/api/bootstrap') {
     return send(res, 200, { user: safeUser(user), data: sanitizeDbForUser(db, user), revision: databaseRevision() }, undefined, req);
+  }
+
+  if (req.method === 'POST' && url.pathname === '/api/customer-ai/reply-draft') {
+    if (!canAccess(user, 'prospectsEdit')) return send(res, 403, { error: '没有生成客户 AI 回复的权限' });
+    const body = await readBody(req);
+    const collection = ['customerConversations', 'prospects'].includes(body.collection) ? body.collection : '';
+    const item = collection ? (db[collection] || []).find(row => row.id === String(body.id || '')) : null;
+    if (!item) return send(res, 404, { error: '找不到客户记录' });
+    const taskType = customerServiceTaskType(item) || 'first';
+    const result = await createCustomerAiReplyDraft(db, { item, collection, taskType }, String(body.channel || ''));
+    const now = new Date().toISOString();
+    item.agentReplyDraft = {
+      text: result.draft.replyText,
+      note: result.draft.note,
+      disposition: result.draft.disposition,
+      riskLevel: result.draft.riskLevel,
+      followUpReason: result.draft.followUpReason,
+      createdAt: now,
+      createdBy: user.name || user.email,
+      provider: result.provider,
+      model: result.model,
+      apiVersion: 2
+    };
+    item.updatedAt = now;
+    audit(db, user, 'customer-ai-reply-draft', {
+      collection,
+      recordId: item.id,
+      recordLabel: item.customer || item.phone || item.id,
+      detail: `系统内 AI 生成客户回复草稿：${item.agentReplyDraft.disposition}`
+    });
+    writeDb(db);
+    notifyDataChanged('customer-ai-reply-draft', item.id);
+    return send(res, 200, {
+      ok: true,
+      draft: item.agentReplyDraft,
+      data: sanitizeDbForUser(db, user)
+    });
   }
 
   const customerSeenMatch = url.pathname.match(/^\/api\/customer-records\/(customerConversations|prospects)\/([^/]+)\/seen$/);
@@ -4925,8 +5317,51 @@ async function api(req, res) {
         host: HOST,
         port: PORT,
         publicUrl: config.publicUrl || null
-      }
+      },
+      ai: customerAiSettingsStatus(db)
     });
+  }
+
+  if (req.method === 'GET' && url.pathname === '/api/customer-ai/settings') {
+    if (!canAccess(user, 'settingsEdit')) return send(res, 403, { error: '没有查看 AI 设置权限' });
+    return send(res, 200, customerAiSettingsStatus(db));
+  }
+
+  if (req.method === 'PUT' && url.pathname === '/api/customer-ai/settings') {
+    if (!canAccess(user, 'settingsEdit')) return send(res, 403, { error: '没有修改 AI 设置权限' });
+    const body = await readBody(req);
+    const apiKey = String(body.apiKey || '').trim();
+    const clearApiKey = Boolean(body.clearApiKey);
+    const model = String(body.model || customerAiReplyModel(db)).trim().slice(0, 80);
+    if (apiKey && apiKey.length < 20) return send(res, 400, { error: 'OpenAI API Key 太短，请检查后再保存' });
+    if (apiKey && !/^sk-[A-Za-z0-9_\-]+/.test(apiKey)) return send(res, 400, { error: 'OpenAI API Key 通常以 sk- 开头，请检查后再保存' });
+    if (!model) return send(res, 400, { error: '请输入 AI 模型名称' });
+
+    const before = customerAiSettingsStatus(db);
+    db.settings = db.settings || {};
+    db.settings.openAiCustomerReplyModel = model;
+    if (clearApiKey) {
+      delete db.settings.openAiCustomerReplyKeyEncrypted;
+      db.settings.openAiCustomerReplyKeyUpdatedAt = new Date().toISOString();
+      db.settings.openAiCustomerReplyKeyUpdatedBy = user.name || user.email;
+    } else if (apiKey) {
+      db.settings.openAiCustomerReplyKeyEncrypted = encryptSecret(apiKey);
+      db.settings.openAiCustomerReplyKeyUpdatedAt = new Date().toISOString();
+      db.settings.openAiCustomerReplyKeyUpdatedBy = user.name || user.email;
+    }
+    const after = customerAiSettingsStatus(db);
+    audit(db, user, 'update-customer-ai-settings', {
+      collection: 'settings',
+      recordId: 'customer-ai',
+      recordLabel: '系统内 ChatGPT 客服',
+      before,
+      after,
+      changedFields: diffRecords(before, after),
+      detail: apiKey ? '更新系统内 ChatGPT 客服密钥' : clearApiKey ? '清除系统内 ChatGPT 客服密钥' : '更新系统内 ChatGPT 客服设置'
+    });
+    writeDb(db);
+    notifyDataChanged('update-customer-ai-settings', 'customer-ai');
+    return send(res, 200, after);
   }
 
   if (req.method === 'GET' && url.pathname === '/api/system/check-update') {
@@ -4994,6 +5429,10 @@ async function api(req, res) {
   if (req.method === 'PUT' && url.pathname === '/api/settings') {
     if (!canAccess(user, 'settingsEdit')) return send(res, 403, { error: '没有修改系统设置权限' });
     const body = await readBody(req);
+    delete body.openAiCustomerReplyKeyEncrypted;
+    delete body.openAiCustomerReplyKeyUpdatedAt;
+    delete body.openAiCustomerReplyKeyUpdatedBy;
+    delete body.openAiCustomerReplyModel;
     if (Object.prototype.hasOwnProperty.call(body, 'callForwardNumber') || Object.prototype.hasOwnProperty.call(body, 'callForwardEnabled')) {
       const forwardNumber = normalizeForwardingPhone(body.callForwardNumber);
       if (body.callForwardEnabled && !forwardNumber) return send(res, 400, { error: '请输入有效的电话转接号码' });
@@ -5009,9 +5448,9 @@ async function api(req, res) {
       collection: 'settings',
       recordId: 'settings',
       recordLabel: '系统设置',
-      changedFields: diffRecords(before, db.settings),
-      before,
-      after: db.settings,
+      changedFields: diffRecords(sanitizeDbForUser({ ...db, settings: before }, user).settings, sanitizeDbForUser(db, user).settings),
+      before: sanitizeDbForUser({ ...db, settings: before }, user).settings,
+      after: sanitizeDbForUser(db, user).settings,
       detail: '修改系统设置'
     });
     writeDb(db);
@@ -6566,6 +7005,7 @@ applyStaffUserAccounts();
 applyShippingCoordinatorAccount();
 applyCommissionPlansImport();
 applySabrinaCustomerServiceRep();
+applyFreyaCustomerServiceRep();
 applyInventoryImport();
 applyJobLedgerImport();
 applyJobSalesRepMigration();

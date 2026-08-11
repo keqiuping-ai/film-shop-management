@@ -104,6 +104,41 @@ POST /api/agent/customer-tasks/{collection}/{id}/send
 
 `channel` 必须出现在任务的 `availableChannels` 中。省略时使用 `preferredChannel`；为了避免误发，建议另一台 Codex 始终显式传入。
 
+## 系统内置 ChatGPT 客服草稿
+
+店内员工登录 QUAD 后，可以在客户交流工作台点击 `AI 生成回复`。系统会调用 OpenAI 生成英文客户回复草稿，并保存到该客户记录的 `agentReplyDraft`，同时填入待发送输入框。此功能只生成草稿，不会自动发送给客户。
+
+配置方式：
+
+1. 老板账号进入 `系统设置` -> `系统内 ChatGPT 客服`，粘贴 `OpenAI API Key` 并保存。密钥会加密保存在服务器数据目录，页面和普通数据同步不会显示明文。
+2. 也可以在 Railway 配置环境变量。若同时存在环境变量和系统设置里的密钥，系统优先使用 Railway 环境变量。
+
+可选 Railway 环境变量：
+
+```text
+OPENAI_API_KEY=<OpenAI API Key>
+OPENAI_CUSTOMER_REPLY_MODEL=gpt-5.6-luna
+OPENAI_API_BASE_URL=https://api.openai.com/v1
+```
+
+接口：
+
+```http
+POST /api/customer-ai/reply-draft
+Authorization: Bearer <员工登录 token>
+Content-Type: application/json
+```
+
+```json
+{
+  "collection": "customerConversations",
+  "id": "客户记录ID",
+  "channel": "yelp"
+}
+```
+
+返回的草稿必须由员工确认后，再通过现有 Yelp 或短信发送按钮发送。投诉、退款、价格不确定、法律责任或明确交期/预约承诺会被标记为 `needs_human`。
+
 ## Codex 工作规则
 
 1. 先读取 `active` 队列，每次只领取一项。

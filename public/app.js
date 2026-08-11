@@ -30,6 +30,10 @@ let token = localStorage.getItem('filmShopCloud.token') || '';
 let state = null;
 let user = null;
 let current = 'modules';
+// Monotonically tracks user-visible navigation. A bootstrap response may arrive
+// after the operator has moved to another module, conversation, or workspace;
+// that older response may update data, but must never repaint the old screen.
+let uiNavigationRevision = 0;
 let inventorySearch = '';
 let jobSearch = '';
 let salesOrderSearch = '';
@@ -143,7 +147,7 @@ const dict = {
     dashboard: '仪表盘',
     dashboardSub: '收入、来源渠道和零售批发销售情况',
     jobs: '施工订单',
-    jobsSub: '窗膜、TPU改色、PPF、建筑膜',
+    jobsSub: '窗膜、TPU改色、Vinyl改色、PPF、建筑膜',
     warranties: '客户质保',
     warrantiesSub: '登记车辆施工、质保内容和客户查询资料',
     installers: '师傅工费',
@@ -196,6 +200,7 @@ const dict = {
     personalNotesSub: '私人备忘、待办事项和定时提醒',
     tint: '窗膜',
     wrap: 'TPU改色',
+    vinylWrap: 'Vinyl改色',
     ppf: 'PPF',
     ceramic: '建筑膜',
     owner: '老板',
@@ -399,7 +404,7 @@ const dict = {
     dashboard: 'Dashboard',
     dashboardSub: 'Revenue, source channels, and retail / wholesale sales',
     jobs: 'Job Orders',
-    jobsSub: 'Window tint, TPU color change, PPF, and architectural film',
+    jobsSub: 'Window tint, TPU color change, vinyl color change, PPF, and architectural film',
     warranties: 'Customer Warranty',
     warrantiesSub: 'Register vehicle installation, coverage, and customer lookup details',
     installers: 'Installer Pay',
@@ -452,6 +457,7 @@ const dict = {
     personalNotesSub: 'Private memos, tasks, and scheduled reminders',
     tint: 'Window Tint',
     wrap: 'TPU Color Change',
+    vinylWrap: 'Vinyl Color Change',
     ppf: 'PPF',
     ceramic: 'Architectural Film',
     owner: 'Owner',
@@ -850,6 +856,9 @@ async function logout() {
 
 async function sync(options = {}) {
   if (syncInFlight) return;
+  const uiRevisionAtStart = uiNavigationRevision;
+  const messageUserAtStart = activeMessageUserId;
+  const workspaceIdAtStart = activeProspectWorkspaceId;
   const replyInput = document.getElementById('prospectReplyInput');
   const replyDraftAtStart = replyInput?.value || '';
   const internalMessageInput = document.getElementById('messageText');
@@ -881,15 +890,22 @@ async function sync(options = {}) {
     const liveInternalMessageDraft = liveInternalMessageInput?.value ?? internalMessageDraft;
     const liveInternalMessageHadFocus = document.activeElement === liveInternalMessageInput;
     const workspaceAfter = activeProspectWorkspaceId ? JSON.stringify(activeCustomerWorkspaceItem().item || {}) : '';
-    preserveProspectWorkspaceRender = Boolean(activeProspectWorkspaceId && (workspaceBefore === workspaceAfter || sidebarWasActive));
+    const uiChangedDuringSync = uiNavigationRevision !== uiRevisionAtStart;
+    const sameMessageContext = !uiChangedDuringSync
+      && activeMessageUserId === messageUserAtStart
+      && internalMessageModalOpen
+      && Boolean(document.getElementById('modal')?.classList.contains('message-modal-open'));
+    const sameWorkspaceContext = !uiChangedDuringSync && activeProspectWorkspaceId === workspaceIdAtStart;
+    preserveProspectWorkspaceRender = Boolean(sameWorkspaceContext && activeProspectWorkspaceId && (workspaceBefore === workspaceAfter || sidebarWasActive));
     notifyNewUnreadMessages(previousUnreadIds);
     localStorage.setItem('filmShopCloud.lastEmail', user.email || '');
     lastSyncAt = new Date();
     renderAuth();
-    render();
+    if (!uiChangedDuringSync) render();
+    else updateMessageBadge();
     checkNewAppointmentAlerts();
     startAiBossReminderLoop();
-    if (internalMessageModalOpen && !internalMessageInputActive()) {
+    if (sameMessageContext && !internalMessageInputActive()) {
       renderMessageModal();
       const refreshedInternalInput = document.getElementById('messageText');
       if (refreshedInternalInput) refreshedInternalInput.value = liveInternalMessageDraft;
@@ -1056,6 +1072,7 @@ document.addEventListener('visibilitychange', () => {
 window.addEventListener('focus', () => { if (token) checkAiBossReminder(); });
 
 function setPage(page) {
+  uiNavigationRevision += 1;
   current = page;
   const url = new URL(window.location.href);
   if (page === 'customerTasks') url.searchParams.set('page', 'customerTasks');
@@ -1502,6 +1519,7 @@ function render() {
   updateMessageBadge();
   enhanceExpandablePanels();
   enhanceEditableTableRows(document.getElementById('view'));
+  if (current === 'settings') setTimeout(loadCustomerAiSettings, 0);
   if (activeProspectWorkspaceId && !preserveProspectWorkspaceRender) renderProspectWorkspace();
   preserveProspectWorkspaceRender = false;
 }
@@ -1622,6 +1640,7 @@ function updateMessageBadge() {
 }
 
 function openMessages(selectedUserId = '') {
+  uiNavigationRevision += 1;
   const users = messageUsers();
   const firstUnread = unreadMessages()[0];
   const nextMessageUserId = selectedUserId || activeMessageUserId || (firstUnread?.scope === 'group' ? GROUP_CHAT_ID : firstUnread?.fromUserId) || GROUP_CHAT_ID;
@@ -1997,6 +2016,7 @@ async function selectMessageUser(id) {
     return;
   }
   if (id !== activeMessageUserId) clearInternalMessagePendingImage();
+  uiNavigationRevision += 1;
   activeMessageUserId = id;
   renderMessageModal(undefined, { forceLatest:true });
   await markMessagesRead(id, { forceLatest:true });
@@ -2278,7 +2298,7 @@ function jobCalc(job) {
   let labor = 0;
   const services = jobServices(job);
   if (installer) {
-    const rates = services.map(service => Number(installer[service] || 0));
+    const rates = services.map(service => Number(installer[installerServicePayKey(service)] || 0));
     if (installer.mode === 'percent') labor = price * Math.max(0, ...rates) / 100;
     if (installer.mode === 'fixed') labor = rates.reduce((sum, rate) => sum + rate, 0);
     if (installer.mode === 'basePlus') labor = 0;
@@ -2378,8 +2398,13 @@ function accountingStatement(jobs = [], salesOrders = [], expenses = [], range =
 
 function servicePoint(service, installer = {}) {
   const defaults = { tint: 1, ppf: 3, wrap: 3, ceramic: 1 };
-  const key = `${service}Point`;
-  return Number(installer[key] || defaults[service] || 1);
+  const payKey = installerServicePayKey(service);
+  const key = `${payKey}Point`;
+  return Number(installer[key] || defaults[payKey] || 1);
+}
+
+function installerServicePayKey(service) {
+  return service === 'vinylWrap' ? 'wrap' : service;
 }
 
 function jobPointValue(job, installer = {}) {
@@ -2387,7 +2412,7 @@ function jobPointValue(job, installer = {}) {
 }
 
 function jobFixedPay(job, installer = {}) {
-  return jobServices(job).reduce((sum, service) => sum + Number(installer[service] || 0), 0);
+  return jobServices(job).reduce((sum, service) => sum + Number(installer[installerServicePayKey(service)] || 0), 0);
 }
 
 function jobPaidAmount(job) {
@@ -3474,7 +3499,7 @@ function openWarrantyFromJob(jobId) {
   }
   const installDate = job.scheduleDate || job.date || today();
   const services = jobServices(job);
-  const productCategory = services.includes('wrap') ? 'vehicleColorChange' : (services.includes('ppf') ? 'ppf' : (services.includes('tint') ? 'automotiveWindowFilm' : 'ppf'));
+  const productCategory = (services.includes('wrap') || services.includes('vinylWrap')) ? 'vehicleColorChange' : (services.includes('ppf') ? 'ppf' : (services.includes('tint') ? 'automotiveWindowFilm' : 'ppf'));
   const warrantyType = productCategory === 'vehicleColorChange' ? 'PVC Color Change Film' : (productCategory === 'automotiveWindowFilm' ? 'Automotive Window Film' : 'PPF');
   const installedAreas = warrantyAreasFromJobConfirmation(job);
   openWarranty('', {
@@ -4105,9 +4130,8 @@ async function saveFieldSalesAccount(accountId = '') {
   try {
     await api(accountId ? `/api/field-sales/accounts/${accountId}` : '/api/field-sales/accounts', { method:accountId ? 'PUT' : 'POST', body:JSON.stringify(body) });
     closeModal();
+    setPage('fieldSales');
     await sync();
-    current = 'fieldSales';
-    render();
   } catch (error) { alert(error.message); }
 }
 
@@ -4161,7 +4185,7 @@ const views = {
     return warrantyView();
   },
   installers() {
-    return panel(t('installers'), hasPerm('installerEdit') ? `<button class="btn primary" onclick="openInstaller()">${t('addNew')}</button>` : '', installerTable() + `<p class="note">${lang === 'zh' ? '百分比适合分包师傅，固定金额适合单项计件。底薪加超产会按月计算任务积分：默认窗膜 1 分，TPU改色/PPF 3 分；达到月任务积分后，超出部分才按对应项目金额计算超产提成。' : 'Percentage works for subcontractors and fixed pay works for piece-rate jobs. Base plus bonus is calculated monthly by quota points: tint defaults to 1 point, TPU color change and PPF default to 3 points, and bonus pay starts only after the monthly quota is reached.'}</p>`);
+    return panel(t('installers'), hasPerm('installerEdit') ? `<button class="btn primary" onclick="openInstaller()">${t('addNew')}</button>` : '', installerTable() + `<p class="note">${lang === 'zh' ? '百分比适合分包师傅，固定金额适合单项计件。底薪加超产会按月计算任务积分：默认窗膜 1 分，TPU改色、Vinyl改色和 PPF 3 分；达到月任务积分后，超出部分才按对应项目金额计算超产提成。Vinyl改色暂时沿用TPU改色的工费和积分设置。' : 'Percentage works for subcontractors and fixed pay works for piece-rate jobs. Base plus bonus is calculated monthly by quota points: tint defaults to 1 point; TPU color change, vinyl color change, and PPF default to 3 points. Vinyl color change currently shares the TPU color change pay and point settings.'}</p>`);
   },
   pricing() {
     return panel(t('pricing'), hasPerm('pricingEdit') ? `<button class="btn primary" onclick="openPriceRule()">${t('addNew')}</button>` : '', priceRuleTable());
@@ -4289,6 +4313,22 @@ const views = {
           <label class="check-row" style="margin-bottom:10px"><input id="callForwardEnabled" type="checkbox" ${state.settings.callForwardEnabled ? 'checked' : ''} /><span>${lang === 'zh' ? '启用电话转接' : 'Enable call forwarding'}</span></label>
           <label>${lang === 'zh' ? '转接到的电话号码' : 'Forward calls to'}<input id="callForwardNumber" type="tel" value="${escapeHtml(state.settings.callForwardNumber || '')}" placeholder="例如 +1 702-354-8143" /></label>
           <p class="note" style="margin:8px 0 0">${lang === 'zh' ? '客户拨打 QUAD Twilio 号码 +1 725-241-2586 时，会转接到这里填写的号码。您可以随时更换或关闭。电话转接会产生 Twilio 通话费用。' : 'Calls to the QUAD Twilio number +1 725-241-2586 will be forwarded here. You can change or disable it at any time. Twilio voice charges apply.'}</p>
+        </div>
+        <div class="wide" style="border:1px solid var(--border);border-radius:14px;padding:16px;background:var(--soft)">
+          <div class="panel-head" style="padding:0;border:0;margin-bottom:10px">
+            <h3 style="margin:0">${lang === 'zh' ? '系统内 ChatGPT 客服' : 'In-system ChatGPT Customer Service'}</h3>
+            <button class="btn" type="button" onclick="loadCustomerAiSettings()">${lang === 'zh' ? '刷新状态' : 'Refresh'}</button>
+          </div>
+          <div class="form-grid">
+            <label>${lang === 'zh' ? 'OpenAI API Key' : 'OpenAI API Key'}<input id="customerAiApiKey" type="password" autocomplete="off" placeholder="sk-..." /></label>
+            <label>${lang === 'zh' ? 'AI 模型' : 'AI Model'}<input id="customerAiModel" value="gpt-5.6-luna" placeholder="gpt-5.6-luna" /></label>
+            <div class="wide">
+              <button class="btn primary" type="button" onclick="saveCustomerAiSettings()">${lang === 'zh' ? '保存AI钥匙' : 'Save AI Key'}</button>
+              <button class="btn" type="button" onclick="clearCustomerAiKey()">${lang === 'zh' ? '清除系统内钥匙' : 'Clear Saved Key'}</button>
+              <span id="customerAiStatus" class="note" style="margin-left:10px">${lang === 'zh' ? '正在读取状态...' : 'Loading status...'}</span>
+            </div>
+          </div>
+          <p class="note" style="margin:8px 0 0">${lang === 'zh' ? '钥匙只在保存时提交一次，服务器加密后存在数据卷里，页面不会显示明文。如果 Railway 环境变量 OPENAI_API_KEY 已配置，系统会优先使用环境变量。' : 'The key is submitted only when saving, encrypted on the server data volume, and never shown in plain text. If Railway OPENAI_API_KEY is configured, it takes priority.'}</p>
         </div>
         <label>${t('oldPassword')}<input id="oldPassword" type="password" /></label>
         <label>${t('newPassword')}<input id="newPassword" type="password" /></label>
@@ -4512,6 +4552,7 @@ function enhanceEditableTableRows(root = document) {
 }
 
 function openPanelZoom(panelEl) {
+  uiNavigationRevision += 1;
   const title = panelEl.querySelector(':scope > .panel-head h3')?.textContent || (lang === 'zh' ? '查看详情' : 'Details');
   const clone = panelEl.cloneNode(true);
   clone.querySelectorAll('[id]').forEach(el => el.removeAttribute('id'));
@@ -4524,6 +4565,7 @@ function openPanelZoom(panelEl) {
 }
 
 function openImagePreview(src, title = '') {
+  uiNavigationRevision += 1;
   document.getElementById('panelZoomTitle').textContent = title || (lang === 'zh' ? '查看图片' : 'Image');
   const body = document.getElementById('panelZoomBody');
   body.innerHTML = `<div class="image-preview-wrap"><img src="${src}" alt="${escapeHtml(title || 'image')}" /></div>`;
@@ -4531,6 +4573,7 @@ function openImagePreview(src, title = '') {
 }
 
 function closePanelZoom() {
+  uiNavigationRevision += 1;
   const modal = document.getElementById('panelZoom');
   if (!modal) return;
   modal.classList.remove('open', 'image-preview-open');
@@ -5858,7 +5901,7 @@ function customerTaskTypeLabel(type) {
     first: lang === 'zh' ? '新客户首聊' : 'First contact',
     followup: lang === 'zh' ? '到期跟进' : 'Follow-up due',
     future: lang === 'zh' ? '未来跟进' : 'Upcoming',
-    sent: lang === 'zh' ? 'Codex 已发送' : 'Sent by Codex'
+    sent: lang === 'zh' ? 'AI 已处理' : 'Handled by AI'
   }[type] || '';
 }
 
@@ -5876,7 +5919,7 @@ function customerTaskCenterView() {
     ['first', lang === 'zh' ? '新客户首聊' : 'First contact', counts.first],
     ['followup', lang === 'zh' ? '到期跟进' : 'Due follow-ups', counts.followup],
     ['future', lang === 'zh' ? '未来跟进' : 'Upcoming', counts.future],
-    ['sent', lang === 'zh' ? 'Codex 已发送' : 'Sent by Codex', counts.sent]
+    ['sent', lang === 'zh' ? 'AI 已处理' : 'Handled by AI', counts.sent]
   ];
   const filterHtml = `<div class="customer-task-filters">${filters.map(([id, label, count]) => `<button class="customer-task-filter ${customerTaskFilter === id ? 'active' : ''}" onclick="setCustomerTaskFilter('${id}')"><span>${escapeHtml(label)}</span><strong>${count}</strong></button>`).join('')}</div>`;
   const cards = `<div class="customer-task-grid">${rows.map(customerTaskCard).join('')}${rows.length ? '' : `<div class="customer-task-empty"><strong>${lang === 'zh' ? '当前队列已经处理完成' : 'This queue is clear'}</strong><span>${lang === 'zh' ? '系统会继续实时接收新客户和客户短信。' : 'New customers and messages will continue to appear automatically.'}</span></div>`}</div>`;
@@ -5904,10 +5947,15 @@ function customerTaskCard(item) {
     <div class="customer-task-phone">${escapeHtml(item.phone || (lang === 'zh' ? '未填写电话' : 'No phone'))}</div>
     <dl><div><dt>${lang === 'zh' ? '车辆' : 'Vehicle'}</dt><dd>${escapeHtml(item.vehicle || '—')}</dd></div><div><dt>${lang === 'zh' ? '需求' : 'Request'}</dt><dd>${escapeHtml(shortText(item.need || '—', 90))}</dd></div></dl>
     ${latestText ? `<div class="customer-task-message"><small>${lang === 'zh' ? '客户最新消息' : 'Latest customer message'}</small>${escapeHtml(shortText(latestText, 150))}</div>` : ''}
-    ${sentMessage ? `<div class="customer-task-message"><small>${lang === 'zh' ? `Codex 最近发送${sentAt ? ` · ${sentAt}` : ''}` : `Latest Codex message${sentAt ? ` · ${sentAt}` : ''}`}</small>${escapeHtml(shortText(sentMessage, 220))}</div>` : ''}
+    ${sentMessage ? `<div class="customer-task-message"><small>${lang === 'zh' ? `AI 最近发送${sentAt ? ` · ${sentAt}` : ''}` : `Latest AI message${sentAt ? ` · ${sentAt}` : ''}`}</small>${escapeHtml(shortText(sentMessage, 220))}</div>` : ''}
     ${schedule ? `<div class="customer-task-schedule"><strong>⏰ ${escapeHtml(schedule)}</strong><span>${escapeHtml(item.followUpReason || (lang === 'zh' ? '定时跟进' : 'Scheduled follow-up'))}</span></div>` : ''}
-    <footer><span>${item._taskType === 'sent' ? (lang === 'zh' ? '已由 Codex 处理' : 'Handled by Codex') : claimedByCodex ? `${lang === 'zh' ? 'Codex AI 正在处理：' : 'Codex AI in progress: '}${escapeHtml(item.taskClaimedByName || '')}` : (lang === 'zh' ? '等待 Codex AI' : 'Waiting for Codex AI')}</span><div><button class="btn primary" onclick="openProspectWorkspace('${item._collection}','${item.id}',true)">${lang === 'zh' ? '查看完整聊天' : 'View full chat'}</button></div></footer>
+    <footer><span>${item._taskType === 'sent' ? (lang === 'zh' ? '已由 AI 处理' : 'Handled by AI') : claimedByCodex ? `${lang === 'zh' ? 'AI 正在处理：' : 'AI in progress: '}${escapeHtml(item.taskClaimedByName || '')}` : (lang === 'zh' ? '系统AI待生成' : 'Ready for system AI')}</span><div>${item._taskType === 'sent' ? '' : `<button class="btn" onclick="openCustomerTaskAiDraft('${item._collection}','${item.id}')">${lang === 'zh' ? '打开并AI生成' : 'Open + AI draft'}</button>`}<button class="btn primary" onclick="openProspectWorkspace('${item._collection}','${item.id}',true)">${lang === 'zh' ? '查看完整聊天' : 'View full chat'}</button></div></footer>
   </article>`;
+}
+
+function openCustomerTaskAiDraft(collection, id) {
+  openProspectWorkspace(collection, id);
+  setTimeout(() => generateCustomerAiReplyDraft(), 100);
 }
 
 async function claimAndOpenCustomerTask(collection, id) {
@@ -6019,6 +6067,7 @@ function activeCustomerWorkspaceItem() {
 }
 
 function openProspectWorkspace(collection, id, readOnly = false) {
+  uiNavigationRevision += 1;
   const item = (state[collection] || []).find(row => row.id === id);
   if (item?.newCustomer) {
     item.newCustomer = false;
@@ -6089,6 +6138,7 @@ function requiredProspectReplyChannel(item) {
 }
 
 function closeProspectWorkspace() {
+  uiNavigationRevision += 1;
   prospectWorkspaceDrafts.delete(activeProspectWorkspaceId);
   activeProspectWorkspaceId = '';
   prospectWorkspaceReadOnly = false;
@@ -6212,6 +6262,7 @@ function renderProspectWorkspace() {
             <button class="reply-reference-button" type="button" onclick="openReplyReferenceLibrary('text')">💬 ${lang === 'zh' ? '回复文字' : 'Reply text'}</button>
             <button class="reply-reference-button" type="button" onclick="openReplyReferenceLibrary('image')">🖼 ${lang === 'zh' ? '回复图片' : 'Reply image'}</button>
             <button class="reply-reference-button" type="button" onclick="openReplyReferenceLibrary('video')">▶ ${lang === 'zh' ? '回复视频' : 'Reply video'}</button>
+            <button id="customerAiDraftButton" class="reply-reference-button" type="button" onclick="generateCustomerAiReplyDraft()" ${hasPerm('prospectsEdit') ? '' : 'disabled'}>AI ${lang === 'zh' ? '生成回复' : 'Draft reply'}</button>
             <span id="prospectAttachmentPreview">${prospectPendingAttachment ? `${escapeHtml(prospectPendingAttachment.name)} <button type="button" onclick="clearProspectAttachment()">×</button>` : ''}</span>
             <input class="hidden" id="prospectImageInput" type="file" accept="image/*" onchange="uploadProspectAttachment(this.files[0]); this.value=''">
             <input class="hidden" id="prospectVideoInput" type="file" accept="video/*" onchange="uploadProspectAttachment(this.files[0]); this.value=''">
@@ -6406,6 +6457,46 @@ function insertProspectReplyText(text) {
   input.value = [input.value.trim(), String(text || '').trim()].filter(Boolean).join('\n');
   input.dispatchEvent(new Event('input', { bubbles: true }));
   input.focus();
+}
+
+async function generateCustomerAiReplyDraft() {
+  const { collection, item } = activeCustomerWorkspaceItem();
+  if (!collection || !item) return;
+  const button = document.getElementById('customerAiDraftButton');
+  const input = document.getElementById('prospectReplyInput');
+  const channel = document.getElementById('prospectReplyChannel')?.value || requiredProspectReplyChannel(item) || '';
+  const previousText = input?.value || '';
+  if (button) {
+    button.disabled = true;
+    button.textContent = lang === 'zh' ? 'AI生成中...' : 'AI drafting...';
+  }
+  try {
+    const result = await api('/api/customer-ai/reply-draft', {
+      method: 'POST',
+      body: JSON.stringify({ collection, id: item.id, channel })
+    });
+    state = result.data;
+    broadcastDataChange();
+    preserveProspectWorkspaceRender = false;
+    renderProspectWorkspace();
+    const nextInput = document.getElementById('prospectReplyInput');
+    if (nextInput && result.draft?.text) {
+      nextInput.value = result.draft.text;
+      nextInput.dispatchEvent(new Event('input', { bubbles: true }));
+      nextInput.focus();
+    } else if (nextInput && previousText) {
+      nextInput.value = previousText;
+    }
+    if (result.draft?.disposition === 'needs_human') {
+      alert(result.draft.note || (lang === 'zh' ? 'AI 判断这条客户消息需要人工处理。' : 'AI marked this as needing human review.'));
+    }
+  } catch (err) {
+    alert(err.message);
+    if (button) {
+      button.disabled = false;
+      button.textContent = `AI ${lang === 'zh' ? '生成回复' : 'Draft reply'}`;
+    }
+  }
 }
 
 async function handleProspectReplyPaste(event) {
@@ -6696,7 +6787,8 @@ async function saveProspectWorkspaceDetails() {
       : null;
     if (savedConversation?.promotedProspectId) {
       closeProspectWorkspace();
-      current = 'prospects';
+      setPage('prospects');
+      return;
     }
     render();
   } catch (err) {
@@ -7356,7 +7448,7 @@ function renderJobConfirmationPrint(job) {
   const L = (en, zh) => printLanguage === 'zh' ? zh : en;
   const P = (value, fallback = '—') => confirmationPrintText(value, printLanguage, fallback);
   const sep = printLanguage === 'zh' ? '：' : ':';
-  const strictServiceNames = { tint: L('Window tint','汽车窗膜'), wrap: L('Color change film','改色膜'), ppf: L('Paint protection film','漆面保护膜'), ceramic: L('Architectural film','建筑膜') };
+  const strictServiceNames = { tint: L('Window tint','汽车窗膜'), wrap: L('TPU color change film','TPU改色膜'), vinylWrap: L('Vinyl color change film','Vinyl改色膜'), ppf: L('Paint protection film','漆面保护膜'), ceramic: L('Architectural film','建筑膜') };
   const strictServiceLabel = jobServices(job).map(service => strictServiceNames[service] || service).join(' + ');
   const strictPaymentNames = { cash:L('Cash','现金'), visa:'Visa', card:L('Card','刷卡'), zelle:'Zelle', check:L('Check','支票'), other:L('Other','其他') };
   const strictPaymentName = strictPaymentNames[job.paymentMethod] || job.paymentMethod || '—';
@@ -8303,6 +8395,79 @@ async function saveSettings() {
   }
 }
 
+function renderCustomerAiStatus(info) {
+  const status = document.getElementById('customerAiStatus');
+  const model = document.getElementById('customerAiModel');
+  if (!status) return;
+  if (model && info?.model) model.value = info.model;
+  if (!info) {
+    status.textContent = lang === 'zh' ? '状态读取失败' : 'Failed to load status';
+    return;
+  }
+  const source = info.source === 'env'
+    ? (lang === 'zh' ? 'Railway环境变量' : 'Railway env var')
+    : info.source === 'settings'
+      ? (lang === 'zh' ? '系统设置' : 'System settings')
+      : (lang === 'zh' ? '未配置' : 'Not configured');
+  const mask = info.keyMask ? ` ${info.keyMask}` : '';
+  status.textContent = lang === 'zh'
+    ? `状态：${info.configured ? '已配置' : '未配置'}｜来源：${source}${mask}`
+    : `Status: ${info.configured ? 'Configured' : 'Not configured'} | Source: ${source}${mask}`;
+}
+
+async function loadCustomerAiSettings() {
+  const status = document.getElementById('customerAiStatus');
+  if (status) status.textContent = lang === 'zh' ? '正在读取状态...' : 'Loading status...';
+  try {
+    renderCustomerAiStatus(await api('/api/customer-ai/settings'));
+  } catch (err) {
+    if (status) status.textContent = err.message;
+  }
+}
+
+async function saveCustomerAiSettings() {
+  const apiKeyInput = document.getElementById('customerAiApiKey');
+  const modelInput = document.getElementById('customerAiModel');
+  const apiKey = String(apiKeyInput?.value || '').trim();
+  if (!apiKey) return alert(lang === 'zh' ? '请先粘贴 OpenAI API Key。' : 'Paste the OpenAI API Key first.');
+  try {
+    const info = await api('/api/customer-ai/settings', {
+      method: 'PUT',
+      body: JSON.stringify({
+        apiKey,
+        model: String(modelInput?.value || 'gpt-5.6-luna').trim()
+      })
+    });
+    if (apiKeyInput) apiKeyInput.value = '';
+    renderCustomerAiStatus(info);
+    alert(lang === 'zh' ? 'AI钥匙已加密保存。' : 'AI key encrypted and saved.');
+  } catch (err) {
+    alert(err.message);
+  }
+}
+
+async function clearCustomerAiKey() {
+  const message = lang === 'zh'
+    ? '确定清除系统内保存的 OpenAI API Key 吗？如果 Railway 环境变量已配置，系统仍会继续使用环境变量。'
+    : 'Clear the saved OpenAI API Key? If the Railway env var is configured, the system will still use it.';
+  if (!confirm(message)) return;
+  try {
+    const info = await api('/api/customer-ai/settings', {
+      method: 'PUT',
+      body: JSON.stringify({
+        clearApiKey: true,
+        model: String(document.getElementById('customerAiModel')?.value || 'gpt-5.6-luna').trim()
+      })
+    });
+    const apiKeyInput = document.getElementById('customerAiApiKey');
+    if (apiKeyInput) apiKeyInput.value = '';
+    renderCustomerAiStatus(info);
+    alert(lang === 'zh' ? '系统内保存的AI钥匙已清除。' : 'Saved AI key cleared.');
+  } catch (err) {
+    alert(err.message);
+  }
+}
+
 async function saveMyProfile() {
   try {
     const body = await api('/api/me', {
@@ -8366,7 +8531,10 @@ async function sendTomorrowScheduleReminder() {
 async function showSystemInfo() {
   try {
     const info = await api('/api/system/info');
-    alert(`当前版本：${info.app.version}\n构建号：${info.app.build}\n升级通道：${info.update.channel}\n远程升级：${info.update.allowRemoteUpgrade ? '已开启' : '未开启'}`);
+    const aiText = info.ai
+      ? `\n客户AI：${info.ai.configured ? '已配置' : '未配置'}\nAI来源：${info.ai.source || '—'}\nAI模型：${info.ai.model || '—'}`
+      : '';
+    alert(`当前版本：${info.app.version}\n构建号：${info.app.build}\n升级通道：${info.update.channel}\n远程升级：${info.update.allowRemoteUpgrade ? '已开启' : '未开启'}${aiText}`);
   } catch (err) {
     alert(err.message);
   }
@@ -8569,6 +8737,7 @@ function roleDefaultPermissions(role) {
 }
 
 function openModal(title, html, onSave) {
+  uiNavigationRevision += 1;
   stopMessageTimeZones();
   document.getElementById('modal').classList.remove('message-modal-open', 'confirmation-modal-open', 'personal-note-modal-open', 'warranty-modal-open');
   document.body.classList.add('modal-lock');
@@ -8599,6 +8768,7 @@ function openModal(title, html, onSave) {
   document.getElementById('modal').classList.add('open');
 }
 function closeModal() {
+  uiNavigationRevision += 1;
   stopMessageTimeZones();
   closeReplyTemplateVideoPreview();
   if (messageRecorder && messageRecorder.state === 'recording') {
@@ -8624,7 +8794,7 @@ function readForm(ids) {
   }));
 }
 function numeric(data, keys) { keys.forEach(k => data[k] = Number(data[k] || 0)); return data; }
-function serviceOptions() { return [['tint',t('tint')], ['wrap',t('wrap')], ['ppf',t('ppf')], ['ceramic',t('ceramic')]]; }
+function serviceOptions() { return [['tint',t('tint')], ['wrap',t('wrap')], ['vinylWrap',t('vinylWrap')], ['ppf',t('ppf')], ['ceramic',t('ceramic')]]; }
 function installerOptions() { return [['',t('unassigned')], ...state.installers.map(i => [i.id, i.name])]; }
 function installerMultiOptions() { return state.installers.map(i => [i.id, i.name]); }
 function customerServiceOptions() { return [['',t('unassigned')], ...(state.customerServiceReps || []).filter(rep => rep.active !== false).map(rep => [rep.id, rep.name])]; }
