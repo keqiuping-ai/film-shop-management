@@ -1632,6 +1632,25 @@ async function createCustomerAiReplyDraft(db, row, requestedChannel = '') {
   };
 }
 
+async function saveCustomerAiReplyDraft(db, user, item, collection, requestedChannel = '', taskType = '') {
+  const result = await createCustomerAiReplyDraft(db, { item, collection, taskType: taskType || customerServiceTaskType(item) || 'first' }, requestedChannel);
+  const now = new Date().toISOString();
+  item.agentReplyDraft = {
+    text: result.draft.replyText,
+    note: result.draft.note,
+    disposition: result.draft.disposition,
+    riskLevel: result.draft.riskLevel,
+    followUpReason: result.draft.followUpReason,
+    createdAt: now,
+    createdBy: user.name || user.email,
+    provider: result.provider,
+    model: result.model,
+    apiVersion: 2
+  };
+  item.updatedAt = now;
+  return result;
+}
+
 function zonedDateTimeToIso(timeZone, dateValue, hour = 17, minute = 0) {
   const [year, month, day] = String(dateValue || '').split('-').map(Number);
   if (![year, month, day, hour, minute].every(Number.isFinite)) return '';
@@ -4611,21 +4630,7 @@ async function api(req, res) {
     const item = collection ? (db[collection] || []).find(row => row.id === String(body.id || '')) : null;
     if (!item) return send(res, 404, { error: '找不到客户记录' });
     const taskType = customerServiceTaskType(item) || 'first';
-    const result = await createCustomerAiReplyDraft(db, { item, collection, taskType }, String(body.channel || ''));
-    const now = new Date().toISOString();
-    item.agentReplyDraft = {
-      text: result.draft.replyText,
-      note: result.draft.note,
-      disposition: result.draft.disposition,
-      riskLevel: result.draft.riskLevel,
-      followUpReason: result.draft.followUpReason,
-      createdAt: now,
-      createdBy: user.name || user.email,
-      provider: result.provider,
-      model: result.model,
-      apiVersion: 2
-    };
-    item.updatedAt = now;
+    await saveCustomerAiReplyDraft(db, user, item, collection, String(body.channel || ''), taskType);
     audit(db, user, 'customer-ai-reply-draft', {
       collection,
       recordId: item.id,
@@ -4637,6 +4642,62 @@ async function api(req, res) {
     return send(res, 200, {
       ok: true,
       draft: item.agentReplyDraft,
+      data: sanitizeDbForUser(db, user)
+    });
+  }
+
+  if (req.method === 'POST' && url.pathname === '/api/customer-ai/reply-drafts/batch') {
+    if (!canAccess(user, 'prospectsEdit')) return send(res, 403, { error: '没有批量生成客户 AI 回复的权限' });
+    const body = await readBody(req);
+    const filter = ['active', 'all', 'reply', 'first', 'followup'].includes(body.filter) ? body.filter : 'active';
+    const limit = Math.max(1, Math.min(10, Number(body.limit || 5)));
+    const skipExisting = body.skipExisting !== false;
+    const allowedTaskTypes = new Set(['reply', 'first', 'followup']);
+    const rows = customerServiceTaskRows(db, filter)
+      .filter(row => allowedTaskTypes.has(row.taskType))
+      .filter(row => !skipExisting || !String(row.item?.agentReplyDraft?.text || '').trim())
+      .slice(0, limit);
+    const results = [];
+    for (const row of rows) {
+      try {
+        const channel = customerServiceRequiredReplyChannel(row.item) || customerServiceAvailableChannels(row.item)[0] || '';
+        await saveCustomerAiReplyDraft(db, user, row.item, row.collection, channel, row.taskType);
+        results.push({
+          ok: true,
+          id: row.item.id,
+          collection: row.collection,
+          customer: row.item.customer || row.item.phone || row.item.id,
+          taskType: row.taskType,
+          disposition: row.item.agentReplyDraft?.disposition || '',
+          model: row.item.agentReplyDraft?.model || ''
+        });
+      } catch (error) {
+        results.push({
+          ok: false,
+          id: row.item.id,
+          collection: row.collection,
+          customer: row.item.customer || row.item.phone || row.item.id,
+          taskType: row.taskType,
+          error: error.message
+        });
+      }
+    }
+    audit(db, user, 'customer-ai-reply-drafts-batch', {
+      collection: 'customer-ai',
+      recordId: 'batch',
+      recordLabel: 'AI客服任务中心批量草稿',
+      detail: `批量生成客户 AI 草稿：成功 ${results.filter(row => row.ok).length}，失败 ${results.filter(row => !row.ok).length}`
+    });
+    writeDb(db);
+    notifyDataChanged('customer-ai-reply-drafts-batch', 'batch');
+    return send(res, 200, {
+      ok: true,
+      requested: limit,
+      processed: results.length,
+      succeeded: results.filter(row => row.ok).length,
+      failed: results.filter(row => !row.ok).length,
+      skipped: Math.max(0, customerServiceTaskRows(db, filter).filter(row => allowedTaskTypes.has(row.taskType)).length - rows.length),
+      results,
       data: sanitizeDbForUser(db, user)
     });
   }

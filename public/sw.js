@@ -1,4 +1,4 @@
-const CACHE_NAME = 'film-shop-v101-ai-composer-layout';
+const CACHE_NAME = 'film-shop-v102-ai-task-batch';
 const ASSETS = [
     '/',
     '/mobile.html',

@@ -5923,7 +5923,8 @@ function customerTaskCenterView() {
   ];
   const filterHtml = `<div class="customer-task-filters">${filters.map(([id, label, count]) => `<button class="customer-task-filter ${customerTaskFilter === id ? 'active' : ''}" onclick="setCustomerTaskFilter('${id}')"><span>${escapeHtml(label)}</span><strong>${count}</strong></button>`).join('')}</div>`;
   const cards = `<div class="customer-task-grid">${rows.map(customerTaskCard).join('')}${rows.length ? '' : `<div class="customer-task-empty"><strong>${lang === 'zh' ? '当前队列已经处理完成' : 'This queue is clear'}</strong><span>${lang === 'zh' ? '系统会继续实时接收新客户和客户短信。' : 'New customers and messages will continue to appear automatically.'}</span></div>`}</div>`;
-  return panel(t('customerTasks'), `<button class="btn" onclick="sync()">${lang === 'zh' ? '立即刷新' : 'Refresh now'}</button>`, `${filterHtml}<div class="customer-task-guide">${lang === 'zh' ? '处理顺序：客户待回复 → 到期跟进 → 新客户首聊。发送成功后系统自动重新判断；未来跟进到点后自动进入待办。' : 'Priority: replies, due follow-ups, then first contact. The queue refreshes after a successful send.'}</div>${cards}`);
+  const actions = `<button id="customerAiBatchButton" class="btn primary" onclick="batchGenerateCustomerAiDrafts()">${lang === 'zh' ? '批量生成草稿（前5条）' : 'Batch draft first 5'}</button><button class="btn" onclick="sync()">${lang === 'zh' ? '立即刷新' : 'Refresh now'}</button>`;
+  return panel(t('customerTasks'), actions, `${filterHtml}<div class="customer-task-guide">${lang === 'zh' ? '处理顺序：客户待回复 → 到期跟进 → 新客户首聊。批量生成只保存草稿，不会自动发送；已有草稿的客户会跳过。' : 'Priority: replies, due follow-ups, then first contact. Batch drafting only saves drafts and never sends; customers with existing drafts are skipped.'}</div><div id="customerAiBatchStatus" class="customer-task-batch-status"></div>${cards}`);
 }
 
 function customerTaskCard(item) {
@@ -5941,6 +5942,7 @@ function customerTaskCard(item) {
     )?.text || ''
     : '';
   const sentAt = latestAgentSend?.sentAt ? new Date(latestAgentSend.sentAt).toLocaleString(lang === 'zh' ? 'zh-CN' : 'en-US') : '';
+  const draft = item.agentReplyDraft?.text ? item.agentReplyDraft : null;
   return `<article class="customer-task-card ${item._taskType}">
     <header><span class="customer-task-kind">${customerTaskTypeLabel(item._taskType)}</span><span class="customer-task-source">${escapeHtml(item.source || '')}</span></header>
     <h3>${escapeHtml(item.customer || (lang === 'zh' ? '未命名客户' : 'Unnamed customer'))}</h3>
@@ -5948,14 +5950,53 @@ function customerTaskCard(item) {
     <dl><div><dt>${lang === 'zh' ? '车辆' : 'Vehicle'}</dt><dd>${escapeHtml(item.vehicle || '—')}</dd></div><div><dt>${lang === 'zh' ? '需求' : 'Request'}</dt><dd>${escapeHtml(shortText(item.need || '—', 90))}</dd></div></dl>
     ${latestText ? `<div class="customer-task-message"><small>${lang === 'zh' ? '客户最新消息' : 'Latest customer message'}</small>${escapeHtml(shortText(latestText, 150))}</div>` : ''}
     ${sentMessage ? `<div class="customer-task-message"><small>${lang === 'zh' ? `AI 最近发送${sentAt ? ` · ${sentAt}` : ''}` : `Latest AI message${sentAt ? ` · ${sentAt}` : ''}`}</small>${escapeHtml(shortText(sentMessage, 220))}</div>` : ''}
+    ${draft ? `<div class="customer-task-message customer-task-draft"><small>${lang === 'zh' ? `已有AI草稿 · ${escapeHtml(formatAppDateTime(draft.createdAt || ''))}` : `AI draft ready · ${escapeHtml(formatAppDateTime(draft.createdAt || ''))}`}</small>${escapeHtml(shortText(draft.text, 220))}</div>` : ''}
     ${schedule ? `<div class="customer-task-schedule"><strong>⏰ ${escapeHtml(schedule)}</strong><span>${escapeHtml(item.followUpReason || (lang === 'zh' ? '定时跟进' : 'Scheduled follow-up'))}</span></div>` : ''}
-    <footer><span>${item._taskType === 'sent' ? (lang === 'zh' ? '已由 AI 处理' : 'Handled by AI') : claimedByCodex ? `${lang === 'zh' ? 'AI 正在处理：' : 'AI in progress: '}${escapeHtml(item.taskClaimedByName || '')}` : (lang === 'zh' ? '系统AI待生成' : 'Ready for system AI')}</span><div>${item._taskType === 'sent' ? '' : `<button class="btn" onclick="openCustomerTaskAiDraft('${item._collection}','${item.id}')">${lang === 'zh' ? '打开并AI生成' : 'Open + AI draft'}</button>`}<button class="btn primary" onclick="openProspectWorkspace('${item._collection}','${item.id}',true)">${lang === 'zh' ? '查看完整聊天' : 'View full chat'}</button></div></footer>
+    <footer><span>${item._taskType === 'sent' ? (lang === 'zh' ? '已由 AI 处理' : 'Handled by AI') : draft ? (lang === 'zh' ? '已有草稿，待人工确认' : 'Draft ready for review') : claimedByCodex ? `${lang === 'zh' ? 'AI 正在处理：' : 'AI in progress: '}${escapeHtml(item.taskClaimedByName || '')}` : (lang === 'zh' ? '系统AI待生成' : 'Ready for system AI')}</span><div>${item._taskType === 'sent' ? '' : `<button class="btn" onclick="openCustomerTaskAiDraft('${item._collection}','${item.id}')">${draft ? (lang === 'zh' ? '打开/重新生成' : 'Open / regenerate') : (lang === 'zh' ? '打开并AI生成' : 'Open + AI draft')}</button>`}<button class="btn primary" onclick="openProspectWorkspace('${item._collection}','${item.id}',true)">${lang === 'zh' ? '查看完整聊天' : 'View full chat'}</button></div></footer>
   </article>`;
 }
 
 function openCustomerTaskAiDraft(collection, id) {
   openProspectWorkspace(collection, id);
   setTimeout(() => generateCustomerAiReplyDraft(), 100);
+}
+
+async function batchGenerateCustomerAiDrafts() {
+  if (!hasPerm('prospectsEdit')) return;
+  const filterLabel = customerTaskTypeLabel(customerTaskFilter) || (lang === 'zh' ? '全部任务' : 'all tasks');
+  const message = lang === 'zh'
+    ? `将按当前筛选“${filterLabel}”批量生成前5条AI草稿。\n\n只保存草稿，不会发送给客户；已有草稿会跳过。继续吗？`
+    : `Generate AI drafts for the first 5 items in the current "${filterLabel}" queue?\n\nThis only saves drafts and will not send messages. Existing drafts are skipped.`;
+  if (!confirm(message)) return;
+  const button = document.getElementById('customerAiBatchButton');
+  const status = document.getElementById('customerAiBatchStatus');
+  if (button) {
+    button.disabled = true;
+    button.textContent = lang === 'zh' ? '批量生成中...' : 'Batch drafting...';
+  }
+  if (status) status.textContent = lang === 'zh' ? 'AI 正在按队列生成草稿，请不要关闭页面。' : 'AI is drafting in queue. Keep this page open.';
+  try {
+    const filter = ['all', 'reply', 'first', 'followup'].includes(customerTaskFilter) ? customerTaskFilter : 'active';
+    const result = await api('/api/customer-ai/reply-drafts/batch', {
+      method: 'POST',
+      body: JSON.stringify({ filter, limit: 5, skipExisting: true })
+    });
+    state = result.data;
+    broadcastDataChange();
+    render();
+    const failures = (result.results || []).filter(row => !row.ok);
+    const failureText = failures.length ? `\n${failures.map(row => `${row.customer || row.id}: ${row.error}`).join('\n')}` : '';
+    alert(lang === 'zh'
+      ? `批量草稿完成：成功 ${result.succeeded}，失败 ${result.failed}，处理 ${result.processed}。${failureText}`
+      : `Batch drafting complete: ${result.succeeded} succeeded, ${result.failed} failed, ${result.processed} processed.${failureText}`);
+  } catch (err) {
+    alert(err.message);
+    if (button) {
+      button.disabled = false;
+      button.textContent = lang === 'zh' ? '批量生成草稿（前5条）' : 'Batch draft first 5';
+    }
+    if (status) status.textContent = '';
+  }
 }
 
 async function claimAndOpenCustomerTask(collection, id) {
@@ -6191,6 +6232,7 @@ function renderProspectWorkspace() {
   const statuses = prospectStatusOptions(false);
   const canReplyYelp = String(item.source || '').trim().toLowerCase() === 'yelp' && Boolean(String(item.externalId || '').trim());
   const canReplySms = customerPhoneMatchKey(item.phone).length === 10;
+  const isMetaSource = prospectTextKey(item.source) === 'meta';
   const requiredReplyChannel = requiredProspectReplyChannel(item);
   const defaultReplyChannel = (requiredReplyChannel === 'yelp' && canReplyYelp) || (requiredReplyChannel === 'sms' && canReplySms)
     ? requiredReplyChannel
@@ -6251,6 +6293,10 @@ function renderProspectWorkspace() {
           ${item.agentReplyDraft?.text ? `<div class="customer-agent-draft"><strong>${lang === 'zh' ? '客服助手建议回复（发送前请人工确认）' : 'Agent draft (review before sending)'}</strong><span>${escapeHtml(item.agentReplyDraft.createdBy || '')} · ${escapeHtml(formatAppDateTime(item.agentReplyDraft.createdAt || ''))}</span><p>${escapeHtml(item.agentReplyDraft.text)}</p></div>` : ''}
           <div class="prospect-sms-status" id="prospectChannelStatus">${canReplyYelp
             ? (lang === 'zh' ? '通过 Yelp 站内消息回复；也可以切换到手机短信' : 'Reply in Yelp, or switch to SMS')
+            : isMetaSource
+              ? (canReplySms
+                ? (lang === 'zh' ? 'Meta / Facebook 来源客户；Meta 私信待接入，当前先通过短信回复 · 发送号码：+1 725-241-2586' : 'Meta / Facebook lead. Meta messaging is pending; reply by SMS for now · Sender: +1 725-241-2586')
+                : (lang === 'zh' ? 'Meta / Facebook 来源客户；Meta 私信待接入，且未填写可用手机号' : 'Meta / Facebook lead. Meta messaging is pending and no usable phone is available.'))
             : (lang === 'zh' ? '通过 Twilio 发送和接收短信 · 发送号码：+1 725-241-2586' : 'Send and receive SMS through Twilio · Sender: +1 725-241-2586')}</div>
           <div class="prospect-attachment-tools">
             <button type="button" onclick="document.getElementById('prospectImageInput').click()">🖼️ ${lang === 'zh' ? '图片' : 'Image'}</button>
@@ -6271,6 +6317,7 @@ function renderProspectWorkspace() {
           <div class="prospect-compose-row">
             <select id="prospectReplyChannel" onchange="updateProspectReplyChannel()" aria-label="${lang === 'zh' ? '回复渠道' : 'Reply channel'}">
               <option value="yelp" ${defaultReplyChannel === 'yelp' ? 'selected' : ''} ${canReplyYelp && (!requiredReplyChannel || requiredReplyChannel === 'yelp') ? '' : 'disabled'}>${lang === 'zh' ? 'Yelp 站内消息' : 'Yelp message'}</option>
+              ${isMetaSource ? `<option value="meta" ${!canReplyYelp && !canReplySms ? 'selected' : ''} disabled>${lang === 'zh' ? 'Meta 私信（待接入）' : 'Meta messages (pending)'}</option>` : ''}
               <option value="sms" ${defaultReplyChannel === 'sms' ? 'selected' : ''} ${canReplySms ? '' : 'disabled'}>${lang === 'zh' ? '手机短信' : 'SMS'}</option>
             </select>
             <textarea id="prospectReplyInput" oninput="prospectReplyRevision += 1" onpaste="handleProspectReplyPaste(event)" placeholder="${lang === 'zh' ? '输入或粘贴文字、截图、图片…' : 'Write or paste text, screenshots, or images…'}"></textarea>
@@ -6808,8 +6855,12 @@ function updateProspectReplyChannel() {
   const attachmentButtons = document.querySelectorAll('.prospect-attachment-tools button');
   if (button) button.textContent = channel === 'yelp'
     ? (lang === 'zh' ? '通过 Yelp 发送' : 'Send via Yelp')
+    : channel === 'meta'
+      ? (lang === 'zh' ? 'Meta 待接入' : 'Meta pending')
     : (lang === 'zh' ? '发送短信' : 'Send SMS');
-  if (status) status.textContent = requiredChannel
+  if (status) status.textContent = channel === 'meta'
+    ? (lang === 'zh' ? 'Meta 私信发送接口尚未接入；请先用短信回复或等待 Meta Messaging 打通。' : 'Meta messaging is not connected yet. Use SMS for now or connect Meta Messaging later.')
+    : requiredChannel
     ? (channel === requiredChannel
       ? (channel === 'yelp'
         ? (lang === 'zh' ? '客户最后从 Yelp 联系；当前默认通过 Yelp 回复，可主动切换到短信' : 'The customer last contacted you on Yelp. Yelp remains the default, but you can switch to SMS.')
@@ -6828,6 +6879,7 @@ async function sendProspectMessage() {
   const channel = document.getElementById('prospectReplyChannel')?.value || 'sms';
   const text = String(input?.value || '').trim();
   if (!item || (!text && !prospectPendingAttachment)) return;
+  if (channel === 'meta') return alert(lang === 'zh' ? 'Meta 私信发送接口尚未接入，请先切换到手机短信。' : 'Meta messaging is not connected yet. Switch to SMS for now.');
   if (channel === 'yelp' && prospectPendingAttachment) return alert(lang === 'zh' ? 'Yelp 通道第一版只发送文字；如需发送图片或视频，请切换到手机短信。' : 'Yelp currently supports text replies here. Switch to SMS for attachments.');
   if (button) {
     button.disabled = true;
