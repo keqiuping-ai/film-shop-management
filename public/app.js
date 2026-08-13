@@ -4331,6 +4331,20 @@ const views = {
               <span id="customerAiKnowledgeMeta" class="note">${lang === 'zh' ? '正在读取已保存规则...' : 'Loading saved rules...'}</span>
             </div>
             <p class="wide customer-ai-knowledge-note">${lang === 'zh' ? 'AI 每次生成“客服助手建议回复”都会先读取这里。没有写明的价格、优惠或承诺，AI 不得自行编造，会继续询问车型和施工范围，或提示人工确认。' : 'Every AI reply draft uses these rules first. Prices, discounts, or commitments not written here must not be invented; the AI will ask for missing details or request human review.'}</p>
+            <section class="wide customer-ai-auto-reply-box">
+              <div class="customer-ai-auto-reply-head"><div><h4>${lang === 'zh' ? 'AI 自动回复' : 'AI Auto Reply'}</h4><p>${lang === 'zh' ? '默认关闭。只自动发送低风险回复；高风险、报价不明确、投诉、退款、质保和法律问题只生成草稿并转人工。' : 'Off by default. Only low-risk replies are sent; high-risk, uncertain quote, complaint, refund, warranty, and legal issues become drafts for staff.'}</p></div><button class="btn danger" type="button" onclick="disableCustomerAiAutoReply()">${lang === 'zh' ? '一键关闭' : 'Stop now'}</button></div>
+              <label class="check-row"><input id="customerAiAutoEnabled" type="checkbox" /><span>${lang === 'zh' ? '启用AI自动回复总开关' : 'Enable AI auto reply'}</span></label>
+              <div class="customer-ai-auto-grid">
+                <fieldset><legend>${lang === 'zh' ? '自动回复渠道' : 'Channels'}</legend><label class="check-row"><input id="customerAiAutoMeta" type="checkbox" /><span>Meta</span></label><label class="check-row"><input id="customerAiAutoYelp" type="checkbox" /><span>Yelp</span></label><label class="check-row"><input id="customerAiAutoSms" type="checkbox" /><span>${lang === 'zh' ? '短信' : 'SMS'}</span></label></fieldset>
+                <label>${lang === 'zh' ? '收到消息后延迟（秒）' : 'Delay after message (seconds)'}<input id="customerAiAutoDelay" type="number" min="10" max="600" value="30" /></label>
+                <label>${lang === 'zh' ? '回复时段' : 'Schedule'}<select id="customerAiAutoSchedule"><option value="always">${lang === 'zh' ? '全天' : 'Always'}</option><option value="business">${lang === 'zh' ? '仅营业时间' : 'Business hours only'}</option></select></label>
+                <label>${lang === 'zh' ? '营业开始' : 'Business start'}<input id="customerAiAutoStart" type="time" value="09:00" /></label>
+                <label>${lang === 'zh' ? '营业结束' : 'Business end'}<input id="customerAiAutoEnd" type="time" value="18:00" /></label>
+                <label>${lang === 'zh' ? '每位客户连续自动回复上限' : 'Max consecutive auto replies'}<input id="customerAiAutoMax" type="number" min="1" max="5" value="2" /></label>
+              </div>
+              <label class="check-row"><input id="customerAiAutoLowRisk" type="checkbox" checked /><span>${lang === 'zh' ? '低风险自动发送；其他情况只保存草稿' : 'Auto-send low risk; save all other cases as drafts'}</span></label>
+              <div><strong>${lang === 'zh' ? '最近自动回复记录' : 'Recent auto-reply log'}</strong><div id="customerAiAutoLogs" class="customer-ai-auto-logs"></div></div>
+            </section>
             <div class="wide">
               <button class="btn primary" type="button" onclick="saveCustomerAiSettings()">${lang === 'zh' ? '保存AI设置' : 'Save AI Settings'}</button>
               <button class="btn" type="button" onclick="clearCustomerAiKey()">${lang === 'zh' ? '清除系统内钥匙' : 'Clear Saved Key'}</button>
@@ -8648,6 +8662,21 @@ function renderCustomerAiStatus(info) {
       ? (updatedAt ? `已保存规则｜最后修改：${updatedAt}${updatedBy ? `｜${updatedBy}` : ''}` : '还没有保存规则，可插入模板后填写')
       : (updatedAt ? `Rules saved | Last updated: ${updatedAt}${updatedBy ? ` | ${updatedBy}` : ''}` : 'No rules saved yet; insert the template to begin');
   }
+  const auto = info?.autoReply || {};
+  const setChecked = (id, value) => { const node = document.getElementById(id); if (node) node.checked = Boolean(value); };
+  const setValue = (id, value) => { const node = document.getElementById(id); if (node && value !== undefined) node.value = value; };
+  setChecked('customerAiAutoEnabled', auto.enabled);
+  setChecked('customerAiAutoMeta', auto.channels?.meta);
+  setChecked('customerAiAutoYelp', auto.channels?.yelp);
+  setChecked('customerAiAutoSms', auto.channels?.sms);
+  setChecked('customerAiAutoLowRisk', auto.autoSendLowRisk !== false);
+  setValue('customerAiAutoDelay', auto.delaySeconds || 30);
+  setValue('customerAiAutoSchedule', auto.schedule || 'always');
+  setValue('customerAiAutoStart', auto.businessStart || '09:00');
+  setValue('customerAiAutoEnd', auto.businessEnd || '18:00');
+  setValue('customerAiAutoMax', auto.maxConsecutive || 2);
+  const logs = document.getElementById('customerAiAutoLogs');
+  if (logs) logs.innerHTML = (info?.autoReplyLogs || []).length ? info.autoReplyLogs.map(row => `<div><time>${escapeHtml(formatAppDateTime(row.createdAt || ''))}</time><b>${escapeHtml(row.status || '')}</b><span>${escapeHtml(row.channel || '')} ${escapeHtml(row.customer || '')}</span><small>${escapeHtml(row.detail || '')}</small></div>`).join('') : `<p class="note">${lang === 'zh' ? '暂时没有自动回复记录' : 'No auto-reply activity yet'}</p>`;
   if (!info) {
     status.textContent = lang === 'zh' ? '状态读取失败' : 'Failed to load status';
     return;
@@ -8685,12 +8714,37 @@ async function saveCustomerAiSettings() {
       body: JSON.stringify({
         apiKey,
         model: String(modelInput?.value || 'gpt-5-mini').trim(),
-        knowledge
+        knowledge,
+        autoReply: {
+          enabled: Boolean(document.getElementById('customerAiAutoEnabled')?.checked),
+          channels: {
+            meta: Boolean(document.getElementById('customerAiAutoMeta')?.checked),
+            yelp: Boolean(document.getElementById('customerAiAutoYelp')?.checked),
+            sms: Boolean(document.getElementById('customerAiAutoSms')?.checked)
+          },
+          delaySeconds: Number(document.getElementById('customerAiAutoDelay')?.value || 30),
+          schedule: document.getElementById('customerAiAutoSchedule')?.value || 'always',
+          businessStart: document.getElementById('customerAiAutoStart')?.value || '09:00',
+          businessEnd: document.getElementById('customerAiAutoEnd')?.value || '18:00',
+          maxConsecutive: Number(document.getElementById('customerAiAutoMax')?.value || 2),
+          autoSendLowRisk: Boolean(document.getElementById('customerAiAutoLowRisk')?.checked)
+        }
       })
     });
     if (apiKeyInput) apiKeyInput.value = '';
     renderCustomerAiStatus(info);
     alert(lang === 'zh' ? 'AI客服规则和设置已保存。以后每次生成回复都会使用这些内容。' : 'AI rules and settings saved. Future reply drafts will use this content.');
+  } catch (err) {
+    alert(err.message);
+  }
+}
+
+async function disableCustomerAiAutoReply() {
+  if (!confirm(lang === 'zh' ? '确定立即关闭所有渠道的 AI 自动回复吗？' : 'Stop AI auto reply on every channel now?')) return;
+  try {
+    const info = await api('/api/customer-ai/auto-reply/disable', { method: 'POST', body: '{}' });
+    renderCustomerAiStatus(info);
+    alert(lang === 'zh' ? 'AI自动回复已关闭。' : 'AI auto reply stopped.');
   } catch (err) {
     alert(err.message);
   }

@@ -1620,9 +1620,41 @@ function customerAiSettingsStatus(db) {
     knowledge: customerAiKnowledge(db),
     knowledgeUpdatedAt: db?.settings?.customerAiKnowledgeUpdatedAt || '',
     knowledgeUpdatedBy: db?.settings?.customerAiKnowledgeUpdatedBy || '',
+    autoReply: customerAiAutoReplySettings(db),
+    autoReplyLogs: (Array.isArray(db?.customerAiAutoReplyLogs) ? db.customerAiAutoReplyLogs : []).slice(-30).reverse(),
     updatedAt: db?.settings?.openAiCustomerReplyKeyUpdatedAt || '',
     updatedBy: db?.settings?.openAiCustomerReplyKeyUpdatedBy || ''
   };
+}
+
+function customerAiAutoReplySettings(db) {
+  const saved = db?.settings?.customerAiAutoReply || {};
+  const delaySeconds = Math.max(10, Math.min(600, Number(saved.delaySeconds || 30)));
+  const maxConsecutive = Math.max(1, Math.min(5, Number(saved.maxConsecutive || 2)));
+  return {
+    enabled: Boolean(saved.enabled),
+    channels: {
+      meta: saved.channels?.meta !== false,
+      yelp: Boolean(saved.channels?.yelp),
+      sms: Boolean(saved.channels?.sms)
+    },
+    delaySeconds,
+    schedule: saved.schedule === 'business' ? 'business' : 'always',
+    businessStart: /^\d{2}:\d{2}$/.test(saved.businessStart || '') ? saved.businessStart : '09:00',
+    businessEnd: /^\d{2}:\d{2}$/.test(saved.businessEnd || '') ? saved.businessEnd : '18:00',
+    maxConsecutive,
+    autoSendLowRisk: saved.autoSendLowRisk !== false,
+    updatedAt: saved.updatedAt || '',
+    updatedBy: saved.updatedBy || ''
+  };
+}
+
+function addCustomerAiAutoReplyLog(db, entry) {
+  db.customerAiAutoReplyLogs = [...(Array.isArray(db.customerAiAutoReplyLogs) ? db.customerAiAutoReplyLogs : []), {
+    id: id(),
+    createdAt: new Date().toISOString(),
+    ...entry
+  }].slice(-500);
 }
 
 function savedMetaPageAccessToken(db) {
@@ -3504,6 +3536,139 @@ async function sendTwilioSms({ to, body, mediaUrl, statusCallback }) {
   const result = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(result.message || `Twilio 发送失败 (${response.status})`);
   return result;
+}
+
+function customerAiAutoReplyInBusinessHours(settings, now = new Date()) {
+  if (settings.schedule !== 'business') return true;
+  const parts = Object.fromEntries(new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/Los_Angeles', hour: '2-digit', minute: '2-digit', hour12: false
+  }).formatToParts(now).map(part => [part.type, part.value]));
+  const current = `${parts.hour}:${parts.minute}`;
+  return settings.businessStart <= settings.businessEnd
+    ? current >= settings.businessStart && current < settings.businessEnd
+    : current >= settings.businessStart || current < settings.businessEnd;
+}
+
+function customerAiAutoReplyLatestInbound(item) {
+  return customerServiceConversation(item).filter(row => row.role === 'customer').at(-1)?.message || null;
+}
+
+function customerAiAutoReplyForceHumanReason(message) {
+  if (message?.attachment) return '客户发送了图片或附件，必须人工查看';
+  const text = String(message?.text || '').toLowerCase();
+  if (/\b(price|pricing|quote|cost|discount|deal|how much)\b|价格|报价|多少钱|优惠/.test(text)) return '客户询问价格或优惠，必须人工确认';
+  if (/\b(complain|complaint|refund|chargeback|lawsuit|lawyer|legal|damage|warranty|guarantee|responsib|cancel)\b|投诉|退款|拒付|律师|法律|损坏|质保|保修|责任|取消/.test(text)) return '涉及投诉、退款、质保、法律或责任问题，必须转人工';
+  return '';
+}
+
+function customerAiAutoReplyConsecutiveCount(item) {
+  const messages = customerServiceConversation(item);
+  let count = 0;
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index].message;
+    if (messages[index].role === 'shop' && !message.autoReply) break;
+    if (messages[index].role === 'shop' && message.autoReply) count += 1;
+  }
+  return count;
+}
+
+async function sendCustomerAiAutomaticReply(db, collection, item, channel, text) {
+  const actor = { id: 'customer-ai-auto-reply', name: 'AI自动客服', email: 'ai-auto-reply@system.local' };
+  const now = new Date().toISOString();
+  let providerId = '';
+  if (channel === 'meta') {
+    const sent = await sendMetaMessengerReply(db, item, text);
+    providerId = sent.messageId || '';
+    appendMetaMessengerMessage(item, { mid: providerId || `quad-meta-${id()}`, text, timestamp: Date.parse(now) }, String(item.externalBusinessId || ''), metaPsidFromItem(item), 'outbound', actor.name);
+  } else if (channel === 'yelp') {
+    const requestId = `quad-yelp-auto-${id()}`;
+    await sendYelpReply({ leadId: String(item.externalId || ''), businessId: String(item.externalBusinessId || ''), text, requestId });
+    providerId = requestId;
+    item.conversationMessages = [...(item.conversationMessages || []), { id: requestId, externalEventId: requestId, speaker: 'shop', speakerName: actor.name, direction: 'outbound', channel: 'yelp', text, timestamp: now, provider: 'yelp-zapier', status: 'accepted', autoReply: true }];
+  } else if (channel === 'sms') {
+    const digits = normalizedPhone(item.phone);
+    const callbackBase = twilioConfig().webhookBaseUrl;
+    const sent = await sendTwilioSms({ to: `+1${digits}`, body: text, statusCallback: callbackBase ? `${callbackBase}/api/twilio/status` : '' });
+    providerId = sent.sid || '';
+    appendSmsMessage(item, { id: `twilio-${providerId || id()}`, speaker: 'shop', speakerName: actor.name, direction: 'outbound', channel: 'sms', text, timestamp: now, provider: 'twilio', providerSid: providerId, status: String(sent.status || 'queued'), autoReply: true });
+  }
+  const sentMessage = (item.conversationMessages || []).find(message => providerId && (message.providerSid === providerId || message.id === providerId))
+    || (item.conversationMessages || []).at(-1);
+  if (sentMessage) sentMessage.autoReply = true;
+  item.updatedAt = now;
+  item.lastAiAutoReplyAt = now;
+  audit(db, actor, 'customer-ai-auto-reply-send', { collection, recordId: item.id, recordLabel: item.customer || item.phone || item.id, detail: `AI自动客服通过 ${channel} 发送低风险回复` });
+  return providerId;
+}
+
+let customerAiAutoReplyRunning = false;
+async function processCustomerAiAutoReplies() {
+  if (customerAiAutoReplyRunning) return;
+  customerAiAutoReplyRunning = true;
+  try {
+    const db = readDb();
+    const settings = customerAiAutoReplySettings(db);
+    if (!settings.enabled || !openAiCustomerReplyKey(db) || !customerAiAutoReplyInBusinessHours(settings)) return;
+    const now = Date.now();
+    const rows = customerServiceTaskRows(db, 'reply').slice(0, 20);
+    let changed = false;
+    for (const { collection, item } of rows) {
+      const inbound = customerAiAutoReplyLatestInbound(item);
+      if (!inbound) continue;
+      const channel = String(inbound.channel || '').toLowerCase();
+      if (!['meta', 'yelp', 'sms'].includes(channel) || !settings.channels[channel]) continue;
+      const inboundKey = prospectMessageKey(inbound);
+      if (!inboundKey || item.lastAiAutoReplyInboundKey === inboundKey) continue;
+      const receivedAt = Date.parse(inbound.timestamp || inbound.time || inbound.createdAt || '');
+      if (!Number.isFinite(receivedAt) || now - receivedAt < settings.delaySeconds * 1000) continue;
+      const forceHumanReason = customerAiAutoReplyForceHumanReason(inbound);
+      if (forceHumanReason) {
+        item.lastAiAutoReplyInboundKey = inboundKey;
+        item.agentReplyDraft = { text: '', note: forceHumanReason, disposition: 'needs_human', riskLevel: 'high', followUpReason: forceHumanReason, createdAt: new Date().toISOString(), createdBy: 'AI自动客服安全规则', provider: 'system', model: '', apiVersion: 2 };
+        addCustomerAiAutoReplyLog(db, { collection, recordId: item.id, customer: item.customer || item.phone, channel, status: 'draft', riskLevel: 'high', detail: forceHumanReason });
+        changed = true;
+        continue;
+      }
+      if (customerAiAutoReplyConsecutiveCount(item) >= settings.maxConsecutive) {
+        item.lastAiAutoReplyInboundKey = inboundKey;
+        addCustomerAiAutoReplyLog(db, { collection, recordId: item.id, customer: item.customer || item.phone, channel, status: 'blocked', detail: '达到每位客户连续自动回复次数上限，已转人工' });
+        changed = true;
+        continue;
+      }
+      try {
+        const actor = { id: 'customer-ai-auto-reply', name: 'AI自动客服', email: 'ai-auto-reply@system.local' };
+        item.lastAiAutoReplyInboundKey = inboundKey;
+        item.lastAiAutoReplyClaimedAt = new Date().toISOString();
+        writeDb(db);
+        const result = await saveCustomerAiReplyDraft(db, actor, item, collection, channel, 'reply');
+        const draft = result.draft;
+        if (draft.disposition === 'ready_for_review' && draft.riskLevel === 'low' && settings.autoSendLowRisk) {
+          await sendCustomerAiAutomaticReply(db, collection, item, channel, draft.replyText);
+          addCustomerAiAutoReplyLog(db, { collection, recordId: item.id, customer: item.customer || item.phone, channel, status: 'sent', riskLevel: draft.riskLevel, detail: draft.note || '低风险回复已自动发送' });
+          delete item.agentReplyDraft;
+        } else {
+          addCustomerAiAutoReplyLog(db, { collection, recordId: item.id, customer: item.customer || item.phone, channel, status: 'draft', riskLevel: draft.riskLevel, detail: draft.note || '高风险或需人工确认，仅保存草稿' });
+        }
+        changed = true;
+      } catch (err) {
+        item.lastAiAutoReplyInboundKey = inboundKey;
+        addCustomerAiAutoReplyLog(db, { collection, recordId: item.id, customer: item.customer || item.phone, channel, status: 'error', detail: String(err.message || err).slice(0, 500) });
+        changed = true;
+      }
+    }
+    if (changed) {
+      writeDb(db);
+      notifyDataChanged('customer-ai-auto-reply', new Date().toISOString());
+    }
+  } finally {
+    customerAiAutoReplyRunning = false;
+  }
+}
+
+function startCustomerAiAutoReplyWorker() {
+  const run = () => processCustomerAiAutoReplies().catch(err => console.warn(`AI auto reply worker failed: ${err.message}`));
+  setTimeout(run, 15 * 1000);
+  setInterval(run, 10 * 1000);
 }
 
 function safeCustomerMediaExtension(name, contentType) {
@@ -5677,6 +5842,7 @@ async function api(req, res) {
     const model = String(body.model || customerAiReplyModel(db)).trim().slice(0, 80);
     const knowledgeProvided = Object.prototype.hasOwnProperty.call(body, 'knowledge');
     const knowledge = String(body.knowledge || '').trim();
+    const autoReplyProvided = body.autoReply && typeof body.autoReply === 'object';
     if (apiKey && apiKey.length < 20) return send(res, 400, { error: 'OpenAI API Key 太短，请检查后再保存' });
     if (apiKey && !/^sk-[A-Za-z0-9_\-]+/.test(apiKey)) return send(res, 400, { error: 'OpenAI API Key 通常以 sk- 开头，请检查后再保存' });
     if (!model) return send(res, 400, { error: '请输入 AI 模型名称' });
@@ -5689,6 +5855,25 @@ async function api(req, res) {
       db.settings.customerAiKnowledge = knowledge;
       db.settings.customerAiKnowledgeUpdatedAt = new Date().toISOString();
       db.settings.customerAiKnowledgeUpdatedBy = user.name || user.email;
+    }
+    if (autoReplyProvided) {
+      const requested = body.autoReply;
+      db.settings.customerAiAutoReply = {
+        enabled: Boolean(requested.enabled),
+        channels: {
+          meta: Boolean(requested.channels?.meta),
+          yelp: Boolean(requested.channels?.yelp),
+          sms: Boolean(requested.channels?.sms)
+        },
+        delaySeconds: Math.max(10, Math.min(600, Number(requested.delaySeconds || 30))),
+        schedule: requested.schedule === 'business' ? 'business' : 'always',
+        businessStart: /^\d{2}:\d{2}$/.test(requested.businessStart || '') ? requested.businessStart : '09:00',
+        businessEnd: /^\d{2}:\d{2}$/.test(requested.businessEnd || '') ? requested.businessEnd : '18:00',
+        maxConsecutive: Math.max(1, Math.min(5, Number(requested.maxConsecutive || 2))),
+        autoSendLowRisk: requested.autoSendLowRisk !== false,
+        updatedAt: new Date().toISOString(),
+        updatedBy: user.name || user.email
+      };
     }
     if (clearApiKey) {
       delete db.settings.openAiCustomerReplyKeyEncrypted;
@@ -5712,6 +5897,22 @@ async function api(req, res) {
     writeDb(db);
     notifyDataChanged('update-customer-ai-settings', 'customer-ai');
     return send(res, 200, after);
+  }
+
+  if (req.method === 'POST' && url.pathname === '/api/customer-ai/auto-reply/disable') {
+    if (!canAccess(user, 'settingsEdit')) return send(res, 403, { error: '没有关闭 AI 自动回复的权限' });
+    db.settings = db.settings || {};
+    db.settings.customerAiAutoReply = {
+      ...customerAiAutoReplySettings(db),
+      enabled: false,
+      updatedAt: new Date().toISOString(),
+      updatedBy: user.name || user.email
+    };
+    addCustomerAiAutoReplyLog(db, { status: 'disabled', channel: '', detail: `由 ${user.name || user.email} 一键关闭` });
+    audit(db, user, 'disable-customer-ai-auto-reply', '一键关闭 AI 自动回复');
+    writeDb(db);
+    notifyDataChanged('disable-customer-ai-auto-reply', 'customer-ai');
+    return send(res, 200, customerAiSettingsStatus(db));
   }
 
   if (req.method === 'GET' && url.pathname === '/api/meta/settings') {
@@ -7497,6 +7698,7 @@ http.createServer((req, res) => {
   startDailyBackupWorker();
   startScheduleReminderWorker();
   startTwilioReconciliationWorker();
+  startCustomerAiAutoReplyWorker();
   setInterval(expireInternalMessageVideos, 6 * 60 * 60 * 1000);
   setInterval(cleanupStaleMediaUploadParts, 6 * 60 * 60 * 1000);
 });
