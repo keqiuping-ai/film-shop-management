@@ -83,6 +83,7 @@ let prospectSearch = '';
 let warrantySearch = '';
 let warrantyDraftPhotos = [];
 const prospectWorkspaceDrafts = new Map();
+const prospectPendingLocalMessages = new Map();
 let messageRecorder = null;
 let messageAudioChunks = [];
 let messageVoiceHeld = false;
@@ -4321,9 +4322,17 @@ const views = {
           </div>
           <div class="form-grid">
             <label>${lang === 'zh' ? 'OpenAI API Key' : 'OpenAI API Key'}<input id="customerAiApiKey" type="password" autocomplete="off" placeholder="sk-..." /></label>
-            <label>${lang === 'zh' ? 'AI 模型' : 'AI Model'}<input id="customerAiModel" value="gpt-5.6-luna" placeholder="gpt-5.6-luna" /></label>
+            <label>${lang === 'zh' ? 'AI 模型（客服快速模式）' : 'AI Model (fast customer service)'}<input id="customerAiModel" value="gpt-5-mini" placeholder="gpt-5-mini" /></label>
+            <label class="wide customer-ai-knowledge-field">${lang === 'zh' ? 'AI客服规则 / 公司知识 / 报价资料' : 'AI rules / company knowledge / pricing'}
+              <textarea id="customerAiKnowledge" rows="10" maxlength="12000" placeholder="${lang === 'zh' ? '把价格、套餐、车型规则、施工范围、常用话术写在这里。例如：\\n- 全车改色膜：轿车 $____ 起，SUV $____ 起，具体看车型和膜料。\\n- 前两窗 35%：$____。\\n- 不确定价格时先要车型、年份、施工部位，并邀请到店看样品。' : 'Put pricing, packages, vehicle rules, service scope, and approved wording here.'}"></textarea>
+            </label>
+            <div class="wide customer-ai-knowledge-tools">
+              <button class="btn" type="button" onclick="insertCustomerAiKnowledgeTemplate()">${lang === 'zh' ? '插入填写模板' : 'Insert template'}</button>
+              <span id="customerAiKnowledgeMeta" class="note">${lang === 'zh' ? '正在读取已保存规则...' : 'Loading saved rules...'}</span>
+            </div>
+            <p class="wide customer-ai-knowledge-note">${lang === 'zh' ? 'AI 每次生成“客服助手建议回复”都会先读取这里。没有写明的价格、优惠或承诺，AI 不得自行编造，会继续询问车型和施工范围，或提示人工确认。' : 'Every AI reply draft uses these rules first. Prices, discounts, or commitments not written here must not be invented; the AI will ask for missing details or request human review.'}</p>
             <div class="wide">
-              <button class="btn primary" type="button" onclick="saveCustomerAiSettings()">${lang === 'zh' ? '保存AI钥匙' : 'Save AI Key'}</button>
+              <button class="btn primary" type="button" onclick="saveCustomerAiSettings()">${lang === 'zh' ? '保存AI设置' : 'Save AI Settings'}</button>
               <button class="btn" type="button" onclick="clearCustomerAiKey()">${lang === 'zh' ? '清除系统内钥匙' : 'Clear Saved Key'}</button>
               <span id="customerAiStatus" class="note" style="margin-left:10px">${lang === 'zh' ? '正在读取状态...' : 'Loading status...'}</span>
             </div>
@@ -5436,7 +5445,8 @@ function prospectIsYelpSystemNotificationMessage(message, source = '') {
 
 function structuredProspectMessages(item) {
   const rows = Array.isArray(item?.conversationMessages) ? item.conversationMessages : [];
-  return rows.map((message, index) => {
+  const localMessages = prospectPendingLocalMessages.get(activeProspectWorkspaceId) || [];
+  return [...rows, ...localMessages].map((message, index) => {
     const speakerName = cleanConversationText(message.speakerName || message.name || message.sender || '');
     const leadForm = prospectIsYelpLeadFormMessage(message, item?.source);
     const systemNotification = prospectIsYelpSystemNotificationMessage(message, item?.source);
@@ -6321,7 +6331,7 @@ function renderProspectWorkspace() {
           </article>`).join('') : `<div class="prospect-chat-empty">${lang === 'zh' ? '还没有聊天记录。' : 'No conversation yet.'}</div>`}
         </main>
         <footer class="prospect-workspace-composer">
-          ${item.agentReplyDraft?.text ? `<div class="customer-agent-draft"><strong>${lang === 'zh' ? '客服助手建议回复（发送前请人工确认）' : 'Agent draft (review before sending)'}</strong><span>${escapeHtml(item.agentReplyDraft.createdBy || '')} · ${escapeHtml(formatAppDateTime(item.agentReplyDraft.createdAt || ''))}</span><p>${escapeHtml(item.agentReplyDraft.text)}</p></div>` : ''}
+          ${customerAgentDraftHtml(item)}
           <div class="prospect-sms-status" id="prospectChannelStatus">${canReplyYelp
             ? (lang === 'zh' ? '通过 Yelp 站内消息回复；也可以切换到手机短信' : 'Reply in Yelp, or switch to SMS')
             : isMetaSource
@@ -6342,6 +6352,7 @@ function renderProspectWorkspace() {
             <button class="reply-reference-button" type="button" onclick="openReplyReferenceLibrary('image')">🖼 ${lang === 'zh' ? '回复图片' : 'Reply image'}</button>
             <button class="reply-reference-button" type="button" onclick="openReplyReferenceLibrary('video')">▶ ${lang === 'zh' ? '回复视频' : 'Reply video'}</button>
             <button id="customerAiDraftButton" class="reply-reference-button" type="button" onclick="generateCustomerAiReplyDraft()" ${hasPerm('prospectsEdit') ? '' : 'disabled'}>AI ${lang === 'zh' ? '生成回复' : 'Draft reply'}</button>
+            <button id="customerSmsRefreshButton" class="reply-reference-button" type="button" onclick="reconcileCustomerSmsNow()">${lang === 'zh' ? '收短信' : 'Check SMS'}</button>
             <span id="prospectAttachmentPreview">${prospectPendingAttachment ? `${escapeHtml(prospectPendingAttachment.name)} <button type="button" onclick="clearProspectAttachment()">×</button>` : ''}</span>
             <input class="hidden" id="prospectImageInput" type="file" accept="image/*" onchange="uploadProspectAttachment(this.files[0]); this.value=''">
             <input class="hidden" id="prospectVideoInput" type="file" accept="video/*" onchange="uploadProspectAttachment(this.files[0]); this.value=''">
@@ -6543,12 +6554,17 @@ async function generateCustomerAiReplyDraft() {
   const { collection, item } = activeCustomerWorkspaceItem();
   if (!collection || !item) return;
   const button = document.getElementById('customerAiDraftButton');
+  const inlineButton = document.getElementById('customerAiDraftInlineButton');
   const input = document.getElementById('prospectReplyInput');
   const channel = document.getElementById('prospectReplyChannel')?.value || requiredProspectReplyChannel(item) || '';
   const previousText = input?.value || '';
   if (button) {
     button.disabled = true;
     button.textContent = lang === 'zh' ? 'AI生成中...' : 'AI drafting...';
+  }
+  if (inlineButton) {
+    inlineButton.disabled = true;
+    inlineButton.textContent = lang === 'zh' ? '正在生成...' : 'Generating...';
   }
   try {
     const result = await api('/api/customer-ai/reply-draft', {
@@ -6576,7 +6592,47 @@ async function generateCustomerAiReplyDraft() {
       button.disabled = false;
       button.textContent = `AI ${lang === 'zh' ? '生成回复' : 'Draft reply'}`;
     }
+    if (inlineButton) {
+      inlineButton.disabled = false;
+      inlineButton.textContent = lang === 'zh' ? '生成客服建议回复' : 'Generate suggested reply';
+    }
   }
+}
+
+async function reconcileCustomerSmsNow() {
+  const button = document.getElementById('customerSmsRefreshButton');
+  if (button) {
+    button.disabled = true;
+    button.textContent = lang === 'zh' ? '收取中...' : 'Checking...';
+  }
+  try {
+    const result = await api('/api/twilio/reconcile', { method: 'POST', body: '{}' });
+    state = result.data;
+    lastDataRevision = String(result.revision || lastDataRevision || '');
+    broadcastDataChange();
+    preserveProspectWorkspaceRender = false;
+    render();
+    const status = document.getElementById('prospectChannelStatus');
+    if (status) {
+      status.textContent = lang === 'zh'
+        ? `已检查最近短信：新增 ${result.added || 0} 条，匹配 ${result.matched || 0} 条，未匹配 ${result.unmatched || 0} 条`
+        : `Checked recent SMS: ${result.added || 0} added, ${result.matched || 0} matched, ${result.unmatched || 0} unmatched`;
+    }
+  } catch (err) {
+    alert(err.message);
+    if (button) {
+      button.disabled = false;
+      button.textContent = lang === 'zh' ? '收短信' : 'Check SMS';
+    }
+  }
+}
+
+function customerAgentDraftHtml(item) {
+  const draft = item?.agentReplyDraft || {};
+  if (draft.text) {
+    return `<div class="customer-agent-draft"><strong>${lang === 'zh' ? '客服助手建议回复（发送前请人工确认）' : 'Agent draft (review before sending)'}</strong><span>${escapeHtml(draft.createdBy || '')} · ${escapeHtml(formatAppDateTime(draft.createdAt || ''))}</span><p>${escapeHtml(draft.text)}</p></div>`;
+  }
+  return `<div class="customer-agent-draft customer-agent-draft-empty"><strong>${lang === 'zh' ? '客服助手建议回复（发送前请人工确认）' : 'Agent draft (review before sending)'}</strong><span>${lang === 'zh' ? '还没有生成草稿。每个客户都可以直接生成，系统只保存草稿，不会自动发送。' : 'No draft yet. Every customer can generate one; it is saved for review and never sent automatically.'}</span><button id="customerAiDraftInlineButton" type="button" onclick="generateCustomerAiReplyDraft()" ${hasPerm('prospectsEdit') ? '' : 'disabled'}>${lang === 'zh' ? '生成客服建议回复' : 'Generate suggested reply'}</button></div>`;
 }
 
 async function handleProspectReplyPaste(event) {
@@ -6916,27 +6972,55 @@ async function sendProspectMessage() {
   if (!item || (!text && !prospectPendingAttachment)) return;
   if (channel === 'meta' && prospectPendingAttachment) return alert(lang === 'zh' ? 'Meta 私信第一版只发送文字；如需发送图片或视频，请切换到手机短信。' : 'Meta currently supports text replies here. Switch to SMS for attachments.');
   if (channel === 'yelp' && prospectPendingAttachment) return alert(lang === 'zh' ? 'Yelp 通道第一版只发送文字；如需发送图片或视频，请切换到手机短信。' : 'Yelp currently supports text replies here. Switch to SMS for attachments.');
+  const workspaceKey = activeProspectWorkspaceId;
+  const localMessageId = `local-send-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  const localChannel = channel === 'yelp' ? 'yelp' : channel === 'meta' ? 'meta' : 'sms';
+  const localAttachment = channel === 'sms' && prospectPendingAttachment ? { ...prospectPendingAttachment } : null;
+  const localText = text || (localAttachment ? (lang === 'zh' ? '正在发送附件...' : 'Sending attachment...') : '');
   if (button) {
     button.disabled = true;
     button.textContent = lang === 'zh' ? '发送中…' : 'Sending…';
   }
+  if (input) input.value = '';
+  prospectPendingAttachment = null;
+  prospectReplyRevision += 1;
+  prospectPendingLocalMessages.set(workspaceKey, [
+    ...(prospectPendingLocalMessages.get(workspaceKey) || []),
+    {
+      id: localMessageId,
+      speaker: 'shop',
+      speakerName: user?.name || user?.email || '',
+      direction: 'outbound',
+      channel: localChannel,
+      text: localText,
+      attachment: localAttachment,
+      timestamp: new Date().toISOString(),
+      status: lang === 'zh' ? '发送中' : 'sending'
+    }
+  ]);
+  renderProspectWorkspace();
   try {
     const result = await api(channel === 'yelp' ? '/api/yelp/send' : channel === 'meta' ? '/api/meta/send' : '/api/twilio/send', {
       method: 'POST',
-      body: JSON.stringify({ collection, id: item.id, text, attachment: channel === 'sms' ? prospectPendingAttachment : null })
+      body: JSON.stringify({ collection, id: item.id, text, attachment: localAttachment })
     });
-    prospectReplyRevision += 1;
-    if (input) input.value = '';
-    prospectPendingAttachment = null;
+    prospectPendingLocalMessages.delete(workspaceKey);
     state = result.data;
+    lastDataRevision = String(result.revision || lastDataRevision || '');
     broadcastDataChange();
     preserveProspectWorkspaceRender = false;
     render();
   } catch (err) {
     alert(err.message);
-    if (button) {
-      button.disabled = false;
-      button.textContent = channel === 'yelp'
+    prospectPendingLocalMessages.delete(workspaceKey);
+    prospectPendingAttachment = localAttachment;
+    renderProspectWorkspace();
+    const nextInput = document.getElementById('prospectReplyInput');
+    if (nextInput) nextInput.value = text;
+    const retryButton = document.getElementById('prospectSendSmsButton');
+    if (retryButton) {
+      retryButton.disabled = false;
+      retryButton.textContent = channel === 'yelp'
         ? (lang === 'zh' ? '通过 Yelp 发送' : 'Send via Yelp')
         : channel === 'meta'
           ? (lang === 'zh' ? '通过 Meta 发送' : 'Send via Meta')
@@ -8484,11 +8568,86 @@ async function saveSettings() {
   }
 }
 
+function customerAiKnowledgeTemplate() {
+  const zhLines = [
+    '【1. AI角色和目标】',
+    '- 身份：QUAD Film / QD Auto Image 客服。',
+    '- 目标：先了解车型、年份、施工项目和客户时间，再推动报价、到店看样或预约。',
+    '',
+    '【2. 可以回答】',
+    '- 公司服务：车窗膜、透明PPF、彩色PPF、改色膜、建筑膜。',
+    '- 公司优势：（请填写材料、施工、质保、经验、门店等真实优势）',
+    '',
+    '【3. 不可以直接回答 / 必须转人工】',
+    '- 未列明的价格、折扣、库存、工期和预约空档不得猜测。',
+    '- 投诉、退款、法律责任、质保争议和最终交车承诺必须转人工。',
+    '',
+    '【4. 报价规则】',
+    '- 全车改色膜：（按轿车/SUV/车型填写价格或范围）',
+    '- 透明PPF：（按全车/前脸/部位填写价格或范围）',
+    '- 彩色PPF：（填写价格或范围）',
+    '- 车窗膜：（按车型、部位、膜系列填写价格）',
+    '- 报价前必须确认：（车型、年份、施工部位、颜色/膜系列等）',
+    '',
+    '【5. 公司资料】',
+    '- 地址：3359 W Oquendo Rd, Las Vegas, NV 89118',
+    '- 联系人/签名：Sabrina / QD Auto Image / 725-304-1424',
+    '- 营业时间：（请填写）',
+    '- 质保政策：（请填写）',
+    '',
+    '【6. 回复风格和成交步骤】',
+    '- 用英文回复客户，简短、热情、专业。',
+    '- 每次只问最关键的一个问题。',
+    '- 条件合适时邀请客户到店看膜样，或询问方便预约的日期。',
+    '',
+    '【7. 常用话术】',
+    '- 首次咨询：（请填写）',
+    '- 客户只问价格：（请填写）',
+    '- 邀请到店：（请填写）'
+  ];
+  const enLines = [
+    '1. AI role and goal',
+    '- Act as QUAD Film / QD Auto Image customer service.',
+    '- Collect vehicle, year, service, and timing details, then move toward a quote, sample visit, or appointment.',
+    '',
+    '2. Allowed answers',
+    '- Add verified services and company advantages.',
+    '',
+    '3. Must escalate',
+    '- Unlisted prices, discounts, stock, timing, complaints, refunds, legal issues, warranty disputes, and firm promises.',
+    '',
+    '4. Pricing rules',
+    '- Add verified prices or ranges by service, vehicle, material, and required details.',
+    '',
+    '5. Company facts and approved wording',
+    '- Add hours, warranty, verified advantages, and reply templates.'
+  ];
+  return (lang === 'zh' ? zhLines : enLines).join('\n');
+}
+
+function insertCustomerAiKnowledgeTemplate() {
+  const knowledge = document.getElementById('customerAiKnowledge');
+  if (!knowledge) return;
+  if (knowledge.value.trim() && !confirm(lang === 'zh' ? '当前已经有内容。确定用填写模板替换吗？' : 'There is already content. Replace it with the template?')) return;
+  knowledge.value = customerAiKnowledgeTemplate();
+  knowledge.focus();
+}
+
 function renderCustomerAiStatus(info) {
   const status = document.getElementById('customerAiStatus');
   const model = document.getElementById('customerAiModel');
+  const knowledge = document.getElementById('customerAiKnowledge');
+  const knowledgeMeta = document.getElementById('customerAiKnowledgeMeta');
   if (!status) return;
   if (model && info?.model) model.value = info.model;
+  if (knowledge && document.activeElement !== knowledge) knowledge.value = info?.knowledge || '';
+  if (knowledgeMeta) {
+    const updatedAt = info?.knowledgeUpdatedAt ? formatAppDateTime(info.knowledgeUpdatedAt) : '';
+    const updatedBy = String(info?.knowledgeUpdatedBy || '').trim();
+    knowledgeMeta.textContent = lang === 'zh'
+      ? (updatedAt ? `已保存规则｜最后修改：${updatedAt}${updatedBy ? `｜${updatedBy}` : ''}` : '还没有保存规则，可插入模板后填写')
+      : (updatedAt ? `Rules saved | Last updated: ${updatedAt}${updatedBy ? ` | ${updatedBy}` : ''}` : 'No rules saved yet; insert the template to begin');
+  }
   if (!info) {
     status.textContent = lang === 'zh' ? '状态读取失败' : 'Failed to load status';
     return;
@@ -8517,19 +8676,21 @@ async function loadCustomerAiSettings() {
 async function saveCustomerAiSettings() {
   const apiKeyInput = document.getElementById('customerAiApiKey');
   const modelInput = document.getElementById('customerAiModel');
+  const knowledgeInput = document.getElementById('customerAiKnowledge');
   const apiKey = String(apiKeyInput?.value || '').trim();
-  if (!apiKey) return alert(lang === 'zh' ? '请先粘贴 OpenAI API Key。' : 'Paste the OpenAI API Key first.');
+  const knowledge = String(knowledgeInput?.value || '').trim();
   try {
     const info = await api('/api/customer-ai/settings', {
       method: 'PUT',
       body: JSON.stringify({
         apiKey,
-        model: String(modelInput?.value || 'gpt-5.6-luna').trim()
+        model: String(modelInput?.value || 'gpt-5-mini').trim(),
+        knowledge
       })
     });
     if (apiKeyInput) apiKeyInput.value = '';
     renderCustomerAiStatus(info);
-    alert(lang === 'zh' ? 'AI钥匙已加密保存。' : 'AI key encrypted and saved.');
+    alert(lang === 'zh' ? 'AI客服规则和设置已保存。以后每次生成回复都会使用这些内容。' : 'AI rules and settings saved. Future reply drafts will use this content.');
   } catch (err) {
     alert(err.message);
   }
@@ -8545,7 +8706,7 @@ async function clearCustomerAiKey() {
       method: 'PUT',
       body: JSON.stringify({
         clearApiKey: true,
-        model: String(document.getElementById('customerAiModel')?.value || 'gpt-5.6-luna').trim()
+        model: String(document.getElementById('customerAiModel')?.value || 'gpt-5-mini').trim()
       })
     });
     const apiKeyInput = document.getElementById('customerAiApiKey');

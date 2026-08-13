@@ -118,7 +118,7 @@ POST /api/agent/customer-tasks/{collection}/{id}/send
 
 ```text
 OPENAI_API_KEY=<OpenAI API Key>
-OPENAI_CUSTOMER_REPLY_MODEL=gpt-5.6-luna
+OPENAI_CUSTOMER_REPLY_MODEL=gpt-5-mini
 OPENAI_API_BASE_URL=https://api.openai.com/v1
 ```
 

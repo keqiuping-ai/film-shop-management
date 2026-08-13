@@ -1528,8 +1528,12 @@ function parseAiBossDraft(text) {
   return JSON.parse(raw.slice(start, end + 1));
 }
 
-function customerAiReplyPrompt(task, channel = '') {
-  const lastMessages = (task.messages || []).slice(-18).map(message => ({
+function customerAiKnowledge(db) {
+  return String(db?.settings?.customerAiKnowledge || '').trim().slice(0, 12000);
+}
+
+function customerAiReplyPrompt(task, channel = '', knowledge = '') {
+  const lastMessages = (task.messages || []).slice(-10).map(message => ({
     role: message.role,
     channel: message.channel,
     at: message.timestamp,
@@ -1544,8 +1548,13 @@ Shop facts:
 - Address: 3359 W Oquendo Rd, Las Vegas, NV 89118.
 - Main public contact name/signature: Sabrina / QD Auto Image / 725-304-1424.
 - The shop can invite customers to visit to compare film samples in person.
-- Do not invent exact prices, discounts, stock, legal tint compliance, installation duration, or appointment availability if not present in the record.
+- Do not invent exact prices, discounts, stock, legal tint compliance, installation duration, or appointment availability if not present in the customer record or operator-maintained knowledge below.
 - If the customer asks about complaint, refund, legal responsibility, uncertain price, warranty dispute, or a firm delivery/appointment promise, do not make a commitment; set disposition to "needs_human".
+
+Operator-maintained customer-service rules, company knowledge, and pricing:
+${knowledge || '(No additional knowledge configured.)'}
+
+Treat the operator-maintained content above as the authoritative business policy and follow it before any general sales advice. It controls what may be answered, what must not be answered, approved company advantages, quoting rules, escalation rules, and preferred wording. If the customer asks a price and an exact matching price is present there, mention it clearly. If only a range, rule, or required vehicle/detail is present, explain that and ask for the missing detail. Never create prices, guarantees, discounts, or company claims outside that content.
 
 Customer task:
 ${JSON.stringify({
@@ -1589,7 +1598,8 @@ function normalizeCustomerAiDraft(value) {
 }
 
 function customerAiReplyModel(db) {
-  return String(process.env.OPENAI_CUSTOMER_REPLY_MODEL || db?.settings?.openAiCustomerReplyModel || 'gpt-5.6-luna').trim();
+  const configured = String(process.env.OPENAI_CUSTOMER_REPLY_MODEL || db?.settings?.openAiCustomerReplyModel || 'gpt-5-mini').trim();
+  return configured === 'gpt-5.6-luna' ? 'gpt-5-mini' : configured;
 }
 
 function openAiCustomerReplyKey(db) {
@@ -1607,6 +1617,9 @@ function customerAiSettingsStatus(db) {
     model: customerAiReplyModel(db),
     keyMask: maskSecret(activeKey),
     customOpenAiBaseUrl: Boolean(process.env.OPENAI_API_BASE_URL),
+    knowledge: customerAiKnowledge(db),
+    knowledgeUpdatedAt: db?.settings?.customerAiKnowledgeUpdatedAt || '',
+    knowledgeUpdatedBy: db?.settings?.customerAiKnowledgeUpdatedBy || '',
     updatedAt: db?.settings?.openAiCustomerReplyKeyUpdatedAt || '',
     updatedBy: db?.settings?.openAiCustomerReplyKeyUpdatedBy || ''
   };
@@ -1655,21 +1668,26 @@ async function createCustomerAiReplyDraft(db, row, requestedChannel = '') {
   const apiKey = openAiCustomerReplyKey(db);
   if (!apiKey) throw new Error('OpenAI API Key 尚未配置，暂时不能生成系统内 AI 客服回复');
   const task = safeCustomerServiceTask(row);
-  const prompt = customerAiReplyPrompt(task, requestedChannel);
+  const prompt = customerAiReplyPrompt(task, requestedChannel, customerAiKnowledge(db));
   const openAiBaseUrl = String(process.env.OPENAI_API_BASE_URL || 'https://api.openai.com/v1').replace(/\/+$/, '');
   const model = customerAiReplyModel(db);
+  const requestBody = {
+    model,
+    messages: [{ role: 'user', content: prompt }],
+    response_format: { type: 'json_object' },
+    max_completion_tokens: 450
+  };
+  if (/^gpt-5(?:\.|-|$)/i.test(model)) requestBody.reasoning_effort = 'minimal';
+  const startedAt = Date.now();
   const value = await fetchAiJson(`${openAiBaseUrl}/chat/completions`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
-    body: JSON.stringify({
-      model,
-      messages: [{ role: 'user', content: prompt }],
-      response_format: { type: 'json_object' }
-    })
+    body: JSON.stringify(requestBody)
   });
   return {
     provider: 'openai',
     model,
+    durationMs: Date.now() - startedAt,
     draft: normalizeCustomerAiDraft(parseAiBossDraft(value?.choices?.[0]?.message?.content))
   };
 }
@@ -1687,6 +1705,7 @@ async function saveCustomerAiReplyDraft(db, user, item, collection, requestedCha
     createdBy: user.name || user.email,
     provider: result.provider,
     model: result.model,
+    durationMs: result.durationMs,
     apiVersion: 2
   };
   item.updatedAt = now;
@@ -3381,7 +3400,7 @@ function applyCustomerNumberRemoval() {
 }
 
 async function reconcileRecentTwilioInboundMessages() {
-  if (!twilioConfigured()) return;
+  if (!twilioConfigured()) return { added: 0, scanned: 0, matched: 0, unmatched: 0, skipped: 0 };
   const config = twilioConfig();
   const auth = Buffer.from(`${config.accountSid}:${config.authToken}`).toString('base64');
   const response = await fetch(`${config.apiBaseUrl}/2010-04-01/Accounts/${encodeURIComponent(config.accountSid)}/Messages.json?PageSize=50`, {
@@ -3391,10 +3410,19 @@ async function reconcileRecentTwilioInboundMessages() {
   const payload = await response.json();
   const db = readDb();
   let added = 0;
+  let scanned = 0;
+  let matched = 0;
+  let unmatched = 0;
+  let skipped = 0;
   for (const message of (payload.messages || [])) {
     if (message.direction !== 'inbound' || normalizedPhone(message.to) !== normalizedPhone(config.fromNumber)) continue;
+    scanned += 1;
     const match = findConversationByPhone(db, message.from);
-    if (!match) continue;
+    if (!match) {
+      unmatched += 1;
+      continue;
+    }
+    matched += 1;
     const existingMessage = (match.item.conversationMessages || []).find(row => row.providerSid === message.sid);
     if (existingMessage) {
       if (Number(message.num_media || 0) > 0 && !existingMessage.attachment?.url) {
@@ -3409,6 +3437,7 @@ async function reconcileRecentTwilioInboundMessages() {
           added += 1;
         }
       }
+      skipped += 1;
       continue;
     }
     const rawTimestamp = message.date_sent || message.date_created || new Date().toISOString();
@@ -3428,11 +3457,12 @@ async function reconcileRecentTwilioInboundMessages() {
     reactivateConversationOnInbound(match.item, Number.isNaN(parsedTimestamp.getTime()) ? String(rawTimestamp) : parsedTimestamp.toISOString());
     added += 1;
   }
-  if (!added) return;
+  if (!added) return { added, scanned, matched, unmatched, skipped };
   audit(db, { id: 'twilio-reconcile', name: 'Twilio' }, 'reconcile-customer-sms', `Recovered ${added} recent inbound SMS messages`);
   writeDb(db);
   notifyDataChanged('reconcile-customer-sms', String(added));
   console.log(`Twilio inbound messages reconciled: ${added}.`);
+  return { added, scanned, matched, unmatched, skipped };
 }
 
 function reactivateConversationOnInbound(item, receivedAt = new Date().toISOString()) {
@@ -3452,7 +3482,7 @@ function reactivateConversationOnInbound(item, receivedAt = new Date().toISOStri
 function startTwilioReconciliationWorker() {
   const run = () => reconcileRecentTwilioInboundMessages().catch(err => console.warn(err.message));
   setTimeout(run, 10 * 1000);
-  setInterval(run, 5 * 60 * 1000);
+  setInterval(run, 30 * 1000);
 }
 
 async function sendTwilioSms({ to, body, mediaUrl, statusCallback }) {
@@ -5645,13 +5675,21 @@ async function api(req, res) {
     const apiKey = String(body.apiKey || '').trim();
     const clearApiKey = Boolean(body.clearApiKey);
     const model = String(body.model || customerAiReplyModel(db)).trim().slice(0, 80);
+    const knowledgeProvided = Object.prototype.hasOwnProperty.call(body, 'knowledge');
+    const knowledge = String(body.knowledge || '').trim();
     if (apiKey && apiKey.length < 20) return send(res, 400, { error: 'OpenAI API Key 太短，请检查后再保存' });
     if (apiKey && !/^sk-[A-Za-z0-9_\-]+/.test(apiKey)) return send(res, 400, { error: 'OpenAI API Key 通常以 sk- 开头，请检查后再保存' });
     if (!model) return send(res, 400, { error: '请输入 AI 模型名称' });
+    if (knowledge.length > 12000) return send(res, 400, { error: 'AI 客服资料库最多 12000 个字符，请精简后再保存' });
 
     const before = customerAiSettingsStatus(db);
     db.settings = db.settings || {};
     db.settings.openAiCustomerReplyModel = model;
+    if (knowledgeProvided) {
+      db.settings.customerAiKnowledge = knowledge;
+      db.settings.customerAiKnowledgeUpdatedAt = new Date().toISOString();
+      db.settings.customerAiKnowledgeUpdatedBy = user.name || user.email;
+    }
     if (clearApiKey) {
       delete db.settings.openAiCustomerReplyKeyEncrypted;
       db.settings.openAiCustomerReplyKeyUpdatedAt = new Date().toISOString();
@@ -5669,7 +5707,7 @@ async function api(req, res) {
       before,
       after,
       changedFields: diffRecords(before, after),
-      detail: apiKey ? '更新系统内 ChatGPT 客服密钥' : clearApiKey ? '清除系统内 ChatGPT 客服密钥' : '更新系统内 ChatGPT 客服设置'
+      detail: apiKey ? '更新系统内 ChatGPT 客服密钥和设置' : clearApiKey ? '清除系统内 ChatGPT 客服密钥' : knowledgeProvided ? '更新系统内 ChatGPT 客服资料库' : '更新系统内 ChatGPT 客服设置'
     });
     writeDb(db);
     notifyDataChanged('update-customer-ai-settings', 'customer-ai');
@@ -5788,6 +5826,9 @@ async function api(req, res) {
     delete body.openAiCustomerReplyKeyUpdatedAt;
     delete body.openAiCustomerReplyKeyUpdatedBy;
     delete body.openAiCustomerReplyModel;
+    delete body.customerAiKnowledge;
+    delete body.customerAiKnowledgeUpdatedAt;
+    delete body.customerAiKnowledgeUpdatedBy;
     delete body.metaPageAccessTokenEncrypted;
     delete body.metaAppSecretEncrypted;
     delete body.metaWebhookVerifyTokenEncrypted;
@@ -5843,6 +5884,17 @@ async function api(req, res) {
       voiceWebhookUrl: `${requestPublicBaseUrl(req)}/api/twilio/voice`,
       callForwardEnabled: Boolean(db.settings?.callForwardEnabled),
       callForwardNumber: String(db.settings?.callForwardNumber || '')
+    });
+  }
+
+  if (req.method === 'POST' && url.pathname === '/api/twilio/reconcile') {
+    if (!canAccess(user, 'prospectsView')) return send(res, 403, { error: '没有同步客户短信的权限' });
+    const result = await reconcileRecentTwilioInboundMessages();
+    return send(res, 200, {
+      ok: true,
+      ...result,
+      data: sanitizeDbForUser(readDb(), user),
+      revision: databaseRevision()
     });
   }
 

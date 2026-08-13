@@ -1044,6 +1044,10 @@ tr:hover td { background: #fbfcfd; }
 .customer-agent-draft strong { color:#795500; }
 .customer-agent-draft span { color:#7c8790; font-size:12px; }
 .customer-agent-draft p { margin:0; white-space:pre-wrap; line-height:1.45; }
+.customer-agent-draft-empty { grid-template-columns:minmax(0,1fr) auto; align-items:center; }
+.customer-agent-draft-empty strong { grid-column:1/-1; }
+.customer-agent-draft-empty button { border:1px solid #e7c45f; border-radius:8px; background:#fff; color:#795500; padding:7px 10px; font-weight:850; cursor:pointer; }
+.customer-agent-draft-empty button:disabled { opacity:.58; cursor:not-allowed; }
 .prospect-workspace {
   position: fixed;
   inset: 0;
@@ -2145,3 +2149,26 @@ body.modal-lock .prospect-workspace { pointer-events: none; }
 .job-warranty-button:hover { background:#fff1af; }
 @media(max-width:900px){.warranty-grid{grid-template-columns:1fr}.warranty-facts{grid-template-columns:1fr}.warranty-card footer{align-items:flex-start;flex-direction:column}.warranty-photo-editor{grid-template-columns:1fr}.warranty-photo-drafts{grid-column:1}}
 .form-grid [hidden] { display: none !important; }
+.customer-ai-knowledge-field textarea {
+  min-height: 210px;
+  resize: vertical;
+  line-height: 1.5;
+  font-size: 15px;
+  white-space: pre-wrap;
+}
+.customer-ai-knowledge-note {
+  margin: -6px 0 2px;
+  padding: 10px 12px;
+  border: 1px solid #c9e7ec;
+  border-radius: 10px;
+  background: #f4fbfc;
+  color: #42636c;
+  line-height: 1.5;
+}
+.customer-ai-knowledge-tools {
+  display:flex;
+  align-items:center;
+  gap:12px;
+  flex-wrap:wrap;
+  margin-top:-4px;
+}
