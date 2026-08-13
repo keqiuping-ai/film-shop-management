@@ -330,6 +330,8 @@ function seedDb() {
       { id: id(), date: new Date().toISOString().slice(0, 10), type: 'wholesale-us', customer: 'LA Dealer', salesRep: '', preparedBy: 'System', item: 'CW-TC8870', qty: 200, unitPrice: 3, status: '待出库', shipping: 'UPS Freight', paid: 300 }
     ],
     shipments: [],
+    shipmentReceipts: [],
+    shipmentExceptions: [],
     schedules: [],
     scheduleReminderLogs: [],
     personalNotes: [],
@@ -399,6 +401,8 @@ function readDb() {
   if (!Array.isArray(db.customerConversations)) db.customerConversations = [];
   if (!Array.isArray(db.replyTemplates)) db.replyTemplates = [];
   if (!Array.isArray(db.shipments)) db.shipments = [];
+  if (!Array.isArray(db.shipmentReceipts)) db.shipmentReceipts = [];
+  if (!Array.isArray(db.shipmentExceptions)) db.shipmentExceptions = [];
   if (!Array.isArray(db.schedules)) db.schedules = [];
   if (!Array.isArray(db.scheduleReminderLogs)) db.scheduleReminderLogs = [];
   if (!Array.isArray(db.personalNotes)) db.personalNotes = [];
@@ -1220,6 +1224,8 @@ function sanitizeDbForUser(db, user) {
     portalCustomers: p.ordersView ? (db.portalCustomers || []).map(safePortalCustomer) : [],
     warranties: p.jobsView || p.jobsCreate || p.jobsEdit || p.jobsDelete ? (db.warranties || []) : [],
     shipments: p.shipmentsView ? db.shipments : [],
+    shipmentReceipts: p.shipmentsView ? db.shipmentReceipts : [],
+    shipmentExceptions: p.shipmentsView ? db.shipmentExceptions : [],
     schedules: p.schedulesView ? (db.schedules || []) : [],
     scheduleReminderLogs: p.schedulesView ? (db.scheduleReminderLogs || []).slice(0, 200) : [],
     customerServiceReps: p.leadsView ? sanitizeCustomerServiceReps(db.customerServiceReps || [], p) : [],
@@ -7053,6 +7059,85 @@ async function api(req, res) {
     return send(res, 200, sanitizeDbForUser(db, user));
   }
 
+  const receiveShipmentMatch = url.pathname.match(/^\/api\/shipments\/([^/]+)\/receive$/);
+  if (receiveShipmentMatch && req.method === 'POST') {
+    if (!canAccess(user, 'shipmentsEdit') || !canAccess(user, 'inventoryEdit')) {
+      return send(res, 403, { error: '收货入库需要同时具备在途货物和库存修改权限' });
+    }
+    const shipment = (db.shipments || []).find(row => row.id === receiveShipmentMatch[1]);
+    if (!shipment) return send(res, 404, { error: '找不到这张在途货物单' });
+    if (shipment.receivedAt || shipment.receiptId) return send(res, 400, { error: '这张在途货物单已经收货入库，不能重复操作' });
+
+    const body = await readBody(req);
+    const sku = String(body.sku || shipment.sku || '').trim();
+    const expectedQty = Number(body.expectedQty ?? shipment.qty);
+    const actualQty = Number(body.actualQty);
+    const note = String(body.note || '').trim().slice(0, 1000);
+    const product = (db.products || []).find(row => String(row.sku || '') === sku);
+    if (!product) return send(res, 400, { error: '请选择系统库存中存在的 SKU，才能自动入库' });
+    if (!Number.isFinite(expectedQty) || expectedQty < 0) return send(res, 400, { error: '在途单应到数量必须是有效数字' });
+    if (!Number.isFinite(actualQty) || actualQty < 0) return send(res, 400, { error: '实际收到数量必须是大于或等于 0 的数字' });
+
+    const now = new Date().toISOString();
+    const receivedDate = dateInTimezone(db.settings?.entryTimezone || db.settings?.timezone || 'America/Los_Angeles', 0);
+    const receiptId = id();
+    const receiptNo = `RK-${receivedDate.replaceAll('-', '')}-${receiptId.slice(0, 6).toUpperCase()}`;
+    const differenceQty = actualQty - expectedQty;
+    const receipt = {
+      id: receiptId, receiptNo, shipmentId: shipment.id, shipmentTrackingNo: shipment.trackingNo || '',
+      sku, productName: product.name || '', items: shipment.items || '', expectedQty, actualQty, differenceQty,
+      supplier: shipment.supplier || '', receivedDate, receivedAt: now, receivedBy: user.name || user.email || '',
+      receivedByUserId: user.id, note, movementId: ''
+    };
+    if (actualQty > 0) {
+      const movement = {
+        id: id(), date: receivedDate, sku, type: 'in', qty: actualQty,
+        note: `在途货物整单收货 ${receiptNo}${shipment.trackingNo ? `；单号 ${shipment.trackingNo}` : ''}`,
+        shipmentId: shipment.id, shipmentReceiptId: receiptId, receiptNo,
+        createdAt: now, createdBy: user.name || user.email || '', createdByUserId: user.id
+      };
+      db.movements.push(movement);
+      applyMovement(db, movement);
+      receipt.movementId = movement.id;
+    }
+
+    let exception = null;
+    if (differenceQty !== 0) {
+      const exceptionId = id();
+      const exceptionNo = `YC-${receivedDate.replaceAll('-', '')}-${exceptionId.slice(0, 6).toUpperCase()}`;
+      exception = {
+        id: exceptionId, exceptionNo, shipmentId: shipment.id, receiptId, receiptNo,
+        sku, productName: product.name || '', items: shipment.items || '', expectedQty, actualQty, differenceQty,
+        type: differenceQty < 0 ? '少货' : '多货', status: '待处理', note,
+        createdAt: now, createdBy: user.name || user.email || '', createdByUserId: user.id
+      };
+      db.shipmentExceptions.unshift(exception);
+    }
+    db.shipmentReceipts.unshift(receipt);
+    shipment.sku = sku;
+    shipment.qty = expectedQty;
+    shipment.actualQty = actualQty;
+    shipment.differenceQty = differenceQty;
+    shipment.arrivedDate = receivedDate;
+    shipment.receivedAt = now;
+    shipment.receivedBy = user.name || user.email || '';
+    shipment.receiptId = receiptId;
+    shipment.receiptNo = receiptNo;
+    shipment.exceptionId = exception?.id || '';
+    shipment.exceptionNo = exception?.exceptionNo || '';
+    shipment.status = exception ? '异常到货' : '已到货';
+    if (note) shipment.receiptNote = note;
+
+    audit(db, user, 'receive-shipment', {
+      collection: 'shipments', recordId: shipment.id, recordLabel: shipment.trackingNo || shipment.items,
+      after: { receipt, exception },
+      detail: `在途货物收货 ${receiptNo}；${sku} 应到 ${expectedQty}，实到 ${actualQty}${exception ? `；生成异常单 ${exception.exceptionNo}` : '；数量一致'}`
+    });
+    writeDb(db);
+    notifyDataChanged('receive-shipment', shipment.id);
+    return send(res, 200, { data: sanitizeDbForUser(db, user), receipt, exception });
+  }
+
   const match = url.pathname.match(/^\/api\/([a-zA-Z]+)(?:\/([^/]+))?$/);
   if (!match) return send(res, 404, { error: 'Not found' });
   const [, collection, recordId] = match;
@@ -7260,6 +7345,9 @@ async function api(req, res) {
     const idx = db[collection].findIndex(x => x.id === recordId);
     const canSeeCosts = user.role === 'owner';
     if (idx < 0) return send(res, 404, { error: 'Record not found' });
+    if (collection === 'shipments' && db[collection][idx].receivedAt) {
+      return send(res, 400, { error: '已经收货入库的在途单不能直接修改，避免库存与入库单不一致' });
+    }
     if (collection === 'users' && db[collection][idx].role === 'owner') {
       return send(res, 400, { error: '老板账号受保护，不能在员工权限里修改。请到设置里修改老板自己的邮箱和密码。' });
     }

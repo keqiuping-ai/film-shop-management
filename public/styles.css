@@ -202,6 +202,15 @@ nav { display: grid; gap: 7px; }
 .module-tile[data-module="leads"] { --module-accent: #0891b2; --module-accent-2: #06b6d4; --module-border: #8bd7e5; --module-soft: rgba(8,145,178,.12); --module-shadow: rgba(8,145,178,.24); }
 .module-tile[data-module="orders"] { --module-accent: #ea580c; --module-accent-2: #facc15; --module-border: #f5bb78; --module-soft: rgba(234,88,12,.13); --module-shadow: rgba(234,88,12,.23); }
 .module-tile[data-module="shipments"] { --module-accent: #4f46e5; --module-accent-2: #38bdf8; --module-border: #a9b6f7; --module-soft: rgba(79,70,229,.12); --module-shadow: rgba(79,70,229,.24); }
+.shipment-exception-panel { margin-bottom: 16px; padding: 16px; border: 2px solid #f2a6a6; border-radius: 14px; background: #fff6f6; }
+.shipment-exception-panel .panel-head { margin-bottom: 10px; }
+.shipment-exception-panel h3, .shipment-exception-panel p { margin: 0; }
+.shipment-receipt-panel { margin-bottom: 16px; padding: 12px 15px; border: 1px solid var(--line); border-radius: 12px; background: #f8fbfc; }
+.shipment-receipt-panel summary { cursor: pointer; color: var(--primary); font-weight: 800; }
+.shipment-receipt-panel .table-wrap { margin-top: 12px; }
+.shipment-mismatch-row { background: #fff4f4; }
+.shipment-doc-link { margin-top: 5px; font-size: 11px; color: var(--muted); }
+.shipment-receive-warning { padding: 12px; border: 1px solid #f0c36d; border-radius: 10px; background: #fff8df; color: #795500; line-height: 1.5; }
 .module-tile[data-module="schedules"] { --module-accent: #059669; --module-accent-2: #84cc16; --module-border: #9dd9ba; --module-soft: rgba(5,150,105,.12); --module-shadow: rgba(5,150,105,.23); }
 .module-tile[data-module="expenses"] { --module-accent: #64748b; --module-accent-2: #14b8a6; --module-border: #b4c1cf; --module-soft: rgba(100,116,139,.12); --module-shadow: rgba(100,116,139,.22); }
 .module-tile[data-module="reports"] { --module-accent: #7c3aed; --module-accent-2: #ec4899; --module-border: #ccb5f6; --module-soft: rgba(124,58,237,.12); --module-shadow: rgba(124,58,237,.23); }

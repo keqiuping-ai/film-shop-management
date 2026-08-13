@@ -4254,7 +4254,7 @@ const views = {
       <input id="shipmentImportFile" class="hidden" type="file" accept=".xlsx,.csv,.tsv" onchange="importShipmentFile(this.files?.[0]); this.value=''" />
       <input id="shipmentPhotoFile" class="hidden" type="file" accept="image/*" capture="environment" onchange="handleShipmentPhotoUpload(this.files?.[0]); this.value=''" />
     ` : '';
-    return panel(t('shipments'), actions, importInputs + shipmentTable() + `<p class="note">${lang === 'zh' ? '这里专门记录从中国发往美国的在途货物。海运可填预计到港/下船和到拉斯维加斯时间；空运可填发出、到港和到拉斯维加斯时间。Excel/CSV 第一行请放表头，例如：运输方式、货物内容、数量、卖货方、柜号/单号、发出时间、预计到港/下船、预计到拉斯维加斯、状态、备注。拍照识别端口已预留，自动 OCR 需要后续配置识别服务。' : 'Track goods moving from China to the US here. Excel/CSV imports use the first row as headers, such as method, items, qty, supplier, tracking no, depart date, port ETA, Las Vegas ETA, status, and notes. Photo OCR is reserved and requires an OCR service to be configured.'}</p>`);
+    return panel(t('shipments'), actions, importInputs + shipmentExceptionPanel() + shipmentReceiptPanel() + shipmentTable() + `<p class="note">${lang === 'zh' ? '货物到公司后请使用“收货入库”：核对实际数量后一次生成入库单并增加库存。应到与实到不一致时，系统会自动生成异常单并集中显示。Excel/CSV 第一行请放表头，例如：运输方式、货物内容、数量、卖货方、柜号/单号、发出时间、预计到港/下船、预计到拉斯维加斯、状态、备注。' : 'Use Receive when goods reach the company. The system creates one receipt and updates stock; quantity mismatches automatically create an exception record.'}</p>`);
   },
   schedules() {
     const actions = hasPerm('schedulesEdit') ? `<div class="mini-actions"><button class="btn primary" onclick="openSchedule()">${t('addNew')}</button><button class="btn" onclick="sendTomorrowScheduleReminder()">${t('sendTomorrowReminder')}</button></div>` : '';
@@ -5154,9 +5154,28 @@ function openPortalCustomer(id = '') {
 function shipmentTable() {
   const rows = [...(state.shipments || [])].sort((a, b) => String(b.etaLasVegas || b.etaPort || b.departDate || '').localeCompare(String(a.etaLasVegas || a.etaPort || a.departDate || '')));
   return `<div class="table-wrap"><table><thead><tr><th>${t('shipmentMethod')}</th><th>${t('shipmentItems')}</th><th>${t('qty')}</th><th>${t('supplier')}</th><th>${t('trackingNo')}</th><th>${t('departDate')}</th><th>${t('etaPort')}</th><th>${t('etaLasVegas')}</th><th>${t('status')}</th><th>${t('note')}</th><th></th></tr></thead><tbody>
-  ${rows.map(s => `<tr><td>${shipmentMethodName(s.method)}</td><td>${escapeHtml(s.items || '')}</td><td>${escapeHtml(s.qty || '')}</td><td>${escapeHtml(s.supplier || '')}<br><span class="note">${escapeHtml(s.contact || '')}</span></td><td>${escapeHtml(s.trackingNo || '')}<br><span class="note">${escapeHtml(s.shipFrom || '')}</span></td><td>${escapeHtml(s.departDate || '')}</td><td>${escapeHtml(s.etaPort || '')}</td><td>${escapeHtml(s.etaLasVegas || '')}</td><td>${statusPill(s.status || '在途')}</td><td>${escapeHtml(s.note || '')}</td>${actionCell('Shipment','shipments',s.id)}</tr>`).join('')}
+  ${rows.map(s => {
+    const mismatch = Number(s.differenceQty || 0) !== 0;
+    const receiveButton = !s.receivedAt && hasPerm('shipmentsEdit') && hasPerm('inventoryEdit')
+      ? `<button class="btn primary" onclick="openShipmentReceipt('${escapeJs(s.id)}')">${lang === 'zh' ? '收货入库' : 'Receive'}</button>` : '';
+    const editButton = !s.receivedAt && hasPerm('shipmentsEdit') ? `<button class="btn" onclick="openShipment('${escapeJs(s.id)}')">${lang === 'zh' ? '编辑' : 'Edit'}</button>` : '';
+    const receiptText = s.receiptNo ? `<div class="shipment-doc-link">${escapeHtml(s.receiptNo)}${mismatch ? `<br><span class="pill bad">${escapeHtml(s.exceptionNo || '')}</span>` : ''}</div>` : '';
+    return `<tr class="${mismatch ? 'shipment-mismatch-row' : ''}"><td>${shipmentMethodName(s.method)}</td><td>${escapeHtml(s.items || '')}${s.sku ? `<br><span class="note">SKU: ${escapeHtml(s.sku)}</span>` : ''}</td><td>${escapeHtml(s.qty || '')}${s.receivedAt ? `<br><span class="note">${lang === 'zh' ? '实收' : 'Received'} ${Number(s.actualQty || 0).toLocaleString()}</span>` : ''}</td><td>${escapeHtml(s.supplier || '')}<br><span class="note">${escapeHtml(s.contact || '')}</span></td><td>${escapeHtml(s.trackingNo || '')}<br><span class="note">${escapeHtml(s.shipFrom || '')}</span></td><td>${escapeHtml(s.departDate || '')}</td><td>${escapeHtml(s.etaPort || '')}</td><td>${escapeHtml(s.etaLasVegas || '')}</td><td>${statusPill(s.status || '在途')}${receiptText}</td><td>${escapeHtml(s.note || '')}${s.receiptNote ? `<br><span class="note">${escapeHtml(s.receiptNote)}</span>` : ''}</td><td><div class="mini-actions">${receiveButton}${editButton}</div></td></tr>`;
+  }).join('')}
   ${rows.length ? '' : `<tr><td colspan="11" class="note">${lang === 'zh' ? '目前没有在途货物。' : 'No inbound shipments right now.'}</td></tr>`}
   </tbody></table></div>`;
+}
+
+function shipmentExceptionPanel() {
+  const rows = [...(state.shipmentExceptions || [])].sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')));
+  if (!rows.length) return '';
+  return `<section class="shipment-exception-panel"><div class="panel-head"><div><h3>${lang === 'zh' ? '到货差异 / 异常单' : 'Receiving Exceptions'}</h3><p class="note">${lang === 'zh' ? '这里集中显示应到数量与实际收货数量不一致的单子。' : 'Expected versus received quantity mismatches.'}</p></div><span class="pill bad">${rows.length}</span></div><div class="table-wrap"><table><thead><tr><th>${lang === 'zh' ? '异常单号' : 'Exception No.'}</th><th>${t('trackingNo')}</th><th>SKU</th><th>${lang === 'zh' ? '应到' : 'Expected'}</th><th>${lang === 'zh' ? '实到' : 'Received'}</th><th>${lang === 'zh' ? '差异' : 'Difference'}</th><th>${t('status')}</th><th>${t('note')}</th></tr></thead><tbody>${rows.map(row => `<tr><td><strong>${escapeHtml(row.exceptionNo || '')}</strong><br><span class="note">${formatAppDateTime(row.createdAt)}</span></td><td>${escapeHtml((state.shipments || []).find(s => s.id === row.shipmentId)?.trackingNo || '')}</td><td>${escapeHtml(row.sku || '')}<br><span class="note">${escapeHtml(row.productName || row.items || '')}</span></td><td>${Number(row.expectedQty || 0).toLocaleString()}</td><td>${Number(row.actualQty || 0).toLocaleString()}</td><td><span class="pill bad">${Number(row.differenceQty || 0) > 0 ? '+' : ''}${Number(row.differenceQty || 0).toLocaleString()} ${escapeHtml(row.type || '')}</span></td><td>${statusPill(row.status || '待处理')}</td><td>${escapeHtml(row.note || '')}</td></tr>`).join('')}</tbody></table></div></section>`;
+}
+
+function shipmentReceiptPanel() {
+  const rows = [...(state.shipmentReceipts || [])].sort((a, b) => String(b.receivedAt || '').localeCompare(String(a.receivedAt || ''))).slice(0, 20);
+  if (!rows.length) return '';
+  return `<details class="shipment-receipt-panel"><summary>${lang === 'zh' ? `查看最近入库单（${rows.length}）` : `Recent receipts (${rows.length})`}</summary><div class="table-wrap"><table><thead><tr><th>${lang === 'zh' ? '入库单号' : 'Receipt No.'}</th><th>${lang === 'zh' ? '收货日期' : 'Date'}</th><th>SKU</th><th>${lang === 'zh' ? '应到' : 'Expected'}</th><th>${lang === 'zh' ? '实到/入库' : 'Received'}</th><th>${lang === 'zh' ? '确认人' : 'Received by'}</th></tr></thead><tbody>${rows.map(row => `<tr><td><strong>${escapeHtml(row.receiptNo || '')}</strong></td><td>${escapeHtml(row.receivedDate || '')}</td><td>${escapeHtml(row.sku || '')}<br><span class="note">${escapeHtml(row.productName || '')}</span></td><td>${Number(row.expectedQty || 0).toLocaleString()}</td><td>${Number(row.actualQty || 0).toLocaleString()}</td><td>${escapeHtml(row.receivedBy || '')}</td></tr>`).join('')}</tbody></table></div></details>`;
 }
 
 function scheduleControls() {
@@ -8282,6 +8301,7 @@ function openShipment(id) {
   const item = (state.shipments || []).find(x => x.id === id) || {
     method: 'ocean',
     items: '',
+    sku: '',
     qty: '',
     supplier: '',
     contact: '',
@@ -8297,6 +8317,7 @@ function openShipment(id) {
   openModal(id ? (lang === 'zh' ? '编辑在途货物' : 'Edit Inbound Shipment') : (lang === 'zh' ? '新增在途货物' : 'New Inbound Shipment'), formHtml([
     ['method',t('shipmentMethod'),'select',item.method, shipmentMethodOptions()],
     ['items',t('shipmentItems'),'text',item.items],
+    ['sku','入库 SKU','select',item.sku || '', [['', lang === 'zh' ? '收货时选择' : 'Select when receiving'], ...(state.products || []).map(product => [product.sku, `${product.sku} · ${product.name || ''}`])]],
     ['qty',t('qty'),'text',item.qty],
     ['supplier',t('supplier'),'text',item.supplier],
     ['contact',lang === 'zh' ? '联系人/电话' : 'Contact / Phone','text',item.contact],
@@ -8309,10 +8330,44 @@ function openShipment(id) {
     ['status',t('status'),'select',item.status, shipmentStatusOptions()],
     ['note',t('note'),'textarea',item.note, null, 'wide']
   ]), () => {
-    const data = readForm(['method','items','qty','supplier','contact','trackingNo','shipFrom','departDate','etaPort','etaLasVegas','arrivedDate','status','note']);
+    const data = readForm(['method','items','sku','qty','supplier','contact','trackingNo','shipFrom','departDate','etaPort','etaLasVegas','arrivedDate','status','note']);
     if (!data.items.trim()) return alert(lang === 'zh' ? '货物内容不能为空。' : 'Items are required.');
     saveRecord('shipments', id, data);
   });
+}
+
+function openShipmentReceipt(id) {
+  const shipment = (state.shipments || []).find(row => row.id === id);
+  if (!shipment) return;
+  const expectedQty = Number(shipment.qty);
+  openModal(lang === 'zh' ? '确认收货并生成入库单' : 'Receive and Create Stock Receipt', formHtml([
+    ['receiptTracking',t('trackingNo'),'text',shipment.trackingNo || ''],
+    ['receiptSku','SKU','select',shipment.sku || '', [['', lang === 'zh' ? '请选择入库商品' : 'Select inventory item'], ...(state.products || []).map(product => [product.sku, `${product.sku} · ${product.name || ''}`])]],
+    ['receiptExpectedQty',lang === 'zh' ? '应到数量' : 'Expected quantity','number',Number.isFinite(expectedQty) ? expectedQty : ''],
+    ['receiptActualQty',lang === 'zh' ? '实际收到数量' : 'Actual received quantity','number',Number.isFinite(expectedQty) ? expectedQty : ''],
+    ['receiptNote',lang === 'zh' ? '收货备注 / 差异原因' : 'Receiving note / mismatch reason','textarea','',null,'wide']
+  ]) + `<div class="wide shipment-receive-warning">${lang === 'zh' ? '确认后会一次增加该 SKU 的库存并生成入库单，不能重复收货。实际数量不同于应到数量时，会同时生成异常单。' : 'Confirmation updates stock once and creates a receipt. A mismatch also creates an exception.'}</div>`, async () => {
+    const sku = document.getElementById('receiptSku')?.value || '';
+    const expected = Number(document.getElementById('receiptExpectedQty')?.value);
+    const actual = Number(document.getElementById('receiptActualQty')?.value);
+    const note = document.getElementById('receiptNote')?.value.trim() || '';
+    if (!sku) return alert(lang === 'zh' ? '请选择入库 SKU。' : 'Select an SKU.');
+    if (!Number.isFinite(expected) || expected < 0 || !Number.isFinite(actual) || actual < 0) return alert(lang === 'zh' ? '应到和实到数量必须是大于或等于 0 的数字。' : 'Quantities must be zero or greater.');
+    if (expected !== actual && !note) return alert(lang === 'zh' ? '数量不一致时请填写差异原因。' : 'Enter a mismatch reason.');
+    if (!confirm(lang === 'zh' ? `确认收货？\nSKU：${sku}\n应到：${expected}\n实到：${actual}\n\n确认后将立即生成入库单并更新库存。` : `Receive ${actual} of ${sku}?`)) return;
+    try {
+      const result = await api(`/api/shipments/${encodeURIComponent(id)}/receive`, { method: 'POST', body: JSON.stringify({ sku, expectedQty: expected, actualQty: actual, note }) });
+      state = result.data;
+      broadcastDataChange();
+      closeModal();
+      render();
+      alert(result.exception
+        ? (lang === 'zh' ? `收货完成，已生成入库单 ${result.receipt.receiptNo} 和异常单 ${result.exception.exceptionNo}。` : 'Receipt and exception created.')
+        : (lang === 'zh' ? `收货完成，已生成入库单 ${result.receipt.receiptNo}，库存已更新。` : 'Receipt created and stock updated.'));
+    } catch (err) { alert(err.message); }
+  });
+  const trackingInput = document.getElementById('receiptTracking');
+  if (trackingInput) trackingInput.disabled = true;
 }
 
 function openSchedule(id) {
@@ -9381,8 +9436,8 @@ function shipmentMethodOptions() {
 }
 function shipmentStatusOptions() {
   return lang === 'zh'
-    ? ['备货中','已发出','在途','已到港','已清关','送往拉斯维加斯','已到货']
-    : [['备货中','Preparing'],['已发出','Departed'],['在途','In Transit'],['已到港','Arrived at Port'],['已清关','Customs Cleared'],['送往拉斯维加斯','To Las Vegas'],['已到货','Arrived']];
+    ? ['备货中','已发出','在途','已到港','已清关','送往拉斯维加斯','已到货','异常到货']
+    : [['备货中','Preparing'],['已发出','Departed'],['在途','In Transit'],['已到港','Arrived at Port'],['已清关','Customs Cleared'],['送往拉斯维加斯','To Las Vegas'],['已到货','Arrived'],['异常到货','Received with Exception']];
 }
 function shipmentMethodName(method) {
   return method === 'air'
