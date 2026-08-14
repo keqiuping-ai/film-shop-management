@@ -6243,19 +6243,28 @@ async function api(req, res) {
     const collection = String(body.collection || '').trim();
     const recordId = String(body.id || '').trim();
     const text = String(body.text || '').trim();
+    const attachment = body.attachment && typeof body.attachment === 'object' ? body.attachment : null;
     if (!['customerConversations', 'prospects'].includes(collection)) return send(res, 400, { error: '客户类型不正确' });
     const item = (db[collection] || []).find(row => row.id === recordId);
     if (!item) return send(res, 404, { error: '找不到客户记录' });
     const requiredChannel = customerServiceRequiredReplyChannel(item);
     if (requiredChannel && requiredChannel !== 'yelp') return send(res, 409, { error: '客户最后通过手机短信联系，请继续使用短信回复，不能同时切换到 Yelp' });
     if (prospectTextKey(item.source) !== 'yelp' || !String(item.externalId || '').trim()) return send(res, 400, { error: '这条客户记录没有可用的 Yelp Lead ID' });
-    if (!text) return send(res, 400, { error: 'Yelp 回复内容不能为空' });
-    if (text.length > 5000) return send(res, 400, { error: 'Yelp 回复内容不能超过 5000 个字符' });
+    if (attachment?.url && !String(attachment.url).startsWith(`${requestPublicBaseUrl(req)}/customer-media/`)) {
+      return send(res, 400, { error: '图片链接不正确，请重新选择回复图片' });
+    }
+    if (!text && !attachment?.url) return send(res, 400, { error: 'Yelp 回复文字或图片不能为空' });
+    const attachmentType = String(attachment?.type || '');
+    const attachmentKind = attachmentType.startsWith('video/') ? 'video' : attachmentType.startsWith('image/') ? 'image' : 'file';
+    const attachmentLabel = attachmentKind === 'image' ? '图片' : attachmentKind === 'video' ? '视频' : '文件';
+    const attachmentLine = attachment?.url ? `${attachmentLabel}：${String(attachment.url)}` : '';
+    const deliveryText = [text, attachmentLine].filter(Boolean).join('\n');
+    if (deliveryText.length > 5000) return send(res, 400, { error: 'Yelp 回复内容和图片链接合计不能超过 5000 个字符' });
     const requestId = `quad-yelp-${id()}`;
     await sendYelpReply({
       leadId: String(item.externalId).trim(),
       businessId: String(item.externalBusinessId || '').trim(),
-      text,
+      text: deliveryText,
       requestId
     });
     const now = new Date().toISOString();
@@ -6267,6 +6276,13 @@ async function api(req, res) {
       direction: 'outbound',
       channel: 'yelp',
       text,
+      attachment: attachment?.url ? {
+        name: String(attachment.name || attachmentLabel).slice(0, 160),
+        type: attachmentType.slice(0, 120),
+        url: String(attachment.url),
+        kind: attachmentKind,
+        size: Number(attachment.size || 0)
+      } : null,
       timestamp: now,
       provider: 'yelp-zapier',
       status: 'accepted'
@@ -6279,7 +6295,7 @@ async function api(req, res) {
       collection,
       recordId: item.id,
       recordLabel: item.customer || item.externalId,
-      detail: `通过 Zapier 向 Yelp Lead ${item.externalId} 发送消息`
+      detail: `通过 Zapier 向 Yelp Lead ${item.externalId} 发送消息${attachment?.url ? `和${attachmentLabel}链接` : ''}`
     });
     writeDb(db);
     notifyDataChanged('send-customer-yelp-message', item.id);

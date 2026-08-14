@@ -6375,15 +6375,15 @@ function renderProspectWorkspace() {
                   : (lang === 'zh' ? 'Meta / Facebook 来源客户；缺少 Meta PSID，且未填写可用手机号' : 'Meta / Facebook lead without PSID and no usable phone is available.')))
             : (lang === 'zh' ? '通过 Twilio 发送和接收短信 · 发送号码：+1 725-241-2586' : 'Send and receive SMS through Twilio · Sender: +1 725-241-2586')}</div>
           <div class="prospect-attachment-tools">
-            <button type="button" onclick="document.getElementById('prospectImageInput').click()">🖼️ ${lang === 'zh' ? '图片' : 'Image'}</button>
-            <button type="button" onclick="document.getElementById('prospectVideoInput').click()">🎬 ${lang === 'zh' ? '视频' : 'Video'}</button>
-            <button type="button" onclick="document.getElementById('prospectFileInput').click()">📎 ${lang === 'zh' ? '文件' : 'File'}</button>
+            <button class="prospect-media-button" type="button" onclick="document.getElementById('prospectImageInput').click()">🖼️ ${lang === 'zh' ? '图片' : 'Image'}</button>
+            <button class="prospect-media-button" type="button" onclick="document.getElementById('prospectVideoInput').click()">🎬 ${lang === 'zh' ? '视频' : 'Video'}</button>
+            <button class="prospect-media-button" type="button" onclick="document.getElementById('prospectFileInput').click()">📎 ${lang === 'zh' ? '文件' : 'File'}</button>
             <button type="button" onclick="insertProspectAddress()">📍 ${lang === 'zh' ? '地址' : 'Address'}</button>
             <button type="button" onclick="insertProspectWebsite()">🌐 ${lang === 'zh' ? '公司网站' : 'Website'}</button>
             <span class="prospect-tool-divider"></span>
             <button class="reply-reference-button" type="button" onclick="openReplyReferenceLibrary('text')">💬 ${lang === 'zh' ? '回复文字' : 'Reply text'}</button>
-            <button class="reply-reference-button" type="button" onclick="openReplyReferenceLibrary('image')">🖼 ${lang === 'zh' ? '回复图片' : 'Reply image'}</button>
-            <button class="reply-reference-button" type="button" onclick="openReplyReferenceLibrary('video')">▶ ${lang === 'zh' ? '回复视频' : 'Reply video'}</button>
+            <button class="reply-reference-button prospect-media-button" type="button" onclick="openReplyReferenceLibrary('image')">🖼 ${lang === 'zh' ? '回复图片' : 'Reply image'}</button>
+            <button class="reply-reference-button prospect-media-button" type="button" onclick="openReplyReferenceLibrary('video')">▶ ${lang === 'zh' ? '回复视频' : 'Reply video'}</button>
             <button id="customerAiDraftButton" class="reply-reference-button" type="button" onclick="generateCustomerAiReplyDraft()" ${hasPerm('prospectsEdit') ? '' : 'disabled'}>AI ${lang === 'zh' ? '生成回复' : 'Draft reply'}</button>
             <button id="customerSmsRefreshButton" class="reply-reference-button" type="button" onclick="reconcileCustomerSmsNow()">${lang === 'zh' ? '收短信' : 'Check SMS'}</button>
             <span id="prospectAttachmentPreview">${prospectPendingAttachment ? `${escapeHtml(prospectPendingAttachment.name)} <button type="button" onclick="clearProspectAttachment()">×</button>` : ''}</span>
@@ -6769,7 +6769,7 @@ function openReplyReferenceLibrary(type = 'text', category = replyTemplateCatego
     <div class="reply-library-picker">
       ${replyLibraryTabs(replyTemplateLibraryType, 'openReplyReferenceLibrary')}
       ${replyTemplateCategoryFilters(replyTemplateCategoryFilter, 'openReplyReferenceLibrary')}
-      <p class="reply-library-help">${lang === 'zh' ? '点击“选用”后只会放入下面的待发送区，确认无误后再点发送短信。' : 'Choosing an item stages it in the composer. It will not send automatically.'}</p>
+      <p class="reply-library-help">${lang === 'zh' ? '点击“选用”后只会放入下面的待发送区，确认无误后再点击当前渠道的发送按钮。' : 'Choosing an item stages it in the composer. It will not send automatically.'}</p>
       ${replyTemplateCards(replyTemplateLibraryType, true, replyTemplateCategoryFilter)}
     </div>`, closeModal);
   document.getElementById('modal').classList.add('reply-library-open');
@@ -6974,7 +6974,7 @@ function updateProspectReplyChannel() {
   rememberProspectReplyChannel(channel);
   const button = document.getElementById('prospectSendSmsButton');
   const status = document.getElementById('prospectChannelStatus');
-  const attachmentButtons = document.querySelectorAll('.prospect-attachment-tools button');
+  const attachmentButtons = document.querySelectorAll('.prospect-attachment-tools .prospect-media-button');
   if (button) button.textContent = channel === 'yelp'
     ? (lang === 'zh' ? '通过 Yelp 发送' : 'Send via Yelp')
     : channel === 'meta'
@@ -6985,15 +6985,15 @@ function updateProspectReplyChannel() {
     : requiredChannel
     ? (channel === requiredChannel
       ? (channel === 'yelp'
-        ? (lang === 'zh' ? '客户最后从 Yelp 联系；当前默认通过 Yelp 回复，可主动切换到短信' : 'The customer last contacted you on Yelp. Yelp remains the default, but you can switch to SMS.')
+        ? (lang === 'zh' ? '客户最后从 Yelp 联系；Yelp 官方只接收文字，回复图片会自动转换成可点击的云端图片链接' : 'Yelp accepts text only; reply images are sent as secure clickable cloud links.')
         : channel === 'meta'
           ? (lang === 'zh' ? '客户最后从 Meta 私信联系；当前通过 Meta 回复' : 'The customer last contacted you through Meta messages')
           : (lang === 'zh' ? '客户最后从短信联系，当前通过短信回复 · 发送号码：+1 725-241-2586' : 'The customer last contacted you by SMS · Sender: +1 725-241-2586'))
       : (lang === 'zh' ? '已手动切换到手机短信 · 发送号码：+1 725-241-2586' : 'Manually switched to SMS · Sender: +1 725-241-2586'))
     : (channel === 'yelp'
-      ? (lang === 'zh' ? '这条回复会通过 Zapier 发回客户的 Yelp 对话' : 'This reply will be sent to the Yelp conversation through Zapier')
+      ? (lang === 'zh' ? '这条回复会通过 Zapier 发回 Yelp；图片会转换成可点击的云端链接' : 'This reply goes to Yelp through Zapier; images are sent as clickable cloud links.')
       : (lang === 'zh' ? '通过 Twilio 发送和接收短信 · 发送号码：+1 725-241-2586' : 'Send and receive SMS through Twilio · Sender: +1 725-241-2586'));
-  attachmentButtons.forEach(control => { control.disabled = channel === 'yelp' || channel === 'meta'; });
+  attachmentButtons.forEach(control => { control.disabled = channel === 'meta'; });
 }
 
 async function sendProspectMessage() {
@@ -7004,11 +7004,10 @@ async function sendProspectMessage() {
   const text = String(input?.value || '').trim();
   if (!item || (!text && !prospectPendingAttachment)) return;
   if (channel === 'meta' && prospectPendingAttachment) return alert(lang === 'zh' ? 'Meta 私信第一版只发送文字；如需发送图片或视频，请切换到手机短信。' : 'Meta currently supports text replies here. Switch to SMS for attachments.');
-  if (channel === 'yelp' && prospectPendingAttachment) return alert(lang === 'zh' ? 'Yelp 通道第一版只发送文字；如需发送图片或视频，请切换到手机短信。' : 'Yelp currently supports text replies here. Switch to SMS for attachments.');
   const workspaceKey = activeProspectWorkspaceId;
   const localMessageId = `local-send-${Date.now()}-${Math.random().toString(36).slice(2)}`;
   const localChannel = channel === 'yelp' ? 'yelp' : channel === 'meta' ? 'meta' : 'sms';
-  const localAttachment = channel === 'sms' && prospectPendingAttachment ? { ...prospectPendingAttachment } : null;
+  const localAttachment = channel !== 'meta' && prospectPendingAttachment ? { ...prospectPendingAttachment } : null;
   const localText = text || (localAttachment ? (lang === 'zh' ? '正在发送附件...' : 'Sending attachment...') : '');
   if (button) {
     button.disabled = true;
