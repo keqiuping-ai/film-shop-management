@@ -8342,16 +8342,16 @@ function openShipmentReceipt(id) {
   const expectedQty = Number(shipment.qty);
   openModal(lang === 'zh' ? '确认收货并生成入库单' : 'Receive and Create Stock Receipt', formHtml([
     ['receiptTracking',t('trackingNo'),'text',shipment.trackingNo || ''],
-    ['receiptSku','SKU','select',shipment.sku || '', [['', lang === 'zh' ? '请选择入库商品' : 'Select inventory item'], ...(state.products || []).map(product => [product.sku, `${product.sku} · ${product.name || ''}`])]],
+    ['receiptSku',lang === 'zh' ? '型号 / SKU（可手动填写）' : 'Model / SKU (manual entry allowed)','text',shipment.sku || ''],
     ['receiptExpectedQty',lang === 'zh' ? '应到数量' : 'Expected quantity','number',Number.isFinite(expectedQty) ? expectedQty : ''],
     ['receiptActualQty',lang === 'zh' ? '实际收到数量' : 'Actual received quantity','number',Number.isFinite(expectedQty) ? expectedQty : ''],
     ['receiptNote',lang === 'zh' ? '收货备注 / 差异原因' : 'Receiving note / mismatch reason','textarea','',null,'wide']
-  ]) + `<div class="wide shipment-receive-warning">${lang === 'zh' ? '确认后会一次增加该 SKU 的库存并生成入库单，不能重复收货。实际数量不同于应到数量时，会同时生成异常单。' : 'Confirmation updates stock once and creates a receipt. A mismatch also creates an exception.'}</div>`, async () => {
-    const sku = document.getElementById('receiptSku')?.value || '';
+  ]) + `<datalist id="shipmentSkuSuggestions">${(state.products || []).map(product => `<option value="${escapeHtml(product.sku)}">${escapeHtml(product.name || '')}</option>`).join('')}</datalist><div class="wide shipment-receive-warning">${lang === 'zh' ? '型号可以直接手动填写，也可以从已有型号建议中选择。新型号会自动建立库存档案；确认后按实收数量生成入库单并增加库存，不能重复收货。数量不一致时会同时生成异常单。' : 'Enter a model manually or choose an existing suggestion. New models create an inventory record automatically.'}</div>`, async () => {
+    const sku = document.getElementById('receiptSku')?.value.trim() || '';
     const expected = Number(document.getElementById('receiptExpectedQty')?.value);
     const actual = Number(document.getElementById('receiptActualQty')?.value);
     const note = document.getElementById('receiptNote')?.value.trim() || '';
-    if (!sku) return alert(lang === 'zh' ? '请选择入库 SKU。' : 'Select an SKU.');
+    if (!sku) return alert(lang === 'zh' ? '请填写入库型号 / SKU。' : 'Enter a model / SKU.');
     if (!Number.isFinite(expected) || expected < 0 || !Number.isFinite(actual) || actual < 0) return alert(lang === 'zh' ? '应到和实到数量必须是大于或等于 0 的数字。' : 'Quantities must be zero or greater.');
     if (expected !== actual && !note) return alert(lang === 'zh' ? '数量不一致时请填写差异原因。' : 'Enter a mismatch reason.');
     if (!confirm(lang === 'zh' ? `确认收货？\nSKU：${sku}\n应到：${expected}\n实到：${actual}\n\n确认后将立即生成入库单并更新库存。` : `Receive ${actual} of ${sku}?`)) return;
@@ -8361,13 +8361,21 @@ function openShipmentReceipt(id) {
       broadcastDataChange();
       closeModal();
       render();
-      alert(result.exception
+      const newModelText = result.productCreated ? (lang === 'zh' ? ' 新型号已自动建立库存档案。' : ' A new inventory item was created.') : '';
+      alert((result.exception
         ? (lang === 'zh' ? `收货完成，已生成入库单 ${result.receipt.receiptNo} 和异常单 ${result.exception.exceptionNo}。` : 'Receipt and exception created.')
-        : (lang === 'zh' ? `收货完成，已生成入库单 ${result.receipt.receiptNo}，库存已更新。` : 'Receipt created and stock updated.'));
+        : (lang === 'zh' ? `收货完成，已生成入库单 ${result.receipt.receiptNo}，库存已更新。` : 'Receipt created and stock updated.')) + newModelText);
     } catch (err) { alert(err.message); }
   });
   const trackingInput = document.getElementById('receiptTracking');
   if (trackingInput) trackingInput.disabled = true;
+  const skuInput = document.getElementById('receiptSku');
+  if (skuInput) {
+    skuInput.setAttribute('list', 'shipmentSkuSuggestions');
+    skuInput.setAttribute('autocomplete', 'off');
+    skuInput.placeholder = lang === 'zh' ? '例如：QD64' : 'e.g. QD64';
+    skuInput.focus();
+  }
 }
 
 function openSchedule(id) {

@@ -7069,17 +7069,35 @@ async function api(req, res) {
     if (shipment.receivedAt || shipment.receiptId) return send(res, 400, { error: '这张在途货物单已经收货入库，不能重复操作' });
 
     const body = await readBody(req);
-    const sku = String(body.sku || shipment.sku || '').trim();
+    const requestedSku = String(body.sku || shipment.sku || '').trim().slice(0, 120);
+    if (!requestedSku) return send(res, 400, { error: '请填写入库型号 / SKU' });
     const expectedQty = Number(body.expectedQty ?? shipment.qty);
     const actualQty = Number(body.actualQty);
     const note = String(body.note || '').trim().slice(0, 1000);
-    const product = (db.products || []).find(row => String(row.sku || '') === sku);
-    if (!product) return send(res, 400, { error: '请选择系统库存中存在的 SKU，才能自动入库' });
     if (!Number.isFinite(expectedQty) || expectedQty < 0) return send(res, 400, { error: '在途单应到数量必须是有效数字' });
     if (!Number.isFinite(actualQty) || actualQty < 0) return send(res, 400, { error: '实际收到数量必须是大于或等于 0 的数字' });
 
     const now = new Date().toISOString();
     const receivedDate = dateInTimezone(db.settings?.entryTimezone || db.settings?.timezone || 'America/Los_Angeles', 0);
+    let product = (db.products || []).find(row => String(row.sku || '').toLowerCase() === requestedSku.toLowerCase());
+    let productCreated = false;
+    if (!product) {
+      product = {
+        id: id(), sku: requestedSku, name: String(shipment.items || requestedSku).trim().slice(0, 240),
+        category: '零售商品', unit: '件', cost: 0, price: 0, wholesale: 0, minPrice: 0,
+        qty: 0, reorder: 0, location: '', portalVisible: false, portalDescription: '',
+        portalImageUrl: '', portalVideoUrl: '', portalNewProduct: false,
+        createdAt: now, createdBy: user.name || user.email || '', createdByUserId: user.id,
+        sourceShipmentId: shipment.id
+      };
+      db.products.push(product);
+      productCreated = true;
+      audit(db, user, 'create-product-from-shipment', {
+        collection: 'products', recordId: product.id, recordLabel: product.sku, after: product,
+        detail: `在途货物收货时自动建立库存型号 ${product.sku}`
+      });
+    }
+    const sku = product.sku;
     const receiptId = id();
     const receiptNo = `RK-${receivedDate.replaceAll('-', '')}-${receiptId.slice(0, 6).toUpperCase()}`;
     const differenceQty = actualQty - expectedQty;
@@ -7087,7 +7105,7 @@ async function api(req, res) {
       id: receiptId, receiptNo, shipmentId: shipment.id, shipmentTrackingNo: shipment.trackingNo || '',
       sku, productName: product.name || '', items: shipment.items || '', expectedQty, actualQty, differenceQty,
       supplier: shipment.supplier || '', receivedDate, receivedAt: now, receivedBy: user.name || user.email || '',
-      receivedByUserId: user.id, note, movementId: ''
+      receivedByUserId: user.id, note, movementId: '', productCreated
     };
     if (actualQty > 0) {
       const movement = {
@@ -7135,7 +7153,7 @@ async function api(req, res) {
     });
     writeDb(db);
     notifyDataChanged('receive-shipment', shipment.id);
-    return send(res, 200, { data: sanitizeDbForUser(db, user), receipt, exception });
+    return send(res, 200, { data: sanitizeDbForUser(db, user), receipt, exception, productCreated });
   }
 
   const match = url.pathname.match(/^\/api\/([a-zA-Z]+)(?:\/([^/]+))?$/);
