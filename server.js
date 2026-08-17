@@ -1239,6 +1239,15 @@ function sanitizeDbForUser(db, user) {
     replyTemplates: p.prospectsView ? (db.replyTemplates || []) : [],
     expenses: p.expensesView || p.fullFinanceView ? (db.expenses || []) : [],
     reimbursements: p.reimbursementsView ? (db.reimbursements || []).filter(item => canApproveReimbursements || item.employeeUserId === user.id) : [],
+    canApproveLeave: canApproveLeave(user),
+    clockRecords: (db.clockRecords || [])
+      .filter(item => canApproveLeave(user) || item.userId === user.id)
+      .sort((a, b) => String(b.at || '').localeCompare(String(a.at || '')))
+      .slice(0, 200),
+    leaveRequests: (db.leaveRequests || [])
+      .filter(item => canApproveLeave(user) || item.userId === user.id)
+      .sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')))
+      .slice(0, 200),
     movements: p.inventoryView ? db.movements : [],
     workshopMovements: p.inventoryView ? (db.workshopMovements || []) : [],
     auditLogs: p.usersManage || p.reportsView ? db.auditLogs : [],

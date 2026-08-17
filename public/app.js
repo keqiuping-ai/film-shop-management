@@ -146,6 +146,10 @@ const dict = {
     addNew: '新增',
     modules: '功能模块',
     modulesSub: '每个业务模块独立入口，像桌面图标一样打开',
+    clock: '员工打卡',
+    clockSub: '电脑定位上下班打卡并查看打卡记录',
+    leave: '请假',
+    leaveSub: '提交请假申请、查看记录和审批',
     aiRules: 'AI客服规则中心',
     aiRulesSub: '独立管理产品知识、回复顺序、分店政策和转人工规则',
     dashboard: '仪表盘',
@@ -405,6 +409,10 @@ const dict = {
     addNew: 'New',
     modules: 'Modules',
     modulesSub: 'Open each business area from a simple desktop-style grid',
+    clock: 'Staff Clock',
+    clockSub: 'Clock in or out with computer location and view records',
+    leave: 'Leave',
+    leaveSub: 'Submit, review, and approve leave requests',
     aiRules: 'AI Customer Rules',
     aiRulesSub: 'Manage product knowledge, reply sequence, branch policy, and escalation rules',
     dashboard: 'Dashboard',
@@ -654,6 +662,8 @@ const t = key => dict[lang]?.[key] || dict.zh[key] || key;
 const serviceNames = new Proxy({}, { get: (_, key) => t(key) });
 const roleNames = new Proxy({}, { get: (_, key) => t(key) });
 const pages = [
+  ['clock', 'clock', 'clockSub'],
+  ['leave', 'leave', 'leaveSub'],
   ['dashboard', 'dashboard', 'dashboardSub'],
   ['jobs', 'jobs', 'jobsSub'],
   ['warranties', 'warranties', 'warrantiesSub'],
@@ -685,6 +695,8 @@ const pages = [
 ];
 
 const pagePermissions = {
+  clock: null,
+  leave: null,
   dashboard: 'jobsView',
   jobs: ['jobsView', 'jobsCreate', 'jobsEdit', 'jobsDelete'],
   warranties: ['jobsView', 'jobsCreate', 'jobsEdit', 'jobsDelete'],
@@ -2286,7 +2298,7 @@ function updateVoiceButton(recording, label = '') {
 }
 
 function navIcon(id) {
-  return { modules:'▦', dashboard:'⌂', jobs:'▣', warranties:'◆', installers:'◉', pricing:'$', inventory:'▤', workshopInventory:'▥', inventoryAlerts:'!', customerTasks:'🎧', aiRules:'🤖', aiBoss:'🧠', fieldSales:'🧭', customerCenter:'💬', replyLibrary:'☁', prospects:'★', leads:'☎', orders:'⇄', portalCustomers:'👤', shipments:'✈', schedules:'◫', workTime:'◴', expenses:'◇', reimbursements:'🧾', reports:'◌', audit:'◷', users:'◎', personalNotes:'📝', settings:'⚙' }[id] || '□';
+  return { modules:'▦', clock:'📍', leave:'🗓️', dashboard:'⌂', jobs:'▣', warranties:'◆', installers:'◉', pricing:'$', inventory:'▤', workshopInventory:'▥', inventoryAlerts:'!', customerTasks:'🎧', aiRules:'🤖', aiBoss:'🧠', fieldSales:'🧭', customerCenter:'💬', replyLibrary:'☁', prospects:'★', leads:'☎', orders:'⇄', portalCustomers:'👤', shipments:'✈', schedules:'◫', workTime:'◴', expenses:'◇', reimbursements:'🧾', reports:'◌', audit:'◷', users:'◎', personalNotes:'📝', settings:'⚙' }[id] || '□';
 }
 
 function moduleGrid(availablePages) {
@@ -4153,7 +4165,46 @@ async function analyzeFieldSalesReport(id) {
   try { await api(`/api/field-sales/daily-reports/${id}/analyze`, { method:'POST', body:'{}' }); await sync(); } catch (error) { alert(error.message); }
 }
 
+function desktopClockView() {
+  const records = state.clockRecords || [];
+  return `<div class="desktop-staff-grid"><section class="panel staff-action-panel"><div class="panel-head"><h3>${lang === 'zh' ? '电脑定位打卡' : 'Computer Location Clock'}</h3></div><label class="desktop-consent"><input id="desktopClockConsent" type="checkbox" /> <span>${lang === 'zh' ? '我同意本次打卡使用电脑定位' : 'I agree to use this computer location for this clock record'}</span></label><p class="note">${lang === 'zh' ? '系统只在点击打卡时获取一次定位，用于核对是否在公司附近，不会持续跟踪。浏览器可能会询问定位权限。' : 'Location is requested only when you clock in or out. It is not continuously tracked.'}</p><div class="desktop-clock-actions"><button class="btn primary" onclick="desktopClock('in')">${lang === 'zh' ? '上班打卡' : 'Clock In'}</button><button class="btn" onclick="desktopClock('out')">${lang === 'zh' ? '下班打卡' : 'Clock Out'}</button></div></section><section class="panel"><div class="panel-head"><h3>${lang === 'zh' ? '打卡记录' : 'Clock Records'}</h3></div>${desktopClockTable(records)}</section></div>`;
+}
+
+function desktopClockTable(records) {
+  if (!records.length) return `<div class="empty-state">${lang === 'zh' ? '暂无打卡记录' : 'No clock records'}</div>`;
+  return `<div class="table-wrap"><table><thead><tr><th>${lang === 'zh' ? '员工' : 'Employee'}</th><th>${lang === 'zh' ? '类型' : 'Type'}</th><th>${lang === 'zh' ? '时间' : 'Time'}</th><th>${lang === 'zh' ? '位置' : 'Location'}</th><th>${lang === 'zh' ? '门店范围' : 'Office range'}</th></tr></thead><tbody>${records.map(item => `<tr><td>${escapeHtml(item.userName || '')}</td><td>${item.type === 'in' ? (lang === 'zh' ? '上班' : 'In') : (lang === 'zh' ? '下班' : 'Out')}</td><td>${escapeHtml(formatAppDateTime(item.at))}</td><td>${item.mapUrl ? `<a href="${escapeHtml(item.mapUrl)}" target="_blank" rel="noopener">${escapeHtml(item.address || `${item.lat}, ${item.lng}`)}</a>` : escapeHtml(item.address || '—')}</td><td>${item.officeMatched ? (lang === 'zh' ? '✅ 范围内' : '✅ In range') : (lang === 'zh' ? '⚠️ 范围外' : '⚠️ Out of range')}</td></tr>`).join('')}</tbody></table></div>`;
+}
+
+async function desktopClock(type) {
+  if (!document.getElementById('desktopClockConsent')?.checked) return alert(lang === 'zh' ? '请先勾选同意本次打卡使用电脑定位。' : 'Please consent to using this computer location.');
+  if (!navigator.geolocation) return alert(lang === 'zh' ? '当前浏览器不支持定位。' : 'This browser does not support location.');
+  navigator.geolocation.getCurrentPosition(async position => {
+    try { await api('/api/mobile/clock', { method:'POST', body:JSON.stringify({ type, lat:position.coords.latitude, lng:position.coords.longitude, accuracy:position.coords.accuracy, locationConsent:true }) }); await sync({ silent:true }); alert(type === 'in' ? (lang === 'zh' ? '上班打卡成功' : 'Clock-in successful') : (lang === 'zh' ? '下班打卡成功' : 'Clock-out successful')); } catch (error) { alert(error.message); }
+  }, error => alert((lang === 'zh' ? '无法获取定位：' : 'Unable to get location: ') + error.message), { enableHighAccuracy:true, timeout:15000, maximumAge:0 });
+}
+
+function desktopLeaveView() {
+  const requests = state.leaveRequests || [];
+  return `<div class="desktop-staff-grid"><section class="panel staff-action-panel"><div class="panel-head"><h3>${lang === 'zh' ? '提交请假' : 'Submit Leave'}</h3></div><div class="desktop-leave-form"><label>${lang === 'zh' ? '请假类型' : 'Leave type'}<select id="desktopLeaveType"><option>事假</option><option>病假</option><option>年假</option><option>调休</option><option>其他</option></select></label><label>${lang === 'zh' ? '开始日期' : 'Start date'}<input id="desktopLeaveStartDate" type="date" /></label><label>${lang === 'zh' ? '开始时间' : 'Start time'}<input id="desktopLeaveStartTime" type="time" /></label><label>${lang === 'zh' ? '结束日期' : 'End date'}<input id="desktopLeaveEndDate" type="date" /></label><label>${lang === 'zh' ? '结束时间' : 'End time'}<input id="desktopLeaveEndTime" type="time" /></label><label>${lang === 'zh' ? '请假小时数' : 'Leave hours'}<input id="desktopLeaveHours" type="number" min="0.5" step="0.5" /></label><label class="wide">${lang === 'zh' ? '请假原因' : 'Reason'}<textarea id="desktopLeaveReason" placeholder="${lang === 'zh' ? '请填写请假原因' : 'Enter leave reason'}"></textarea></label></div><button class="btn primary" onclick="submitDesktopLeave()">${lang === 'zh' ? '提交请假申请' : 'Submit Leave Request'}</button></section><section class="panel"><div class="panel-head"><h3>${state.canApproveLeave ? (lang === 'zh' ? '请假审批/记录' : 'Leave Approval / Records') : (lang === 'zh' ? '我的请假记录' : 'My Leave Records')}</h3></div>${desktopLeaveTable(requests)}</section></div>`;
+}
+
+function desktopLeaveTable(requests) {
+  if (!requests.length) return `<div class="empty-state">${lang === 'zh' ? '暂无请假记录' : 'No leave records'}</div>`;
+  return `<div class="table-wrap"><table><thead><tr><th>${lang === 'zh' ? '员工/类型' : 'Employee / Type'}</th><th>${lang === 'zh' ? '日期时间' : 'Date / Time'}</th><th>${lang === 'zh' ? '小时' : 'Hours'}</th><th>${lang === 'zh' ? '原因' : 'Reason'}</th><th>${lang === 'zh' ? '状态' : 'Status'}</th><th>${lang === 'zh' ? '操作' : 'Action'}</th></tr></thead><tbody>${requests.map(item => `<tr><td>${escapeHtml(item.userName || '')}<br><small>${escapeHtml(item.leaveType || '')}</small></td><td>${escapeHtml(item.startDate || '')} ${escapeHtml(item.startTime || '')}<br>${lang === 'zh' ? '至' : 'to'} ${escapeHtml(item.endDate || '')} ${escapeHtml(item.endTime || '')}</td><td>${Number(item.hours || 0)}</td><td>${escapeHtml(item.reason || '')}</td><td>${escapeHtml(item.status || '')}${item.reviewedBy ? `<br><small>${escapeHtml(item.reviewedBy)}</small>` : ''}</td><td>${state.canApproveLeave && item.status === '待审批' ? `<button class="btn primary" onclick="reviewDesktopLeave('${escapeHtml(item.id)}','已批准')">${lang === 'zh' ? '批准' : 'Approve'}</button> <button class="btn danger" onclick="reviewDesktopLeave('${escapeHtml(item.id)}','已拒绝')">${lang === 'zh' ? '拒绝' : 'Reject'}</button>` : '—'}</td></tr>`).join('')}</tbody></table></div>`;
+}
+
+async function submitDesktopLeave() {
+  try { await api('/api/mobile/leave', { method:'POST', body:JSON.stringify({ leaveType:value('desktopLeaveType'), startDate:value('desktopLeaveStartDate'), startTime:value('desktopLeaveStartTime'), endDate:value('desktopLeaveEndDate'), endTime:value('desktopLeaveEndTime'), hours:value('desktopLeaveHours'), reason:value('desktopLeaveReason') }) }); await sync({ silent:true }); alert(lang === 'zh' ? '请假申请已提交' : 'Leave request submitted'); } catch (error) { alert(error.message); }
+}
+
+async function reviewDesktopLeave(id, status) {
+  const reviewNote = prompt(lang === 'zh' ? '审批备注（可留空）' : 'Review note (optional)') || '';
+  try { await api(`/api/mobile/leave/${encodeURIComponent(id)}`, { method:'PUT', body:JSON.stringify({ status, reviewNote }) }); await sync({ silent:true }); } catch (error) { alert(error.message); }
+}
+
 const views = {
+  clock() { return desktopClockView(); },
+  leave() { return desktopLeaveView(); },
   aiBoss() { return aiBossView(); },
   aiRules() { return customerAiRulesView(); },
   fieldSales() { return fieldSalesManagementView(); },
