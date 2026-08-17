@@ -43,6 +43,7 @@ let jobEndDate = '';
 let jobSourceFilter = '';
 let jobPersonFilter = '';
 let showDeletedJobs = false;
+let showInactiveUsers = false;
 let scheduleMonth = today().slice(0, 7);
 let jobMonth = today().slice(0, 7);
 let auditDate = today();
@@ -145,6 +146,8 @@ const dict = {
     addNew: '新增',
     modules: '功能模块',
     modulesSub: '每个业务模块独立入口，像桌面图标一样打开',
+    aiRules: 'AI客服规则中心',
+    aiRulesSub: '独立管理产品知识、回复顺序、分店政策和转人工规则',
     dashboard: '仪表盘',
     dashboardSub: '收入、来源渠道和零售批发销售情况',
     jobs: '施工订单',
@@ -402,6 +405,8 @@ const dict = {
     addNew: 'New',
     modules: 'Modules',
     modulesSub: 'Open each business area from a simple desktop-style grid',
+    aiRules: 'AI Customer Rules',
+    aiRulesSub: 'Manage product knowledge, reply sequence, branch policy, and escalation rules',
     dashboard: 'Dashboard',
     dashboardSub: 'Revenue, source channels, and retail / wholesale sales',
     jobs: 'Job Orders',
@@ -658,6 +663,7 @@ const pages = [
   ['workshopInventory', 'workshopInventory', 'workshopInventorySub'],
   ['inventoryAlerts', 'inventoryAlerts', 'inventoryAlertsSub'],
   ['customerTasks', 'customerTasks', 'customerTasksSub'],
+  ['aiRules', 'aiRules', 'aiRulesSub'],
   ['aiBoss', 'aiBoss', 'aiBossSub'],
   ['fieldSales', 'fieldSales', 'fieldSalesSub'],
   ['customerCenter', 'customerCenter', 'customerCenterSub'],
@@ -688,6 +694,7 @@ const pagePermissions = {
   workshopInventory: 'inventoryView',
   inventoryAlerts: 'inventoryView',
   customerTasks: 'prospectsView',
+  aiRules: 'aiRulesEdit',
   aiBoss: null,
   fieldSales: 'fieldSalesManage',
   customerCenter: 'prospectsView',
@@ -767,6 +774,7 @@ const permissionLabels = [
   ['fullFinanceView', '查看完整财报/成本/利润', 'View full financials / costs / profit'],
   ['usersManage', '管理员工账号和权限', 'Manage users and permissions'],
   ['customerCodexChat', '允许与客服 Codex 沟通', 'Communicate with Customer Service Codex'],
+  ['aiRulesEdit', '查看和修改AI客服规则', 'View and edit AI customer-service rules'],
   ['settingsEdit', '修改系统设置/检查升级', 'Edit settings / check updates']
 ];
 
@@ -1521,6 +1529,7 @@ function render() {
   enhanceExpandablePanels();
   enhanceEditableTableRows(document.getElementById('view'));
   if (current === 'settings') setTimeout(() => { loadCustomerAiSettings(); loadMetaSettings(); }, 0);
+  if (current === 'aiRules') setTimeout(loadCustomerAiRules, 0);
   if (activeProspectWorkspaceId && !preserveProspectWorkspaceRender) renderProspectWorkspace();
   preserveProspectWorkspaceRender = false;
 }
@@ -2277,7 +2286,7 @@ function updateVoiceButton(recording, label = '') {
 }
 
 function navIcon(id) {
-  return { modules:'▦', dashboard:'⌂', jobs:'▣', warranties:'◆', installers:'◉', pricing:'$', inventory:'▤', workshopInventory:'▥', inventoryAlerts:'!', customerTasks:'🎧', aiBoss:'🧠', fieldSales:'🧭', customerCenter:'💬', replyLibrary:'☁', prospects:'★', leads:'☎', orders:'⇄', portalCustomers:'👤', shipments:'✈', schedules:'◫', workTime:'◴', expenses:'◇', reimbursements:'🧾', reports:'◌', audit:'◷', users:'◎', personalNotes:'📝', settings:'⚙' }[id] || '□';
+  return { modules:'▦', dashboard:'⌂', jobs:'▣', warranties:'◆', installers:'◉', pricing:'$', inventory:'▤', workshopInventory:'▥', inventoryAlerts:'!', customerTasks:'🎧', aiRules:'🤖', aiBoss:'🧠', fieldSales:'🧭', customerCenter:'💬', replyLibrary:'☁', prospects:'★', leads:'☎', orders:'⇄', portalCustomers:'👤', shipments:'✈', schedules:'◫', workTime:'◴', expenses:'◇', reimbursements:'🧾', reports:'◌', audit:'◷', users:'◎', personalNotes:'📝', settings:'⚙' }[id] || '□';
 }
 
 function moduleGrid(availablePages) {
@@ -4146,6 +4155,7 @@ async function analyzeFieldSalesReport(id) {
 
 const views = {
   aiBoss() { return aiBossView(); },
+  aiRules() { return customerAiRulesView(); },
   fieldSales() { return fieldSalesManagementView(); },
   personalNotes() { return personalNotesView(); },
   dashboard() {
@@ -4323,14 +4333,7 @@ const views = {
           <div class="form-grid">
             <label>${lang === 'zh' ? 'OpenAI API Key' : 'OpenAI API Key'}<input id="customerAiApiKey" type="password" autocomplete="off" placeholder="sk-..." /></label>
             <label>${lang === 'zh' ? 'AI 模型（客服快速模式）' : 'AI Model (fast customer service)'}<input id="customerAiModel" value="gpt-5-mini" placeholder="gpt-5-mini" /></label>
-            <label class="wide customer-ai-knowledge-field">${lang === 'zh' ? 'AI客服规则 / 公司知识 / 报价资料' : 'AI rules / company knowledge / pricing'}
-              <textarea id="customerAiKnowledge" rows="10" maxlength="12000" placeholder="${lang === 'zh' ? '把价格、套餐、车型规则、施工范围、常用话术写在这里。例如：\\n- 全车改色膜：轿车 $____ 起，SUV $____ 起，具体看车型和膜料。\\n- 前两窗 35%：$____。\\n- 不确定价格时先要车型、年份、施工部位，并邀请到店看样品。' : 'Put pricing, packages, vehicle rules, service scope, and approved wording here.'}"></textarea>
-            </label>
-            <div class="wide customer-ai-knowledge-tools">
-              <button class="btn" type="button" onclick="insertCustomerAiKnowledgeTemplate()">${lang === 'zh' ? '插入填写模板' : 'Insert template'}</button>
-              <span id="customerAiKnowledgeMeta" class="note">${lang === 'zh' ? '正在读取已保存规则...' : 'Loading saved rules...'}</span>
-            </div>
-            <p class="wide customer-ai-knowledge-note">${lang === 'zh' ? 'AI 每次生成“客服助手建议回复”都会先读取这里。没有写明的价格、优惠或承诺，AI 不得自行编造，会继续询问车型和施工范围，或提示人工确认。' : 'Every AI reply draft uses these rules first. Prices, discounts, or commitments not written here must not be invented; the AI will ask for missing details or request human review.'}</p>
+            <div class="wide customer-ai-rules-link"><div><strong>${lang === 'zh' ? 'AI客服话术、产品和分店规则已独立管理' : 'AI wording, product, and branch rules are managed separately'}</strong><p class="note">${lang === 'zh' ? '客服可单独获得“AI客服规则”权限，但看不到 API Key、模型和自动发送设置。' : 'Staff may receive AI Rules permission without seeing the API key, model, or auto-send settings.'}</p></div><button class="btn primary" type="button" onclick="setPage('aiRules')">${lang === 'zh' ? '打开AI客服规则中心' : 'Open AI Rules Center'}</button></div>
             <section class="wide customer-ai-auto-reply-box">
               <div class="customer-ai-auto-reply-head"><div><h4>${lang === 'zh' ? 'AI 自动回复' : 'AI Auto Reply'}</h4><p>${lang === 'zh' ? '默认关闭。只自动发送低风险回复；高风险、报价不明确、投诉、退款、质保和法律问题只生成草稿并转人工。' : 'Off by default. Only low-risk replies are sent; high-risk, uncertain quote, complaint, refund, warranty, and legal issues become drafts for staff.'}</p></div><button class="btn danger" type="button" onclick="disableCustomerAiAutoReply()">${lang === 'zh' ? '一键关闭' : 'Stop now'}</button></div>
               <label class="check-row"><input id="customerAiAutoEnabled" type="checkbox" /><span>${lang === 'zh' ? '启用AI自动回复总开关' : 'Enable AI auto reply'}</span></label>
@@ -6196,7 +6199,7 @@ async function markCustomerRecordSeen(collection, id) {
 }
 
 const prospectWorkspaceFieldIds = [
-  'workspaceDate', 'workspaceSource', 'workspaceCustomer', 'workspacePhone', 'workspaceVehicle',
+  'workspaceDate', 'workspaceSource', 'workspaceCustomer', 'workspacePhone', 'workspaceCity', 'workspaceBranchId', 'workspaceVehicle',
   'workspaceNeed', 'workspaceService', 'workspaceAppointmentDate', 'workspaceAppointmentTime',
   'workspaceOwnerId', 'workspaceIntentLevel', 'workspaceStatus', 'workspaceCallNote',
   'workspaceFollowUpDate', 'workspaceFollowUpTime', 'workspaceFollowUpReason'
@@ -6303,6 +6306,9 @@ function renderProspectWorkspace() {
   const owners = customerServiceOptions();
   const intents = prospectIntentOptions();
   const statuses = prospectStatusOptions(false);
+  const branches = (state.settings?.customerBranches || []).filter(branch => branch.active !== false);
+  const branchOptions = [['', lang === 'zh' ? '待确认分店' : 'Branch not confirmed'], ...branches.map(branch => [branch.id, `${branch.name}${branch.city ? `（${branch.city}）` : ''}`])];
+  const activeBranch = branches.find(branch => branch.id === item.branchId);
   const canReplyYelp = String(item.source || '').trim().toLowerCase() === 'yelp' && Boolean(String(item.externalId || '').trim());
   const canReplySms = customerPhoneMatchKey(item.phone).length === 10;
   const isMetaSource = normalizeSourceKey(item.source) === 'meta';
@@ -6316,6 +6322,7 @@ function renderProspectWorkspace() {
       <div class="prospect-workspace-customer">
         <strong>${escapeHtml(item.customer || (lang === 'zh' ? '未命名客户' : 'Unnamed customer'))}</strong>
         <span>${escapeHtml(item.phone || (lang === 'zh' ? '未填写电话' : 'No phone'))}</span>
+        ${activeBranch ? `<span class="pill good">${escapeHtml(activeBranch.name)}</span>` : ''}
         ${prospectIntentPill(item.intentLevel)} ${prospectStatusPill(item.status)}
       </div>
       <div class="prospect-workspace-actions">
@@ -6332,6 +6339,10 @@ function renderProspectWorkspace() {
         ${field(t('source'), select('workspaceSource', item.source || 'Yelp', sources))}
         ${field(t('customer'), `<input id="workspaceCustomer" value="${escapeHtml(item.customer || '')}" ${hasPerm('prospectsEdit') ? '' : 'disabled'}>`)}
         ${field(lang === 'zh' ? '电话' : 'Phone', `<input id="workspacePhone" value="${escapeHtml(item.phone || '')}" ${hasPerm('prospectsEdit') ? '' : 'disabled'}>`)}
+        <div class="prospect-sidebar-pair">
+          ${field(lang === 'zh' ? '城市' : 'City', `<input id="workspaceCity" value="${escapeHtml(item.city || '')}" placeholder="Las Vegas / Los Angeles" ${hasPerm('prospectsEdit') ? '' : 'disabled'}>`)}
+          ${field(lang === 'zh' ? '所属分店' : 'Branch', select('workspaceBranchId', item.branchId || '', branchOptions))}
+        </div>
         ${field(t('vehicle'), `<input id="workspaceVehicle" value="${escapeHtml(item.vehicle || '')}" ${hasPerm('prospectsEdit') ? '' : 'disabled'}>`)}
         ${field(t('vehicleNeed'), `<textarea id="workspaceNeed" ${hasPerm('prospectsEdit') ? '' : 'disabled'}>${escapeHtml(item.need || '')}</textarea>`)}
         ${field(t('service'), select('workspaceService', item.service || 'tint', services))}
@@ -6938,7 +6949,7 @@ async function saveProspectWorkspaceDetails() {
   const updated = {
     ...item,
     date: value('workspaceDate'), source: value('workspaceSource'), customer: value('workspaceCustomer'),
-    phone: value('workspacePhone'), vehicle: value('workspaceVehicle'), need: value('workspaceNeed'),
+    phone: value('workspacePhone'), city: value('workspaceCity'), branchId: value('workspaceBranchId'), vehicle: value('workspaceVehicle'), need: value('workspaceNeed'),
     service: value('workspaceService'), appointmentDate: value('workspaceAppointmentDate'),
     appointmentTime: value('workspaceAppointmentTime'), ownerId, ownerName: rep?.name || '',
     intentLevel: value('workspaceIntentLevel'), status: value('workspaceStatus'),
@@ -7078,8 +7089,10 @@ function leadTable() {
 
 function userTable() {
   const avatarLabel = lang === 'zh' ? '头像' : 'Photo';
-  return `<div class="table-wrap"><table><thead><tr><th>${avatarLabel}</th><th>${t('name')}</th><th>${t('email')}</th><th>${t('role')}</th><th>${t('active')}</th><th></th></tr></thead><tbody>
-  ${state.users.map(u => `<tr><td class="employee-avatar-cell">${userAvatarHtml(u)}</td><td>${escapeHtml(u.name)}</td><td>${escapeHtml(u.email)}</td><td>${roleNames[u.role] || u.role}</td><td>${u.active ? `<span class="pill good">${t('enabled')}</span>` : `<span class="pill bad">${t('disabled')}</span>`}</td>${userActionCell(u)}</tr>`).join('')}
+  const inactiveCount = state.users.filter(u => u.role !== 'owner' && u.active === false).length;
+  const rows = state.users.filter(u => showInactiveUsers || u.active !== false);
+  return `<div class="employee-list-tools"><span>${lang === 'zh' ? '删除员工会立即停用登录，但历史订单、打卡和聊天记录仍会保留。' : 'Removing an employee disables login while preserving order, clock, and message history.'}</span>${inactiveCount ? `<button class="btn" type="button" onclick="showInactiveUsers=!showInactiveUsers;render()">${showInactiveUsers ? (lang === 'zh' ? '隐藏已删除员工' : 'Hide removed employees') : (lang === 'zh' ? `查看已删除员工（${inactiveCount}）` : `Show removed employees (${inactiveCount})`)}</button>` : ''}</div><div class="table-wrap"><table><thead><tr><th>${avatarLabel}</th><th>${t('name')}</th><th>${t('email')}</th><th>${t('role')}</th><th>${t('active')}</th><th></th></tr></thead><tbody>
+  ${rows.map(u => `<tr class="${u.active === false ? 'employee-inactive-row' : ''}"><td class="employee-avatar-cell">${userAvatarHtml(u)}</td><td>${escapeHtml(u.name)}</td><td>${escapeHtml(u.email)}</td><td>${roleNames[u.role] || u.role}</td><td>${u.active ? `<span class="pill good">${t('enabled')}</span>` : `<span class="pill bad">${lang === 'zh' ? '已删除/停用' : 'Removed / disabled'}</span>`}</td>${userActionCell(u)}</tr>`).join('')}
   </tbody></table></div>`;
 }
 
@@ -7294,7 +7307,24 @@ function userActionCell(row) {
   if (row.role === 'owner') {
     return `<td><span class="pill info">${lang === 'zh' ? '老板受保护' : 'Owner protected'}</span></td>`;
   }
-  return actionCell('User', 'users', row.id);
+  const edit = `<button class="icon-btn" title="${t('edit')}" onclick="event.stopPropagation();openUser('${row.id}')">✎</button>`;
+  const remove = row.active === false ? '' : `<button class="employee-remove-button" type="button" onclick="event.stopPropagation();removeEmployee('${row.id}')">${lang === 'zh' ? '删除员工' : 'Remove'}</button>`;
+  return `<td><div class="mini-actions">${edit}${remove}</div></td>`;
+}
+
+async function removeEmployee(id) {
+  const name = state.users.find(row => row.id === id)?.name || '';
+  const message = lang === 'zh'
+    ? `确定删除员工“${name}”吗？\n\n该员工将立即无法登录，并从在职员工列表隐藏；历史订单、打卡、留言和操作记录会继续保留。`
+    : `Remove employee “${name}”?\n\nLogin will be disabled and the employee hidden from the active list. Historical records will be preserved.`;
+  if (!confirm(message)) return;
+  try {
+    state = await api(`/api/users/${encodeURIComponent(id)}`, { method: 'DELETE' });
+    broadcastDataChange();
+    render();
+  } catch (err) {
+    alert(err.message);
+  }
 }
 
 function collectionPermission(collection, action) {
@@ -8316,7 +8346,7 @@ function openShipment(id) {
   openModal(id ? (lang === 'zh' ? '编辑在途货物' : 'Edit Inbound Shipment') : (lang === 'zh' ? '新增在途货物' : 'New Inbound Shipment'), formHtml([
     ['method',t('shipmentMethod'),'select',item.method, shipmentMethodOptions()],
     ['items',t('shipmentItems'),'text',item.items],
-    ['sku','入库 SKU','select',item.sku || '', [['', lang === 'zh' ? '收货时选择' : 'Select when receiving'], ...(state.products || []).map(product => [product.sku, `${product.sku} · ${product.name || ''}`])]],
+    ['sku',lang === 'zh' ? '入库 SKU（可搜索或手动填写）' : 'Inbound SKU (search or custom)','shipmentSkuSearch',item.sku || ''],
     ['qty',t('qty'),'text',item.qty],
     ['supplier',t('supplier'),'text',item.supplier],
     ['contact',lang === 'zh' ? '联系人/电话' : 'Contact / Phone','text',item.contact],
@@ -8644,6 +8674,93 @@ async function saveSettings() {
   }
 }
 
+let customerAiBranchDrafts = [];
+let customerAiPlaybookDrafts = [];
+
+function customerAiRulesView() {
+  return `<div class="panel customer-ai-rules-page">
+    <div class="panel-head"><div><h3>${lang === 'zh' ? 'AI 客服规则中心' : 'AI Customer Rules Center'}</h3><p class="note">${lang === 'zh' ? '这里仅管理客服话术、产品资料和分店政策，不显示 API Key、模型或自动发送开关。' : 'This page manages service wording, product knowledge, and branch policies without exposing keys, models, or auto-send controls.'}</p></div><div><button class="btn" onclick="loadCustomerAiRules()">${lang === 'zh' ? '刷新' : 'Refresh'}</button> <button class="btn primary" onclick="saveCustomerAiRules()">${lang === 'zh' ? '保存全部规则' : 'Save all rules'}</button></div></div>
+    <div id="customerAiRulesMeta" class="customer-ai-rules-meta">${lang === 'zh' ? '正在读取已保存规则…' : 'Loading saved rules…'}</div>
+    <section class="customer-ai-rules-section"><h4>${lang === 'zh' ? '一、公司知识与产品规则' : '1. Company and product rules'}</h4><p class="note">${lang === 'zh' ? '填写所有分店共同使用的产品、价格、质保、公司优势和禁止回答内容。' : 'Shared product, pricing, warranty, company advantage, and prohibited-answer rules.'}</p><textarea id="customerAiKnowledge" rows="14" maxlength="12000" placeholder="${lang === 'zh' ? '填写产品规则、报价依据、质保和公司优势…' : 'Enter product, pricing, warranty, and company rules…'}"></textarea></section>
+    <section class="customer-ai-rules-section"><div class="customer-ai-auto-reply-head"><div><h4>${lang === 'zh' ? '二、客户聊天顺序与每一步规则' : '2. Conversation sequence and step rules'}</h4><p>${lang === 'zh' ? '规则按页面顺序交给 AI。可以分别设置第一次、第二次、后续沟通、报价、邀约和转人工。' : 'Rules are passed to AI in this order. Configure first, second, ongoing, price, visit, and escalation behavior separately.'}</p></div><button class="btn" onclick="addCustomerAiPlaybookRule()">${lang === 'zh' ? '+ 新增规则' : '+ Add rule'}</button></div><div id="customerAiPlaybook" class="customer-ai-playbook"></div></section>
+    <section class="customer-ai-rules-section"><div class="customer-ai-auto-reply-head"><div><h4>${lang === 'zh' ? '三、分店资料与分店专用规则' : '3. Branch information and rules'}</h4><p>${lang === 'zh' ? '不同分店可以使用不同地址、报价、营业时间和政策。' : 'Each branch can have different address, pricing, hours, and policy.'}</p></div><button class="btn" onclick="addCustomerAiBranchEditor()">${lang === 'zh' ? '+ 新增分店' : '+ Add branch'}</button></div><div id="customerAiBranches" class="customer-ai-branches"></div></section>
+    <div class="customer-ai-rules-footer"><button class="btn primary" onclick="saveCustomerAiRules()">${lang === 'zh' ? '保存全部规则' : 'Save all rules'}</button></div>
+  </div>`;
+}
+
+function renderCustomerAiPlaybookEditors() {
+  const container = document.getElementById('customerAiPlaybook');
+  if (!container) return;
+  const triggers = [['first','第一次回复'],['second','第二次回复'],['ongoing','第三次及后续'],['pricing','客户询问价格'],['visit','邀请到店'],['escalation','转人工'],['always','每次回复都执行']];
+  container.innerHTML = customerAiPlaybookDrafts.map((rule, index) => `<article class="customer-ai-playbook-card" data-rule-index="${index}">
+    <div class="customer-ai-playbook-number">${index + 1}</div><div class="customer-ai-playbook-fields">
+      <div class="customer-ai-playbook-row"><label>${lang === 'zh' ? '规则名称' : 'Rule name'}<input data-rule-field="name" value="${escapeHtml(rule.name || '')}"></label><label>${lang === 'zh' ? '什么时候使用' : 'When to apply'}<select data-rule-field="trigger">${triggers.map(([value,label]) => `<option value="${value}" ${rule.trigger === value ? 'selected' : ''}>${lang === 'zh' ? label : value}</option>`).join('')}</select></label><label class="check-row"><input data-rule-field="enabled" type="checkbox" ${rule.enabled !== false ? 'checked' : ''}><span>${lang === 'zh' ? '启用' : 'Enabled'}</span></label></div>
+      <label>${lang === 'zh' ? '这一步必须遵守的详细规则' : 'Instructions for this step'}<textarea data-rule-field="instruction" rows="4" maxlength="3000">${escapeHtml(rule.instruction || '')}</textarea></label>
+      <div class="mini-actions"><button class="btn" onclick="moveCustomerAiPlaybookRule(${index},-1)">↑</button><button class="btn" onclick="moveCustomerAiPlaybookRule(${index},1)">↓</button><button class="btn danger" onclick="removeCustomerAiPlaybookRule(${index})">${lang === 'zh' ? '删除规则' : 'Delete'}</button></div>
+    </div></article>`).join('');
+}
+
+function readCustomerAiPlaybook() {
+  return [...document.querySelectorAll('#customerAiPlaybook .customer-ai-playbook-card')].map((card,index) => { const existing=customerAiPlaybookDrafts[index]||{}; const value=field=>String(card.querySelector(`[data-rule-field="${field}"]`)?.value||'').trim(); return { id:existing.id||`rule-${Date.now()}-${index}`, name:value('name'), trigger:value('trigger'), enabled:Boolean(card.querySelector('[data-rule-field="enabled"]')?.checked), instruction:value('instruction') }; });
+}
+
+function addCustomerAiPlaybookRule() { customerAiPlaybookDrafts=readCustomerAiPlaybook(); customerAiPlaybookDrafts.push({id:`rule-${Date.now()}`,name:'',trigger:'always',enabled:true,instruction:''}); renderCustomerAiPlaybookEditors(); }
+function removeCustomerAiPlaybookRule(index) { if(customerAiPlaybookDrafts.length<=1)return alert(lang==='zh'?'至少保留一条规则。':'Keep at least one rule.'); customerAiPlaybookDrafts=readCustomerAiPlaybook().filter((_,i)=>i!==index); renderCustomerAiPlaybookEditors(); }
+function moveCustomerAiPlaybookRule(index,offset) { const rows=readCustomerAiPlaybook(); const target=index+offset; if(target<0||target>=rows.length)return; [rows[index],rows[target]]=[rows[target],rows[index]]; customerAiPlaybookDrafts=rows; renderCustomerAiPlaybookEditors(); }
+
+async function loadCustomerAiRules() {
+  try { const info=await api('/api/customer-ai/rules'); const knowledge=document.getElementById('customerAiKnowledge'); if(knowledge)knowledge.value=info.knowledge||''; customerAiBranchDrafts=(info.branches||[]).map(row=>({...row})); customerAiPlaybookDrafts=(info.playbook||[]).map(row=>({...row})); renderCustomerAiBranchEditors(); renderCustomerAiPlaybookEditors(); const meta=document.getElementById('customerAiRulesMeta'); if(meta)meta.textContent=info.updatedAt?(lang==='zh'?`最后修改：${formatAppDateTime(info.updatedAt)}｜${info.updatedBy||''}`:`Last updated: ${formatAppDateTime(info.updatedAt)} | ${info.updatedBy||''}`):(lang==='zh'?'尚未保存独立规则':'No saved rules yet'); } catch(err){ const meta=document.getElementById('customerAiRulesMeta'); if(meta)meta.textContent=err.message; }
+}
+
+async function saveCustomerAiRules() {
+  const knowledge=String(document.getElementById('customerAiKnowledge')?.value||'').trim(); const branches=readCustomerAiBranches(); const playbook=readCustomerAiPlaybook();
+  if(!branches.length||branches.some(row=>!row.name||!row.city))return alert(lang==='zh'?'请填写每个分店的名称和城市。':'Complete every branch name and city.');
+  if(!playbook.length||playbook.some(row=>!row.name||!row.instruction))return alert(lang==='zh'?'请填写每一条流程规则的名称和详细内容。':'Complete every playbook rule.');
+  try { const info=await api('/api/customer-ai/rules',{method:'PUT',body:JSON.stringify({knowledge,branches,playbook})}); customerAiBranchDrafts=info.branches; customerAiPlaybookDrafts=info.playbook; renderCustomerAiBranchEditors(); renderCustomerAiPlaybookEditors(); const meta=document.getElementById('customerAiRulesMeta'); if(meta)meta.textContent=lang==='zh'?`保存成功｜${formatAppDateTime(info.updatedAt)}｜${info.updatedBy||''}`:'Rules saved'; alert(lang==='zh'?'AI客服全部规则已经保存，下一次生成回复立即使用新规则。':'All AI rules saved and active for the next reply.'); } catch(err){alert(err.message);}
+}
+
+function renderCustomerAiBranchEditors() {
+  const container = document.getElementById('customerAiBranches');
+  if (!container) return;
+  container.innerHTML = customerAiBranchDrafts.map((branch, index) => `
+    <article class="customer-ai-branch-card" data-branch-index="${index}">
+      <div class="customer-ai-branch-card-head"><strong>${escapeHtml(branch.name || (lang === 'zh' ? `分店 ${index + 1}` : `Branch ${index + 1}`))}</strong><button class="btn danger" type="button" onclick="removeCustomerAiBranchEditor(${index})">${lang === 'zh' ? '移除' : 'Remove'}</button></div>
+      <div class="customer-ai-branch-grid">
+        <label>${lang === 'zh' ? '分店名称' : 'Branch name'}<input data-branch-field="name" value="${escapeHtml(branch.name || '')}" placeholder="${lang === 'zh' ? '例如：拉斯维加斯分店' : 'Las Vegas Branch'}"></label>
+        <label>${lang === 'zh' ? '主要城市' : 'Primary city'}<input data-branch-field="city" value="${escapeHtml(branch.city || '')}" placeholder="Las Vegas"></label>
+        <label class="wide">${lang === 'zh' ? '城市别名（逗号分隔）' : 'City aliases (comma-separated)'}<input data-branch-field="aliases" value="${escapeHtml(branch.aliases || '')}" placeholder="Las Vegas, Vegas"></label>
+        <label class="wide">${lang === 'zh' ? '分店地址' : 'Branch address'}<input data-branch-field="address" value="${escapeHtml(branch.address || '')}" placeholder="${lang === 'zh' ? '未填写时 AI 不会编造地址' : 'AI will not invent a missing address'}"></label>
+        <label class="wide">${lang === 'zh' ? '该分店专用 AI 规则 / 报价 / 政策' : 'Branch-specific AI rules / pricing / policy'}<textarea data-branch-field="aiKnowledge" rows="5" maxlength="6000" placeholder="${lang === 'zh' ? '只填写本分店独有的价格、营业时间、优惠、政策和话术。' : 'Rules, pricing, hours, promotions, and wording unique to this branch.'}">${escapeHtml(branch.aiKnowledge || '')}</textarea></label>
+        <label class="check-row"><input data-branch-field="active" type="checkbox" ${branch.active !== false ? 'checked' : ''}><span>${lang === 'zh' ? '启用该分店' : 'Branch active'}</span></label>
+      </div>
+    </article>`).join('');
+}
+
+function readCustomerAiBranches() {
+  return [...document.querySelectorAll('#customerAiBranches .customer-ai-branch-card')].map((card, index) => {
+    const value = field => String(card.querySelector(`[data-branch-field="${field}"]`)?.value || '').trim();
+    const existing = customerAiBranchDrafts[index] || {};
+    return {
+      id: existing.id || `branch-${Date.now()}-${index + 1}`,
+      name: value('name'), city: value('city'), aliases: value('aliases'), address: value('address'),
+      aiKnowledge: value('aiKnowledge'), active: Boolean(card.querySelector('[data-branch-field="active"]')?.checked)
+    };
+  });
+}
+
+function addCustomerAiBranchEditor() {
+  customerAiBranchDrafts = readCustomerAiBranches();
+  customerAiBranchDrafts.push({ id: `branch-${Date.now()}`, name: '', city: '', aliases: '', address: '', aiKnowledge: '', active: true });
+  renderCustomerAiBranchEditors();
+}
+
+function removeCustomerAiBranchEditor(index) {
+  if (customerAiBranchDrafts.length <= 1) return alert(lang === 'zh' ? '至少保留一个分店。' : 'Keep at least one branch.');
+  if (!confirm(lang === 'zh' ? '确定从设置中移除这个分店吗？已有客户记录不会删除。' : 'Remove this branch from settings? Existing customer records will not be deleted.')) return;
+  customerAiBranchDrafts = readCustomerAiBranches().filter((_, rowIndex) => rowIndex !== index);
+  renderCustomerAiBranchEditors();
+}
+
 function customerAiKnowledgeTemplate() {
   const zhLines = [
     '【1. AI角色和目标】',
@@ -8717,6 +8834,11 @@ function renderCustomerAiStatus(info) {
   if (!status) return;
   if (model && info?.model) model.value = info.model;
   if (knowledge && document.activeElement !== knowledge) knowledge.value = info?.knowledge || '';
+  const branchEditorFocused = Boolean(document.activeElement?.closest?.('#customerAiBranches'));
+  if (!branchEditorFocused && Array.isArray(info?.branches)) {
+    customerAiBranchDrafts = info.branches.map(branch => ({ ...branch }));
+    renderCustomerAiBranchEditors();
+  }
   if (knowledgeMeta) {
     const updatedAt = info?.knowledgeUpdatedAt ? formatAppDateTime(info.knowledgeUpdatedAt) : '';
     const updatedBy = String(info?.knowledgeUpdatedBy || '').trim();
@@ -8767,16 +8889,13 @@ async function loadCustomerAiSettings() {
 async function saveCustomerAiSettings() {
   const apiKeyInput = document.getElementById('customerAiApiKey');
   const modelInput = document.getElementById('customerAiModel');
-  const knowledgeInput = document.getElementById('customerAiKnowledge');
   const apiKey = String(apiKeyInput?.value || '').trim();
-  const knowledge = String(knowledgeInput?.value || '').trim();
   try {
     const info = await api('/api/customer-ai/settings', {
       method: 'PUT',
       body: JSON.stringify({
         apiKey,
         model: String(modelInput?.value || 'gpt-5-mini').trim(),
-        knowledge,
         autoReply: {
           enabled: Boolean(document.getElementById('customerAiAutoEnabled')?.checked),
           channels: {
@@ -9127,6 +9246,7 @@ function formHtml(fields) {
     if (type === 'select') return `<label class="${cls || ''}">${label}<select id="${id}">${options.map(o => Array.isArray(o) ? `<option value="${o[0]}" ${String(value) === String(o[0]) ? 'selected' : ''}>${o[1]}</option>` : `<option value="${o}" ${String(value) === String(o) ? 'selected' : ''}>${o}</option>`).join('')}</select></label>`;
     if (type === 'skuSearch') return salesOrderSkuSearchHtml(id, label, value, cls);
     if (type === 'workshopSkuSearch') return workshopSkuSearchHtml(id, label, value, cls);
+    if (type === 'shipmentSkuSearch') return shipmentSkuSearchHtml(id, label, value, cls);
     if (type === 'avatar') return profileAvatarEditor({ name: document.getElementById('myName')?.value || '', avatarDataUrl: value || '' }, id, 'employeeAvatarPreview', 'handleEmployeeAvatarUpload(event)', 'clearEmployeeAvatar()');
     if (type === 'readonly') return `<label class="${cls || ''}">${label}<input id="${id}" type="text" value="${escapeHtml(value ?? '')}" readonly /></label>`;
     if (type === 'multi') {
@@ -9141,6 +9261,47 @@ function formHtml(fields) {
     }
     return `<label class="${cls || ''}">${label}<input id="${id}" type="${type}" value="${escapeHtml(value ?? '')}" /></label>`;
   }).join('')}</div>`;
+}
+
+function shipmentSkuSearchRows(query = '') {
+  const keyword = normalizeSearchText(query);
+  return (state.products || []).filter(product => !keyword || normalizeSearchText([
+    product.sku, product.name, product.category, product.location
+  ].join(' ')).includes(keyword)).slice(0, 30);
+}
+
+function shipmentSkuSearchHtml(id, label, value, cls = '') {
+  return `<label class="${cls || ''} shipment-sku-field">${label}
+    <div class="shipment-sku-search">
+      <input id="${id}" value="${escapeHtml(value || '')}" autocomplete="off" placeholder="${lang === 'zh' ? '输入 SKU、产品名、颜色搜索；也可直接填新型号' : 'Search SKU, product, or color; or enter a custom model'}" onfocus="updateShipmentSkuSearch(this,true)" oninput="updateShipmentSkuSearch(this,true)" onkeydown="handleShipmentSkuSearchKey(event)" onblur="setTimeout(()=>document.getElementById('${id}SearchResults')?.classList.remove('open'),150)">
+      <div id="${id}SearchResults" class="shipment-sku-results"></div>
+    </div>
+    <small>${lang === 'zh' ? '搜索不到时可直接保留输入内容，作为个性化型号保存。' : 'If no match exists, keep the typed value as a custom model.'}</small>
+  </label>`;
+}
+
+function updateShipmentSkuSearch(input, open = false) {
+  const results = document.getElementById(`${input.id}SearchResults`);
+  if (!results) return;
+  const rows = shipmentSkuSearchRows(input.value);
+  results.innerHTML = rows.length ? rows.map(product => `<button type="button" data-sku="${escapeHtml(product.sku)}" onmousedown="event.preventDefault();selectShipmentSku('${escapeJs(input.id)}',this.dataset.sku)"><strong>${escapeHtml(product.sku)}</strong><span>${escapeHtml(product.name || '')}</span><small>${escapeHtml(product.category || '')}${product.qty !== undefined ? ` · ${lang === 'zh' ? '库存' : 'Stock'} ${escapeHtml(product.qty)}` : ''}</small></button>`).join('') : `<div class="shipment-sku-custom-hint">${input.value.trim() ? (lang === 'zh' ? `没有找到，可直接使用“${escapeHtml(input.value.trim())}”作为新型号` : `No match. Use “${escapeHtml(input.value.trim())}” as a custom model.`) : (lang === 'zh' ? '输入内容开始搜索' : 'Type to search')}</div>`;
+  results.classList.toggle('open', Boolean(open));
+}
+
+function selectShipmentSku(inputId, sku) {
+  const input = document.getElementById(inputId);
+  if (!input) return;
+  input.value = sku || '';
+  document.getElementById(`${inputId}SearchResults`)?.classList.remove('open');
+  input.focus();
+}
+
+function handleShipmentSkuSearchKey(event) {
+  if (event.key === 'Escape') event.target.closest('.shipment-sku-search')?.querySelector('.shipment-sku-results')?.classList.remove('open');
+  if (event.key === 'Enter') {
+    const first = event.target.closest('.shipment-sku-search')?.querySelector('.shipment-sku-results button');
+    if (first) { event.preventDefault(); selectShipmentSku(event.target.id, first.dataset.sku); }
+  }
 }
 
 function permissionEditor(permissions) {

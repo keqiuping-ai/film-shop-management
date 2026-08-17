@@ -808,6 +808,27 @@ tr:hover td { background: #fbfcfd; }
   border-radius: 8px;
 }
 .mini-actions { display: flex; gap: 6px; justify-content: flex-end; }
+.employee-list-tools {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+  color: var(--muted);
+  font-size: 13px;
+}
+.employee-remove-button {
+  min-width: 76px;
+  padding: 7px 10px;
+  border: 1px solid #efb4b4;
+  border-radius: 7px;
+  background: #fff5f5;
+  color: #b42318;
+  font-weight: 700;
+  cursor: pointer;
+}
+.employee-remove-button:hover { background: #fde8e8; }
+.employee-inactive-row { opacity: .7; }
 .icon-btn {
   width: 32px;
   height: 32px;
@@ -2174,6 +2195,39 @@ body.modal-lock .prospect-workspace { pointer-events: none; }
   color: #42636c;
   line-height: 1.5;
 }
+
+.customer-ai-branches-box { border:1px solid var(--border); border-radius:14px; padding:16px; background:#fff; }
+.customer-ai-rules-link { display:flex; align-items:center; justify-content:space-between; gap:16px; border:1px solid #9dd5df; border-radius:12px; padding:14px; background:#f2fbfc; }
+.customer-ai-rules-link p { margin:5px 0 0; }
+.customer-ai-rules-page { display:grid; gap:16px; }
+.customer-ai-rules-meta { padding:10px 14px; border-radius:10px; background:#eef8fa; color:#456670; }
+.customer-ai-rules-section { border:1px solid var(--border); border-radius:14px; padding:16px; background:#fff; }
+.customer-ai-rules-section h4 { margin:0 0 6px; font-size:20px; }
+.customer-ai-rules-section > textarea { width:100%; min-height:300px; margin-top:12px; resize:vertical; }
+.customer-ai-playbook { display:grid; gap:12px; margin-top:12px; }
+.customer-ai-playbook-card { display:grid; grid-template-columns:44px minmax(0,1fr); gap:12px; border:1px solid var(--border); border-radius:12px; padding:14px; background:var(--soft); }
+.customer-ai-playbook-number { width:38px; height:38px; display:grid; place-items:center; border-radius:50%; background:var(--primary); color:#fff; font-weight:800; }
+.customer-ai-playbook-fields { display:grid; gap:10px; }
+.customer-ai-playbook-row { display:grid; grid-template-columns:1fr 1fr auto; gap:10px; align-items:end; }
+.customer-ai-playbook-fields textarea { min-height:90px; resize:vertical; }
+.customer-ai-rules-footer { position:sticky; bottom:12px; display:flex; justify-content:flex-end; padding:12px; border-radius:12px; background:rgba(255,255,255,.94); box-shadow:0 5px 20px rgba(0,0,0,.12); }
+.shipment-sku-field { position:relative; }
+.shipment-sku-search { position:relative; }
+.shipment-sku-results { display:none; position:absolute; z-index:80; top:calc(100% + 4px); left:0; right:0; max-height:320px; overflow:auto; border:1px solid var(--border); border-radius:10px; background:#fff; box-shadow:0 12px 28px rgba(0,0,0,.16); }
+.shipment-sku-results.open { display:block; }
+.shipment-sku-results button { width:100%; display:grid; grid-template-columns:minmax(100px,.65fr) minmax(140px,1.5fr) auto; gap:10px; align-items:center; padding:10px 12px; border:0; border-bottom:1px solid var(--border); background:#fff; text-align:left; cursor:pointer; }
+.shipment-sku-results button:hover,.shipment-sku-results button:focus { background:#eaf7f9; outline:none; }
+.shipment-sku-results button strong { color:var(--primary); }
+.shipment-sku-results button span,.shipment-sku-results button small { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.shipment-sku-custom-hint { padding:12px; color:var(--muted); }
+.shipment-sku-field > small { display:block; margin-top:6px; color:var(--muted); font-weight:400; }
+.customer-ai-branches { display:grid; gap:12px; margin-top:12px; }
+.customer-ai-branch-card { border:1px solid var(--border); border-radius:12px; padding:14px; background:var(--soft); }
+.customer-ai-branch-card-head { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:10px; }
+.customer-ai-branch-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; }
+.customer-ai-branch-grid .wide { grid-column:1 / -1; }
+.customer-ai-branch-grid textarea { min-height:110px; resize:vertical; }
+@media (max-width: 760px) { .customer-ai-branch-grid,.customer-ai-playbook-row { grid-template-columns:1fr; } .customer-ai-branch-grid .wide { grid-column:auto; } .customer-ai-rules-link { align-items:stretch; flex-direction:column; } }
 .customer-ai-knowledge-tools {
   display:flex;
   align-items:center;

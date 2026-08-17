@@ -1112,6 +1112,7 @@ function defaultPermissions(role) {
     fullFinanceView: false,
     usersManage: false,
     customerCodexChat: false,
+    aiRulesEdit: false,
     settingsEdit: false
   };
   const all = Object.fromEntries(Object.keys(none).map(k => [k, true]));
@@ -1192,6 +1193,9 @@ function sanitizeDbForUser(db, user) {
   const canSeeCosts = user?.role === 'owner';
   const canApproveReimbursements = Boolean(p.reimbursementsApprove);
   const safeSettings = { ...(db.settings || {}) };
+  safeSettings.customerBranches = customerBranches(db).map(({ aiKnowledge, ...branch }) => branch);
+  delete safeSettings.customerAiKnowledge;
+  delete safeSettings.customerAiPlaybook;
   delete safeSettings.openAiCustomerReplyKeyEncrypted;
   delete safeSettings.metaPageAccessTokenEncrypted;
   delete safeSettings.metaAppSecretEncrypted;
@@ -1230,8 +1234,8 @@ function sanitizeDbForUser(db, user) {
     scheduleReminderLogs: p.schedulesView ? (db.scheduleReminderLogs || []).slice(0, 200) : [],
     customerServiceReps: p.leadsView ? sanitizeCustomerServiceReps(db.customerServiceReps || [], p) : [],
     leads: p.leadsView ? sanitizeLeads(db.leads || [], p) : [],
-    prospects: p.prospectsView ? (db.prospects || []) : [],
-    customerConversations: p.prospectsView ? (db.customerConversations || []) : [],
+    prospects: p.prospectsView ? (db.prospects || []).map(item => enrichCustomerIdentity(db, { ...item })) : [],
+    customerConversations: p.prospectsView ? (db.customerConversations || []).map(item => enrichCustomerIdentity(db, { ...item })) : [],
     replyTemplates: p.prospectsView ? (db.replyTemplates || []) : [],
     expenses: p.expensesView || p.fullFinanceView ? (db.expenses || []) : [],
     reimbursements: p.reimbursementsView ? (db.reimbursements || []).filter(item => canApproveReimbursements || item.employeeUserId === user.id) : [],
@@ -1538,7 +1542,131 @@ function customerAiKnowledge(db) {
   return String(db?.settings?.customerAiKnowledge || '').trim().slice(0, 12000);
 }
 
-function customerAiReplyPrompt(task, channel = '', knowledge = '') {
+const DEFAULT_CUSTOMER_AI_PLAYBOOK = [
+  { id: 'first-reply', name: '第一次回复', trigger: 'first', enabled: true, instruction: '简短欢迎客户，确认车型、年份和想做的项目；已有资料不要重复询问。只提出一个最关键的问题。' },
+  { id: 'second-reply', name: '第二次回复', trigger: 'second', enabled: true, instruction: '承接客户刚补充的资料，不要重新自我介绍；补齐报价或预约所缺的下一项信息。' },
+  { id: 'ongoing-reply', name: '后续持续沟通', trigger: 'ongoing', enabled: true, instruction: '直接回答客户最新问题，不重复地址、电话、优势或前面已说过的内容；每次只推进一个下一步。' },
+  { id: 'price-rule', name: '客户询问价格', trigger: 'pricing', enabled: true, instruction: '只使用公司知识或分店规则中明确写明的价格。缺少车型、年份、部位或膜系列时先询问，不得猜价。' },
+  { id: 'visit-rule', name: '邀请到店', trigger: 'visit', enabled: true, instruction: '只有在看样、验车或确认报价确有必要时邀请到店；本次对话已经邀请过就不要重复邀请。' },
+  { id: 'human-rule', name: '必须转人工', trigger: 'escalation', enabled: true, instruction: '投诉、退款、质保争议、法律责任、无法确认的承诺和规则外报价必须转人工，不得自动承诺。' }
+];
+
+function normalizeCustomerAiPlaybookRule(value = {}, index = 0) {
+  const allowed = new Set(['first', 'second', 'ongoing', 'pricing', 'visit', 'escalation', 'always']);
+  const rawId = String(value.id || '').trim().toLowerCase().replace(/[^a-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '');
+  return {
+    id: rawId || `rule-${index + 1}`,
+    name: String(value.name || `规则 ${index + 1}`).trim().slice(0, 80),
+    trigger: allowed.has(String(value.trigger || '')) ? String(value.trigger) : 'always',
+    enabled: value.enabled !== false,
+    instruction: String(value.instruction || '').trim().slice(0, 3000)
+  };
+}
+
+function customerAiPlaybook(db) {
+  const saved = Array.isArray(db?.settings?.customerAiPlaybook) ? db.settings.customerAiPlaybook : [];
+  return (saved.length ? saved : DEFAULT_CUSTOMER_AI_PLAYBOOK).slice(0, 30).map(normalizeCustomerAiPlaybookRule);
+}
+
+function applicableCustomerAiPlaybook(db, task) {
+  const customerMessages = (task.messages || []).filter(message => message.role === 'customer');
+  const stage = customerMessages.length <= 1 ? 'first' : customerMessages.length === 2 ? 'second' : 'ongoing';
+  const latest = String(customerMessages.at(-1)?.text || '').toLowerCase();
+  return customerAiPlaybook(db).filter(rule => rule.enabled && (
+    ['always', 'escalation'].includes(rule.trigger)
+    || rule.trigger === stage
+    || (rule.trigger === 'pricing' && /price|cost|quote|how much|价格|报价|多少钱/.test(latest))
+    || (rule.trigger === 'visit' && /visit|come in|appointment|schedule|sample|到店|预约|看样/.test(latest))
+  ));
+}
+
+const DEFAULT_CUSTOMER_BRANCHES = [
+  {
+    id: 'las-vegas', name: '拉斯维加斯分店', city: 'Las Vegas', aliases: 'Las Vegas, Vegas',
+    address: '3359 W Oquendo Rd, Las Vegas, NV 89118', aiKnowledge: '', active: true
+  },
+  {
+    id: 'los-angeles', name: '洛杉矶分店', city: 'Los Angeles', aliases: 'Los Angeles, LA',
+    address: '', aiKnowledge: '', active: true
+  }
+];
+
+function normalizeCustomerBranch(value = {}, index = 0) {
+  const name = String(value.name || '').trim().slice(0, 80);
+  const city = String(value.city || '').trim().slice(0, 80);
+  const rawId = String(value.id || '').trim().toLowerCase().replace(/[^a-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '');
+  return {
+    id: rawId || `branch-${index + 1}`,
+    name: name || city || `分店 ${index + 1}`,
+    city,
+    aliases: String(Array.isArray(value.aliases) ? value.aliases.join(', ') : value.aliases || '').trim().slice(0, 500),
+    address: String(value.address || '').trim().slice(0, 300),
+    aiKnowledge: String(value.aiKnowledge || '').trim().slice(0, 6000),
+    active: value.active !== false
+  };
+}
+
+function customerBranches(db) {
+  const saved = Array.isArray(db?.settings?.customerBranches) ? db.settings.customerBranches : [];
+  return (saved.length ? saved : DEFAULT_CUSTOMER_BRANCHES).slice(0, 20).map(normalizeCustomerBranch);
+}
+
+function customerBranchAliases(branch) {
+  return [branch?.city, branch?.name, ...String(branch?.aliases || '').split(/[,，;；\n]/)]
+    .map(value => String(value || '').trim()).filter(value => value.length >= 2);
+}
+
+function textIncludesBranchAlias(text, alias) {
+  const haystack = String(text || '').toLowerCase();
+  const needle = String(alias || '').trim().toLowerCase();
+  if (!needle) return false;
+  if (needle.length > 3) return haystack.includes(needle);
+  const escaped = needle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(`(?:^|[^a-z0-9])${escaped}(?:$|[^a-z0-9])`, 'i').test(haystack);
+}
+
+function customerIdentityText(item = {}) {
+  return [item.city, item.need, item.chatContext, ...(item.conversationMessages || []).map(message => message?.text || '')].join('\n');
+}
+
+function extractCustomerPhone(item = {}) {
+  if (String(item.phone || '').trim()) return String(item.phone).trim();
+  const text = customerIdentityText(item);
+  const labeled = text.match(/(?:phone(?:\s*number)?|telephone|tel|手机(?:号)?|电话)\s*[:：-]?\s*(\+?1?[\s.(\-]*\d{3}[\s.)\-]*\d{3}[\s.\-]*\d{4})/i);
+  return String(labeled?.[1] || '').trim();
+}
+
+function extractCustomerCity(item = {}, branches = []) {
+  if (String(item.city || '').trim()) return String(item.city).trim();
+  const text = customerIdentityText(item);
+  const labeled = text.match(/(?:^|\n)\s*(?:city|城市|地区)\s*[:：-]\s*([^\n,，;；]{2,80})/i);
+  if (labeled?.[1]) return String(labeled[1]).trim();
+  for (const branch of branches) {
+    const alias = customerBranchAliases(branch).find(value => textIncludesBranchAlias(text, value));
+    if (alias) return branch.city || alias;
+  }
+  return '';
+}
+
+function enrichCustomerIdentity(db, item = {}) {
+  const branches = customerBranches(db);
+  if (!String(item.phone || '').trim()) item.phone = extractCustomerPhone(item);
+  if (!String(item.city || '').trim()) item.city = extractCustomerCity(item, branches);
+  if (!String(item.branchId || '').trim()) {
+    const haystack = `${item.city || ''}\n${customerIdentityText(item)}`;
+    const match = branches.find(branch => customerBranchAliases(branch).some(alias => textIncludesBranchAlias(haystack, alias)));
+    if (match) item.branchId = match.id;
+  }
+  return item;
+}
+
+function customerBranchForItem(db, item = {}) {
+  const branches = customerBranches(db);
+  enrichCustomerIdentity(db, item);
+  return branches.find(branch => branch.id === item.branchId) || null;
+}
+
+function customerAiReplyPrompt(task, channel = '', knowledge = '', branch = null, playbook = []) {
   const lastMessages = (task.messages || []).slice(-10).map(message => ({
     role: message.role,
     channel: message.channel,
@@ -1546,12 +1674,12 @@ function customerAiReplyPrompt(task, channel = '', knowledge = '') {
     text: message.text
   }));
   const preferredChannel = channel || task.preferredChannel || task.availableChannels?.[0] || '';
-  return `You are the built-in AI customer service assistant for QUAD Film / QD Auto Image, a Las Vegas automotive window tint, PPF, TPU color PPF/color change, vinyl wrap, and architectural film shop.
+  return `You are the built-in AI customer service assistant for QUAD Film / QD Auto Image, an automotive window tint, PPF, TPU color PPF/color change, vinyl wrap, and architectural film business with multiple branches.
 
 Write a customer-facing English reply draft for an employee to review before sending.
 
-Shop facts:
-- Address: 3359 W Oquendo Rd, Las Vegas, NV 89118.
+Assigned branch:
+${branch ? `- Branch: ${branch.name}\n- City: ${branch.city || '(not configured)'}\n- Address: ${branch.address || '(not configured; do not invent one)'}` : '- No branch has been confirmed. Do not assume Las Vegas or Los Angeles; ask which city/location only when it is needed.'}
 - Main public contact name/signature: Sabrina / QD Auto Image / 725-304-1424.
 - The shop can invite customers to visit to compare film samples in person.
 - Do not invent exact prices, discounts, stock, legal tint compliance, installation duration, or appointment availability if not present in the customer record or operator-maintained knowledge below.
@@ -1559,6 +1687,12 @@ Shop facts:
 
 Operator-maintained customer-service rules, company knowledge, and pricing:
 ${knowledge || '(No additional knowledge configured.)'}
+
+Rules for this assigned branch:
+${branch?.aiKnowledge || '(No branch-specific rules configured.)'}
+
+Applicable conversation playbook rules (follow in this order):
+${playbook.length ? playbook.map((rule, index) => `${index + 1}. ${rule.name}: ${rule.instruction}`).join('\n') : '(No additional playbook rule applies.)'}
 
 Treat the operator-maintained content above as the authoritative business policy and follow it before any general sales advice. It controls what may be answered, what must not be answered, approved company advantages, quoting rules, escalation rules, and preferred wording. If the customer asks a price and an exact matching price is present there, mention it clearly. If only a range, rule, or required vehicle/detail is present, explain that and ask for the missing detail. Never create prices, guarantees, discounts, or company claims outside that content.
 
@@ -1568,6 +1702,8 @@ ${JSON.stringify({
   channel: preferredChannel,
   customer: task.customer,
   phone: task.phone,
+  city: task.city,
+  branch: task.branch,
   vehicle: task.vehicle,
   need: task.need,
   status: task.status,
@@ -1579,6 +1715,11 @@ ${JSON.stringify({
 
 Recent conversation:
 ${JSON.stringify(lastMessages, null, 2)}
+
+Conversation continuity rules:
+- Continue naturally from the latest customer message and use the recent conversation as memory.
+- If the shop city, branch, address, phone number, services, warranty, or another fact was already stated, do not repeat it unless the customer asks again or correction is necessary.
+- Do not restart with the same company introduction or repeat the same sales pitch. Acknowledge only new information and ask the next useful question.
 
 Return JSON only with exactly these fields:
 - replyText: English text ready to paste to the customer. Keep it concise, warm, and professional. End with one clear question that moves toward visit, quote details, or scheduling.
@@ -1626,6 +1767,10 @@ function customerAiSettingsStatus(db) {
     knowledge: customerAiKnowledge(db),
     knowledgeUpdatedAt: db?.settings?.customerAiKnowledgeUpdatedAt || '',
     knowledgeUpdatedBy: db?.settings?.customerAiKnowledgeUpdatedBy || '',
+    branches: customerBranches(db),
+    playbook: customerAiPlaybook(db),
+    rulesUpdatedAt: db?.settings?.customerAiRulesUpdatedAt || '',
+    rulesUpdatedBy: db?.settings?.customerAiRulesUpdatedBy || '',
     autoReply: customerAiAutoReplySettings(db),
     autoReplyLogs: (Array.isArray(db?.customerAiAutoReplyLogs) ? db.customerAiAutoReplyLogs : []).slice(-30).reverse(),
     updatedAt: db?.settings?.openAiCustomerReplyKeyUpdatedAt || '',
@@ -1706,7 +1851,10 @@ async function createCustomerAiReplyDraft(db, row, requestedChannel = '') {
   const apiKey = openAiCustomerReplyKey(db);
   if (!apiKey) throw new Error('OpenAI API Key 尚未配置，暂时不能生成系统内 AI 客服回复');
   const task = safeCustomerServiceTask(row);
-  const prompt = customerAiReplyPrompt(task, requestedChannel, customerAiKnowledge(db));
+  const branch = customerBranchForItem(db, row.item);
+  task.city = String(row.item?.city || '');
+  task.branch = branch ? { id: branch.id, name: branch.name, city: branch.city } : null;
+  const prompt = customerAiReplyPrompt(task, requestedChannel, customerAiKnowledge(db), branch, applicableCustomerAiPlaybook(db, task));
   const openAiBaseUrl = String(process.env.OPENAI_API_BASE_URL || 'https://api.openai.com/v1').replace(/\/+$/, '');
   const model = customerAiReplyModel(db);
   const requestBody = {
@@ -2369,6 +2517,8 @@ function normalizeProspectInput(input, fallback = {}) {
     source,
     customer: cleanImportedText(input.customer || input.customerName || fallback.customer || ''),
     phone: String(input.phone || fallback.phone || '').trim(),
+    city: cleanImportedText(input.city || input.customerCity || fallback.city || ''),
+    branchId: String(input.branchId || fallback.branchId || '').trim(),
     email: cleanImportedText(input.email || input.temporaryEmail || fallback.email || ''),
     vehicle: cleanImportedText(input.vehicle || fallback.vehicle || ''),
     need: cleanImportedConversationText(input.need || input.customerNeed || input.interest || fallback.need || ''),
@@ -2619,6 +2769,7 @@ function importCustomerRecords(db, user, body, collection = 'prospects') {
   db[collection] = Array.isArray(db[collection]) ? db[collection] : [];
   rows.forEach((row, index) => {
     const candidate = normalizeProspectInput(row, fallback);
+    enrichCustomerIdentity(db, candidate);
     const hasUsefulIdentity = candidate.customer || candidate.phone || candidate.externalId || candidate.chatContext || candidate.conversationMessages?.length;
     if (!candidate.source || !hasUsefulIdentity) {
       result.skipped += 1;
@@ -2660,6 +2811,7 @@ function importCustomerRecords(db, user, body, collection = 'prospects') {
         updatedBy: user.name || user.email,
         updatedByUserId: user.id
       });
+      enrichCustomerIdentity(db, next);
       if (waitingForCustomer) {
         next.intentLevel = duplicate.intentLevel || candidate.intentLevel;
         next.intentReason = duplicate.intentReason || next.intentReason;
@@ -2692,6 +2844,7 @@ function importCustomerRecords(db, user, body, collection = 'prospects') {
       createdBy: user.name || user.email,
       createdByUserId: user.id
     };
+    enrichCustomerIdentity(db, item);
     db[collection].push(item);
     result.imported += 1;
     result.items.push({ id: item.id, status: 'new', customer: item.customer, source: item.source });
@@ -2853,6 +3006,7 @@ function metaLeadToCustomerConversation(lead, webhookChange = {}) {
     source: 'Meta / Facebook',
     customer: customer || 'Meta Lead',
     phone,
+    city,
     email,
     vehicle,
     need: needLines.join('\n') || 'Meta Lead Ads 表单线索',
@@ -3044,6 +3198,7 @@ async function handleMetaMessengerWebhook(req, res, db, url) {
         imported += 1;
       }
       if (appendMetaMessengerMessage(match.item, event.message, recipientId || pageId, psid, 'inbound', match.item.customer || 'Meta Customer')) {
+        enrichCustomerIdentity(db, match.item);
         updated += 1;
       } else {
         skipped += 1;
@@ -5835,6 +5990,41 @@ async function api(req, res) {
     });
   }
 
+  if (req.method === 'GET' && url.pathname === '/api/customer-ai/rules') {
+    if (!canAccess(user, 'aiRulesEdit') && !canAccess(user, 'settingsEdit')) return send(res, 403, { error: '没有查看 AI 客服规则的权限' });
+    return send(res, 200, {
+      knowledge: customerAiKnowledge(db),
+      branches: customerBranches(db),
+      playbook: customerAiPlaybook(db),
+      updatedAt: db?.settings?.customerAiRulesUpdatedAt || db?.settings?.customerAiKnowledgeUpdatedAt || '',
+      updatedBy: db?.settings?.customerAiRulesUpdatedBy || db?.settings?.customerAiKnowledgeUpdatedBy || ''
+    });
+  }
+
+  if (req.method === 'PUT' && url.pathname === '/api/customer-ai/rules') {
+    if (!canAccess(user, 'aiRulesEdit') && !canAccess(user, 'settingsEdit')) return send(res, 403, { error: '没有修改 AI 客服规则的权限' });
+    const body = await readBody(req);
+    const knowledge = String(body.knowledge || '').trim();
+    const branches = Array.isArray(body.branches) ? body.branches.slice(0, 20).map(normalizeCustomerBranch) : [];
+    const playbook = Array.isArray(body.playbook) ? body.playbook.slice(0, 30).map(normalizeCustomerAiPlaybookRule) : [];
+    if (knowledge.length > 12000) return send(res, 400, { error: '公司知识和产品规则最多 12000 个字符' });
+    if (!branches.length || branches.some(branch => !branch.name || !branch.city)) return send(res, 400, { error: '至少保留一个分店，并填写分店名称和城市' });
+    if (!playbook.length || playbook.some(rule => !rule.name || !rule.instruction)) return send(res, 400, { error: '至少保留一条完整的客服流程规则' });
+    const before = { knowledge: customerAiKnowledge(db), branches: customerBranches(db), playbook: customerAiPlaybook(db) };
+    db.settings = db.settings || {};
+    db.settings.customerAiKnowledge = knowledge;
+    db.settings.customerBranches = branches;
+    db.settings.customerAiPlaybook = playbook;
+    db.settings.customerAiKnowledgeUpdatedAt = new Date().toISOString();
+    db.settings.customerAiKnowledgeUpdatedBy = user.name || user.email;
+    db.settings.customerAiRulesUpdatedAt = db.settings.customerAiKnowledgeUpdatedAt;
+    db.settings.customerAiRulesUpdatedBy = db.settings.customerAiKnowledgeUpdatedBy;
+    audit(db, user, 'update-customer-ai-rules', { collection: 'settings', recordId: 'customer-ai-rules', before, after: { knowledge, branches, playbook }, detail: `修改 AI 客服规则，共 ${playbook.length} 条流程规则、${branches.length} 个分店` });
+    writeDb(db);
+    notifyDataChanged('update-customer-ai-rules', { rules: playbook.length, branches: branches.length });
+    return send(res, 200, { knowledge, branches, playbook, updatedAt: db.settings.customerAiRulesUpdatedAt, updatedBy: db.settings.customerAiRulesUpdatedBy });
+  }
+
   if (req.method === 'GET' && url.pathname === '/api/customer-ai/settings') {
     if (!canAccess(user, 'settingsEdit')) return send(res, 403, { error: '没有查看 AI 设置权限' });
     return send(res, 200, customerAiSettingsStatus(db));
@@ -5848,11 +6038,15 @@ async function api(req, res) {
     const model = String(body.model || customerAiReplyModel(db)).trim().slice(0, 80);
     const knowledgeProvided = Object.prototype.hasOwnProperty.call(body, 'knowledge');
     const knowledge = String(body.knowledge || '').trim();
+    const branchesProvided = Array.isArray(body.branches);
+    const branches = branchesProvided ? body.branches.slice(0, 20).map(normalizeCustomerBranch) : [];
     const autoReplyProvided = body.autoReply && typeof body.autoReply === 'object';
     if (apiKey && apiKey.length < 20) return send(res, 400, { error: 'OpenAI API Key 太短，请检查后再保存' });
     if (apiKey && !/^sk-[A-Za-z0-9_\-]+/.test(apiKey)) return send(res, 400, { error: 'OpenAI API Key 通常以 sk- 开头，请检查后再保存' });
     if (!model) return send(res, 400, { error: '请输入 AI 模型名称' });
     if (knowledge.length > 12000) return send(res, 400, { error: 'AI 客服资料库最多 12000 个字符，请精简后再保存' });
+    if (branchesProvided && !branches.length) return send(res, 400, { error: '至少保留一个分店' });
+    if (branches.some(branch => !branch.name || !branch.city)) return send(res, 400, { error: '每个分店都需要填写分店名称和城市' });
 
     const before = customerAiSettingsStatus(db);
     db.settings = db.settings || {};
@@ -5862,6 +6056,7 @@ async function api(req, res) {
       db.settings.customerAiKnowledgeUpdatedAt = new Date().toISOString();
       db.settings.customerAiKnowledgeUpdatedBy = user.name || user.email;
     }
+    if (branchesProvided) db.settings.customerBranches = branches;
     if (autoReplyProvided) {
       const requested = body.autoReply;
       db.settings.customerAiAutoReply = {
@@ -6036,6 +6231,10 @@ async function api(req, res) {
     delete body.customerAiKnowledge;
     delete body.customerAiKnowledgeUpdatedAt;
     delete body.customerAiKnowledgeUpdatedBy;
+    delete body.customerBranches;
+    delete body.customerAiPlaybook;
+    delete body.customerAiRulesUpdatedAt;
+    delete body.customerAiRulesUpdatedBy;
     delete body.metaPageAccessTokenEncrypted;
     delete body.metaAppSecretEncrypted;
     delete body.metaWebhookVerifyTokenEncrypted;
@@ -6291,6 +6490,10 @@ async function api(req, res) {
     item.updatedAt = now;
     item.lastYelpAt = now;
     item.lastYelpDirection = 'outbound';
+    delete item.agentReplyDraft;
+    delete item.taskClaimedByUserId;
+    delete item.taskClaimedByName;
+    delete item.taskClaimedAt;
     audit(db, user, 'send-customer-yelp-message', {
       collection,
       recordId: item.id,
@@ -7276,6 +7479,7 @@ async function api(req, res) {
     }
     if (collection === 'prospects' || collection === 'customerConversations') {
       const now = new Date().toISOString();
+      enrichCustomerIdentity(db, item);
       item.createdAt = item.createdAt || now;
       item.importedAt = item.importedAt || now;
       item.updatedAt = now;
@@ -7486,6 +7690,7 @@ async function api(req, res) {
     }
     if (collection === 'prospects' || collection === 'customerConversations') {
       const now = new Date().toISOString();
+      enrichCustomerIdentity(db, next);
       next.createdAt = db[collection][idx].createdAt || next.createdAt || now;
       next.importedAt = db[collection][idx].importedAt || next.importedAt || next.createdAt;
       next.updatedBy = user.name || user.email;
