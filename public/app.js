@@ -35,6 +35,8 @@ let current = 'modules';
 // that older response may update data, but must never repaint the old screen.
 let uiNavigationRevision = 0;
 let inventorySearch = '';
+let inventoryBranchFilter = localStorage.getItem('filmShopCloud.inventoryBranch') || 'all';
+let ownerBranchFilter = localStorage.getItem('filmShopCloud.ownerBranch') || 'all';
 let jobSearch = '';
 let salesOrderSearch = '';
 let jobDatePreset = 'month';
@@ -1376,8 +1378,25 @@ function jobMatchesPerson(job) {
   return jobPersonText(job).includes(jobPersonFilter);
 }
 
+function branchScopedRows(rows = []) {
+  if (ownerBranchFilter === 'all') return rows || [];
+  return (rows || []).filter(row => String(row?.branchId || '') === ownerBranchFilter);
+}
+
+function ownerBranchSwitcher() {
+  const options = [['all', lang === 'zh' ? '公司合并' : 'Company'], ['', lang === 'zh' ? '待确认分店' : 'Pending branch'], ...branchOptions(false)];
+  if (!options.some(([id]) => id === ownerBranchFilter)) ownerBranchFilter = 'all';
+  return `<label class="owner-branch-switcher"><span>${lang === 'zh' ? '经营范围' : 'Business scope'}</span><select onchange="setOwnerBranchFilter(this.value)">${options.map(([id,label]) => `<option value="${escapeHtml(id)}" ${id === ownerBranchFilter ? 'selected' : ''}>${escapeHtml(label)}</option>`).join('')}</select></label>`;
+}
+
+function setOwnerBranchFilter(value) {
+  ownerBranchFilter = String(value ?? 'all');
+  localStorage.setItem('filmShopCloud.ownerBranch', ownerBranchFilter);
+  render();
+}
+
 function filteredJobs(includeSearch = true) {
-  const rows = sortByDateDesc(state.jobs || [])
+  const rows = sortByDateDesc(branchScopedRows(state.jobs || []))
     .filter(job => !job.deletedAt)
     .filter(jobMatchesDate)
     .filter(jobMatchesSource)
@@ -1399,7 +1418,7 @@ function orderMatchesPerson(order) {
 }
 
 function filteredSalesOrders() {
-  return (state.salesOrders || [])
+  return branchScopedRows(state.salesOrders || [])
     .filter(orderMatchesDate)
     .filter(orderMatchesPerson);
 }
@@ -1413,11 +1432,12 @@ function reimbursedExpenseRows() {
     amount: Number(row.amount || 0),
     note: `${row.reimbursementNo || ''} ${row.purpose || ''}`.trim(),
     recurring: false
+    ,branchId: row.branchId || ''
   }));
 }
 
 function allOperatingExpenseRows() {
-  return [...(state.expenses || []), ...reimbursedExpenseRows()];
+  return branchScopedRows([...(state.expenses || []), ...reimbursedExpenseRows()]);
 }
 
 function filteredExpenses(range = activeJobDateRange()) {
@@ -1431,7 +1451,7 @@ function dateFallsInRange(value, range = activeJobDateRange()) {
 }
 
 function filteredAccountingJobs(range = activeJobDateRange()) {
-  return (state.jobs || [])
+  return branchScopedRows(state.jobs || [])
     .filter(job => !job.deletedAt)
     .filter(job => dateFallsInRange(job.deliveredAt || job.date, range))
     .filter(jobMatchesSource)
@@ -1439,13 +1459,13 @@ function filteredAccountingJobs(range = activeJobDateRange()) {
 }
 
 function filteredAccountingSalesOrders(range = activeJobDateRange()) {
-  return (state.salesOrders || [])
+  return branchScopedRows(state.salesOrders || [])
     .filter(order => dateFallsInRange(order.shippedAt || order.date, range))
     .filter(orderMatchesPerson);
 }
 
 function accountingBalanceJobs(range = activeJobDateRange()) {
-  return (state.jobs || [])
+  return branchScopedRows(state.jobs || [])
     .filter(job => !job.deletedAt)
     .filter(job => !range.end || String(job.deliveredAt || job.date || '').slice(0, 10) <= range.end)
     .filter(jobMatchesSource)
@@ -1453,7 +1473,7 @@ function accountingBalanceJobs(range = activeJobDateRange()) {
 }
 
 function accountingBalanceSalesOrders(range = activeJobDateRange()) {
-  return (state.salesOrders || [])
+  return branchScopedRows(state.salesOrders || [])
     .filter(order => !range.end || String(order.shippedAt || order.date || '').slice(0, 10) <= range.end)
     .filter(orderMatchesPerson);
 }
@@ -1522,6 +1542,7 @@ function render() {
     ${currentPage ? `<button class="nav-btn active" onclick="setPage('${currentPage[0]}')">
       <span>${navIcon(currentPage[0])}</span><span>${t(currentPage[1])}</span>
     </button>` : ''}
+    ${user?.role === 'owner' ? ownerBranchSwitcher() : ''}
   `;
   const page = current === 'modules' ? ['modules', 'modules', 'modulesSub'] : currentPage;
   const pageTitle = document.getElementById('pageTitle');
@@ -2481,6 +2502,15 @@ function paymentMethodName(value) {
 
 function paymentStatusOptions() {
   return [['unpaid', paymentStatusLabel('unpaid')], ['partial', paymentStatusLabel('partial')], ['paid', paymentStatusLabel('paid')]];
+}
+
+function branchOptions(includeUnassigned = true) {
+  const rows = (state.settings?.customerBranches || []).filter(branch => branch.active !== false).map(branch => [branch.id, `${branch.name}${branch.city ? `（${branch.city}）` : ''}`]);
+  return includeUnassigned ? [['', lang === 'zh' ? '待确认分店' : 'Branch not confirmed'], ...rows] : rows;
+}
+
+function defaultBranchId() {
+  return user?.defaultBranchId || (Array.isArray(user?.branchIds) ? user.branchIds[0] : '') || '';
 }
 
 function basePlusMonthlyPay(installer, jobs) {
@@ -4129,6 +4159,7 @@ function openFieldSalesAccount(accountId = '') {
   const account = (state.fieldSales?.accounts || []).find(item => item.id === accountId) || {};
   openModal(accountId ? (lang === 'zh' ? '管理业务客户' : 'Manage field-sales account') : (lang === 'zh' ? '新增并分配业务客户' : 'Add and assign account'), `<div class="ai-boss-form">
     <label><span>${lang === 'zh' ? '客户门店名称' : 'Business name'}</span><input id="fieldSalesBusinessName" value="${escapeHtml(account.businessName || '')}"></label>
+    <label><span>${lang === 'zh' ? '所属分店' : 'Branch'}</span><select id="fieldSalesBranchId">${branchOptions().map(([id,label]) => `<option value="${escapeHtml(id)}" ${id === String(account.branchId || defaultBranchId()) ? 'selected' : ''}>${escapeHtml(label)}</option>`).join('')}</select></label>
     <label><span>${lang === 'zh' ? '负责人' : 'Assigned salesperson'}</span><select id="fieldSalesAssigned">${fieldSalesPeopleOptions(account.assignedUserId || '')}</select></label>
     <label class="wide"><span>${lang === 'zh' ? '门店地址' : 'Store address'}</span><input id="fieldSalesAddress" value="${escapeHtml(account.address || '')}"></label>
     <label><span>${lang === 'zh' ? '联系人' : 'Contact name'}</span><input id="fieldSalesContact" value="${escapeHtml(account.contactName || '')}"></label>
@@ -4145,6 +4176,7 @@ async function saveFieldSalesAccount(accountId = '') {
   const nextVisitValue = document.getElementById('fieldSalesNextVisit')?.value || '';
   const body = {
     businessName: value('fieldSalesBusinessName'), address: value('fieldSalesAddress'),
+    branchId: value('fieldSalesBranchId'),
     contactName: value('fieldSalesContact'), phone: value('fieldSalesPhone'), email: value('fieldSalesEmail'),
     assignedUserId: value('fieldSalesAssigned'), stage: value('fieldSalesStage'),
     cadenceDays: Number(value('fieldSalesCadence') || 7), note: value('fieldSalesNote'),
@@ -4195,6 +4227,37 @@ function desktopLeaveTable(requests) {
   return `<div class="table-wrap"><table><thead><tr><th>${lang === 'zh' ? '员工/类型' : 'Employee / Type'}</th><th>${lang === 'zh' ? '日期时间' : 'Date / Time'}</th><th>${lang === 'zh' ? '小时' : 'Hours'}</th><th>${lang === 'zh' ? '原因' : 'Reason'}</th><th>${lang === 'zh' ? '状态' : 'Status'}</th><th>${lang === 'zh' ? '操作' : 'Action'}</th></tr></thead><tbody>${requests.map(item => `<tr><td>${escapeHtml(item.userName || '')}<br><small>${escapeHtml(item.leaveType || '')}</small></td><td>${escapeHtml(item.startDate || '')} ${escapeHtml(item.startTime || '')}<br>${lang === 'zh' ? '至' : 'to'} ${escapeHtml(item.endDate || '')} ${escapeHtml(item.endTime || '')}</td><td>${Number(item.hours || 0)}</td><td>${escapeHtml(item.reason || '')}</td><td>${escapeHtml(item.status || '')}${item.reviewedBy ? `<br><small>${escapeHtml(item.reviewedBy)}</small>` : ''}</td><td>${state.canApproveLeave && item.status === '待审批' ? `<button class="btn primary" onclick="reviewDesktopLeave('${escapeHtml(item.id)}','已批准')">${lang === 'zh' ? '批准' : 'Approve'}</button> <button class="btn danger" onclick="reviewDesktopLeave('${escapeHtml(item.id)}','已拒绝')">${lang === 'zh' ? '拒绝' : 'Reject'}</button>` : '—'}</td></tr>`).join('')}</tbody></table></div>`;
 }
 
+function ownerBranchComparison() {
+  if (user?.role !== 'owner') return '';
+  const branches = [...branchOptions(false), ['', lang === 'zh' ? '待确认分店' : 'Pending branch']];
+  const rows = branches.map(([branchId, name]) => {
+    const jobs = (state.jobs || []).filter(row => !row.deletedAt && String(row.branchId || '') === branchId);
+    const orders = (state.salesOrders || []).filter(row => String(row.branchId || '') === branchId);
+    const expenses = [...(state.expenses || []), ...reimbursedExpenseRows()].filter(row => String(row.branchId || '') === branchId);
+    const jobRevenue = jobs.reduce((sum, row) => sum + Number(jobCalc(row).price || 0), 0);
+    const orderRevenue = orders.reduce((sum, row) => sum + Number(orderCalc(row).total || 0), 0);
+    const expense = expenses.reduce((sum, row) => sum + Number(row.amount || 0), 0);
+    return { branchId, name, jobs:jobs.length, orders:orders.length, revenue:jobRevenue + orderRevenue, expense, net:jobRevenue + orderRevenue - expense };
+  });
+  return `<div class="panel" style="margin-top:14px"><div class="panel-head"><div><h3>${lang === 'zh' ? '分店经营对比' : 'Branch Comparison'}</h3><p class="note">${lang === 'zh' ? '公司合并查看时用于横向比较；工资和提成继续按所属施工单分店核算。' : 'Side-by-side view; payroll and commission follow each job branch.'}</p></div></div><div class="table-wrap"><table><thead><tr><th>${lang === 'zh' ? '分店' : 'Branch'}</th><th>${t('jobs')}</th><th>${lang === 'zh' ? '零售/批发单' : 'Sales orders'}</th><th>${lang === 'zh' ? '收入' : 'Revenue'}</th><th>${lang === 'zh' ? '费用/报销' : 'Expense'}</th><th>${lang === 'zh' ? '收入减费用' : 'Revenue less expense'}</th></tr></thead><tbody>${rows.map(row => `<tr><td><strong>${escapeHtml(row.name)}</strong></td><td>${row.jobs}</td><td>${row.orders}</td><td>${currency.format(row.revenue)}</td><td>${currency.format(row.expense)}</td><td>${currency.format(row.net)}</td></tr>`).join('')}</tbody></table></div></div>`;
+}
+
+function ownerBranchReconciliation() {
+  if (user?.role !== 'owner') return '';
+  const collections = [
+    [lang === 'zh' ? '施工订单' : 'Jobs', state.jobs], [lang === 'zh' ? '零售/批发订单' : 'Sales orders', state.salesOrders],
+    [lang === 'zh' ? '在途货物' : 'Shipments', state.shipments], [lang === 'zh' ? '费用' : 'Expenses', state.expenses],
+    [lang === 'zh' ? '报销' : 'Reimbursements', state.reimbursements], [lang === 'zh' ? '客户' : 'Customers', [...(state.prospects || []), ...(state.customerConversations || [])]]
+  ];
+  const pending = collections.map(([name, rows]) => ({ name, count:(rows || []).filter(row => !String(row.branchId || '')).length })).filter(row => row.count);
+  const branchTotals = new Map();
+  (state.branchInventory || []).forEach(row => branchTotals.set(row.sku, Number(branchTotals.get(row.sku) || 0) + Number(row.qty || 0)));
+  const inventoryMismatch = (state.products || []).filter(product => Math.abs(Number(product.qty || 0) - Number(branchTotals.get(product.sku) || 0)) > 0.001);
+  const transferExceptions = (state.branchTransferExceptions || []).filter(row => row.status === '待处理').length;
+  const total = pending.reduce((sum,row) => sum + row.count, 0) + inventoryMismatch.length + transferExceptions;
+  return `<div class="panel" style="margin-top:14px"><div class="panel-head"><div><h3>${lang === 'zh' ? '异常对账中心' : 'Reconciliation Exceptions'}</h3><p class="note">${lang === 'zh' ? '这里只提示，不自动改历史归属或财务数据。' : 'Review-only: historical ownership is never guessed.'}</p></div><span class="pill ${total ? 'bad' : 'good'}">${total}</span></div><div class="table-wrap"><table><thead><tr><th>${lang === 'zh' ? '检查项目' : 'Check'}</th><th>${lang === 'zh' ? '异常数量' : 'Exceptions'}</th><th>${lang === 'zh' ? '处理原则' : 'Rule'}</th></tr></thead><tbody>${pending.map(row => `<tr><td>${escapeHtml(row.name)} · ${lang === 'zh' ? '待确认分店' : 'Pending branch'}</td><td>${row.count}</td><td>${lang === 'zh' ? '人工核对后再归类' : 'Assign only after manual review'}</td></tr>`).join('')}<tr><td>${lang === 'zh' ? '库存公司总账与分店明细' : 'Inventory control vs branch detail'}</td><td>${inventoryMismatch.length}</td><td>${lang === 'zh' ? '总账必须等于所有分店加待确认' : 'Control total must equal branches plus pending'}</td></tr><tr><td>${lang === 'zh' ? '跨店调拨异常单' : 'Transfer exceptions'}</td><td>${transferExceptions}</td><td>${lang === 'zh' ? '核对少货/多货后关闭异常' : 'Resolve shortages/overages'}</td></tr></tbody></table></div></div>`;
+}
+
 async function submitDesktopLeave() {
   try { await api('/api/mobile/leave', { method:'POST', body:JSON.stringify({ leaveType:value('desktopLeaveType'), startDate:value('desktopLeaveStartDate'), startTime:value('desktopLeaveStartTime'), endDate:value('desktopLeaveEndDate'), endTime:value('desktopLeaveEndTime'), hours:value('desktopLeaveHours'), reason:value('desktopLeaveReason') }) }); await sync({ silent:true }); alert(lang === 'zh' ? '请假申请已提交' : 'Leave request submitted'); } catch (error) { alert(error.message); }
 }
@@ -4232,12 +4295,12 @@ const views = {
       <div class="panel" style="margin-top:14px">
         <div class="panel-head"><h3>${lang === 'zh' ? '零售批发销售情况' : 'Retail / Wholesale Sales'}</h3>${hasPerm('ordersView') ? `<button class="btn" onclick="setPage('orders')">${t('viewAll')}</button>` : ''}</div>
         ${retailWholesaleSalesTable(dashboardOrders)}
-      </div>`;
+      </div>${ownerBranchComparison()}${ownerBranchReconciliation()}`;
   },
   jobs() {
     const canListJobs = hasAnyPerm(['jobsView', 'jobsEdit', 'jobsDelete']);
-    const baseJobs = sortByDateDesc((state.jobs || []).filter(job => !job.deletedAt));
-    const deletedJobs = sortByDateDesc((state.jobs || []).filter(job => job.deletedAt));
+    const baseJobs = sortByDateDesc(branchScopedRows(state.jobs || []).filter(job => !job.deletedAt));
+    const deletedJobs = sortByDateDesc(branchScopedRows(state.jobs || []).filter(job => job.deletedAt));
     const visibleJobs = searchedJobs(baseJobs);
     const content = canListJobs
       ? `${jobSearchBox(baseJobs)}<div id="jobSearchResults">${jobBoard(visibleJobs)}</div>${showDeletedJobs ? deletedJobSection(deletedJobs) : ''}`
@@ -4255,11 +4318,13 @@ const views = {
     return panel(t('pricing'), hasPerm('pricingEdit') ? `<button class="btn primary" onclick="openPriceRule()">${t('addNew')}</button>` : '', priceRuleTable());
   },
   inventory() {
-    return `${panel(t('inventoryAlerts'), `<button class="btn" onclick="setPage('inventoryAlerts')">${t('viewAll')}</button>`, inventoryAlertTable(false, 8))}
+    return `${panel(lang === 'zh' ? '分店库存范围' : 'Inventory Scope', '', `${inventoryBranchControls()}<p class="note">${lang === 'zh' ? '公司总库存是控制总账；各分店是明细账；无法可靠判断的历史库存只进入“待确认分店”。' : 'Company inventory is the control total. Unknown historical allocations remain pending.'}</p>`)}
+    ${panel(t('inventoryAlerts'), `<button class="btn" onclick="setPage('inventoryAlerts')">${t('viewAll')}</button>`, inventoryAlertTable(false, 8))}
     <div class="split" style="margin-top:14px">
       <div class="panel"><div class="panel-head"><h3>${t('inventory')}</h3>${hasPerm('inventoryEdit') ? `<button class="btn primary" onclick="openProduct()">${t('addNew')}</button>` : ''}</div>${inventorySearchBox()}<div id="inventorySearchResults">${productTable(searchedProducts(), true)}</div></div>
       <div class="panel"><div class="panel-head"><h3>${lang === 'zh' ? '出入库流水' : 'Inventory Movements'}</h3>${hasPerm('inventoryEdit') ? `<button class="btn primary" onclick="openMovement()">${t('addNew')}</button>` : ''}</div>${movementTable()}</div>
-    </div>`;
+    </div>
+    <div class="panel" style="margin-top:14px"><div class="panel-head"><h3>${lang === 'zh' ? '跨店调拨与异常' : 'Branch Transfers & Exceptions'}</h3>${hasPerm('inventoryEdit') ? `<button class="btn primary" onclick="openBranchTransfer()">${lang === 'zh' ? '新增调拨单' : 'New Transfer'}</button>` : ''}</div>${branchTransferTable()}</div>`;
   },
   workshopInventory() {
     const actions = hasPerm('inventoryEdit')
@@ -4327,7 +4392,7 @@ const views = {
     return employeeWorkTimeView();
   },
   expenses() {
-    return panel(t('expenses'), hasPerm('expensesEdit') ? `<button class="btn primary" onclick="openExpense()">${t('addNew')}</button>` : '', expenseTable() + `<p class="note">${lang === 'zh' ? '这里录入房租、水电费、保险、广告、软件订阅等运营成本。报表会自动扣除这些费用。' : 'Enter rent, utilities, insurance, advertising, software subscriptions, and other operating costs here. Reports deduct these costs automatically.'}</p>`);
+    return panel(t('expenses'), hasPerm('expensesEdit') ? `<button class="btn primary" onclick="openExpense()">${t('addNew')}</button>` : '', expenseTable(true, branchScopedRows(state.expenses || [])) + `<p class="note">${lang === 'zh' ? '这里录入房租、水电费、保险、广告、软件订阅等运营成本。报表会自动扣除这些费用。' : 'Enter rent, utilities, insurance, advertising, software subscriptions, and other operating costs here. Reports deduct these costs automatically.'}</p>`);
   },
   reimbursements() {
     return reimbursementView();
@@ -5034,9 +5099,59 @@ function priceRuleTable() {
 function productTable(rows, actions = false) {
   const costHead = canSeeFinance() ? `<th>${t('cost')}</th>` : '';
   return `<div class="table-wrap"><table><thead><tr><th>${t('sku')}</th><th>${t('productName')}</th><th>${t('category')}</th><th>${t('stock')}</th>${costHead}<th>${t('retailPrice')}</th><th>${t('wholesalePrice')}</th><th>${t('minSalePrice')}</th>${actions ? '<th></th>' : ''}</tr></thead><tbody>
-  ${rows.map(p => `<tr><td>${escapeHtml(p.sku)}</td><td>${escapeHtml(p.name)}</td><td>${escapeHtml(p.category)}</td><td>${stockPill(p)} ${Number(p.qty || 0).toLocaleString()} ${escapeHtml(p.unit)}</td>${canSeeFinance() ? `<td>${currency.format(Number(p.cost || 0))}</td>` : ''}<td>${currency.format(Number(p.price || 0))}</td><td>${currency.format(Number(p.wholesale || 0))}</td><td>${currency.format(productMinimumSalePrice(p))}</td>${actions ? actionCell('Product','products',p.id) : ''}</tr>`).join('')}
+  ${rows.map(p => { const qty = inventoryDisplayQty(p); return `<tr><td>${escapeHtml(p.sku)}</td><td>${escapeHtml(p.name)}</td><td>${escapeHtml(p.category)}</td><td>${stockPill({ ...p, qty })} ${Number(qty || 0).toLocaleString()} ${escapeHtml(p.unit)}</td>${canSeeFinance() ? `<td>${currency.format(Number(p.cost || 0))}</td>` : ''}<td>${currency.format(Number(p.price || 0))}</td><td>${currency.format(Number(p.wholesale || 0))}</td><td>${currency.format(productMinimumSalePrice(p))}</td>${actions ? actionCell('Product','products',p.id) : ''}</tr>`; }).join('')}
   ${rows.length ? '' : `<tr><td colspan="${actions ? (canSeeFinance() ? 9 : 8) : (canSeeFinance() ? 8 : 7)}" class="note">${lang === 'zh' ? '没有库存商品。' : 'No inventory items.'}</td></tr>`}
   </tbody></table></div>`;
+}
+
+function inventoryDisplayQty(product) {
+  if (inventoryBranchFilter === 'all') return Number(product?.qty || 0);
+  return Number((state.branchInventory || []).find(row => row.sku === product?.sku && String(row.branchId || '') === inventoryBranchFilter)?.qty || 0);
+}
+
+function inventoryBranchControls() {
+  const options = [['all', lang === 'zh' ? '公司全部库存' : 'Company total'], ['', lang === 'zh' ? '待确认分店' : 'Branch pending'], ...branchOptions(false)];
+  if (!options.some(([id]) => id === inventoryBranchFilter)) inventoryBranchFilter = user?.defaultBranchId || 'all';
+  return `<label class="branch-filter">${lang === 'zh' ? '查看分店' : 'Branch'}<select onchange="setInventoryBranch(this.value)">${options.map(([id, label]) => `<option value="${escapeHtml(id)}" ${id === inventoryBranchFilter ? 'selected' : ''}>${escapeHtml(label)}</option>`).join('')}</select></label>`;
+}
+
+function setInventoryBranch(value) {
+  inventoryBranchFilter = String(value ?? 'all');
+  localStorage.setItem('filmShopCloud.inventoryBranch', inventoryBranchFilter);
+  render();
+}
+
+function branchTransferTable() {
+  const branches = Object.fromEntries(branchOptions(false));
+  const rows = state.branchTransfers || [];
+  return `<div class="table-wrap"><table><thead><tr><th>${lang === 'zh' ? '调拨单' : 'Transfer'}</th><th>${lang === 'zh' ? '调出' : 'From'}</th><th>${lang === 'zh' ? '调入' : 'To'}</th><th>SKU</th><th>${t('qty')}</th><th>${t('status')}</th><th></th></tr></thead><tbody>${rows.map(row => `<tr><td>${escapeHtml(row.transferNo || '')}<br><span class="note">${escapeHtml(row.date || '')}</span></td><td>${escapeHtml(branches[row.fromBranchId] || row.fromBranchId)}</td><td>${escapeHtml(branches[row.toBranchId] || row.toBranchId)}</td><td>${escapeHtml(row.sku || '')}</td><td>${Number(row.qty || 0).toLocaleString()}${row.actualQty !== undefined ? `<br><span class="note">${lang === 'zh' ? '实收' : 'Received'} ${Number(row.actualQty || 0).toLocaleString()}</span>` : ''}</td><td>${statusPill(row.status)}</td><td>${row.status === '待发货' ? `<button class="btn" onclick="branchTransferAction('${row.id}','ship')">${lang === 'zh' ? '确认发货' : 'Ship'}</button>` : ''}${row.status === '在途' ? `<button class="btn primary" onclick="receiveBranchTransfer('${row.id}',${Number(row.qty || 0)})">${lang === 'zh' ? '确认收货' : 'Receive'}</button>` : ''}</td></tr>`).join('')}${rows.length ? '' : `<tr><td colspan="7" class="note">${lang === 'zh' ? '还没有跨店调拨单。' : 'No branch transfers.'}</td></tr>`}</tbody></table></div>`;
+}
+
+function openBranchTransfer() {
+  const branches = branchOptions(false);
+  openModal(lang === 'zh' ? '新增跨店调拨单' : 'New Branch Transfer', formHtml([
+    ['date',t('date'),'date',today()], ['fromBranchId',lang === 'zh' ? '调出分店' : 'From branch','select',user?.defaultBranchId || branches[0]?.[0] || '',branches],
+    ['toBranchId',lang === 'zh' ? '调入分店' : 'To branch','select',branches[1]?.[0] || branches[0]?.[0] || '',branches],
+    ['sku','SKU','select',state.products?.[0]?.sku || '',(state.products || []).map(product => [product.sku, `${product.sku} · ${product.name || ''}`])],
+    ['qty',t('qty'),'number',1], ['note',t('note'),'textarea','',null,'wide']
+  ]), async () => {
+    try {
+      const data = numeric(readForm(['date','fromBranchId','toBranchId','sku','qty','note']), ['qty']);
+      state = await api('/api/branch-transfers', { method:'POST', body:JSON.stringify(data) });
+      broadcastDataChange(); closeModal(); render();
+    } catch (error) { alert(error.message); }
+  });
+}
+
+async function branchTransferAction(id, action) {
+  if (!confirm(lang === 'zh' ? '确定执行这个调拨操作吗？' : 'Confirm this transfer action?')) return;
+  try { state = await api(`/api/branch-transfers/${encodeURIComponent(id)}/${action}`, { method:'POST', body:'{}' }); broadcastDataChange(); render(); } catch (error) { alert(error.message); }
+}
+
+async function receiveBranchTransfer(id, expectedQty) {
+  const input = prompt(lang === 'zh' ? `应收 ${expectedQty}，请输入实际收货数量：` : `Expected ${expectedQty}. Enter actual quantity:`, expectedQty);
+  if (input === null) return;
+  try { state = await api(`/api/branch-transfers/${encodeURIComponent(id)}/receive`, { method:'POST', body:JSON.stringify({ actualQty:Number(input) }) }); broadcastDataChange(); render(); } catch (error) { alert(error.message); }
 }
 
 function stockAlertProducts() {
@@ -5125,7 +5240,7 @@ function workshopMovementTable() {
 
 function salesOrderTable() {
   const query = ['owner', 'manager'].includes(user?.role) ? normalizeSearchText(salesOrderSearch) : '';
-  const rows = sortByDateDesc(state.salesOrders || []).filter(order => !query || [
+  const rows = sortByDateDesc(branchScopedRows(state.salesOrders || [])).filter(order => !query || [
     order.date, order.type, salesOrderTypeName(order.type), order.customer, order.customerAddress, order.customerContact,
     order.salesRep, order.preparedBy, salesOrderItemsSummary(order), order.paymentMethod,
     paymentMethodName(order.paymentMethod || ''), order.shipping, order.trackingNo, order.status
@@ -5208,7 +5323,7 @@ function openPortalCustomer(id = '') {
 }
 
 function shipmentTable() {
-  const rows = [...(state.shipments || [])].sort((a, b) => String(b.etaLasVegas || b.etaPort || b.departDate || '').localeCompare(String(a.etaLasVegas || a.etaPort || a.departDate || '')));
+  const rows = [...branchScopedRows(state.shipments || [])].sort((a, b) => String(b.etaLasVegas || b.etaPort || b.departDate || '').localeCompare(String(a.etaLasVegas || a.etaPort || a.departDate || '')));
   return `<div class="table-wrap"><table><thead><tr><th>${t('shipmentMethod')}</th><th>${t('shipmentItems')}</th><th>${t('qty')}</th><th>${t('supplier')}</th><th>${t('trackingNo')}</th><th>${t('departDate')}</th><th>${t('etaPort')}</th><th>${t('etaLasVegas')}</th><th>${t('status')}</th><th>${t('note')}</th><th></th></tr></thead><tbody>
   ${rows.map(s => {
     const mismatch = Number(s.differenceQty || 0) !== 0;
@@ -5223,13 +5338,13 @@ function shipmentTable() {
 }
 
 function shipmentExceptionPanel() {
-  const rows = [...(state.shipmentExceptions || [])].sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')));
+  const rows = [...branchScopedRows(state.shipmentExceptions || [])].sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')));
   if (!rows.length) return '';
   return `<section class="shipment-exception-panel"><div class="panel-head"><div><h3>${lang === 'zh' ? '到货差异 / 异常单' : 'Receiving Exceptions'}</h3><p class="note">${lang === 'zh' ? '这里集中显示应到数量与实际收货数量不一致的单子。' : 'Expected versus received quantity mismatches.'}</p></div><span class="pill bad">${rows.length}</span></div><div class="table-wrap"><table><thead><tr><th>${lang === 'zh' ? '异常单号' : 'Exception No.'}</th><th>${t('trackingNo')}</th><th>SKU</th><th>${lang === 'zh' ? '应到' : 'Expected'}</th><th>${lang === 'zh' ? '实到' : 'Received'}</th><th>${lang === 'zh' ? '差异' : 'Difference'}</th><th>${t('status')}</th><th>${t('note')}</th></tr></thead><tbody>${rows.map(row => `<tr><td><strong>${escapeHtml(row.exceptionNo || '')}</strong><br><span class="note">${formatAppDateTime(row.createdAt)}</span></td><td>${escapeHtml((state.shipments || []).find(s => s.id === row.shipmentId)?.trackingNo || '')}</td><td>${escapeHtml(row.sku || '')}<br><span class="note">${escapeHtml(row.productName || row.items || '')}</span></td><td>${Number(row.expectedQty || 0).toLocaleString()}</td><td>${Number(row.actualQty || 0).toLocaleString()}</td><td><span class="pill bad">${Number(row.differenceQty || 0) > 0 ? '+' : ''}${Number(row.differenceQty || 0).toLocaleString()} ${escapeHtml(row.type || '')}</span></td><td>${statusPill(row.status || '待处理')}</td><td>${escapeHtml(row.note || '')}</td></tr>`).join('')}</tbody></table></div></section>`;
 }
 
 function shipmentReceiptPanel() {
-  const rows = [...(state.shipmentReceipts || [])].sort((a, b) => String(b.receivedAt || '').localeCompare(String(a.receivedAt || ''))).slice(0, 20);
+  const rows = [...branchScopedRows(state.shipmentReceipts || [])].sort((a, b) => String(b.receivedAt || '').localeCompare(String(a.receivedAt || ''))).slice(0, 20);
   if (!rows.length) return '';
   return `<details class="shipment-receipt-panel"><summary>${lang === 'zh' ? `查看最近入库单（${rows.length}）` : `Recent receipts (${rows.length})`}</summary><div class="table-wrap"><table><thead><tr><th>${lang === 'zh' ? '入库单号' : 'Receipt No.'}</th><th>${lang === 'zh' ? '收货日期' : 'Date'}</th><th>SKU</th><th>${lang === 'zh' ? '应到' : 'Expected'}</th><th>${lang === 'zh' ? '实到/入库' : 'Received'}</th><th>${lang === 'zh' ? '确认人' : 'Received by'}</th></tr></thead><tbody>${rows.map(row => `<tr><td><strong>${escapeHtml(row.receiptNo || '')}</strong></td><td>${escapeHtml(row.receivedDate || '')}</td><td>${escapeHtml(row.sku || '')}<br><span class="note">${escapeHtml(row.productName || '')}</span></td><td>${Number(row.expectedQty || 0).toLocaleString()}</td><td>${Number(row.actualQty || 0).toLocaleString()}</td><td>${escapeHtml(row.receivedBy || '')}</td></tr>`).join('')}</tbody></table></div></details>`;
 }
@@ -5327,7 +5442,7 @@ function reimbursementStatusPill(status) {
 }
 
 function reimbursementView() {
-  const rows = [...(state.reimbursements || [])].sort((a, b) => String(b.createdAt || b.date || '').localeCompare(String(a.createdAt || a.date || '')));
+  const rows = [...branchScopedRows(state.reimbursements || [])].sort((a, b) => String(b.createdAt || b.date || '').localeCompare(String(a.createdAt || a.date || '')));
   const pending = rows.filter(row => row.status === '待审批').reduce((sum, row) => sum + Number(row.amount || 0), 0);
   const approved = rows.filter(row => row.status === '已批准').reduce((sum, row) => sum + Number(row.amount || 0), 0);
   const reimbursed = rows.filter(row => row.status === '已报销').reduce((sum, row) => sum + Number(row.amount || 0), 0);
@@ -5740,7 +5855,7 @@ function prospectHasGeneratedJob(item) {
 
 function sortedProspectRows() {
   const grouped = new Map();
-  for (const item of (state.prospects || []).filter(row => ['已预约', '已到店'].includes(String(row.status || '')))) {
+  for (const item of branchScopedRows(state.prospects || []).filter(row => ['已预约', '已到店'].includes(String(row.status || '')))) {
     const phoneKey = customerPhoneMatchKey(item.phone);
     const key = phoneKey ? `phone:${phoneKey}` : `id:${item.id}`;
     if (!grouped.has(key)) grouped.set(key, []);
@@ -5900,11 +6015,12 @@ function openAppointmentAlertCustomer(id) {
 }
 
 function allCustomerCenterRows() {
-  const promotedIds = new Set((state.prospects || []).map(item => item.id));
-  const regular = (state.customerConversations || [])
+  const scopedProspects = branchScopedRows(state.prospects || []);
+  const promotedIds = new Set(scopedProspects.map(item => item.id));
+  const regular = branchScopedRows(state.customerConversations || [])
     .filter(item => !item.promotedProspectId || !promotedIds.has(item.promotedProspectId))
     .map(item => ({ ...item, _collection: 'customerConversations', _highIntent: false }));
-  const highIntent = (state.prospects || []).map(item => ({ ...item, _collection: 'prospects', _highIntent: true }));
+  const highIntent = scopedProspects.map(item => ({ ...item, _collection: 'prospects', _highIntent: true }));
   return [...regular, ...highIntent].sort((a, b) => {
     const newDifference = Number(Boolean(b.newCustomer) && String(b.status || '') !== '暂时无需回复') - Number(Boolean(a.newCustomer) && String(a.status || '') !== '暂时无需回复');
     const pendingDifference = Number(customerAwaitingReply(b)) - Number(customerAwaitingReply(a));
@@ -7131,7 +7247,7 @@ async function sendProspectSms() {
 }
 
 function leadTable() {
-  const rows = sortByDateDesc(state.leads || []);
+  const rows = sortByDateDesc(branchScopedRows(state.leads || []));
   return `<div class="table-wrap"><table><thead><tr><th>${t('date')}</th><th>${t('source')}</th><th>${t('leadType')}</th><th>${t('customer')}</th><th>${t('service')}</th><th>${t('customerService')}</th><th>${t('leadStatus')}</th><th>${t('quote')}</th>${canSeeCommission() ? `<th>${t('soldAmount')}</th>` : ''}<th>${t('note')}</th><th></th></tr></thead><tbody>
   ${rows.map(lead => {
     const rep = (state.customerServiceReps || []).find(x => x.id === lead.repId);
@@ -7419,11 +7535,11 @@ function openQuickAdd() {
 }
 
 function openJob(id, preset = {}) {
-  const item = state.jobs.find(x => x.id === id) || { date: today(), scheduleDate: '', customer: '', phone: '', source: 'Walk-in', leadRepId: '', receptionRepId: '', vehicle: '', vin: '', salesRep: '', service: 'tint', vehicleClass: '小型轿车', package: '基本款', installerId: '', status: '排期', price: 0, materialCost: 0, deposit: 0, paidAmount: 0, paymentStatus: 'unpaid', paymentMethod: '', notes: '', ...preset };
+  const item = state.jobs.find(x => x.id === id) || { date: today(), branchId: defaultBranchId(), scheduleDate: '', customer: '', phone: '', source: 'Walk-in', leadRepId: '', receptionRepId: '', vehicle: '', vin: '', salesRep: '', service: 'tint', vehicleClass: '小型轿车', package: '基本款', installerId: '', status: '排期', price: 0, materialCost: 0, deposit: 0, paidAmount: 0, paymentStatus: 'unpaid', paymentMethod: '', notes: '', ...preset };
   const selectedServices = jobServices(item);
   const selectedInstallers = jobInstallerIds(item);
   const fields = [
-    ['date',t('date'),'date',item.date], ['scheduleDate',t('scheduleDate'),'date',item.scheduleDate || ''], ['customer',lang === 'zh' ? '客户姓名' : 'Customer Name','text',item.customer], ['phone',lang === 'zh' ? '电话' : 'Phone','text',item.phone],
+    ['date',t('date'),'date',item.date], ['branchId',lang === 'zh' ? '所属分店' : 'Branch','select',item.branchId || '',branchOptions()], ['scheduleDate',t('scheduleDate'),'date',item.scheduleDate || ''], ['customer',lang === 'zh' ? '客户姓名' : 'Customer Name','text',item.customer], ['phone',lang === 'zh' ? '电话' : 'Phone','text',item.phone],
     ['source',t('source'),'select',item.source || 'Walk-in', leadSourceOptions()],
     ['leadRepId',t('leadGroupRep'),'select',item.leadRepId || '', customerServiceOptions()],
     ['receptionRepId',t('receptionRep'),'select',item.receptionRepId || '', customerServiceOptions()],
@@ -7438,7 +7554,7 @@ function openJob(id, preset = {}) {
     ['paymentMethod',t('paymentMethod'),'select',item.paymentMethod || '', paymentMethodOptions()],
     ['notes',t('note'),'textarea',item.notes, null, 'wide']
   ];
-  const ids = ['date','scheduleDate','customer','phone','source','leadRepId','receptionRepId','vehicle','salesRep','vin','services','vehicleClass','package','installerIds','status','price', ...(canSeeFinance() ? ['materialCost'] : []), 'deposit','paidAmount','paymentStatus','paymentMethod','notes'];
+  const ids = ['date','branchId','scheduleDate','customer','phone','source','leadRepId','receptionRepId','vehicle','salesRep','vin','services','vehicleClass','package','installerIds','status','price', ...(canSeeFinance() ? ['materialCost'] : []), 'deposit','paidAmount','paymentStatus','paymentMethod','notes'];
   openModal(id ? (lang === 'zh' ? '编辑施工单' : 'Edit Job') : (lang === 'zh' ? '新增施工单' : 'New Job'), formHtml(fields), () => {
     const data = numeric(readForm(ids), ['price', ...(canSeeFinance() ? ['materialCost'] : []), 'deposit','paidAmount']);
     if (!id) {
@@ -7905,15 +8021,15 @@ function openProduct(id) {
 
 function openMovement(preset = {}) {
   openModal(lang === 'zh' ? '新增出入库流水' : 'New Inventory Movement', formHtml([
-    ['date',t('date'),'date',today()], ['sku','SKU','select',preset.sku || state.products[0]?.sku || '', state.products.map(p => p.sku)], ['type',t('type'),'select',preset.type || 'out', [['in',t('in')],['out',t('out')]]],
+    ['date',t('date'),'date',today()], ['branchId',lang === 'zh' ? '所属分店' : 'Branch','select',preset.branchId || (inventoryBranchFilter !== 'all' ? inventoryBranchFilter : '') || defaultBranchId(),branchOptions(false)], ['sku','SKU','select',preset.sku || state.products[0]?.sku || '', state.products.map(p => p.sku)], ['type',t('type'),'select',preset.type || 'out', [['in',t('in')],['out',t('out')]]],
     ['qty',t('qty'),'number',preset.qty || 0], ['salesOrderId',t('relatedOrder'),'select',preset.salesOrderId || '', salesOrderMovementOptions(preset.sku)], ['note',t('note'),'text',preset.note || '']
   ]) + `<div class="wide stock-hint" id="movementStockHint"></div>`, () => {
-    const data = numeric(readForm(['date','sku','type','qty','salesOrderId','note']), ['qty']);
+    const data = numeric(readForm(['date','branchId','sku','type','qty','salesOrderId','note']), ['qty']);
     const dateError = validateTodayEntryDate(data.date);
     if (dateError) return alert(dateError);
     if (data.type !== 'out') data.salesOrderId = '';
     const product = state.products.find(p => p.sku === data.sku);
-    const currentQty = Number(product?.qty || 0);
+    const currentQty = Number((state.branchInventory || []).find(row => row.sku === data.sku && row.branchId === data.branchId)?.qty ?? product?.qty ?? 0);
     if (data.qty <= 0) return alert(lang === 'zh' ? '数量必须大于 0。' : 'Quantity must be greater than 0.');
     if (data.type === 'out' && !data.salesOrderId) return alert(lang === 'zh' ? '出库必须关联零售/批发订单。没有订单不允许出货。' : 'Stock-out must be linked to a retail / wholesale order.');
     if (data.type === 'out' && data.qty > currentQty) {
@@ -7940,6 +8056,7 @@ function openWorkshopMovement(type = 'transfer') {
     movementType === 'transfer' ? t('workshopTransfer') : t('workshopConsume'),
     formHtml([
       ['date',t('date'),'date',today()],
+      ['branchId',lang === 'zh' ? '领料分店' : 'Branch','select',(inventoryBranchFilter !== 'all' ? inventoryBranchFilter : '') || defaultBranchId(),branchOptions(false)],
       ['sku','SKU','workshopSkuSearch',''],
       ['type',t('type'),'select',movementType,[['transfer',t('workshopTransfer')],['consume',t('workshopConsume')]]],
       ['qty',t('qtyMeters'),'number',0],
@@ -7948,14 +8065,14 @@ function openWorkshopMovement(type = 'transfer') {
       ['note',t('note'),'textarea','', null, 'wide']
     ]) + `<div class="wide stock-hint" id="workshopStockHint"></div>`,
     () => {
-      const data = numeric(readForm(['date','sku','type','qty','operator','jobCustomer','note']), ['qty']);
+      const data = numeric(readForm(['date','branchId','sku','type','qty','operator','jobCustomer','note']), ['qty']);
       const dateError = validateTodayEntryDate(data.date);
       if (dateError) return alert(dateError);
       if (!data.sku) return alert(lang === 'zh' ? '请先选择 SKU。' : 'Choose a SKU first.');
       const product = state.products.find(p => p.sku === data.sku);
       if (!product) return alert(lang === 'zh' ? '找不到这个 SKU。' : 'Cannot find this SKU.');
       if (data.qty <= 0) return alert(lang === 'zh' ? '数量必须大于 0。' : 'Quantity must be greater than 0.');
-      const availableQty = data.type === 'transfer' ? Number(product.qty || 0) : workshopStockQty(data.sku);
+      const availableQty = data.type === 'transfer' ? Number((state.branchInventory || []).find(row => row.sku === data.sku && row.branchId === data.branchId)?.qty ?? product.qty ?? 0) : workshopStockQty(data.sku);
       if (data.qty > availableQty) {
         const label = data.type === 'transfer' ? t('mainWarehouseStock') : t('workshopCurrentStock');
         const availableUnit = data.type === 'transfer' ? (product.unit || '') : t('meter');
@@ -8149,6 +8266,7 @@ function openProspect(id, collection = 'prospects') {
 function openLead(id) {
   const item = (state.leads || []).find(x => x.id === id) || {
     date: today(),
+    branchId: defaultBranchId(),
     source: 'Yelp',
     leadType: 'online',
     customerType: 'toc',
@@ -8164,6 +8282,7 @@ function openLead(id) {
   };
   openModal(id ? (lang === 'zh' ? '编辑客资' : 'Edit Lead') : (lang === 'zh' ? '新增客资' : 'New Lead'), formHtml([
     ['date',t('date'),'date',item.date],
+    ['branchId',lang === 'zh' ? '所属分店' : 'Branch','select',item.branchId || '',branchOptions()],
     ['source',t('source'),'select',item.source, leadSourceOptions()],
     ['leadType',t('leadType'),'select',item.leadType || 'online', leadTypeOptions()],
     ['customerType',t('customerType'),'select',item.customerType || 'toc', customerTypeOptions()],
@@ -8177,7 +8296,7 @@ function openLead(id) {
     ['soldAmount',`${t('soldAmount')} $`,'number',item.soldAmount],
     ['note',t('note'),'textarea',item.note, null, 'wide']
   ]), () => {
-    const data = numeric(readForm(['date','source','leadType','customerType','saleType','customer','phone','service','repId','status','quote','soldAmount','note']), ['quote','soldAmount']);
+    const data = numeric(readForm(['date','branchId','source','leadType','customerType','saleType','customer','phone','service','repId','status','quote','soldAmount','note']), ['quote','soldAmount']);
     if (!id) {
       const dateError = validateTodayEntryDate(data.date);
       if (dateError) return alert(dateError);
@@ -8300,7 +8419,7 @@ function updateSalesOrderLinesTotal() {
 }
 
 function openSalesOrder(id) {
-  const item = state.salesOrders.find(x => x.id === id) || { date: today(), type: 'retail-us', customer: '', customerAddress: '', customerContact: '', salesRep: '', preparedBy: user?.name || '', item: '', qty: 1, unitPrice: 0, status: '待收款', shipping: '', trackingNo: '', paid: 0, paymentMethod: '' };
+  const item = state.salesOrders.find(x => x.id === id) || { date: today(), branchId: defaultBranchId(), type: 'retail-us', customer: '', customerAddress: '', customerContact: '', salesRep: '', preparedBy: user?.name || '', item: '', qty: 1, unitPrice: 0, status: '待收款', shipping: '', trackingNo: '', paid: 0, paymentMethod: '' };
   if (id && item.portalSource && (item.portalNew || item.portalCustomerUnread)) markPortalOrderRead(id);
   const lines = salesOrderLineItems(item);
   const shippingTracking = [...new Set([item.shipping, item.trackingNo].map(value => String(value || '').trim()).filter(Boolean))].join(' · ');
@@ -8309,7 +8428,7 @@ function openSalesOrder(id) {
     return value !== '已出库' || item.status === '已出库';
   });
   const fields = [
-    ['date',t('date'),'date',item.date], ['type',t('type'),'select',item.type, salesOrderTypeOptions()], ['customer',t('customer'),'text',item.customer],
+    ['date',t('date'),'date',item.date], ['branchId',lang === 'zh' ? '所属分店' : 'Branch','select',item.branchId || '',branchOptions()], ['type',t('type'),'select',item.type, salesOrderTypeOptions()], ['customer',t('customer'),'text',item.customer],
     ['customerAddress',lang === 'zh' ? '客户地址' : 'Customer address','text',item.customerAddress || ''],
     ['customerContact',lang === 'zh' ? '客户联系方式（电话 / Email）' : 'Customer contact (phone / email)','text',item.customerContact || ''],
     ['salesRep',t('orderSalesRep'),'text',item.salesRep || ''], ['status',t('status'),'select',item.status, editableSalesStatuses], ['paid',`${t('paid')} $`,'number',item.paid],
@@ -8325,7 +8444,7 @@ function openSalesOrder(id) {
     id ? (lang === 'zh' ? '编辑零售/批发订单' : 'Edit Sales Order') : (lang === 'zh' ? '新增零售/批发订单' : 'New Sales Order'),
     formHtml(fields) + lineTable + portalOrderConversationHtml(item),
     () => {
-      const data = numeric(readForm(['date','type','customer','customerAddress','customerContact','salesRep','status','paid','paymentMethod','shippingTracking','preparedBy']), ['paid']);
+      const data = numeric(readForm(['date','branchId','type','customer','customerAddress','customerContact','salesRep','status','paid','paymentMethod','shippingTracking','preparedBy']), ['paid']);
       data.shipping = String(data.shippingTracking || '').trim();
       data.trackingNo = data.shipping;
       delete data.shippingTracking;
@@ -8389,6 +8508,7 @@ async function sendPortalOrderReply(id) {
 function openShipment(id) {
   const item = (state.shipments || []).find(x => x.id === id) || {
     method: 'ocean',
+    branchId: defaultBranchId(),
     items: '',
     sku: '',
     qty: '',
@@ -8405,6 +8525,7 @@ function openShipment(id) {
   };
   openModal(id ? (lang === 'zh' ? '编辑在途货物' : 'Edit Inbound Shipment') : (lang === 'zh' ? '新增在途货物' : 'New Inbound Shipment'), formHtml([
     ['method',t('shipmentMethod'),'select',item.method, shipmentMethodOptions()],
+    ['branchId',lang === 'zh' ? '最终到达分店' : 'Destination branch','select',item.branchId || '',branchOptions()],
     ['items',t('shipmentItems'),'text',item.items],
     ['sku',lang === 'zh' ? '入库 SKU（可搜索或手动填写）' : 'Inbound SKU (search or custom)','shipmentSkuSearch',item.sku || ''],
     ['qty',t('qty'),'text',item.qty],
@@ -8419,7 +8540,7 @@ function openShipment(id) {
     ['status',t('status'),'select',item.status, shipmentStatusOptions()],
     ['note',t('note'),'textarea',item.note, null, 'wide']
   ]), () => {
-    const data = readForm(['method','items','sku','qty','supplier','contact','trackingNo','shipFrom','departDate','etaPort','etaLasVegas','arrivedDate','status','note']);
+    const data = readForm(['method','branchId','items','sku','qty','supplier','contact','trackingNo','shipFrom','departDate','etaPort','etaLasVegas','arrivedDate','status','note']);
     if (!data.items.trim()) return alert(lang === 'zh' ? '货物内容不能为空。' : 'Items are required.');
     saveRecord('shipments', id, data);
   });
@@ -8468,24 +8589,26 @@ function openShipmentReceipt(id) {
 }
 
 function openSchedule(id) {
-  const item = (state.schedules || []).find(x => x.id === id) || { date: today(), employeeId: activeEmployeeOptions()[0]?.[0] || '', type: 'work', shift: '10:00-18:00', reason: '', note: '' };
+  const item = (state.schedules || []).find(x => x.id === id) || { date: today(), branchId: defaultBranchId(), employeeId: activeEmployeeOptions()[0]?.[0] || '', type: 'work', shift: '10:00-18:00', reason: '', note: '' };
   openModal(id ? (lang === 'zh' ? '编辑调休/排班' : 'Edit Schedule') : (lang === 'zh' ? '新增调休/排班' : 'New Schedule'), formHtml([
     ['date',t('date'),'date',item.date],
+    ['branchId',lang === 'zh' ? '所属分店' : 'Branch','select',item.branchId || '',branchOptions()],
     ['employeeId',t('name'),'select',item.employeeId || '', activeEmployeeOptions()],
     ['type',t('scheduleType'),'select',item.type || 'work', scheduleTypeOptions()],
     ['shift',t('shift'),'text',item.shift || ''],
     ['reason',lang === 'zh' ? '原因' : 'Reason','text',item.reason || ''],
     ['note',t('note'),'textarea',item.note || '', null, 'wide']
   ]), () => {
-    const data = readForm(['date','employeeId','type','shift','reason','note']);
+    const data = readForm(['date','branchId','employeeId','type','shift','reason','note']);
     saveRecord('schedules', id, data);
   });
 }
 
 function openExpense(id) {
-  const item = (state.expenses || []).find(x => x.id === id) || { date: today(), category: '房屋租金', vendor: '', adPlacement: '', adStartDate: '', adEndDate: '', amount: 0, recurring: true, note: '' };
+  const item = (state.expenses || []).find(x => x.id === id) || { date: today(), branchId: defaultBranchId(), category: '房屋租金', vendor: '', adPlacement: '', adStartDate: '', adEndDate: '', amount: 0, recurring: true, note: '' };
   openModal(id ? (lang === 'zh' ? '编辑运营成本' : 'Edit Operating Cost') : (lang === 'zh' ? '新增运营成本' : 'New Operating Cost'), formHtml([
     ['date',t('date'),'date',item.date],
+    ['branchId',lang === 'zh' ? '所属分店' : 'Branch','select',item.branchId || '',branchOptions()],
     ['category',t('expenseCategory'),'select',item.category, expenseCategories()],
     ['vendor',t('vendor'),'text',item.vendor],
     ['adPlacement',t('adPlacement'),'text',item.adPlacement || ''],
@@ -8495,7 +8618,7 @@ function openExpense(id) {
     ['recurring',t('recurring'),'select',String(Boolean(item.recurring)), [['true',lang === 'zh' ? '是' : 'Yes'],['false',lang === 'zh' ? '否' : 'No']]],
     ['note',t('note'),'text',item.note]
   ]), () => {
-    const data = readForm(['date','category','vendor','adPlacement','adStartDate','adEndDate','amount','recurring','note']);
+    const data = readForm(['date','branchId','category','vendor','adPlacement','adStartDate','adEndDate','amount','recurring','note']);
     data.amount = Number(data.amount || 0);
     data.recurring = data.recurring === 'true';
     saveRecord('expenses', id, data);
@@ -8516,7 +8639,7 @@ function reimbursementPaymentOptions() {
 
 function openReimbursement(id) {
   const item = (state.reimbursements || []).find(row => row.id === id) || {
-    date: today(), category: lang === 'zh' ? '材料耗材' : 'Materials & supplies', vendor: '', purpose: '', amount: 0,
+    date: today(), branchId: defaultBranchId(), category: lang === 'zh' ? '材料耗材' : 'Materials & supplies', vendor: '', purpose: '', amount: 0,
     paymentMethod: lang === 'zh' ? '个人银行卡' : 'Personal debit card', notes: '', attachments: [], status: '待审批'
   };
   const canApprove = hasPerm('reimbursementsApprove');
@@ -8536,6 +8659,7 @@ function openReimbursement(id) {
       <div class="reimbursement-form-head"><div><strong>${escapeHtml(item.reimbursementNo || (lang === 'zh' ? '新报销申请' : 'New claim'))}</strong>${id ? reimbursementStatusPill(item.status) : ''}</div><span>${escapeHtml(item.employeeName || user?.name || '')}</span></div>
       ${formHtml([
         ['reimbursementExpenseDate',lang === 'zh' ? '费用日期' : 'Expense date','date',item.date],
+        ['reimbursementBranchId',lang === 'zh' ? '所属分店' : 'Branch','select',item.branchId || '',branchOptions()],
         ['reimbursementCategory',lang === 'zh' ? '费用类别' : 'Category','select',item.category,reimbursementCategoryOptions()],
         ['reimbursementVendor',lang === 'zh' ? '商家/收款方' : 'Vendor','text',item.vendor],
         ['reimbursementPurpose',lang === 'zh' ? '用途说明' : 'Business purpose','text',item.purpose],
@@ -8552,6 +8676,7 @@ function openReimbursement(id) {
       if (!canEdit || window.reimbursementSaving) return;
       const data = {
         date: document.getElementById('reimbursementExpenseDate')?.value || '',
+        branchId: document.getElementById('reimbursementBranchId')?.value || '',
         category: document.getElementById('reimbursementCategory')?.value || '',
         vendor: document.getElementById('reimbursementVendor')?.value || '',
         purpose: document.getElementById('reimbursementPurpose')?.value || '',
@@ -8612,21 +8737,25 @@ function printReimbursement(id) {
 }
 
 function openUser(id, presetRole = 'frontdesk') {
-  const item = state.users.find(x => x.id === id) || { name: '', email: '', role: presetRole, active: true };
+  const item = state.users.find(x => x.id === id) || { name: '', email: '', role: presetRole, active: true, defaultBranchId: '', branchIds: [] };
   const permissions = { ...roleDefaultPermissions(item.role), ...(item.permissions || {}) };
   openModal(id ? (lang === 'zh' ? '编辑账号' : 'Edit User') : (lang === 'zh' ? '新增账号' : 'New User'), formHtml([
     ['employeeAvatarDataUrl', '', 'avatar', item.avatarDataUrl || '', null, 'wide'],
     ['employeeAccountName',t('name'),'text',item.name],
     ['employeeAccountLogin',t('email'),'text',item.email],
     ['employeeAccountRole',t('role'),'select',item.role, roleOptions()],
+    ['employeeDefaultBranchId',lang === 'zh' ? '默认分店' : 'Default branch','select',item.defaultBranchId || '',branchOptions()],
+    ['employeeBranchIds',lang === 'zh' ? '可以访问的分店' : 'Accessible branches','multi',item.branchIds || [],branchOptions(false)],
     ['employeeAccountActive',t('status'),'select',String(item.active), [['true',t('enabled')],['false',t('disabled')]]],
     ['employeeAccountSecret',id ? t('newPassword') : (lang === 'zh' ? '临时密码' : 'Temporary Password'),'password','']
   ]) + permissionEditor(permissions), () => {
-    const raw = readForm(['employeeAccountName','employeeAccountLogin','employeeAccountRole','employeeAccountActive','employeeAccountSecret']);
+    const raw = readForm(['employeeAccountName','employeeAccountLogin','employeeAccountRole','employeeDefaultBranchId','employeeBranchIds','employeeAccountActive','employeeAccountSecret']);
     const data = {
       name: raw.employeeAccountName,
       email: raw.employeeAccountLogin,
       role: raw.employeeAccountRole,
+      defaultBranchId: raw.employeeDefaultBranchId,
+      branchIds: raw.employeeBranchIds,
       active: raw.employeeAccountActive,
       password: raw.employeeAccountSecret,
       avatarDataUrl: document.getElementById('employeeAvatarDataUrl')?.value || ''

@@ -363,6 +363,8 @@ function seedDb() {
       { id: id(), date: new Date().toISOString().slice(0, 10), sku: 'CW-TC881', type: 'in', qty: 16000, note: '初始库存' }
     ],
     workshopMovements: [],
+    branchTransfers: [],
+    branchTransferExceptions: [],
     messages: [],
     clockRecords: [],
     leaveRequests: [],
@@ -422,6 +424,8 @@ function readDb() {
   if (!Array.isArray(db.leaveRequests)) db.leaveRequests = [];
   if (!Array.isArray(db.employeeActivity)) db.employeeActivity = [];
   if (!Array.isArray(db.workshopMovements)) db.workshopMovements = [];
+  if (!Array.isArray(db.branchTransfers)) db.branchTransfers = [];
+  if (!Array.isArray(db.branchTransferExceptions)) db.branchTransferExceptions = [];
   cachedDb = db;
   cachedDbRevision = revision;
   return db;
@@ -1257,35 +1261,38 @@ function sanitizeDbForUser(db, user) {
             selfUpdatedAt: profile.selfUpdatedAt, updatedAt: profile.updatedAt
           }),
     installers: p.installerView || p.jobsView ? db.installers.map(installer => sanitizeInstaller(installer, p)) : [],
-    products: p.inventoryView || p.ordersEdit ? sanitizeProducts(db.products, canSeeCosts) : [],
+    products: p.inventoryView || p.ordersEdit ? productsForUser(db, user, canSeeCosts) : [],
     priceRules: p.pricingView ? db.priceRules.map(rule => canSeeCosts ? rule : { ...rule, materialCost: 0 }) : [],
-    jobs: p.jobsView || p.jobsEdit || p.jobsDelete ? db.jobs.map(job => sanitizeJob(job, p, canSeeCosts)) : [],
-    salesOrders: p.ordersView ? db.salesOrders.map(order => sanitizeSalesOrder(order, p)) : [],
+    jobs: p.jobsView || p.jobsEdit || p.jobsDelete ? branchVisibleRecords(db, user, db.jobs).map(job => sanitizeJob(job, p, canSeeCosts)) : [],
+    salesOrders: p.ordersView ? branchVisibleRecords(db, user, db.salesOrders).map(order => sanitizeSalesOrder(order, p)) : [],
     portalCustomers: p.ordersView ? (db.portalCustomers || []).map(safePortalCustomer) : [],
-    warranties: p.jobsView || p.jobsCreate || p.jobsEdit || p.jobsDelete ? (db.warranties || []) : [],
-    shipments: p.shipmentsView ? db.shipments : [],
-    shipmentReceipts: p.shipmentsView ? db.shipmentReceipts : [],
-    shipmentExceptions: p.shipmentsView ? db.shipmentExceptions : [],
-    schedules: p.schedulesView ? (db.schedules || []) : [],
+    warranties: p.jobsView || p.jobsCreate || p.jobsEdit || p.jobsDelete ? branchVisibleRecords(db, user, db.warranties || []) : [],
+    shipments: p.shipmentsView ? branchVisibleRecords(db, user, db.shipments) : [],
+    shipmentReceipts: p.shipmentsView ? branchVisibleRecords(db, user, db.shipmentReceipts) : [],
+    shipmentExceptions: p.shipmentsView ? branchVisibleRecords(db, user, db.shipmentExceptions) : [],
+    schedules: p.schedulesView ? branchVisibleRecords(db, user, db.schedules || []) : [],
     scheduleReminderLogs: p.schedulesView ? (db.scheduleReminderLogs || []).slice(0, 200) : [],
     customerServiceReps: p.leadsView ? sanitizeCustomerServiceReps(db.customerServiceReps || [], p) : [],
-    leads: p.leadsView ? sanitizeLeads(db.leads || [], p) : [],
-    prospects: p.prospectsView ? (db.prospects || []).map(item => enrichCustomerIdentity(db, { ...item })) : [],
-    customerConversations: p.prospectsView ? (db.customerConversations || []).map(item => enrichCustomerIdentity(db, { ...item })) : [],
+    leads: p.leadsView ? sanitizeLeads(branchVisibleRecords(db, user, db.leads || []), p) : [],
+    prospects: p.prospectsView ? branchVisibleRecords(db, user, db.prospects || []).map(item => enrichCustomerIdentity(db, { ...item })) : [],
+    customerConversations: p.prospectsView ? branchVisibleRecords(db, user, db.customerConversations || []).map(item => enrichCustomerIdentity(db, { ...item })) : [],
     replyTemplates: p.prospectsView ? (db.replyTemplates || []) : [],
-    expenses: p.expensesView || p.fullFinanceView ? (db.expenses || []) : [],
-    reimbursements: p.reimbursementsView ? (db.reimbursements || []).filter(item => canApproveReimbursements || item.employeeUserId === user.id) : [],
+    expenses: p.expensesView || p.fullFinanceView ? branchVisibleRecords(db, user, db.expenses || []) : [],
+    reimbursements: p.reimbursementsView ? branchVisibleRecords(db, user, db.reimbursements || []).filter(item => canApproveReimbursements || item.employeeUserId === user.id) : [],
     canApproveLeave: canApproveLeave(user),
-    clockRecords: (db.clockRecords || [])
+    clockRecords: branchVisibleRecords(db, user, db.clockRecords || [])
       .filter(item => canApproveLeave(user) || item.userId === user.id)
       .sort((a, b) => String(b.at || '').localeCompare(String(a.at || '')))
       .slice(0, 200),
-    leaveRequests: (db.leaveRequests || [])
+    leaveRequests: branchVisibleRecords(db, user, db.leaveRequests || [])
       .filter(item => canApproveLeave(user) || item.userId === user.id)
       .sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')))
       .slice(0, 200),
-    movements: p.inventoryView ? db.movements : [],
-    workshopMovements: p.inventoryView ? (db.workshopMovements || []) : [],
+    movements: p.inventoryView ? branchVisibleRecords(db, user, db.movements) : [],
+    workshopMovements: p.inventoryView ? branchVisibleRecords(db, user, db.workshopMovements || []) : [],
+    branchInventory: p.inventoryView ? branchInventorySnapshot(db, user) : [],
+    branchTransfers: p.inventoryView ? branchTransferVisibleRecords(db, user, db.branchTransfers || []) : [],
+    branchTransferExceptions: p.inventoryView ? branchTransferVisibleRecords(db, user, db.branchTransferExceptions || []) : [],
     auditLogs: p.usersManage || p.reportsView ? db.auditLogs : [],
     employeeActivity: p.usersManage || p.reportsView ? (db.employeeActivity || []) : [],
     permissions: p
@@ -1468,7 +1475,7 @@ function addDaysIso(db, days, hour = 17) {
 
 function fieldSalesSnapshot(db, user) {
   const canManage = canManageFieldSales(user);
-  const accounts = (db.salesAccounts || [])
+  const accounts = branchVisibleRecords(db, user, db.salesAccounts || [])
     .filter(item => fieldSalesVisible(item, user))
     .sort((a, b) => String(a.nextVisitAt || '9999').localeCompare(String(b.nextVisitAt || '9999')));
   const accountIds = new Set(accounts.map(item => item.id));
@@ -1488,7 +1495,7 @@ function fieldSalesSnapshot(db, user) {
       .filter(item => accountIds.has(item.accountId) && (canManage || fieldSalesVisible(item, user)))
       .sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')))
       .slice(0, 500),
-    dailyReports: (db.salesDailyReports || [])
+    dailyReports: branchVisibleRecords(db, user, db.salesDailyReports || [])
       .filter(item => canManage || item.userId === user.id)
       .sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')))
       .slice(0, 200),
@@ -1654,6 +1661,95 @@ function normalizeCustomerBranch(value = {}, index = 0) {
 function customerBranches(db) {
   const saved = Array.isArray(db?.settings?.customerBranches) ? db.settings.customerBranches : [];
   return (saved.length ? saved : DEFAULT_CUSTOMER_BRANCHES).slice(0, 20).map(normalizeCustomerBranch);
+}
+
+function userBranchIds(db, user) {
+  if (!user || user.role === 'owner') return null;
+  const valid = new Set(customerBranches(db).map(branch => branch.id));
+  const ids = Array.isArray(user.branchIds) ? user.branchIds : [];
+  const normalized = [...new Set([user.defaultBranchId, ...ids].map(value => String(value || '').trim()).filter(id => valid.has(id)))];
+  return normalized.length ? normalized : null;
+}
+
+function canAccessBranch(db, user, branchId) {
+  if (user?.role === 'owner') return true;
+  const scope = userBranchIds(db, user);
+  if (!scope) return true; // Legacy accounts remain usable until an owner assigns their branch scope.
+  return scope.includes(String(branchId || '').trim());
+}
+
+function branchVisibleRecords(db, user, rows = []) {
+  const scope = userBranchIds(db, user);
+  if (!scope) return rows;
+  return (rows || []).filter(row => scope.includes(String(row?.branchId || '').trim()));
+}
+
+function branchTransferVisibleRecords(db, user, rows = []) {
+  const scope = userBranchIds(db, user);
+  if (!scope) return rows;
+  return (rows || []).filter(row => scope.includes(String(row?.fromBranchId || '').trim()) || scope.includes(String(row?.toBranchId || '').trim()));
+}
+
+function branchInventorySnapshot(db, user) {
+  const scope = userBranchIds(db, user);
+  const balances = new Map();
+  const add = (sku, branchId, qty) => {
+    const key = `${String(sku || '')}\u0000${String(branchId || '')}`;
+    balances.set(key, Number(balances.get(key) || 0) + Number(qty || 0));
+  };
+  (db.movements || []).filter(row => !row.reversedAt).forEach(row => add(row.sku, row.branchId || '', row.type === 'in' ? row.qty : -Number(row.qty || 0)));
+  (db.workshopMovements || []).filter(row => row.type === 'transfer').forEach(row => add(row.sku, row.branchId || '', -Number(row.qty || 0)));
+  // First freeze the historical, unassigned control-balance difference. A later
+  // transfer discrepancy must never be silently absorbed into "pending branch".
+  (db.products || []).forEach(product => {
+    let allocated = 0;
+    for (const [key, qty] of balances.entries()) {
+      const [sku, branchId] = key.split('\u0000');
+      if (sku !== String(product.sku || '')) continue;
+      allocated += qty;
+    }
+    const pending = Number(product.qty || 0) - allocated;
+    if (Math.abs(pending) > 0.0001) add(product.sku, '', pending);
+  });
+  (db.branchTransfers || []).forEach(row => {
+    if (!['在途', '已收货', '异常收货'].includes(row.status)) return;
+    add(row.sku, row.fromBranchId, -Number(row.qty || 0));
+    if (row.status === '在途') add(row.sku, '__in_transit__', Number(row.qty || 0));
+    if (['已收货', '异常收货'].includes(row.status)) add(row.sku, row.toBranchId, Number(row.actualQty || 0));
+  });
+  const result = [];
+  for (const [key, qty] of balances.entries()) {
+    const [sku, branchId] = key.split('\u0000');
+    if (!scope || scope.includes(branchId)) result.push({ sku, branchId, qty: Math.round(qty * 1000) / 1000 });
+  }
+  return result;
+}
+
+function branchStockQty(db, sku, branchId) {
+  return Number(branchInventorySnapshot(db, { role: 'owner' }).find(row => row.sku === sku && row.branchId === branchId)?.qty || 0);
+}
+
+function productsForUser(db, user, canSeeCosts) {
+  const products = sanitizeProducts(db.products || [], canSeeCosts);
+  const scope = userBranchIds(db, user);
+  if (!scope) return products;
+  const inventory = branchInventorySnapshot(db, user);
+  return products.map(product => ({
+    ...product,
+    qty: inventory.filter(row => row.sku === product.sku).reduce((sum, row) => sum + Number(row.qty || 0), 0)
+  }));
+}
+
+function assignRecordBranch(db, user, item, collection) {
+  const branchCollections = new Set(['jobs','warranties','salesOrders','shipments','expenses','reimbursements','leads','prospects','customerConversations','movements','workshopMovements','schedules','salesAccounts','salesVisits','salesCheckInAttempts','salesTrialRolls','salesDailyReports']);
+  if (!branchCollections.has(collection)) return '';
+  if (collection === 'prospects' || collection === 'customerConversations') enrichCustomerIdentity(db, item);
+  if (collection === 'warranties' && item.jobId) item.branchId = (db.jobs || []).find(job => job.id === item.jobId)?.branchId || item.branchId;
+  item.branchId = String(item.branchId || user.defaultBranchId || '').trim();
+  const valid = new Set(customerBranches(db).map(branch => branch.id));
+  if (item.branchId && !valid.has(item.branchId)) return '所属分店不存在或已被移除';
+  if (!canAccessBranch(db, user, item.branchId)) return '你没有这个分店的数据权限';
+  return '';
 }
 
 function customerBranchAliases(branch) {
@@ -5550,6 +5646,7 @@ async function api(req, res) {
     const assignedUserId = canManageFieldSales(user) && (db.users || []).some(item => item.id === body.assignedUserId)
       ? String(body.assignedUserId)
       : user.id;
+    const assignedUser = (db.users || []).find(item => item.id === assignedUserId);
     const cadenceDays = Math.min(365, Math.max(1, Number(body.cadenceDays || 7)));
     const now = new Date().toISOString();
     const geocoded = hasValidCoordinates(body.lat, body.lng)
@@ -5557,6 +5654,7 @@ async function api(req, res) {
       : await forwardGeocode(address);
     const account = {
       id: id(), businessName, address,
+      branchId: String(body.branchId || assignedUser?.defaultBranchId || user.defaultBranchId || '').trim(),
       contactName: String(body.contactName || '').trim().slice(0, 120),
       phone: String(body.phone || '').trim().slice(0, 80),
       email: String(body.email || '').trim().slice(0, 180),
@@ -5577,6 +5675,8 @@ async function api(req, res) {
       createdByName: user.name || user.email,
       createdAt: now, updatedAt: now
     };
+    const branchError = assignRecordBranch(db, user, account, 'salesAccounts');
+    if (branchError) return send(res, 400, { error: branchError });
     db.salesAccounts.unshift(account);
     audit(db, user, 'create-field-sales-account', { collection: 'salesAccounts', recordId: account.id, recordLabel: businessName, after: account, detail: `新增外勤客户 ${businessName}` });
     writeDb(db);
@@ -5590,6 +5690,7 @@ async function api(req, res) {
     const accountId = decodeURIComponent(fieldSalesAccountMatch[1]);
     const index = (db.salesAccounts || []).findIndex(item => item.id === accountId);
     if (index < 0 || !fieldSalesVisible(db.salesAccounts[index], user)) return send(res, 404, { error: '找不到这个业务客户' });
+    if (!canAccessBranch(db, user, db.salesAccounts[index].branchId)) return send(res, 403, { error: '你没有这个业务客户所属分店的数据权限' });
     const body = await readBody(req);
     const before = db.salesAccounts[index];
     const nextAddress = String(body.address ?? before.address).trim().slice(0, 300);
@@ -5600,6 +5701,7 @@ async function api(req, res) {
       : before.assignedUserId;
     const next = {
       ...before,
+      branchId: String(body.branchId ?? before.branchId ?? '').trim(),
       businessName: String(body.businessName ?? before.businessName).trim().slice(0, 180),
       address: nextAddress,
       contactName: String(body.contactName ?? before.contactName).trim().slice(0, 120),
@@ -5613,6 +5715,8 @@ async function api(req, res) {
       nextVisitAt: String(body.nextVisitAt ?? before.nextVisitAt).trim(),
       updatedAt: new Date().toISOString()
     };
+    const branchError = assignRecordBranch(db, user, next, 'salesAccounts');
+    if (branchError) return send(res, 400, { error: branchError });
     if (addressChanged) {
       next.lat = geocoded?.lat ?? null;
       next.lng = geocoded?.lng ?? null;
@@ -5631,7 +5735,7 @@ async function api(req, res) {
   if (req.method === 'POST' && url.pathname === '/api/field-sales/visits/start') {
     if (!canUseFieldSales(user)) return send(res, 403, { error: '当前账号没有业务员管理权限' });
     const body = await readBody(req);
-    const account = (db.salesAccounts || []).find(item => item.id === body.accountId && fieldSalesVisible(item, user));
+    const account = (db.salesAccounts || []).find(item => item.id === body.accountId && fieldSalesVisible(item, user) && canAccessBranch(db, user, item.branchId));
     if (!account) return send(res, 404, { error: '找不到这个业务客户' });
     if (body.locationConsent !== true) return send(res, 400, { error: '请先同意本次拜访使用手机定位' });
     const lat = Number(body.lat); const lng = Number(body.lng); const accuracy = Number(body.accuracy || 0);
@@ -5663,6 +5767,7 @@ async function api(req, res) {
     if (distanceToAccountMeters > allowedRadiusMeters) {
       const attempt = {
         id: id(), accountId: account.id, businessName: account.businessName,
+        branchId: account.branchId || '',
         customerAddress: account.address,
         customerLat: Number(account.lat), customerLng: Number(account.lng),
         userId: user.id, userName: user.name || user.email,
@@ -5690,6 +5795,7 @@ async function api(req, res) {
     }
     const visit = {
       id: id(), accountId: account.id, businessName: account.businessName,
+      branchId: account.branchId || '',
       customerAddress: account.address,
       userId: user.id, userName: user.name || user.email,
       status: '进行中', startedAt: new Date().toISOString(), completedAt: '',
@@ -5719,6 +5825,7 @@ async function api(req, res) {
     const visitId = decodeURIComponent(fieldSalesVisitMatch[1]);
     const visitIndex = (db.salesVisits || []).findIndex(item => item.id === visitId);
     if (visitIndex < 0 || (!canManageFieldSales(user) && db.salesVisits[visitIndex].userId !== user.id)) return send(res, 404, { error: '找不到本次拜访' });
+    if (!canAccessBranch(db, user, db.salesVisits[visitIndex].branchId)) return send(res, 403, { error: '你没有这次拜访所属分店的数据权限' });
     const body = await readBody(req);
     const reportText = String(body.reportText || '').trim().slice(0, 12000);
     if (!reportText) return send(res, 400, { error: '请填写本次拜访结果' });
@@ -5763,6 +5870,7 @@ async function api(req, res) {
         const product = (db.products || []).find(row => row.sku === requestedSku || row.id === item?.productId);
         db.salesTrialRolls.unshift({
           id: id(), accountId: visit.accountId, businessName: visit.businessName,
+          branchId: visit.branchId || '',
           visitId: visit.id, userId: visit.userId, userName: visit.userName,
           productId: product?.id || '', productSku: product?.sku || requestedSku,
           productName: product?.name || String(item?.productName || requestedSku || '试用膜').slice(0, 180),
@@ -5776,13 +5884,14 @@ async function api(req, res) {
         });
       }
     }
-    const daily = (db.salesDailyReports || []).find(item => item.userId === visit.userId && item.date === dateInTimezone(db.settings?.timezone || 'America/Los_Angeles', 0));
+    const daily = (db.salesDailyReports || []).find(item => item.userId === visit.userId && item.date === dateInTimezone(db.settings?.timezone || 'America/Los_Angeles', 0) && String(item.branchId || '') === String(visit.branchId || ''));
     if (daily) {
       daily.visitIds = [...new Set([...(daily.visitIds || []), visit.id])];
       daily.updatedAt = now;
     } else {
       db.salesDailyReports.unshift({
         id: id(), userId: visit.userId, userName: visit.userName,
+        branchId: visit.branchId || '',
         date: dateInTimezone(db.settings?.timezone || 'America/Los_Angeles', 0),
         visitIds: [visit.id], summary: '', createdAt: now, updatedAt: now
       });
@@ -5799,6 +5908,7 @@ async function api(req, res) {
     const visitId = decodeURIComponent(fieldSalesAnalyzeMatch[1]);
     const visit = (db.salesVisits || []).find(item => item.id === visitId);
     if (!visit || (!canManageFieldSales(user) && visit.userId !== user.id)) return send(res, 404, { error: '找不到本次拜访' });
+    if (!canAccessBranch(db, user, visit.branchId)) return send(res, 403, { error: '你没有这次拜访所属分店的数据权限' });
     try {
       const body = await readBody(req);
       const result = await createFieldSalesAnalysis(visit, String(body.provider || ''));
@@ -5826,16 +5936,19 @@ async function api(req, res) {
     const summary = String(body.summary || '').trim().slice(0, 12000);
     if (!summary) return send(res, 400, { error: '请填写今天的工作报告' });
     const date = String(body.date || dateInTimezone(db.settings?.timezone || 'America/Los_Angeles', 0)).slice(0, 10);
-    let report = (db.salesDailyReports || []).find(item => item.userId === user.id && item.date === date);
+    const branchId = String(body.branchId || user.defaultBranchId || '').trim();
+    let report = (db.salesDailyReports || []).find(item => item.userId === user.id && item.date === date && String(item.branchId || '') === branchId);
     if (!report) {
-      report = { id: id(), userId: user.id, userName: user.name || user.email, date, visitIds: [], createdAt: new Date().toISOString() };
+      report = { id: id(), userId: user.id, userName: user.name || user.email, branchId, date, visitIds: [], createdAt: new Date().toISOString() };
+      const branchError = assignRecordBranch(db, user, report, 'salesDailyReports');
+      if (branchError) return send(res, 400, { error: branchError });
       db.salesDailyReports.unshift(report);
     }
     report.summary = summary;
     report.plan = String(body.plan || '').trim().slice(0, 6000);
     report.blockers = String(body.blockers || '').trim().slice(0, 6000);
     report.checkInAttemptIds = (db.salesCheckInAttempts || [])
-      .filter(item => item.userId === user.id && instantDateInTimezone(item.attemptedAt, db.settings?.timezone || 'America/Los_Angeles') === date)
+      .filter(item => item.userId === user.id && String(item.branchId || '') === branchId && instantDateInTimezone(item.attemptedAt, db.settings?.timezone || 'America/Los_Angeles') === date)
       .map(item => item.id);
     report.aiStatus = (process.env.OPENAI_API_KEY || process.env.DEEPSEEK_API_KEY) ? '待分析' : '未配置';
     report.updatedAt = new Date().toISOString();
@@ -5955,6 +6068,7 @@ async function api(req, res) {
       userId: user.id,
       userName: user.name || user.email,
       email: user.email || '',
+      branchId: String(user.defaultBranchId || '').trim(),
       type,
       at: new Date().toISOString(),
       date: dateInTimezone(db.settings?.timezone || 'America/Los_Angeles', 0),
@@ -6001,6 +6115,7 @@ async function api(req, res) {
       userId: user.id,
       userName: user.name || user.email,
       email: user.email || '',
+      branchId: String(user.defaultBranchId || '').trim(),
       leaveType: String(body.leaveType || '事假').trim().slice(0, 30),
       startDate,
       startTime: String(body.startTime || '').trim().slice(0, 10),
@@ -7093,6 +7208,7 @@ async function api(req, res) {
     const common = {
       date: String(body.date || '').trim(),
       type: body.type === 'transfer' ? 'transfer' : 'consume',
+      branchId: String(body.branchId || user.defaultBranchId || '').trim(),
       operator: String(body.operator || '').trim(),
       jobId: String(body.jobId || '').trim(),
       jobCustomer: String(body.jobCustomer || '').trim(),
@@ -7106,6 +7222,8 @@ async function api(req, res) {
     }));
 
     for (const movement of movements) {
+      const branchError = assignRecordBranch(db, user, movement, 'workshopMovements');
+      if (branchError) return send(res, 400, { error: branchError });
       const dateError = validateEntryDate(db, movement, 'workshopMovements');
       if (dateError) return send(res, 400, { error: dateError });
       const movementError = validateWorkshopMovement(db, movement);
@@ -7374,6 +7492,7 @@ async function api(req, res) {
     }
     const shipment = (db.shipments || []).find(row => row.id === receiveShipmentMatch[1]);
     if (!shipment) return send(res, 404, { error: '找不到这张在途货物单' });
+    if (!canAccessBranch(db, user, shipment.branchId)) return send(res, 403, { error: '你没有这张在途货物所属分店的数据权限' });
     if (shipment.receivedAt || shipment.receiptId) return send(res, 400, { error: '这张在途货物单已经收货入库，不能重复操作' });
 
     const body = await readBody(req);
@@ -7413,13 +7532,14 @@ async function api(req, res) {
       id: receiptId, receiptNo, shipmentId: shipment.id, shipmentTrackingNo: shipment.trackingNo || '',
       sku, productName: product.name || '', items: shipment.items || '', expectedQty, actualQty, differenceQty,
       supplier: shipment.supplier || '', receivedDate, receivedAt: now, receivedBy: user.name || user.email || '',
-      receivedByUserId: user.id, note, movementId: '', productCreated
+      receivedByUserId: user.id, branchId: shipment.branchId || '', note, movementId: '', productCreated
     };
     if (actualQty > 0) {
       const movement = {
         id: id(), date: receivedDate, sku, type: 'in', qty: actualQty,
         note: `在途货物整单收货 ${receiptNo}${shipment.trackingNo ? `；单号 ${shipment.trackingNo}` : ''}`,
         shipmentId: shipment.id, shipmentReceiptId: receiptId, receiptNo,
+        branchId: shipment.branchId || '',
         createdAt: now, createdBy: user.name || user.email || '', createdByUserId: user.id
       };
       db.movements.push(movement);
@@ -7434,7 +7554,7 @@ async function api(req, res) {
       exception = {
         id: exceptionId, exceptionNo, shipmentId: shipment.id, receiptId, receiptNo,
         sku, productName: product.name || '', items: shipment.items || '', expectedQty, actualQty, differenceQty,
-        type: differenceQty < 0 ? '少货' : '多货', status: '待处理', note,
+        type: differenceQty < 0 ? '少货' : '多货', status: '待处理', branchId: shipment.branchId || '', note,
         createdAt: now, createdBy: user.name || user.email || '', createdByUserId: user.id
       };
       db.shipmentExceptions.unshift(exception);
@@ -7464,6 +7584,89 @@ async function api(req, res) {
     return send(res, 200, { data: sanitizeDbForUser(db, user), receipt, exception, productCreated });
   }
 
+  if (url.pathname === '/api/branch-transfers' && req.method === 'POST') {
+    if (!canAccess(user, 'inventoryEdit')) return send(res, 403, { error: '没有库存调拨权限' });
+    const body = await readBody(req);
+    const fromBranchId = String(body.fromBranchId || '').trim();
+    const toBranchId = String(body.toBranchId || '').trim();
+    const sku = String(body.sku || '').trim();
+    const qty = Number(body.qty || 0);
+    const validBranches = new Set(customerBranches(db).filter(branch => branch.active !== false).map(branch => branch.id));
+    if (!validBranches.has(fromBranchId) || !validBranches.has(toBranchId)) return send(res, 400, { error: '请选择有效的调出分店和调入分店' });
+    if (fromBranchId === toBranchId) return send(res, 400, { error: '调出分店和调入分店不能相同' });
+    if (!canAccessBranch(db, user, fromBranchId)) return send(res, 403, { error: '你没有调出分店的权限' });
+    if (!(db.products || []).some(product => product.sku === sku)) return send(res, 400, { error: '找不到调拨商品 SKU' });
+    if (!Number.isFinite(qty) || qty <= 0) return send(res, 400, { error: '调拨数量必须大于 0' });
+    const available = branchStockQty(db, sku, fromBranchId);
+    if (qty > available) return send(res, 400, { error: `调出分店库存不足。当前 ${available}，调拨 ${qty}` });
+    const now = new Date().toISOString();
+    const transfer = {
+      id: id(), transferNo: `DB-${now.slice(0, 10).replaceAll('-', '')}-${Math.random().toString(36).slice(2, 7).toUpperCase()}`,
+      date: String(body.date || now.slice(0, 10)), fromBranchId, toBranchId, sku, qty,
+      status: '待发货', note: String(body.note || '').trim().slice(0, 1000),
+      createdAt: now, createdBy: user.name || user.email || '', createdByUserId: user.id
+    };
+    db.branchTransfers.unshift(transfer);
+    audit(db, user, 'create-branch-transfer', { collection: 'branchTransfers', recordId: transfer.id, after: transfer, detail: `创建跨店调拨 ${transfer.transferNo}` });
+    writeDb(db);
+    notifyDataChanged('create-branch-transfer', transfer.id);
+    return send(res, 200, sanitizeDbForUser(db, user));
+  }
+
+  const transferActionMatch = url.pathname.match(/^\/api\/branch-transfers\/([^/]+)\/(ship|receive|cancel)$/);
+  if (transferActionMatch && req.method === 'POST') {
+    if (!canAccess(user, 'inventoryEdit')) return send(res, 403, { error: '没有库存调拨权限' });
+    const transfer = (db.branchTransfers || []).find(row => row.id === transferActionMatch[1]);
+    if (!transfer) return send(res, 404, { error: '找不到调拨单' });
+    const action = transferActionMatch[2];
+    const body = await readBody(req);
+    const now = new Date().toISOString();
+    if (action === 'ship') {
+      if (transfer.status !== '待发货') return send(res, 400, { error: '只有待发货调拨单可以确认发货' });
+      if (!canAccessBranch(db, user, transfer.fromBranchId)) return send(res, 403, { error: '你没有调出分店的权限' });
+      const available = branchStockQty(db, transfer.sku, transfer.fromBranchId);
+      if (Number(transfer.qty || 0) > available) return send(res, 400, { error: `调出分店库存不足。当前 ${available}` });
+      transfer.status = '在途';
+      transfer.shippedAt = now;
+      transfer.shippedBy = user.name || user.email || '';
+    } else if (action === 'receive') {
+      if (transfer.status !== '在途') return send(res, 400, { error: '只有在途调拨单可以收货' });
+      if (!canAccessBranch(db, user, transfer.toBranchId)) return send(res, 403, { error: '你没有调入分店的权限' });
+      const actualQty = Number(body.actualQty);
+      if (!Number.isFinite(actualQty) || actualQty < 0) return send(res, 400, { error: '请填写正确的实际收货数量' });
+      transfer.actualQty = actualQty;
+      transfer.receivedAt = now;
+      transfer.receivedBy = user.name || user.email || '';
+      transfer.receiptNote = String(body.note || '').trim().slice(0, 1000);
+      const differenceQty = actualQty - Number(transfer.qty || 0);
+      transfer.differenceQty = differenceQty;
+      transfer.status = differenceQty === 0 ? '已收货' : '异常收货';
+      if (differenceQty !== 0) {
+        const exception = {
+          id: id(), exceptionNo: `DBYC-${now.slice(0, 10).replaceAll('-', '')}-${Math.random().toString(36).slice(2, 7).toUpperCase()}`,
+          transferId: transfer.id, transferNo: transfer.transferNo, fromBranchId: transfer.fromBranchId, toBranchId: transfer.toBranchId,
+          sku: transfer.sku, expectedQty: Number(transfer.qty || 0), actualQty, differenceQty,
+          type: differenceQty < 0 ? '少货' : '多货', status: '待处理', note: transfer.receiptNote,
+          createdAt: now, createdBy: user.name || user.email || '', createdByUserId: user.id
+        };
+        db.branchTransferExceptions.unshift(exception);
+        transfer.exceptionId = exception.id;
+        transfer.exceptionNo = exception.exceptionNo;
+      }
+    } else {
+      if (transfer.status !== '待发货') return send(res, 400, { error: '只有待发货调拨单可以取消' });
+      if (!canAccessBranch(db, user, transfer.fromBranchId)) return send(res, 403, { error: '你没有调出分店的权限' });
+      transfer.status = '已取消';
+      transfer.cancelledAt = now;
+      transfer.cancelledBy = user.name || user.email || '';
+    }
+    transfer.updatedAt = now;
+    audit(db, user, `${action}-branch-transfer`, { collection: 'branchTransfers', recordId: transfer.id, after: transfer, detail: `${action} 跨店调拨 ${transfer.transferNo}` });
+    writeDb(db);
+    notifyDataChanged(`${action}-branch-transfer`, transfer.id);
+    return send(res, 200, sanitizeDbForUser(db, user));
+  }
+
   const match = url.pathname.match(/^\/api\/([a-zA-Z]+)(?:\/([^/]+))?$/);
   if (!match) return send(res, 404, { error: 'Not found' });
   const [, collection, recordId] = match;
@@ -7481,6 +7684,8 @@ async function api(req, res) {
     const canSeeCosts = user.role === 'owner';
     const dateError = validateEntryDate(db, item, collection);
     if (dateError) return send(res, 400, { error: dateError });
+    const branchError = assignRecordBranch(db, user, item, collection);
+    if (branchError) return send(res, 400, { error: branchError });
     if (collection === 'users') {
       if (item.role === 'owner') return send(res, 400, { error: '不能在员工账号里新增老板账号' });
       const error = validateUserInput(db, item, null, true);
@@ -7493,6 +7698,9 @@ async function api(req, res) {
       item.passwordHash = hashPassword(body.password);
       delete item.password;
       item.active = item.active !== false;
+      item.defaultBranchId = String(item.defaultBranchId || '').trim();
+      item.branchIds = [...new Set([item.defaultBranchId, ...(Array.isArray(item.branchIds) ? item.branchIds : [])].map(value => String(value || '').trim()).filter(Boolean))];
+      if (item.branchIds.some(branchId => !customerBranches(db).some(branch => branch.id === branchId))) return send(res, 400, { error: '员工分店权限中包含不存在的分店' });
       item.permissions = { ...defaultPermissions(item.role), ...(body.permissions || {}) };
     }
     if (collection === 'movements') {
@@ -7680,6 +7888,7 @@ async function api(req, res) {
     const idx = db[collection].findIndex(x => x.id === recordId);
     const canSeeCosts = user.role === 'owner';
     if (idx < 0) return send(res, 404, { error: 'Record not found' });
+    if (!canAccessBranch(db, user, db[collection][idx]?.branchId)) return send(res, 403, { error: '你没有这条记录所属分店的数据权限' });
     if (collection === 'shipments' && db[collection][idx].receivedAt) {
       return send(res, 400, { error: '已经收货入库的在途单不能直接修改，避免库存与入库单不一致' });
     }
@@ -7698,7 +7907,12 @@ async function api(req, res) {
       if (body.password) next.passwordHash = hashPassword(body.password);
       delete next.password;
       next.permissions = { ...defaultPermissions(next.role), ...(body.permissions || {}) };
+      next.defaultBranchId = String(next.defaultBranchId || '').trim();
+      next.branchIds = [...new Set([next.defaultBranchId, ...(Array.isArray(next.branchIds) ? next.branchIds : [])].map(value => String(value || '').trim()).filter(Boolean))];
+      if (next.branchIds.some(branchId => !customerBranches(db).some(branch => branch.id === branchId))) return send(res, 400, { error: '员工分店权限中包含不存在的分店' });
     }
+    const updateBranchError = assignRecordBranch(db, user, next, collection);
+    if (updateBranchError) return send(res, 400, { error: updateBranchError });
     if (collection === 'schedules') {
       const error = prepareScheduleItem(db, next);
       if (error) return send(res, 400, { error });
@@ -7860,6 +8074,8 @@ async function api(req, res) {
   }
 
   if (req.method === 'DELETE' && recordId) {
+    const branchProtectedRecord = (db[collection] || []).find(row => row.id === recordId);
+    if (branchProtectedRecord && !canAccessBranch(db, user, branchProtectedRecord.branchId)) return send(res, 403, { error: '你没有这条记录所属分店的数据权限' });
     if (collection === 'workshopMovements') {
       return send(res, 400, { error: '贴膜间库存流水不能删除。请用反向流水修正，保证库存台账完整。' });
     }
@@ -7988,6 +8204,7 @@ function validateMovement(db, movement) {
     if (movement.type !== 'out') return '只有出库流水可以关联零售批发订单';
     const order = db.salesOrders.find(o => o.id === movement.salesOrderId);
     if (!order) return '找不到关联的零售批发订单';
+    if (order.branchId && movement.branchId && order.branchId !== movement.branchId) return '出库分店必须与订单所属分店一致';
     if (order.status !== '待出库') return '只有待出库订单可以通过库存出库自动改为已出库';
     const orderLine = salesOrderItems(order).find(line => String(line.item) === String(movement.sku || ''));
     if (!orderLine) return '出库SKU必须和关联订单的某一行商品一致';
@@ -7998,6 +8215,10 @@ function validateMovement(db, movement) {
   const currentQty = Number(product.qty || 0);
   if (movement.type === 'out' && qty > currentQty) {
     return `出库数量不能超过当前库存。${product.sku} 当前库存 ${currentQty}，本次出库 ${qty}`;
+  }
+  if (movement.type === 'out' && movement.branchId) {
+    const branchQty = branchStockQty(db, movement.sku, movement.branchId);
+    if (qty > branchQty) return `分店库存不足。${movement.sku} 当前分店库存 ${branchQty}，本次出库 ${qty}`;
   }
   return '';
 }
@@ -8042,7 +8263,7 @@ function validateWorkshopMovement(db, movement) {
   if (!Number.isFinite(qty) || qty <= 0) return '数量必须大于 0';
   if (movement.type !== 'transfer' && movement.type !== 'consume') return '请选择领料到贴膜间或贴膜间消耗';
   if (movement.type === 'transfer') {
-    const mainQty = Number(product.qty || 0);
+    const mainQty = movement.branchId ? branchStockQty(db, movement.sku, movement.branchId) : Number(product.qty || 0);
     if (qty > mainQty) return `大仓库存不足。${product.sku} 大仓当前库存 ${mainQty}，本次领料 ${qty}`;
   }
   if (movement.type === 'consume') {
