@@ -1027,6 +1027,42 @@ function applySalesOrderSalesRepMigration() {
   console.log(`Sales order sales rep migration changed ${changed} fields.`);
 }
 
+function applyAccountingLinkageMigration() {
+  const migrationVersion = 'accounting-linkage-2026-08-18-v1';
+  const db = readDb();
+  if (db.accountingLinkageMigrationVersion === migrationVersion) return;
+  let costSnapshots = 0;
+  let paymentLedgers = 0;
+  (db.salesOrders || []).forEach(order => {
+    const originalLines = salesOrderItems(order);
+    order.items = originalLines.map(line => {
+      if (line.unitCostSnapshot !== null && line.unitCostSnapshot !== undefined && Number.isFinite(Number(line.unitCostSnapshot))) return line;
+      const product = (db.products || []).find(row => row.sku === line.item);
+      costSnapshots += 1;
+      return { ...line, unitCostSnapshot: Number(product?.cost || 0), costSnapshotSource: 'migration-current-product-cost' };
+    });
+    const first = order.items[0] || {};
+    order.unitCostSnapshot = Number(first.unitCostSnapshot || 0);
+    if (!Array.isArray(order.paymentTransactions)) order.paymentTransactions = [];
+    if (Number(order.paid || 0) !== 0 && !order.paymentTransactions.length) {
+      order.paymentTransactions.push({
+        id: id(), date: String(order.date || '').slice(0, 10), amount: Number(order.paid || 0),
+        type: Number(order.paid || 0) >= 0 ? 'payment' : 'refund', method: String(order.paymentMethod || ''),
+        createdAt: order.createdAt || new Date().toISOString(), createdBy: order.preparedBy || '历史迁移',
+        source: 'migration-opening-balance'
+      });
+      paymentLedgers += 1;
+    }
+  });
+  db.accountingLinkageMigrationVersion = migrationVersion;
+  db.accountingLinkageMigrationAt = new Date().toISOString();
+  audit(db, { id: 'system', name: 'System' }, 'migrate-accounting-linkage', {
+    collection: 'salesOrders', detail: `锁定历史订单成本 ${costSnapshots} 行，建立历史收款期初流水 ${paymentLedgers} 单；没有改变库存、订单金额或累计收款`
+  });
+  writeDb(db);
+  console.log(`Accounting linkage migration: ${costSnapshots} cost snapshots, ${paymentLedgers} payment ledgers.`);
+}
+
 function applyCustomPrintedFilmSalesOrderMigration() {
   const migrationVersion = 'custom-printed-film-sales-order-2026-07-07-v1';
   const db = readDb();
@@ -2177,8 +2213,48 @@ function salesOrderItems(order) {
   return source.map(line => ({
     item: String(line?.item || line?.sku || '').trim(),
     qty: Number(line?.qty || 0),
-    unitPrice: Number(line?.unitPrice || 0)
+    unitPrice: Number(line?.unitPrice || 0),
+    unitCostSnapshot: Number.isFinite(Number(line?.unitCostSnapshot)) ? Number(line.unitCostSnapshot) : null
   })).filter(line => line.item);
+}
+
+function snapshotSalesOrderCosts(db, order, previousOrder = null) {
+  const previousBySku = new Map(salesOrderItems(previousOrder || {}).map(line => [line.item, line.unitCostSnapshot]));
+  order.items = salesOrderItems(order).map(line => {
+    const previous = previousBySku.get(line.item);
+    const product = (db.products || []).find(row => row.sku === line.item);
+    const unitCostSnapshot = previous !== null && previous !== undefined && Number.isFinite(Number(previous))
+      ? Number(previous)
+      : Number(product?.cost || 0);
+    return { ...line, unitCostSnapshot };
+  });
+  const first = order.items[0] || {};
+  order.item = first.item || '';
+  order.qty = Number(first.qty || 0);
+  order.unitPrice = Number(first.unitPrice || 0);
+  order.unitCostSnapshot = Number(first.unitCostSnapshot || 0);
+}
+
+function salesOrderHasCompleteShipment(db, order) {
+  const physicalLines = salesOrderItems(order).filter(line => !isCustomPrintedFilmSku(line.item));
+  if (!physicalLines.length) return true;
+  return physicalLines.every(line => {
+    const shipped = (db.movements || []).filter(row => !row.reversedAt && row.type === 'out' && row.salesOrderId === order.id && String(row.sku) === line.item);
+    return shipped.reduce((sum, row) => sum + Number(row.qty || 0), 0) === Number(line.qty || 0);
+  });
+}
+
+function appendPaymentTransaction(order, previousPaid, user) {
+  const nextPaid = Number(order.paid || 0);
+  const beforePaid = Number(previousPaid || 0);
+  const delta = Math.round((nextPaid - beforePaid) * 100) / 100;
+  order.paymentTransactions = Array.isArray(order.paymentTransactions) ? order.paymentTransactions : [];
+  if (!delta) return;
+  order.paymentTransactions.push({
+    id: id(), date: String(order.date || '').slice(0, 10), amount: delta,
+    type: delta > 0 ? 'payment' : 'refund', method: String(order.paymentMethod || ''),
+    createdAt: new Date().toISOString(), createdBy: user.name || user.email || '', createdByUserId: user.id
+  });
 }
 
 function validateSalesOrder(db, order) {
@@ -7018,6 +7094,7 @@ async function api(req, res) {
       date: String(body.date || '').trim(),
       type: body.type === 'transfer' ? 'transfer' : 'consume',
       operator: String(body.operator || '').trim(),
+      jobId: String(body.jobId || '').trim(),
       jobCustomer: String(body.jobCustomer || '').trim(),
       note: String(body.note || '').trim()
     };
@@ -7257,6 +7334,9 @@ async function api(req, res) {
     if (!movement) return send(res, 404, { error: '找不到这条出入库流水' });
     if (movement.reversedAt) return send(res, 400, { error: '这条入库流水已经撤销，不能重复操作' });
     if (movement.type !== 'in') return send(res, 400, { error: '目前只允许撤销误操作的入库流水；出库请通过对应订单处理' });
+    if (movement.shipmentReceiptId || movement.shipmentId || movement.receiptNo) {
+      return send(res, 400, { error: '在途收货生成的入库流水不能单独撤销，否则在途单、入库单和库存会不一致。请通过在途异常处理流程办理。' });
+    }
     const product = (db.products || []).find(row => row.sku === movement.sku);
     if (!product) return send(res, 404, { error: '找不到这条流水对应的库存商品' });
     const qty = Number(movement.qty || 0);
@@ -7453,6 +7533,9 @@ async function api(req, res) {
     if (collection === 'products' && !canSeeCosts) {
       item.cost = 0;
     }
+    if (collection === 'products' && Number(item.qty || 0) !== 0) {
+      return send(res, 400, { error: '新增商品的库存必须从 0 开始。请保存商品后通过入库流水增加库存，保证数量可追溯。' });
+    }
     if (collection === 'priceRules' && !canSeeCosts) {
       item.materialCost = 0;
     }
@@ -7481,6 +7564,11 @@ async function api(req, res) {
       item.customerContact = String(item.customerContact || '').trim().slice(0, 500);
       const error = validateSalesOrder(db, item);
       if (error) return send(res, 400, { error });
+      if (String(item.status || '').trim() === '已出库') {
+        return send(res, 400, { error: '新订单不能直接标记为已出库。请先保存为待出库，再从库存模块按订单出库。' });
+      }
+      snapshotSalesOrderCosts(db, item);
+      appendPaymentTransaction(item, 0, user);
       item.preparedBy = String(item.preparedBy || user.name || '').trim();
       item.preparedByUserId = user.id;
       item.createdAt = new Date().toISOString();
@@ -7639,6 +7727,12 @@ async function api(req, res) {
     if (collection === 'products' && !canSeeCosts) {
       next.cost = db[collection][idx].cost || 0;
     }
+    if (collection === 'products') {
+      if (Number(next.qty || 0) !== Number(db[collection][idx].qty || 0)) {
+        return send(res, 400, { error: '库存数量不能在商品档案中直接修改。请使用入库、订单出库或盘点调整流水。' });
+      }
+      next.qty = Number(db[collection][idx].qty || 0);
+    }
     if (collection === 'priceRules' && !canSeeCosts) {
       next.materialCost = db[collection][idx].materialCost || 0;
     }
@@ -7686,11 +7780,25 @@ async function api(req, res) {
     }
     if (collection === 'salesOrders') {
       const previousStatus = String(db[collection][idx].status || '').trim();
+      const previousOrder = db[collection][idx];
       next.salesRep = String(next.salesRep || '').trim();
       next.customerAddress = String(next.customerAddress || '').trim().slice(0, 500);
       next.customerContact = String(next.customerContact || '').trim().slice(0, 500);
       const error = validateSalesOrder(db, next);
       if (error) return send(res, 400, { error });
+      const nextStatus = String(next.status || '').trim();
+      if (nextStatus === '已出库' && previousStatus !== '已出库' && !salesOrderHasCompleteShipment(db, previousOrder)) {
+        return send(res, 400, { error: '不能手工把订单改成已出库。请从库存模块关联订单逐项出库，系统会自动更新状态。' });
+      }
+      if (previousStatus === '已出库') {
+        const beforeLines = salesOrderItems(previousOrder).map(({ item, qty, unitPrice }) => ({ item, qty, unitPrice }));
+        const afterLines = salesOrderItems(next).map(({ item, qty, unitPrice }) => ({ item, qty, unitPrice }));
+        if (nextStatus !== '已出库' || JSON.stringify(beforeLines) !== JSON.stringify(afterLines)) {
+          return send(res, 400, { error: '已出库订单不能改变状态或商品明细；退款和退货请使用冲销记录，不能改写原单。' });
+        }
+      }
+      snapshotSalesOrderCosts(db, next, previousOrder);
+      appendPaymentTransaction(next, previousOrder.paid, user);
       next.preparedBy = String(next.preparedBy || db[collection][idx].preparedBy || user.name || '').trim();
       next.preparedByUserId = db[collection][idx].preparedByUserId || user.id;
       next.updatedBy = user.name || '';
@@ -7800,6 +7908,26 @@ async function api(req, res) {
       const canApprove = canAccess(user, 'reimbursementsApprove');
       if (!canApprove && existingReimbursement.employeeUserId !== user.id) return send(res, 403, { error: '只能删除自己的报销申请' });
       if (existingReimbursement.status !== '待审批') return send(res, 400, { error: '已审批的报销记录需要保留，不能删除' });
+    }
+    if (collection === 'salesOrders') {
+      const order = (db.salesOrders || []).find(row => row.id === recordId);
+      if (!order) return send(res, 404, { error: 'Record not found' });
+      const hasMovement = (db.movements || []).some(row => row.salesOrderId === recordId);
+      if (hasMovement || ['已出库', 'shipped', 'delivered', 'completed'].includes(String(order.status || '').trim().toLowerCase())) {
+        return send(res, 400, { error: '已产生库存流水或已出库的订单必须保留，不能删除。需要作废时请保留原单并建立退货/冲销记录。' });
+      }
+    }
+    if (collection === 'products') {
+      const product = (db.products || []).find(row => row.id === recordId);
+      if (!product) return send(res, 404, { error: 'Record not found' });
+      const sku = String(product.sku || '');
+      const references = [
+        ...(db.movements || []).filter(row => String(row.sku || '') === sku),
+        ...(db.workshopMovements || []).filter(row => String(row.sku || '') === sku),
+        ...(db.salesOrders || []).filter(order => salesOrderItems(order).some(line => line.item === sku)),
+        ...(db.shipmentReceipts || []).filter(row => String(row.sku || '') === sku)
+      ];
+      if (references.length) return send(res, 400, { error: `商品 ${sku} 已有订单或库存流水引用，不能删除。可以把它停用或隐藏，但必须保留历史主档。` });
     }
     const existing = db[collection].find(x => x.id === recordId);
     db[collection] = db[collection].filter(x => x.id !== recordId);
@@ -7918,6 +8046,10 @@ function validateWorkshopMovement(db, movement) {
     if (qty > mainQty) return `大仓库存不足。${product.sku} 大仓当前库存 ${mainQty}，本次领料 ${qty}`;
   }
   if (movement.type === 'consume') {
+    if (!movement.jobId) return '施工消耗必须关联施工单，不能只填写客户姓名';
+    const job = (db.jobs || []).find(row => row.id === movement.jobId && !row.deletedAt);
+    if (!job) return '找不到关联的施工单';
+    movement.jobCustomer = job.customer || movement.jobCustomer || '';
     const currentQty = workshopStockQty(db, movement.sku);
     if (qty > currentQty) return `贴膜间库存不足。${product.sku} 贴膜间当前库存 ${currentQty}，本次消耗 ${qty}`;
   }
@@ -7925,6 +8057,23 @@ function validateWorkshopMovement(db, movement) {
 }
 
 function applyWorkshopMovement(db, movement) {
+  if (movement.type === 'consume' && movement.jobId) {
+    const job = (db.jobs || []).find(row => row.id === movement.jobId);
+    const product = (db.products || []).find(row => row.sku === movement.sku);
+    if (job) {
+      const unitCost = Number(product?.cost || 0);
+      movement.unitCostSnapshot = unitCost;
+      movement.materialCostAmount = Math.round(unitCost * Number(movement.qty || 0) * 100) / 100;
+      const actualCost = (db.workshopMovements || [])
+        .filter(row => row.type === 'consume' && row.jobId === job.id)
+        .reduce((sum, row) => sum + Number(row.materialCostAmount || 0), 0);
+      job.actualMaterialCost = Math.round(actualCost * 100) / 100;
+      job.materialCost = job.actualMaterialCost;
+      job.materialCostSource = 'workshop-consumption';
+      job.materialCostUpdatedAt = new Date().toISOString();
+    }
+    return;
+  }
   if (movement.type !== 'transfer') return;
   const product = db.products.find(p => p.sku === movement.sku);
   if (!product) return;
@@ -8010,6 +8159,7 @@ applyJobSalesRepMigration();
 applyJobCommissionPeopleMigration();
 applySalesOrderSalesRepMigration();
 applyCustomPrintedFilmSalesOrderMigration();
+applyAccountingLinkageMigration();
 applyPromotedConversationMerge();
 applyCustomerConversationPromotionEligibilityMigration();
 applyImportedCustomerEncodingMigration();

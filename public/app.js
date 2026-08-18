@@ -2351,7 +2351,7 @@ function isStartedRevenueJob(job) {
 }
 
 function revenueJobs(jobs = []) {
-  return (jobs || []).filter(job => !job.deletedAt).filter(isStartedRevenueJob);
+  return (jobs || []).filter(job => !job.deletedAt).filter(isRecognizedJobRevenue);
 }
 
 function isRecognizedJobRevenue(job) {
@@ -2367,9 +2367,8 @@ function isShippedSalesOrder(order) {
 function recognizedSalesCollection(order) {
   const status = String(order?.status || '').trim().toLowerCase();
   if (['已取消', '取消', 'canceled', 'cancelled'].includes(status)) return 0;
-  const total = Math.max(0, Number(orderCalc(order).total || 0));
-  const paid = Math.max(0, Number(order?.paid || 0));
-  return Math.min(total, paid);
+  if (!isShippedSalesOrder(order)) return 0;
+  return Math.max(0, Number(orderCalc(order).total || 0));
 }
 
 function isRecognizedSalesRevenue(order) {
@@ -2403,12 +2402,11 @@ function accountingStatement(jobs = [], salesOrders = [], expenses = [], range =
   const orderReceivables = (balanceOrders || []).filter(isShippedSalesOrder).reduce((sum, order) => sum + Math.max(0, orderCalc(order).total - Number(order.paid || 0)), 0);
   const accountsReceivable = jobReceivables + orderReceivables;
   const customerDeposits = (balanceJobs || []).filter(job => !isRecognizedJobRevenue(job) && !['取消', 'canceled', 'cancelled'].includes(String(job?.status || '').trim().toLowerCase())).reduce((sum, job) => sum + Math.max(0, jobPaidAmount(job)), 0)
-    + (balanceOrders || []).filter(order => !['已取消', '取消', 'canceled', 'cancelled'].includes(String(order?.status || '').trim().toLowerCase()))
-      .reduce((sum, order) => sum + Math.max(0, Number(order.paid || 0) - Math.max(0, orderCalc(order).total)), 0);
+    + (balanceOrders || []).filter(order => !isShippedSalesOrder(order) && !['已取消', '取消', 'canceled', 'cancelled'].includes(String(order?.status || '').trim().toLowerCase()))
+      .reduce((sum, order) => sum + Math.max(0, Number(order.paid || 0)), 0);
   const missingJobMaterialCosts = recognizedJobs.filter(job => Number(job.price || 0) > 0 && Number(job.materialCost || 0) <= 0).length;
   const missingProductCosts = recognizedOrders.reduce((count, order) => count + salesOrderLineItems(order).filter(line => {
-    const product = state.products.find(item => item.sku === line.item);
-    return !product || Number(product.cost || 0) <= 0;
+    return line.unitCostSnapshot === null || line.unitCostSnapshot === undefined || !Number.isFinite(Number(line.unitCostSnapshot)) || Number(line.unitCostSnapshot) <= 0;
   }).length, 0);
   return {
     recognizedJobs, recognizedOrders, serviceRevenue, productRevenue, revenue,
@@ -2503,12 +2501,12 @@ function basePlusMonthlyPay(installer, jobs) {
 }
 
 function installerPaySummary(installer, jobs, range = null) {
-  const installerJobs = jobs.filter(job => primaryInstallerId(job) === installer.id);
+  const installerJobs = jobs.filter(job => jobInstallerIds(job).includes(installer.id));
   const base = Number(installer.base || 0);
   const baseMonths = base > 0 ? calendarMonthsInRange(range, installerJobs).length : 0;
   const baseTotal = base * baseMonths;
   if (installer.mode !== 'basePlus') {
-    const total = installerJobs.reduce((sum, job) => sum + jobCalc(job).labor, 0);
+    const total = installerJobs.reduce((sum, job) => sum + jobCalc(job).labor / Math.max(1, jobInstallerIds(job).length), 0);
     return { name: installer.name, count: installerJobs.length, points: null, base: baseTotal, overagePay: total, total: baseTotal + total };
   }
   const byMonth = new Map();
@@ -2577,7 +2575,11 @@ function repName(id) {
 }
 
 function isCommissionableJob(job) {
-  return !job.deletedAt && !['取消', '无效'].includes(job.status) && Number(job.price || 0) !== 0;
+  return !job.deletedAt && ['已交车', 'delivered', 'completed'].includes(String(job.status || '').trim().toLowerCase()) && Number(job.price || 0) !== 0;
+}
+
+function isArrivedJob(job) {
+  return !job.deletedAt && ['已到店', '施工中', '待质检', '返工', '已交车', 'arrived', 'in progress', 'quality check', 'rework', 'delivered', 'completed'].includes(String(job.status || '').trim().toLowerCase());
 }
 
 function jobCommissionLead(job) {
@@ -2674,8 +2676,7 @@ function orderCalc(order) {
   const items = salesOrderLineItems(order);
   const total = items.reduce((sum, line) => sum + Number(line.qty || 0) * Number(line.unitPrice || 0), 0);
   const cost = items.reduce((sum, line) => {
-    const product = state.products.find(x => x.sku === line.item);
-    return sum + (product ? Number(product.cost || 0) * Number(line.qty || 0) : 0);
+    return sum + Number(line.unitCostSnapshot || 0) * Number(line.qty || 0);
   }, 0);
   return { total, cost, gross: total - cost, balance: total - Number(order.paid || 0) };
 }
@@ -2685,10 +2686,11 @@ function salesOrderLineItems(order) {
   const normalized = rows.map(line => ({
     item: String(line?.item || line?.sku || '').trim(),
     qty: Number(line?.qty || 0),
-    unitPrice: Number(line?.unitPrice || 0)
+    unitPrice: Number(line?.unitPrice || 0),
+    unitCostSnapshot: Number.isFinite(Number(line?.unitCostSnapshot)) ? Number(line.unitCostSnapshot) : null
   })).filter(line => line.item);
   if (normalized.length) return normalized;
-  return order?.item ? [{ item: String(order.item), qty: Number(order.qty || 0), unitPrice: Number(order.unitPrice || 0) }] : [];
+  return order?.item ? [{ item: String(order.item), qty: Number(order.qty || 0), unitPrice: Number(order.unitPrice || 0), unitCostSnapshot: Number.isFinite(Number(order.unitCostSnapshot)) ? Number(order.unitCostSnapshot) : null }] : [];
 }
 
 function salesOrderItemsSummary(order) {
@@ -2930,7 +2932,7 @@ function kpis(jobs = state.jobs.filter(j => !j.deletedAt && isDateInMonth(j.date
   const jobRevenue = incomeJobs.reduce((a, j) => a + jobCalc(j).price, 0);
   const jobMaterial = incomeJobs.reduce((a, j) => a + jobCalc(j).material, 0);
   const jobGross = canSeeFinance() ? jobRevenue - jobMaterial - totalLaborForJobs(incomeJobs) : 0;
-  const orderRevenue = salesOrders.reduce((a, o) => a + orderCalc(o).total, 0);
+  const orderRevenue = salesOrders.filter(isRecognizedSalesRevenue).reduce((a, o) => a + recognizedSalesCollection(o), 0);
   const totalRevenue = jobRevenue + orderRevenue;
   const lowStock = state.products.filter(p => Number(p.reorder || 0) > 0 && Number(p.qty || 0) <= Number(p.reorder || 0)).length;
   return { jobRevenue, jobGross, orderRevenue, totalRevenue, lowStock };
@@ -3318,7 +3320,7 @@ function financialStatementSummary(statement, range) {
         <table class="financial-statement"><thead><tr><th>${lang === 'zh' ? '科目' : 'Account'}</th><th>${lang === 'zh' ? '本期金额' : 'Current period'}</th><th>${lang === 'zh' ? '占收入' : '% revenue'}</th></tr></thead><tbody>
           <tr class="financial-section"><td colspan="3">${lang === 'zh' ? '营业收入' : 'REVENUE'}</td></tr>
           ${financialStatementRow(lang === 'zh' ? '施工服务收入（仅已交车）' : 'Installation service revenue (delivered only)', statement.serviceRevenue, statement.revenue)}
-          ${financialStatementRow(lang === 'zh' ? '商品销售收入（按实际已收款）' : 'Product sales revenue (cash collected)', statement.productRevenue, statement.revenue)}
+          ${financialStatementRow(lang === 'zh' ? '商品销售收入（仅已完成出库）' : 'Product sales revenue (shipped only)', statement.productRevenue, statement.revenue)}
           ${financialStatementRow(lang === 'zh' ? '营业收入合计' : 'Total revenue', statement.revenue, statement.revenue, 'financial-subtotal')}
           <tr class="financial-section"><td colspan="3">${lang === 'zh' ? '营业成本' : 'COST OF SALES'}</td></tr>
           ${financialStatementRow(lang === 'zh' ? '直接材料及商品成本' : 'Direct materials and product costs', -statement.directMaterials, statement.revenue)}
@@ -3345,7 +3347,7 @@ function financialStatementSummary(statement, range) {
         </div>
       </div>
     </div>
-    <p class="financial-policy-note">${lang === 'zh' ? '确认政策：施工收入在交车时确认；商品销售收入按销售单实际已收金额确认，部分收款仅确认已收部分，不以出库状态为依据；相关商品成本按已收款比例配比。直接材料和生产人工计入营业成本；客服提成及运营成本计入营业费用。已取消销售单和未收款销售单不确认商品收入。' : 'Recognition policy: service revenue is recognized on delivery. Product sales revenue is recognized from actual collections, with partial collections recognized only to the amount collected and independent of shipment status; related product cost is matched proportionally. Direct materials and production labor are cost of sales; customer service commissions and operating costs are operating expenses. Canceled and uncollected sales orders are excluded from product revenue.'}</p>
+    <p class="financial-policy-note">${lang === 'zh' ? '确认政策：采用权责发生制。施工收入在交车时确认；商品销售收入及其历史成本在完成库存出库时确认。出库前收到的款项列为客户预收，出库后未收部分列为应收账款。直接材料和生产人工计入营业成本；客服提成只在已交车后确认，运营成本计入营业费用。' : 'Recognition policy: accrual basis. Service revenue is recognized on delivery; product revenue and locked historical cost are recognized on inventory shipment. Collections before shipment are customer deposits, and unpaid balances after shipment are receivables. Direct materials and production labor are cost of sales; service commissions are recognized only after delivery.'}</p>
   </section>`;
 }
 
@@ -5420,14 +5422,15 @@ function leadKpiCards() {
 function leadReportRows(jobsSource = (state.jobs || []).filter(job => !job.deletedAt)) {
   return (state.customerServiceReps || []).map(rep => {
     const jobs = (jobsSource || []).filter(job => job.leadRepId === rep.id || job.receptionRepId === rep.id);
+    const arrivedJobs = jobs.filter(isArrivedJob);
     const closedJobs = jobs.filter(isCommissionableJob);
     const leadJobs = jobs.filter(job => job.leadRepId === rep.id);
     const receptionJobs = jobs.filter(job => job.receptionRepId === rep.id);
     const leadCommissionTotal = leadJobs.reduce((sum, job) => sum + jobRepCommission(job, rep), 0);
     const receptionCommissionTotal = receptionJobs.reduce((sum, job) => sum + jobRepCommission(job, rep), 0);
-    const arrivalRate = jobs.length ? closedJobs.length / jobs.length : 0;
-    const closeRate = arrivalRate;
-    return { rep, total: jobs.length, arrived: closedJobs.length, closed: closedJobs.length, arrivalRate, closeRate, leadCommissionTotal, receptionCommissionTotal, commission: leadCommissionTotal + receptionCommissionTotal };
+    const arrivalRate = jobs.length ? arrivedJobs.length / jobs.length : 0;
+    const closeRate = arrivedJobs.length ? closedJobs.length / arrivedJobs.length : 0;
+    return { rep, total: jobs.length, arrived: arrivedJobs.length, closed: closedJobs.length, arrivalRate, closeRate, leadCommissionTotal, receptionCommissionTotal, commission: leadCommissionTotal + receptionCommissionTotal };
   });
 }
 
@@ -7892,7 +7895,7 @@ function openProduct(id) {
     ['unit',lang === 'zh' ? '单位' : 'Unit','text',item.unit], ...(canSeeFinance() ? [['cost',`${t('cost')} $`,'number',item.cost]] : []), ['price',`${t('retailPrice')} $`,'number',item.price],
     ['wholesale',`${t('wholesalePrice')} $`,'number',item.wholesale],
     ['minPrice',`${t('minSalePrice')} $`,'number',item.minPrice || item.wholesale || 0],
-    ['qty',lang === 'zh' ? '当前库存' : 'Current Stock','number',item.qty], ['reorder',lang === 'zh' ? '预警库存' : 'Reorder Level','number',item.reorder], ['location',lang === 'zh' ? '仓位' : 'Location','text',item.location],
+    ['qty',lang === 'zh' ? '当前库存（只能通过库存流水变化）' : 'Current Stock (ledger controlled)','readonly',item.qty], ['reorder',lang === 'zh' ? '预警库存' : 'Reorder Level','number',item.reorder], ['location',lang === 'zh' ? '仓位' : 'Location','text',item.location],
     ['portalDescription',lang === 'zh' ? '客户产品介绍' : 'Customer description','textarea',item.portalDescription || ''], ['portalImageUrl',lang === 'zh' ? '产品图片链接' : 'Product image URL','text',item.portalImageUrl || ''], ['portalVideoUrl',lang === 'zh' ? '产品视频链接' : 'Product video URL','text',item.portalVideoUrl || ''],
     ['portalVisible',lang === 'zh' ? '客户客户端展示' : 'Show in customer portal','select',item.portalVisible === false ? 'false' : 'true',[['true',lang === 'zh' ? '展示' : 'Show'],['false',lang === 'zh' ? '隐藏' : 'Hide']]], ['portalNewProduct',lang === 'zh' ? '新品标签' : 'New product badge','select',item.portalNewProduct ? 'true' : 'false',[['false',lang === 'zh' ? '普通产品' : 'Regular'],['true',lang === 'zh' ? '新品' : 'New']]]
   ];
@@ -8049,13 +8052,15 @@ async function saveWorkshopMovementBatch(data) {
 }
 
 function openWorkshopConsumeBatch() {
-  const fields = [['date',t('date'),'date',today()], ['type',t('type'),'select','consume',[['consume',t('workshopConsume')],['transfer',t('workshopTransfer')]]], ['operator',t('operator'),'text',user?.name || ''], ['jobCustomer',t('workshopUsage'),'text',''], ['note',t('note'),'textarea','', null, 'wide']];
+  const jobOptions = [['', lang === 'zh' ? '请选择施工单' : 'Select a job'], ...(state.jobs || []).filter(job => !job.deletedAt && !['取消', '无效'].includes(job.status)).map(job => [job.id, `${job.date || ''} · ${job.customer || ''} · ${job.vehicle || ''}`])];
+  const fields = [['date',t('date'),'date',today()], ['type',t('type'),'select','consume',[['consume',t('workshopConsume')],['transfer',t('workshopTransfer')]]], ['operator',t('operator'),'text',user?.name || ''], ['jobId',lang === 'zh' ? '关联施工单' : 'Linked job','select','',jobOptions], ['jobCustomer',t('workshopUsage'),'text',''], ['note',t('note'),'textarea','', null, 'wide']];
   const lines = `<div class="sales-order-lines workshop-consume-lines wide"><div class="sales-order-lines-head"><strong>${lang === 'zh' ? '膜料明细' : 'Film details'}</strong><button class="btn" type="button" onclick="addWorkshopConsumeLine()">+ ${lang === 'zh' ? '新增一行' : 'Add line'}</button></div><div class="table-wrap"><table class="sales-lines-table workshop-consume-table"><thead><tr><th>SKU</th><th>${t('qtyMeters')}</th><th>${lang === 'zh' ? '可用库存' : 'Available'}</th><th></th></tr></thead><tbody id="workshopConsumeLines">${workshopConsumeLineRowHtml()}</tbody></table></div><div class="stock-hint">${lang === 'zh' ? '同一个 SKU 填写多行时会自动合并数量；任意一行库存不足，整张单都不会保存。' : 'Duplicate SKUs are combined. If any item lacks stock, the whole batch is rejected.'}</div></div>`;
   openModal(t('workshopConsume'), formHtml(fields) + lines, () => {
-    const data = readForm(['date','type','operator','jobCustomer','note']);
+    const data = readForm(['date','type','operator','jobId','jobCustomer','note']);
     data.items = readWorkshopConsumeLines();
     const dateError = validateTodayEntryDate(data.date);
     if (dateError) return alert(dateError);
+    if (data.type === 'consume' && !data.jobId) return alert(lang === 'zh' ? '施工消耗必须选择关联施工单。' : 'Workshop usage must be linked to a job.');
     if (!data.items.length || data.items.some(line => !line.sku)) return alert(lang === 'zh' ? '每一行都必须选择 SKU。' : 'Choose a SKU for every line.');
     if (data.items.some(line => line.qty <= 0)) return alert(lang === 'zh' ? '每一行数量都必须大于 0。' : 'Every quantity must be greater than 0.');
     const totals = new Map();
@@ -8299,11 +8304,15 @@ function openSalesOrder(id) {
   if (id && item.portalSource && (item.portalNew || item.portalCustomerUnread)) markPortalOrderRead(id);
   const lines = salesOrderLineItems(item);
   const shippingTracking = [...new Set([item.shipping, item.trackingNo].map(value => String(value || '').trim()).filter(Boolean))].join(' · ');
+  const editableSalesStatuses = salesStatusOptions().filter(option => {
+    const value = Array.isArray(option) ? option[0] : option;
+    return value !== '已出库' || item.status === '已出库';
+  });
   const fields = [
     ['date',t('date'),'date',item.date], ['type',t('type'),'select',item.type, salesOrderTypeOptions()], ['customer',t('customer'),'text',item.customer],
     ['customerAddress',lang === 'zh' ? '客户地址' : 'Customer address','text',item.customerAddress || ''],
     ['customerContact',lang === 'zh' ? '客户联系方式（电话 / Email）' : 'Customer contact (phone / email)','text',item.customerContact || ''],
-    ['salesRep',t('orderSalesRep'),'text',item.salesRep || ''], ['status',t('status'),'select',item.status, salesStatusOptions()], ['paid',`${t('paid')} $`,'number',item.paid],
+    ['salesRep',t('orderSalesRep'),'text',item.salesRep || ''], ['status',t('status'),'select',item.status, editableSalesStatuses], ['paid',`${t('paid')} $`,'number',item.paid],
     ['paymentMethod',t('paymentMethod'),'select',item.paymentMethod || '', paymentMethodOptions()], ['shippingTracking',lang === 'zh' ? '物流/单号' : 'Shipping / Tracking','text',shippingTracking],
     ['preparedBy',t('preparedBy'),'text',item.preparedBy || user?.name || '']
   ];
