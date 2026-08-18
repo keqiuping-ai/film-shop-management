@@ -9664,8 +9664,8 @@ function shipmentMethodOptions() {
 }
 function shipmentStatusOptions() {
   return lang === 'zh'
-    ? ['备货中','已发出','在途','已到港','已清关','送往拉斯维加斯','已到货','异常到货']
-    : [['备货中','Preparing'],['已发出','Departed'],['在途','In Transit'],['已到港','Arrived at Port'],['已清关','Customs Cleared'],['送往拉斯维加斯','To Las Vegas'],['已到货','Arrived'],['异常到货','Received with Exception']];
+    ? ['备货中','已发出','在途','已到港','已清关','送往拉斯维加斯','送往洛杉矶','已到货','异常到货']
+    : [['备货中','Preparing'],['已发出','Departed'],['在途','In Transit'],['已到港','Arrived at Port'],['已清关','Customs Cleared'],['送往拉斯维加斯','To Las Vegas'],['送往洛杉矶','To Los Angeles'],['已到货','Arrived'],['异常到货','Received with Exception']];
 }
 function shipmentMethodName(method) {
   return method === 'air'
@@ -9729,6 +9729,7 @@ function translateStatus(status) {
     '已到港': 'Arrived at Port',
     '已清关': 'Customs Cleared',
     '送往拉斯维加斯': 'To Las Vegas',
+    '送往洛杉矶': 'To Los Angeles',
     '已到货': 'Arrived',
     '新客资': 'New',
     '已邀约': 'Invited',
