@@ -42,6 +42,8 @@ let salesOrderSearch = '';
 let jobDatePreset = 'month';
 let jobStartDate = '';
 let jobEndDate = '';
+let completedJobStartDate = '';
+let completedJobEndDate = '';
 let jobSourceFilter = '';
 let jobPersonFilter = '';
 let showDeletedJobs = false;
@@ -2651,7 +2653,7 @@ function canSeeLabor() {
 }
 
 function canSeeFinance() {
-  return user?.role === 'owner';
+  return user?.role === 'owner' || hasPerm('fullFinanceView');
 }
 
 function canSeeCommission() {
@@ -5137,14 +5139,82 @@ function jobArchiveTable(rows) {
   </tbody></table></div>`;
 }
 
+function completedJobDate(job) {
+  return String(job.scheduleDate || job.date || '').slice(0, 10);
+}
+
+function completedJobRangeRows(rows = []) {
+  return rows.filter(job => {
+    const date = completedJobDate(job);
+    if (completedJobStartDate && date < completedJobStartDate) return false;
+    if (completedJobEndDate && date > completedJobEndDate) return false;
+    return true;
+  });
+}
+
+function completedJobExportRows(rows = []) {
+  return completedJobRangeRows(rows).filter(isRecognizedJobRevenue);
+}
+
+function setCompletedJobRange(field, value) {
+  if (field === 'start') completedJobStartDate = value || '';
+  if (field === 'end') completedJobEndDate = value || '';
+  render();
+}
+
+function clearCompletedJobRange() {
+  completedJobStartDate = '';
+  completedJobEndDate = '';
+  render();
+}
+
+function completedJobTools(rows) {
+  const exportCount = completedJobExportRows(rows).length;
+  const exportTools = canSeeFinance() ? `<div class="completed-job-export"><span class="note">${lang === 'zh' ? `可导出 ${exportCount} 张已交车订单` : `${exportCount} delivered jobs ready`}</span><button class="btn" onclick="copyCompletedJobs()">${lang === 'zh' ? '复制表格' : 'Copy table'}</button><button class="btn primary" onclick="exportCompletedJobsExcel()" ${exportCount ? '' : 'disabled'}>${lang === 'zh' ? '导出 Excel' : 'Export Excel'}</button></div>` : '';
+  return `<div class="completed-job-tools"><div class="completed-job-range"><label>${lang === 'zh' ? '开始日期' : 'Start date'}<input type="date" value="${escapeHtml(completedJobStartDate)}" onchange="setCompletedJobRange('start',this.value)"></label><span>—</span><label>${lang === 'zh' ? '结束日期' : 'End date'}<input type="date" value="${escapeHtml(completedJobEndDate)}" onchange="setCompletedJobRange('end',this.value)"></label><button class="btn" onclick="clearCompletedJobRange()">${lang === 'zh' ? '全部时间' : 'All dates'}</button></div>${exportTools}</div>`;
+}
+
+function completedJobPlainRows() {
+  return completedJobExportRows(branchScopedRows(state.jobs || []).filter(job => !job.deletedAt)).map(job => {
+    const calc = jobCalc(job);
+    return [completedJobDate(job), job.customer || '', job.phone || '', job.vehicle || '', [serviceLabelList(job), job.package].filter(Boolean).join(' · '), jobInstallerNames(job), calc.price, jobPaidAmount(job), Math.max(0, calc.price - jobPaidAmount(job)), paymentStatusLabel(jobPaymentStatusValue(job)), calc.material, calc.labor, calc.gross, job.salesRep || '', job.preparedBy || ''];
+  });
+}
+
+async function copyCompletedJobs() {
+  const headers = lang === 'zh' ? ['施工日期','客户','电话','车辆','项目','师傅','报价','已收款','未收款','付款情况','材料成本','师傅工费','毛利','负责人','填表人'] : ['Install Date','Customer','Phone','Vehicle','Service','Installer','Quote','Paid','Balance','Payment','Material Cost','Labor','Gross Profit','Owner','Prepared By'];
+  const rows = completedJobPlainRows();
+  if (!rows.length) return alert(lang === 'zh' ? '所选时间没有可复制的已交车订单。' : 'No delivered jobs in this date range.');
+  const text = [headers, ...rows].map(row => row.map(value => String(value ?? '').replace(/[\t\r\n]+/g, ' ')).join('\t')).join('\n');
+  try { await navigator.clipboard.writeText(text); alert(lang === 'zh' ? `已复制 ${rows.length} 张订单，可直接粘贴到 Excel。` : `${rows.length} jobs copied. Paste into Excel.`); } catch { alert(lang === 'zh' ? '浏览器没有允许复制，请使用“导出 Excel”。' : 'Clipboard access was denied. Use Export Excel.'); }
+}
+
+async function exportCompletedJobsExcel() {
+  const params = new URLSearchParams();
+  if (completedJobStartDate) params.set('start', completedJobStartDate);
+  if (completedJobEndDate) params.set('end', completedJobEndDate);
+  params.set('branch', ownerBranchFilter);
+  try {
+    const response = await fetch(`/api/jobs/completed-export.xlsx?${params}`, { headers:{ Authorization:`Bearer ${token}` } });
+    if (!response.ok) { const body = await response.json().catch(() => ({})); throw new Error(body.error || `HTTP ${response.status}`); }
+    const blob = await response.blob();
+    const disposition = response.headers.get('content-disposition') || '';
+    const fileName = decodeURIComponent(disposition.match(/filename\*=UTF-8''([^;]+)/i)?.[1] || `QUAD-已成交订单-${completedJobStartDate || '全部'}-${completedJobEndDate || today()}.xlsx`);
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a'); anchor.href = url; anchor.download = fileName; document.body.appendChild(anchor); anchor.click(); anchor.remove(); setTimeout(() => URL.revokeObjectURL(url), 1000);
+  } catch (error) { alert((lang === 'zh' ? 'Excel 导出失败：' : 'Excel export failed: ') + error.message); }
+}
+
 function jobBoard(rows) {
   const active = rows.filter(job => !jobIsArchived(job)).sort(compareActiveJobsBySchedule);
   const archived = rows.filter(jobIsArchived);
+  const visibleArchived = completedJobRangeRows(archived);
   return `<section class="job-board-section">
     <div class="job-section-heading"><div><h4>${lang === 'zh' ? '排单与正在施工' : 'Scheduled & Active Jobs'}</h4><p>${lang === 'zh' ? '按施工时间从早到晚排列；同一天排单优先' : 'Earliest job date first; scheduled jobs lead within the same day'}</p></div><span>${active.length}</span></div>
     ${jobActiveCards(active)}
-    <div class="job-section-heading archived"><div><h4>${lang === 'zh' ? '已成交与历史订单' : 'Completed & Historical Jobs'}</h4><p>${lang === 'zh' ? '已交车和取消订单以紧凑表格保留在下方' : 'Delivered and canceled jobs in a compact list'}</p></div><span>${archived.length}</span></div>
-    ${jobArchiveTable(archived)}
+    <div class="job-section-heading archived completed-job-heading"><div><h4>${lang === 'zh' ? '已成交与历史订单' : 'Completed & Historical Jobs'}</h4><p>${lang === 'zh' ? '按施工日期查询；Excel 仅导出已交车订单，取消订单不会进入财务表。' : 'Filter by install date. Excel includes delivered jobs only; canceled jobs are excluded.'}</p></div><span>${visibleArchived.length}</span></div>
+    ${completedJobTools(archived)}
+    ${jobArchiveTable(visibleArchived)}
   </section>`;
 }
 

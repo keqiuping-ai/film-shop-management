@@ -1555,6 +1555,130 @@ function attendanceMonthlyReport(db, user, month) {
   return { month, canManage: approver, employees: result, generatedAt: new Date().toISOString() };
 }
 
+function completedJobExportDate(job) {
+  return String(job?.scheduleDate || job?.date || '').slice(0, 10);
+}
+
+function completedJobExcelDate(value) {
+  const match = String(value || '').slice(0, 10).match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  return match ? new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]))) : null;
+}
+
+function completedJobExportCalc(db, job) {
+  const price = Number(job?.price || 0);
+  const material = Number(job?.materialCost || 0);
+  const installerIds = Array.isArray(job?.installerIds)
+    ? job.installerIds.map(String).filter(Boolean)
+    : String(job?.installerIds || job?.installerId || '').split(',').map(value => value.trim()).filter(Boolean);
+  const installer = (db.installers || []).find(row => row.id === installerIds[0]);
+  const services = (Array.isArray(job?.services) ? job.services : String(job?.service || '').split(','))
+    .map(value => String(value || '').trim()).filter(Boolean);
+  const selectedServices = services.length ? [...new Set(services)] : ['tint'];
+  let labor = 0;
+  if (installer) {
+    const rates = selectedServices.map(service => Number(installer[service === 'vinylWrap' ? 'wrap' : service] || 0));
+    if (installer.mode === 'percent') labor = price * Math.max(0, ...rates) / 100;
+    if (installer.mode === 'fixed') labor = rates.reduce((sum, rate) => sum + rate, 0);
+  }
+  const paid = Number(job?.paidAmount ?? job?.deposit ?? 0);
+  return { price, paid, balance:Math.max(0, price - paid), material, labor, gross:price - material - labor };
+}
+
+function completedJobExportInstallerNames(db, job) {
+  const ids = Array.isArray(job?.installerIds)
+    ? job.installerIds.map(String).filter(Boolean)
+    : String(job?.installerIds || job?.installerId || '').split(',').map(value => value.trim()).filter(Boolean);
+  return [...new Set(ids)].map(idValue => (db.installers || []).find(row => row.id === idValue)?.name).filter(Boolean).join(' / ');
+}
+
+function completedJobExportService(job) {
+  const serviceNames = { tint:'窗膜', ppf:'PPF', vinylWrap:'Vinyl改色', wrap:'Vinyl改色', tpuWrap:'TPU改色', ceramic:'陶瓷涂层' };
+  const services = (Array.isArray(job?.services) ? job.services : String(job?.service || '').split(','))
+    .map(value => String(value || '').trim()).filter(Boolean);
+  return (services.length ? [...new Set(services)] : ['tint']).map(value => serviceNames[value] || value).join(' + ');
+}
+
+function completedJobExportPaymentStatus(job, calc) {
+  const value = String(job?.paymentStatus || '').trim();
+  if (value === 'paid') return '已付款';
+  if (value === 'partial') return '部分付款';
+  if (value === 'unpaid') return '未付款';
+  if (calc.price > 0 && calc.paid >= calc.price) return '已付款';
+  if (calc.paid > 0) return '部分付款';
+  return '未付款';
+}
+
+async function createCompletedJobsWorkbook(db, user, query) {
+  const p = effectivePermissions(user);
+  if (!(user.role === 'owner' || p.fullFinanceView)) throw Object.assign(new Error('当前账号没有导出财务成交表的权限'), { statusCode:403 });
+  let ExcelJS;
+  try { ExcelJS = require('exceljs'); } catch { throw new Error('服务器没有安装 Excel 导出组件'); }
+  const start = String(query.start || '').slice(0, 10);
+  const end = String(query.end || '').slice(0, 10);
+  if (start && !/^\d{4}-\d{2}-\d{2}$/.test(start)) throw Object.assign(new Error('开始日期格式不正确'), { statusCode:400 });
+  if (end && !/^\d{4}-\d{2}-\d{2}$/.test(end)) throw Object.assign(new Error('结束日期格式不正确'), { statusCode:400 });
+  if (start && end && start > end) throw Object.assign(new Error('开始日期不能晚于结束日期'), { statusCode:400 });
+  const requestedBranch = String(query.branch ?? 'all');
+  if (requestedBranch !== 'all' && !canAccessBranch(db, user, requestedBranch)) throw Object.assign(new Error('你没有该分店的数据权限'), { statusCode:403 });
+  const statuses = new Set(['已交车', 'delivered', 'completed']);
+  const jobs = branchVisibleRecords(db, user, db.jobs || []).filter(job => {
+    if (job.deletedAt || !statuses.has(String(job.status || '').trim().toLowerCase()) || Number(job.price || 0) === 0) return false;
+    if (requestedBranch !== 'all' && String(job.branchId || '') !== requestedBranch) return false;
+    const date = completedJobExportDate(job);
+    return (!start || date >= start) && (!end || date <= end);
+  }).sort((a, b) => completedJobExportDate(a).localeCompare(completedJobExportDate(b)));
+  const branches = customerBranches(db);
+  const branchLabel = requestedBranch === 'all' ? '公司合并' : (branches.find(row => row.id === requestedBranch)?.name || (requestedBranch ? requestedBranch : '待确认分店'));
+  const paymentMethods = { cash:'现金', visa:'Visa', card:'刷卡', zelle:'Zelle', check:'支票', other:'其他' };
+  const workbook = new ExcelJS.Workbook();
+  workbook.creator = 'QUAD Film Shop Management';
+  workbook.created = new Date();
+  const sheet = workbook.addWorksheet('已成交订单', { views:[{ state:'frozen', ySplit:4 }] });
+  const headers = ['施工日期','建单日期','分店','客户','电话','来源','车辆','项目','套餐','施工师傅','状态','报价','已收款','未收款','付款情况','付款方式','材料成本','师傅工费','毛利','销售/负责人','填表人','备注'];
+  sheet.mergeCells(1, 1, 1, headers.length);
+  sheet.getCell('A1').value = 'QUAD 已成交施工订单财务表';
+  sheet.getCell('A1').font = { size:18, bold:true, color:{ argb:'FFFFFFFF' } };
+  sheet.getCell('A1').alignment = { vertical:'middle', horizontal:'center' };
+  sheet.getCell('A1').fill = { type:'pattern', pattern:'solid', fgColor:{ argb:'FF146B7D' } };
+  sheet.getRow(1).height = 30;
+  sheet.mergeCells(2, 1, 2, headers.length);
+  sheet.getCell('A2').value = `查询时间：${start || '全部'} 至 ${end || '全部'}    数据范围：${branchLabel}    导出时间：${new Date().toLocaleString('zh-CN', { timeZone:db.settings?.timezone || 'America/Los_Angeles' })}`;
+  sheet.getCell('A2').font = { color:{ argb:'FF4E5969' } };
+  sheet.getCell('A2').alignment = { vertical:'middle' };
+  sheet.getRow(3).values = [`订单数量：${jobs.length}`];
+  const headerRow = sheet.getRow(4); headerRow.values = headers;
+  headerRow.font = { bold:true, color:{ argb:'FFFFFFFF' } };
+  headerRow.fill = { type:'pattern', pattern:'solid', fgColor:{ argb:'FF27869A' } };
+  headerRow.alignment = { vertical:'middle', horizontal:'center', wrapText:true };
+  jobs.forEach(job => {
+    const calc = completedJobExportCalc(db, job);
+    const branchName = branches.find(row => row.id === String(job.branchId || ''))?.name || (job.branchId ? job.branchId : '待确认分店');
+    sheet.addRow([
+      completedJobExcelDate(completedJobExportDate(job)), completedJobExcelDate(job.date), branchName, job.customer || '', job.phone || '', job.source || '', job.vehicle || '',
+      completedJobExportService(job), job.package || '', completedJobExportInstallerNames(db, job), '已交车', calc.price, calc.paid, calc.balance,
+      completedJobExportPaymentStatus(job, calc), paymentMethods[job.paymentMethod] || job.paymentMethod || '未填写', calc.material, calc.labor, calc.gross,
+      job.salesRep || '', job.preparedBy || '', job.notes || job.note || ''
+    ]);
+  });
+  const firstDataRow = 5;
+  const lastDataRow = Math.max(firstDataRow, 4 + jobs.length);
+  if (jobs.length) {
+    sheet.autoFilter = { from:{ row:4, column:1 }, to:{ row:lastDataRow, column:headers.length } };
+    const totalRow = sheet.addRow(['合计']);
+    sheet.mergeCells(totalRow.number, 1, totalRow.number, 11);
+    [12,13,14,17,18,19].forEach(column => { totalRow.getCell(column).value = { formula:`SUM(${sheet.getColumn(column).letter}${firstDataRow}:${sheet.getColumn(column).letter}${lastDataRow})` }; });
+    totalRow.font = { bold:true };
+    totalRow.fill = { type:'pattern', pattern:'solid', fgColor:{ argb:'FFDCEFF2' } };
+  }
+  [12,13,14,17,18,19].forEach(column => { sheet.getColumn(column).numFmt = '$#,##0.00'; });
+  sheet.getColumn(1).numFmt = 'yyyy-mm-dd'; sheet.getColumn(2).numFmt = 'yyyy-mm-dd';
+  const widths = [13,13,18,20,16,16,20,18,18,20,12,14,14,14,14,14,14,14,14,18,16,36];
+  widths.forEach((width, index) => { sheet.getColumn(index + 1).width = width; });
+  sheet.eachRow((row, rowNumber) => { if (rowNumber >= 4) row.alignment = { vertical:'top', wrapText:true }; });
+  const buffer = await workbook.xlsx.writeBuffer();
+  return { buffer, count:jobs.length, fileName:`QUAD-已成交订单-${start || '全部'}-${end || '全部'}.xlsx` };
+}
+
 function canManageFieldSales(user) {
   return ['owner', 'manager'].includes(user?.role) || Boolean(effectivePermissions(user).fieldSalesManage);
 }
@@ -3171,6 +3295,14 @@ function send(res, status, body, type = 'application/json; charset=utf-8', req =
     return res.end(gzipped);
   }
   headers['Content-Length'] = buffer.length;
+  res.writeHead(status, headers);
+  res.end(buffer);
+}
+
+function sendBinary(res, status, data, type, fileName = '') {
+  const buffer = Buffer.isBuffer(data) ? data : Buffer.from(data);
+  const headers = { 'Content-Type': type, 'Content-Length': buffer.length, 'Cache-Control': 'no-store' };
+  if (fileName) headers['Content-Disposition'] = `attachment; filename*=UTF-8''${encodeURIComponent(fileName)}`;
   res.writeHead(status, headers);
   res.end(buffer);
 }
@@ -6151,6 +6283,25 @@ async function api(req, res) {
     const month = String(url.searchParams.get('month') || dateInTimezone(db.settings?.timezone || 'America/Los_Angeles', 0).slice(0, 7));
     if (!/^\d{4}-\d{2}$/.test(month)) return send(res, 400, { error: '统计月份格式不正确' });
     return send(res, 200, attendanceMonthlyReport(db, user, month));
+  }
+
+  if (req.method === 'GET' && url.pathname === '/api/jobs/completed-export.xlsx') {
+    try {
+      const result = await createCompletedJobsWorkbook(db, user, {
+        start: url.searchParams.get('start') || '',
+        end: url.searchParams.get('end') || '',
+        branch: url.searchParams.get('branch') ?? 'all'
+      });
+      return sendBinary(
+        res,
+        200,
+        result.buffer,
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        result.fileName
+      );
+    } catch (error) {
+      return send(res, error.statusCode || 500, { error:error.message || 'Excel 导出失败' });
+    }
   }
 
   if (req.method === 'POST' && url.pathname === '/api/mobile/clock') {
