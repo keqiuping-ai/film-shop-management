@@ -879,6 +879,7 @@ async function logout() {
 
 async function sync(options = {}) {
   if (syncInFlight) return;
+  const aiRulesUiState = current === 'aiRules' ? captureCustomerAiRulesUiState() : null;
   const uiRevisionAtStart = uiNavigationRevision;
   const messageUserAtStart = activeMessageUserId;
   const workspaceIdAtStart = activeProspectWorkspaceId;
@@ -924,7 +925,7 @@ async function sync(options = {}) {
     localStorage.setItem('filmShopCloud.lastEmail', user.email || '');
     lastSyncAt = new Date();
     renderAuth();
-    if (!uiChangedDuringSync) render();
+    if (!uiChangedDuringSync) render({ aiRulesUiState });
     else updateMessageBadge();
     checkNewAppointmentAlerts();
     startAiBossReminderLoop();
@@ -1529,7 +1530,7 @@ function jobPersonOptions() {
   return [['', t('allPeople')], ...[...people.entries()].sort((a, b) => a[1].localeCompare(b[1]))];
 }
 
-function render() {
+function render(options = {}) {
   if (!state) return;
   const availablePages = pages.filter(([id]) => !pagePermissions[id] || hasAnyPerm(pagePermissions[id]));
   if (current !== 'modules' && !availablePages.some(([id]) => id === current)) current = 'modules';
@@ -1562,7 +1563,10 @@ function render() {
   enhanceExpandablePanels();
   enhanceEditableTableRows(document.getElementById('view'));
   if (current === 'settings') setTimeout(() => { loadCustomerAiSettings(); loadMetaSettings(); }, 0);
-  if (current === 'aiRules') setTimeout(loadCustomerAiRules, 0);
+  if (current === 'aiRules') {
+    if (options.aiRulesUiState) restoreCustomerAiRulesUiState(options.aiRulesUiState, { restoreDrafts: true });
+    else setTimeout(loadCustomerAiRules, 0);
+  }
   if (activeProspectWorkspaceId && !preserveProspectWorkspaceRender) renderProspectWorkspace();
   preserveProspectWorkspaceRender = false;
 }
@@ -8866,6 +8870,87 @@ async function saveSettings() {
 let customerAiBranchDrafts = [];
 let customerAiPlaybookDrafts = [];
 
+function customerAiRulesFieldKey(element) {
+  if (!element) return '';
+  if (element.id) return `#${element.id}`;
+  const playbookCard = element.closest?.('[data-rule-index]');
+  const ruleField = element.getAttribute?.('data-rule-field');
+  if (playbookCard && ruleField) return `rule:${playbookCard.dataset.ruleIndex}:${ruleField}`;
+  const branchCard = element.closest?.('[data-branch-index]');
+  const branchField = element.getAttribute?.('data-branch-field');
+  if (branchCard && branchField) return `branch:${branchCard.dataset.branchIndex}:${branchField}`;
+  return '';
+}
+
+function customerAiRulesFieldByKey(key) {
+  if (!key) return null;
+  if (key.startsWith('#')) return document.getElementById(key.slice(1));
+  const [kind, index, field] = key.split(':');
+  if (kind === 'rule') return document.querySelector(`[data-rule-index="${index}"] [data-rule-field="${field}"]`);
+  if (kind === 'branch') return document.querySelector(`[data-branch-index="${index}"] [data-branch-field="${field}"]`);
+  return null;
+}
+
+function captureCustomerAiRulesUiState() {
+  const page = document.querySelector('.customer-ai-rules-page');
+  if (!page) return null;
+  const active = page.contains(document.activeElement) ? document.activeElement : null;
+  const textareaScroll = {};
+  page.querySelectorAll('textarea').forEach(element => {
+    const key = customerAiRulesFieldKey(element);
+    if (key) textareaScroll[key] = { top: element.scrollTop, left: element.scrollLeft };
+  });
+  return {
+    windowX: window.scrollX,
+    windowY: window.scrollY,
+    documentTop: document.scrollingElement?.scrollTop || 0,
+    viewTop: document.getElementById('view')?.scrollTop || 0,
+    pageTop: page.scrollTop || 0,
+    knowledge: document.getElementById('customerAiKnowledge')?.value || '',
+    branches: readCustomerAiBranches(),
+    playbook: readCustomerAiPlaybook(),
+    activeKey: customerAiRulesFieldKey(active),
+    selectionStart: Number.isInteger(active?.selectionStart) ? active.selectionStart : null,
+    selectionEnd: Number.isInteger(active?.selectionEnd) ? active.selectionEnd : null,
+    textareaScroll
+  };
+}
+
+function restoreCustomerAiRulesUiState(snapshot, options = {}) {
+  if (!snapshot || current !== 'aiRules') return;
+  if (options.restoreDrafts) {
+    const knowledge = document.getElementById('customerAiKnowledge');
+    if (knowledge) knowledge.value = snapshot.knowledge || '';
+    customerAiBranchDrafts = (snapshot.branches || []).map(row => ({ ...row }));
+    customerAiPlaybookDrafts = (snapshot.playbook || []).map(row => ({ ...row }));
+    renderCustomerAiBranchEditors();
+    renderCustomerAiPlaybookEditors();
+  }
+  const restorePosition = () => {
+    const view = document.getElementById('view');
+    const page = document.querySelector('.customer-ai-rules-page');
+    if (view) view.scrollTop = snapshot.viewTop || 0;
+    if (page) page.scrollTop = snapshot.pageTop || 0;
+    if (document.scrollingElement) document.scrollingElement.scrollTop = snapshot.documentTop || snapshot.windowY || 0;
+    window.scrollTo(snapshot.windowX || 0, snapshot.windowY || 0);
+    Object.entries(snapshot.textareaScroll || {}).forEach(([key, position]) => {
+      const element = customerAiRulesFieldByKey(key);
+      if (element) {
+        element.scrollTop = position.top || 0;
+        element.scrollLeft = position.left || 0;
+      }
+    });
+    const active = customerAiRulesFieldByKey(snapshot.activeKey);
+    if (active) {
+      active.focus({ preventScroll: true });
+      if (snapshot.selectionStart !== null && typeof active.setSelectionRange === 'function') {
+        active.setSelectionRange(snapshot.selectionStart, snapshot.selectionEnd ?? snapshot.selectionStart);
+      }
+    }
+  };
+  requestAnimationFrame(() => requestAnimationFrame(restorePosition));
+}
+
 function customerAiRulesView() {
   return `<div class="panel customer-ai-rules-page">
     <div class="panel-head"><div><h3>${lang === 'zh' ? 'AI 客服规则中心' : 'AI Customer Rules Center'}</h3><p class="note">${lang === 'zh' ? '这里仅管理客服话术、产品资料和分店政策，不显示 API Key、模型或自动发送开关。' : 'This page manages service wording, product knowledge, and branch policies without exposing keys, models, or auto-send controls.'}</p></div><div><button class="btn" onclick="loadCustomerAiRules()">${lang === 'zh' ? '刷新' : 'Refresh'}</button> <button class="btn primary" onclick="saveCustomerAiRules()">${lang === 'zh' ? '保存全部规则' : 'Save all rules'}</button></div></div>
@@ -8898,14 +8983,30 @@ function removeCustomerAiPlaybookRule(index) { if(customerAiPlaybookDrafts.lengt
 function moveCustomerAiPlaybookRule(index,offset) { const rows=readCustomerAiPlaybook(); const target=index+offset; if(target<0||target>=rows.length)return; [rows[index],rows[target]]=[rows[target],rows[index]]; customerAiPlaybookDrafts=rows; renderCustomerAiPlaybookEditors(); }
 
 async function loadCustomerAiRules() {
-  try { const info=await api('/api/customer-ai/rules'); const knowledge=document.getElementById('customerAiKnowledge'); if(knowledge)knowledge.value=info.knowledge||''; customerAiBranchDrafts=(info.branches||[]).map(row=>({...row})); customerAiPlaybookDrafts=(info.playbook||[]).map(row=>({...row})); renderCustomerAiBranchEditors(); renderCustomerAiPlaybookEditors(); const meta=document.getElementById('customerAiRulesMeta'); if(meta)meta.textContent=info.updatedAt?(lang==='zh'?`最后修改：${formatAppDateTime(info.updatedAt)}｜${info.updatedBy||''}`:`Last updated: ${formatAppDateTime(info.updatedAt)} | ${info.updatedBy||''}`):(lang==='zh'?'尚未保存独立规则':'No saved rules yet'); } catch(err){ const meta=document.getElementById('customerAiRulesMeta'); if(meta)meta.textContent=err.message; }
+  const uiState = captureCustomerAiRulesUiState();
+  try {
+    const info = await api('/api/customer-ai/rules');
+    const knowledge = document.getElementById('customerAiKnowledge');
+    if (knowledge) knowledge.value = info.knowledge || '';
+    customerAiBranchDrafts = (info.branches || []).map(row => ({ ...row }));
+    customerAiPlaybookDrafts = (info.playbook || []).map(row => ({ ...row }));
+    renderCustomerAiBranchEditors();
+    renderCustomerAiPlaybookEditors();
+    const meta = document.getElementById('customerAiRulesMeta');
+    if (meta) meta.textContent = info.updatedAt ? (lang === 'zh' ? `最后修改：${formatAppDateTime(info.updatedAt)}｜${info.updatedBy || ''}` : `Last updated: ${formatAppDateTime(info.updatedAt)} | ${info.updatedBy || ''}`) : (lang === 'zh' ? '尚未保存独立规则' : 'No saved rules yet');
+    restoreCustomerAiRulesUiState(uiState);
+  } catch (err) {
+    const meta = document.getElementById('customerAiRulesMeta');
+    if (meta) meta.textContent = err.message;
+  }
 }
 
 async function saveCustomerAiRules() {
+  const uiState = captureCustomerAiRulesUiState();
   const knowledge=String(document.getElementById('customerAiKnowledge')?.value||'').trim(); const branches=readCustomerAiBranches(); const playbook=readCustomerAiPlaybook();
   if(!branches.length||branches.some(row=>!row.name||!row.city))return alert(lang==='zh'?'请填写每个分店的名称和城市。':'Complete every branch name and city.');
   if(!playbook.length||playbook.some(row=>!row.name||!row.instruction))return alert(lang==='zh'?'请填写每一条流程规则的名称和详细内容。':'Complete every playbook rule.');
-  try { const info=await api('/api/customer-ai/rules',{method:'PUT',body:JSON.stringify({knowledge,branches,playbook})}); customerAiBranchDrafts=info.branches; customerAiPlaybookDrafts=info.playbook; renderCustomerAiBranchEditors(); renderCustomerAiPlaybookEditors(); const meta=document.getElementById('customerAiRulesMeta'); if(meta)meta.textContent=lang==='zh'?`保存成功｜${formatAppDateTime(info.updatedAt)}｜${info.updatedBy||''}`:'Rules saved'; alert(lang==='zh'?'AI客服全部规则已经保存，下一次生成回复立即使用新规则。':'All AI rules saved and active for the next reply.'); } catch(err){alert(err.message);}
+  try { const info=await api('/api/customer-ai/rules',{method:'PUT',body:JSON.stringify({knowledge,branches,playbook})}); customerAiBranchDrafts=info.branches; customerAiPlaybookDrafts=info.playbook; renderCustomerAiBranchEditors(); renderCustomerAiPlaybookEditors(); const meta=document.getElementById('customerAiRulesMeta'); if(meta)meta.textContent=lang==='zh'?`保存成功｜${formatAppDateTime(info.updatedAt)}｜${info.updatedBy||''}`:'Rules saved'; restoreCustomerAiRulesUiState(uiState); alert(lang==='zh'?'AI客服全部规则已经保存，下一次生成回复立即使用新规则。':'All AI rules saved and active for the next reply.'); } catch(err){alert(err.message);}
 }
 
 function renderCustomerAiBranchEditors() {
