@@ -35,8 +35,15 @@ let current = 'modules';
 // that older response may update data, but must never repaint the old screen.
 let uiNavigationRevision = 0;
 let inventorySearch = '';
-let inventoryBranchFilter = localStorage.getItem('filmShopCloud.inventoryBranch') || 'all';
-let ownerBranchFilter = localStorage.getItem('filmShopCloud.ownerBranch') || 'all';
+let inventoryBranchFilter = localStorage.getItem('filmShopCloud.inventoryBranch') || 'las-vegas';
+let ownerBranchFilter = localStorage.getItem('filmShopCloud.ownerBranch') || 'las-vegas';
+if (!localStorage.getItem('filmShopCloud.branchScopeDefaultV2')) {
+  ownerBranchFilter = 'las-vegas';
+  inventoryBranchFilter = 'las-vegas';
+  localStorage.setItem('filmShopCloud.ownerBranch', ownerBranchFilter);
+  localStorage.setItem('filmShopCloud.inventoryBranch', inventoryBranchFilter);
+  localStorage.setItem('filmShopCloud.branchScopeDefaultV2', 'las-vegas');
+}
 let jobSearch = '';
 let salesOrderSearch = '';
 let jobDatePreset = 'month';
@@ -1111,6 +1118,16 @@ function setPage(page) {
   render();
 }
 
+const COMPANY_SCOPE_PAGES = new Set([
+  'modules', 'clock', 'leave', 'warranties', 'pricing', 'customerTasks', 'aiRules', 'aiBoss',
+  'fieldSales', 'customerCenter', 'replyLibrary', 'shipments', 'portalCustomers',
+  'personalNotes', 'audit', 'settings'
+]);
+
+function isCompanyScopePage(page = current) {
+  return COMPANY_SCOPE_PAGES.has(page);
+}
+
 function setInventorySearch(value) {
   inventorySearch = value || '';
   const input = document.getElementById('inventorySearchInput');
@@ -1386,11 +1403,13 @@ function jobMatchesPerson(job) {
 }
 
 function branchScopedRows(rows = []) {
+  if (isCompanyScopePage()) return rows || [];
   if (ownerBranchFilter === 'all') return rows || [];
   return (rows || []).filter(row => String(row?.branchId || '') === ownerBranchFilter);
 }
 
 function ownerBranchSwitcher() {
+  if (isCompanyScopePage()) return `<div class="owner-branch-switcher company-scope"><span>${lang === 'zh' ? '经营范围' : 'Business scope'}</span><strong>${lang === 'zh' ? '公司合并' : 'Company combined'}</strong></div>`;
   const options = [['all', lang === 'zh' ? '公司合并' : 'Company'], ['', lang === 'zh' ? '待确认分店' : 'Pending branch'], ...branchOptions(false)];
   if (!options.some(([id]) => id === ownerBranchFilter)) ownerBranchFilter = 'all';
   return `<label class="owner-branch-switcher"><span>${lang === 'zh' ? '经营范围' : 'Business scope'}</span><select onchange="setOwnerBranchFilter(this.value)">${options.map(([id,label]) => `<option value="${escapeHtml(id)}" ${id === ownerBranchFilter ? 'selected' : ''}>${escapeHtml(label)}</option>`).join('')}</select></label>`;
@@ -5235,8 +5254,9 @@ function deletedJobSection(rows) {
 
 function installerTable() {
   const payCols = canSeeLabor() ? `<th>${t('mode')}</th><th>${t('tint')}</th><th>${t('ppf')}</th><th>${t('wrap')}</th><th>${t('basePay')}</th><th>${lang === 'zh' ? '月任务积分' : 'Monthly Quota'}</th>` : '';
+  const rows = branchScopedRows(state.installers || []);
   return `<div class="table-wrap"><table><thead><tr><th>${t('name')}</th><th>${t('city')}</th><th>${t('skills')}</th>${payCols}<th></th></tr></thead><tbody>
-  ${state.installers.map(x => {
+  ${rows.map(x => {
     const payCells = canSeeLabor() ? `<td>${modeName(x.mode)}</td><td>${feeText(x, 'tint')}</td><td>${feeText(x, 'ppf')}</td><td>${feeText(x, 'wrap')}</td><td>${currency.format(Number(x.base || 0))}</td><td>${x.mode === 'basePlus' ? Number(x.baseQuota || 20) : '-'}</td>` : '';
     return `<tr><td>${escapeHtml(x.name)}<br><span class="note">${escapeHtml(x.phone || '')}</span></td><td>${escapeHtml(x.city || '')}</td><td>${escapeHtml(x.skills || '')}</td>${payCells}${actionCell('Installer','installers',x.id)}</tr>`;
   }).join('')}
@@ -7413,8 +7433,12 @@ function leadTable() {
 
 function userTable() {
   const avatarLabel = lang === 'zh' ? '头像' : 'Photo';
-  const inactiveCount = state.users.filter(u => u.role !== 'owner' && u.active === false).length;
-  const rows = state.users.filter(u => showInactiveUsers || u.active !== false);
+  const inBranch = employee => employee.role === 'owner' || ownerBranchFilter === 'all' || (ownerBranchFilter === ''
+    ? !employee.defaultBranchId && !(employee.branchIds || []).length
+    : employee.defaultBranchId === ownerBranchFilter || (employee.branchIds || []).includes(ownerBranchFilter));
+  const scopedUsers = (state.users || []).filter(inBranch);
+  const inactiveCount = scopedUsers.filter(u => u.role !== 'owner' && u.active === false).length;
+  const rows = scopedUsers.filter(u => showInactiveUsers || u.active !== false);
   return `<div class="employee-list-tools"><span>${lang === 'zh' ? '删除员工会立即停用登录，但历史订单、打卡和聊天记录仍会保留。' : 'Removing an employee disables login while preserving order, clock, and message history.'}</span>${inactiveCount ? `<button class="btn" type="button" onclick="showInactiveUsers=!showInactiveUsers;render()">${showInactiveUsers ? (lang === 'zh' ? '隐藏已删除员工' : 'Hide removed employees') : (lang === 'zh' ? `查看已删除员工（${inactiveCount}）` : `Show removed employees (${inactiveCount})`)}</button>` : ''}</div><div class="table-wrap"><table><thead><tr><th>${avatarLabel}</th><th>${t('name')}</th><th>${t('email')}</th><th>${t('role')}</th><th>${t('active')}</th><th></th></tr></thead><tbody>
   ${rows.map(u => `<tr class="${u.active === false ? 'employee-inactive-row' : ''}"><td class="employee-avatar-cell">${userAvatarHtml(u)}</td><td>${escapeHtml(u.name)}</td><td>${escapeHtml(u.email)}</td><td>${roleNames[u.role] || u.role}</td><td>${u.active ? `<span class="pill good">${t('enabled')}</span>` : `<span class="pill bad">${lang === 'zh' ? '已删除/停用' : 'Removed / disabled'}</span>`}</td>${userActionCell(u)}</tr>`).join('')}
   </tbody></table></div>`;
@@ -8131,9 +8155,9 @@ function openJobFromProspect(prospectId) {
 }
 
 function openInstaller(id) {
-  const item = state.installers.find(x => x.id === id) || { name: '', city: '', phone: '', skills: '', mode: 'percent', tint: 25, ppf: 25, wrap: 25, ceramic: 20, base: 0, baseQuota: 20, tintPoint: 1, ppfPoint: 3, wrapPoint: 3, ceramicPoint: 1, active: true };
+  const item = state.installers.find(x => x.id === id) || { branchId:ownerBranchFilter === 'all' ? 'las-vegas' : ownerBranchFilter, name: '', city: '', phone: '', skills: '', mode: 'percent', tint: 25, ppf: 25, wrap: 25, ceramic: 20, base: 0, baseQuota: 20, tintPoint: 1, ppfPoint: 3, wrapPoint: 3, ceramicPoint: 1, active: true };
   openModal(id ? (lang === 'zh' ? '编辑师傅' : 'Edit Installer') : (lang === 'zh' ? '新增师傅' : 'New Installer'), formHtml([
-    ['name',t('name'),'text',item.name], ['city',t('city'),'text',item.city], ['phone',lang === 'zh' ? '联系方式' : 'Contact','text',item.phone],
+    ['branchId',lang === 'zh' ? '所属分店' : 'Branch','select',item.branchId || 'las-vegas',branchOptions(false)], ['name',t('name'),'text',item.name], ['city',t('city'),'text',item.city], ['phone',lang === 'zh' ? '联系方式' : 'Contact','text',item.phone],
     ['skills',t('skills'),'text',item.skills], ['mode',lang === 'zh' ? '工费模式' : 'Pay Mode','select',item.mode, [['percent',t('percent')],['fixed',t('fixed')],['basePlus',t('basePlus')]]],
     ['tint',`${t('tint')} ${lang === 'zh' ? '超产金额' : 'Bonus Amount'}`,'number',item.tint],
     ['ppf',`${t('ppf')} ${lang === 'zh' ? '超产金额' : 'Bonus Amount'}`,'number',item.ppf],
@@ -8145,7 +8169,7 @@ function openInstaller(id) {
     ['ppfPoint',lang === 'zh' ? 'PPF积分' : 'PPF Points','number',item.ppfPoint || 3],
     ['wrapPoint',lang === 'zh' ? 'TPU改色积分' : 'TPU Color Change Points','number',item.wrapPoint || 3],
     ['ceramicPoint',lang === 'zh' ? '建筑膜积分' : 'Architectural Film Points','number',item.ceramicPoint || 1]
-  ]), () => saveRecord('installers', id, numeric(readForm(['name','city','phone','skills','mode','tint','ppf','wrap','ceramic','base','baseQuota','tintPoint','ppfPoint','wrapPoint','ceramicPoint']), ['tint','ppf','wrap','ceramic','base','baseQuota','tintPoint','ppfPoint','wrapPoint','ceramicPoint'])));
+  ]), () => saveRecord('installers', id, numeric(readForm(['branchId','name','city','phone','skills','mode','tint','ppf','wrap','ceramic','base','baseQuota','tintPoint','ppfPoint','wrapPoint','ceramicPoint']), ['tint','ppf','wrap','ceramic','base','baseQuota','tintPoint','ppfPoint','wrapPoint','ceramicPoint'])));
 }
 
 function openPriceRule(id) {
@@ -8891,7 +8915,8 @@ function printReimbursement(id) {
 }
 
 function openUser(id, presetRole = 'frontdesk') {
-  const item = state.users.find(x => x.id === id) || { name: '', email: '', role: presetRole, active: true, defaultBranchId: '', branchIds: [] };
+  const initialBranchId = ownerBranchFilter && ownerBranchFilter !== 'all' ? ownerBranchFilter : 'las-vegas';
+  const item = state.users.find(x => x.id === id) || { name: '', email: '', role: presetRole, active: true, defaultBranchId: initialBranchId, branchIds: [initialBranchId] };
   const permissions = { ...roleDefaultPermissions(item.role), ...(item.permissions || {}) };
   openModal(id ? (lang === 'zh' ? '编辑账号' : 'Edit User') : (lang === 'zh' ? '新增账号' : 'New User'), formHtml([
     ['employeeAvatarDataUrl', '', 'avatar', item.avatarDataUrl || '', null, 'wide'],

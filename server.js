@@ -1260,31 +1260,31 @@ function sanitizeDbForUser(db, user) {
             authorizedActions: profile.authorizedActions, backupUserId: profile.backupUserId,
             selfUpdatedAt: profile.selfUpdatedAt, updatedAt: profile.updatedAt
           }),
-    installers: p.installerView || p.jobsView ? db.installers.map(installer => sanitizeInstaller(installer, p)) : [],
+    installers: p.installerView || p.jobsView ? branchVisibleRecords(db, user, db.installers).map(installer => sanitizeInstaller(installer, p)) : [],
     products: p.inventoryView || p.ordersEdit ? productsForUser(db, user, canSeeCosts) : [],
     priceRules: p.pricingView ? db.priceRules.map(rule => canSeeCosts ? rule : { ...rule, materialCost: 0 }) : [],
     jobs: p.jobsView || p.jobsEdit || p.jobsDelete ? branchVisibleRecords(db, user, db.jobs).map(job => sanitizeJob(job, p, canSeeCosts)) : [],
     salesOrders: p.ordersView ? branchVisibleRecords(db, user, db.salesOrders).map(order => sanitizeSalesOrder(order, p)) : [],
     portalCustomers: p.ordersView ? (db.portalCustomers || []).map(safePortalCustomer) : [],
-    warranties: p.jobsView || p.jobsCreate || p.jobsEdit || p.jobsDelete ? branchVisibleRecords(db, user, db.warranties || []) : [],
-    shipments: p.shipmentsView ? branchVisibleRecords(db, user, db.shipments) : [],
-    shipmentReceipts: p.shipmentsView ? branchVisibleRecords(db, user, db.shipmentReceipts) : [],
-    shipmentExceptions: p.shipmentsView ? branchVisibleRecords(db, user, db.shipmentExceptions) : [],
+    warranties: p.jobsView || p.jobsCreate || p.jobsEdit || p.jobsDelete ? (db.warranties || []) : [],
+    shipments: p.shipmentsView ? (db.shipments || []) : [],
+    shipmentReceipts: p.shipmentsView ? (db.shipmentReceipts || []) : [],
+    shipmentExceptions: p.shipmentsView ? (db.shipmentExceptions || []) : [],
     schedules: p.schedulesView ? branchVisibleRecords(db, user, db.schedules || []) : [],
     scheduleReminderLogs: p.schedulesView ? (db.scheduleReminderLogs || []).slice(0, 200) : [],
     customerServiceReps: p.leadsView ? sanitizeCustomerServiceReps(db.customerServiceReps || [], p) : [],
     leads: p.leadsView ? sanitizeLeads(branchVisibleRecords(db, user, db.leads || []), p) : [],
-    prospects: p.prospectsView ? branchVisibleRecords(db, user, db.prospects || []).map(item => enrichCustomerIdentity(db, { ...item })) : [],
-    customerConversations: p.prospectsView ? branchVisibleRecords(db, user, db.customerConversations || []).map(item => enrichCustomerIdentity(db, { ...item })) : [],
+    prospects: p.prospectsView ? (db.prospects || []).map(item => enrichCustomerIdentity(db, { ...item })) : [],
+    customerConversations: p.prospectsView ? (db.customerConversations || []).map(item => enrichCustomerIdentity(db, { ...item })) : [],
     replyTemplates: p.prospectsView ? (db.replyTemplates || []) : [],
     expenses: p.expensesView || p.fullFinanceView ? branchVisibleRecords(db, user, db.expenses || []) : [],
     reimbursements: p.reimbursementsView ? branchVisibleRecords(db, user, db.reimbursements || []).filter(item => canApproveReimbursements || item.employeeUserId === user.id) : [],
     canApproveLeave: canApproveLeave(user),
-    clockRecords: branchVisibleRecords(db, user, db.clockRecords || [])
+    clockRecords: (db.clockRecords || [])
       .filter(item => canApproveLeave(user) || item.userId === user.id)
       .sort((a, b) => String(b.at || '').localeCompare(String(a.at || '')))
       .slice(0, 200),
-    leaveRequests: branchVisibleRecords(db, user, db.leaveRequests || [])
+    leaveRequests: (db.leaveRequests || [])
       .filter(item => canApproveLeave(user) || item.userId === user.id)
       .sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')))
       .slice(0, 200),
@@ -1700,7 +1700,7 @@ function addDaysIso(db, days, hour = 17) {
 
 function fieldSalesSnapshot(db, user) {
   const canManage = canManageFieldSales(user);
-  const accounts = branchVisibleRecords(db, user, db.salesAccounts || [])
+  const accounts = (db.salesAccounts || [])
     .filter(item => fieldSalesVisible(item, user))
     .sort((a, b) => String(a.nextVisitAt || '9999').localeCompare(String(b.nextVisitAt || '9999')));
   const accountIds = new Set(accounts.map(item => item.id));
@@ -1720,7 +1720,7 @@ function fieldSalesSnapshot(db, user) {
       .filter(item => accountIds.has(item.accountId) && (canManage || fieldSalesVisible(item, user)))
       .sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')))
       .slice(0, 500),
-    dailyReports: branchVisibleRecords(db, user, db.salesDailyReports || [])
+    dailyReports: (db.salesDailyReports || [])
       .filter(item => canManage || item.userId === user.id)
       .sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')))
       .slice(0, 200),
@@ -1934,7 +1934,8 @@ function branchInventorySnapshot(db, user) {
       allocated += qty;
     }
     const pending = Number(product.qty || 0) - allocated;
-    if (Math.abs(pending) > 0.0001) add(product.sku, '', pending);
+    const legacyInventoryBranchId = String(db.settings?.legacyInventoryBranchId || '').trim();
+    if (Math.abs(pending) > 0.0001) add(product.sku, legacyInventoryBranchId, pending);
   });
   (db.branchTransfers || []).forEach(row => {
     if (!['在途', '已收货', '异常收货'].includes(row.status)) return;
@@ -1948,6 +1949,53 @@ function branchInventorySnapshot(db, user) {
     if (!scope || scope.includes(branchId)) result.push({ sku, branchId, qty: Math.round(qty * 1000) / 1000 });
   }
   return result;
+}
+
+function applyLasVegasLegacyBranchMigration() {
+  const version = 'legacy-data-to-las-vegas-2026-08-21-v1';
+  const db = readDb();
+  if (db.lasVegasLegacyBranchMigrationVersion === version) return;
+  fs.mkdirSync(BACKUP_DIR, { recursive:true });
+  const backupName = `db-before-las-vegas-branch-migration-${new Date().toISOString().replace(/[:.]/g, '-')}.json`;
+  fs.writeFileSync(path.join(BACKUP_DIR, backupName), JSON.stringify(db, null, 2));
+  db.settings.customerBranches = customerBranches(db);
+  db.settings.legacyInventoryBranchId = 'las-vegas';
+  const collections = [
+    'jobs','salesOrders','shipments','shipmentReceipts','shipmentExceptions','schedules','leads','prospects',
+    'customerConversations','expenses','reimbursements','clockRecords','leaveRequests','movements','workshopMovements',
+    'salesAccounts','salesVisits','salesCheckInAttempts','salesTrialRolls','salesDailyReports'
+  ];
+  const counts = {};
+  collections.forEach(collection => {
+    counts[collection] = 0;
+    (db[collection] || []).forEach(row => {
+      if (String(row.branchId || '').trim() !== 'las-vegas') { row.branchId = 'las-vegas'; counts[collection] += 1; }
+    });
+  });
+  counts.warranties = 0;
+  (db.warranties || []).forEach(row => {
+    if (String(row.branchId || '').trim() !== 'las-vegas') { row.branchId = 'las-vegas'; counts.warranties += 1; }
+  });
+  counts.installers = 0;
+  (db.installers || []).forEach(row => {
+    if (String(row.branchId || '').trim() !== 'las-vegas') { row.branchId = 'las-vegas'; counts.installers += 1; }
+  });
+  counts.users = 0;
+  (db.users || []).forEach(row => {
+    if (row.role === 'owner') return;
+    if (String(row.defaultBranchId || '').trim() !== 'las-vegas' || (row.branchIds || []).some(branchId => branchId !== 'las-vegas')) counts.users += 1;
+    row.defaultBranchId = 'las-vegas';
+    row.branchIds = ['las-vegas'];
+  });
+  db.lasVegasLegacyBranchMigrationVersion = version;
+  db.lasVegasLegacyBranchMigrationAt = new Date().toISOString();
+  db.lasVegasLegacyBranchMigrationBackup = backupName;
+  audit(db, { id:'system', name:'System' }, 'assign-legacy-data-las-vegas', {
+    detail:'按老板确认，将启用洛杉矶分店前的历史业务和库存归入拉斯维加斯；公司共用模块仍保持合并视图',
+    counts, backupName
+  });
+  writeDb(db);
+  console.log(`Legacy data assigned to Las Vegas. Backup saved as ${backupName}.`);
 }
 
 function branchStockQty(db, sku, branchId) {
@@ -1966,7 +2014,7 @@ function productsForUser(db, user, canSeeCosts) {
 }
 
 function assignRecordBranch(db, user, item, collection) {
-  const branchCollections = new Set(['jobs','warranties','salesOrders','shipments','expenses','reimbursements','leads','prospects','customerConversations','movements','workshopMovements','schedules','salesAccounts','salesVisits','salesCheckInAttempts','salesTrialRolls','salesDailyReports']);
+  const branchCollections = new Set(['jobs','warranties','installers','salesOrders','shipments','expenses','reimbursements','leads','prospects','customerConversations','movements','workshopMovements','schedules','salesAccounts','salesVisits','salesCheckInAttempts','salesTrialRolls','salesDailyReports']);
   if (!branchCollections.has(collection)) return '';
   if (collection === 'prospects' || collection === 'customerConversations') enrichCustomerIdentity(db, item);
   if (collection === 'warranties' && item.jobId) item.branchId = (db.jobs || []).find(job => job.id === item.jobId)?.branchId || item.branchId;
@@ -8645,6 +8693,7 @@ applyImportedCustomerEncodingMigration();
 applyCustomerConversationDuplicateMerge();
 applyYelpLeadFormMessageMigration();
 applyCustomerNumberRemoval();
+applyLasVegasLegacyBranchMigration();
 expireInternalMessageVideos();
 cleanupStaleMediaUploadParts();
 http.createServer((req, res) => {
