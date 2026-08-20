@@ -1454,6 +1454,107 @@ function canApproveLeave(user) {
   return user?.role === 'owner' || user?.role === 'manager' || p.schedulesEdit || p.usersManage;
 }
 
+function attendanceDateRange(startDate, endDate) {
+  const rows = [];
+  let cursor = new Date(`${startDate}T12:00:00Z`);
+  const end = new Date(`${endDate}T12:00:00Z`);
+  while (!Number.isNaN(cursor.getTime()) && cursor <= end && rows.length < 370) {
+    rows.push(cursor.toISOString().slice(0, 10));
+    cursor.setUTCDate(cursor.getUTCDate() + 1);
+  }
+  return rows;
+}
+
+function attendanceMonthlyReport(db, user, month) {
+  const approver = canApproveLeave(user);
+  const visibleClock = branchVisibleRecords(db, user, db.clockRecords || []).filter(row => String(row.date || '').startsWith(month));
+  const visibleSchedules = branchVisibleRecords(db, user, db.schedules || []).filter(row => String(row.date || '').startsWith(month));
+  const visibleLeave = branchVisibleRecords(db, user, db.leaveRequests || []).filter(row => String(row.endDate || '') >= `${month}-01` && String(row.startDate || '') <= `${month}-31`);
+  const permitted = rows => approver ? rows : rows.filter(row => row.userId === user.id || row.employeeId === user.id);
+  const clocks = permitted(visibleClock);
+  const schedules = permitted(visibleSchedules);
+  const leaveRequests = permitted(visibleLeave);
+  const userIds = new Set(approver ? [] : [user.id]);
+  clocks.forEach(row => userIds.add(row.userId));
+  schedules.forEach(row => userIds.add(row.employeeId));
+  leaveRequests.forEach(row => userIds.add(row.userId));
+  if (approver) (db.users || []).filter(row => row.active !== false && row.role !== 'owner').forEach(row => userIds.add(row.id));
+  const employees = (db.users || []).filter(row => userIds.has(row.id) && (approver || row.id === user.id));
+
+  const result = employees.map(employee => {
+    const dayMap = new Map();
+    const dayFor = date => {
+      if (!dayMap.has(date)) dayMap.set(date, { date, clockRecords: [], schedules: [], leaveRequests: [] });
+      return dayMap.get(date);
+    };
+    clocks.filter(row => row.userId === employee.id).forEach(row => dayFor(row.date).clockRecords.push(row));
+    schedules.filter(row => row.employeeId === employee.id).forEach(row => dayFor(row.date).schedules.push(row));
+    leaveRequests.filter(row => row.userId === employee.id).forEach(request => {
+      const allDates = attendanceDateRange(request.startDate, request.endDate);
+      const allocatedHours = allDates.length ? Number(request.hours || 0) / allDates.length : Number(request.hours || 0);
+      allDates.filter(date => date.startsWith(month)).forEach(date => dayFor(date).leaveRequests.push({ ...request, allocatedHours }));
+    });
+
+    const days = [...dayMap.values()].map(day => {
+      const records = [...day.clockRecords].sort((a, b) => String(a.at || '').localeCompare(String(b.at || '')));
+      const pairs = [];
+      const anomalies = [];
+      let openIn = null;
+      records.forEach(record => {
+        if (record.type === 'in') {
+          if (openIn) anomalies.push('重复上班卡');
+          else openIn = record;
+          return;
+        }
+        if (!openIn) {
+          anomalies.push('只有下班卡');
+          return;
+        }
+        const hours = (new Date(record.at).getTime() - new Date(openIn.at).getTime()) / 3600000;
+        if (Number.isFinite(hours) && hours > 0 && hours <= 24) {
+          pairs.push({ inAt: openIn.at, outAt: record.at, hours });
+          if (hours > 16) anomalies.push('单段工时超过16小时');
+        } else anomalies.push('上下班时间不正确');
+        openIn = null;
+      });
+      if (openIn) anomalies.push('缺少下班卡');
+      const abnormalLocations = records.filter(record => record.officeMatched === false && Number.isFinite(Number(record.officeDistanceMeters)));
+      if (abnormalLocations.length) anomalies.push(`范围外打卡${abnormalLocations.length}次`);
+      const workedHours = pairs.reduce((sum, pair) => sum + pair.hours, 0);
+      const approvedLeave = day.leaveRequests.filter(row => row.status === '已批准');
+      return {
+        date: day.date,
+        clockInCount: records.filter(row => row.type === 'in').length,
+        clockOutCount: records.filter(row => row.type === 'out').length,
+        clockRecords: records.map(row => ({ id:row.id, type:row.type, at:row.at, address:row.address, mapUrl:row.mapUrl, officeMatched:row.officeMatched, officeDistanceMeters:row.officeDistanceMeters, accuracy:row.accuracy })),
+        pairs,
+        workedHours,
+        schedules: day.schedules,
+        leaveRequests: day.leaveRequests,
+        approvedLeaveHours: approvedLeave.reduce((sum, row) => sum + Number(row.allocatedHours || 0), 0),
+        anomalies: [...new Set(anomalies)]
+      };
+    }).sort((a, b) => b.date.localeCompare(a.date));
+
+    const attendanceDays = days.filter(day => day.clockInCount > 0).length;
+    return {
+      employee: safeUser(employee),
+      summary: {
+        attendanceDays,
+        workedHours: days.reduce((sum, day) => sum + day.workedHours, 0),
+        approvedLeaveDays: days.filter(day => day.approvedLeaveHours > 0).length,
+        approvedLeaveHours: days.reduce((sum, day) => sum + day.approvedLeaveHours, 0),
+        adjustedRestDays: days.filter(day => day.schedules.some(row => row.type === 'adjustedRest')).length,
+        makeupDays: days.filter(day => day.schedules.some(row => row.type === 'makeup')).length,
+        incompleteClockDays: days.filter(day => day.anomalies.some(text => /缺少|只有|重复|时间不正确/.test(text))).length,
+        abnormalLocationDays: days.filter(day => day.anomalies.some(text => text.includes('范围外'))).length
+      },
+      days
+    };
+  }).sort((a, b) => String(a.employee.name || '').localeCompare(String(b.employee.name || '')));
+  return { month, canManage: approver, employees: result, generatedAt: new Date().toISOString() };
+}
+
 function canManageFieldSales(user) {
   return ['owner', 'manager'].includes(user?.role) || Boolean(effectivePermissions(user).fieldSalesManage);
 }
@@ -6044,6 +6145,12 @@ async function api(req, res) {
       return send(res, 200, { ok: true, data: sanitizeDbForUser(db, user) });
     }
     return send(res, 405, { error: 'Method not allowed' });
+  }
+
+  if (req.method === 'GET' && url.pathname === '/api/attendance-report') {
+    const month = String(url.searchParams.get('month') || dateInTimezone(db.settings?.timezone || 'America/Los_Angeles', 0).slice(0, 7));
+    if (!/^\d{4}-\d{2}$/.test(month)) return send(res, 400, { error: '统计月份格式不正确' });
+    return send(res, 200, attendanceMonthlyReport(db, user, month));
   }
 
   if (req.method === 'POST' && url.pathname === '/api/mobile/clock') {

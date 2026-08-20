@@ -50,6 +50,10 @@ let scheduleMonth = today().slice(0, 7);
 let jobMonth = today().slice(0, 7);
 let auditDate = today();
 let workTimeDate = today();
+let attendanceMonth = today().slice(0, 7);
+let attendanceReport = null;
+let attendanceReportKey = '';
+let attendanceSelectedUserId = '';
 let fieldSalesUserFilter = 'all';
 let activityHeartbeatTimer = null;
 let lastEmployeeInteractionAt = Date.now();
@@ -1563,6 +1567,7 @@ function render(options = {}) {
   enhanceExpandablePanels();
   enhanceEditableTableRows(document.getElementById('view'));
   if (current === 'settings') setTimeout(() => { loadCustomerAiSettings(); loadMetaSettings(); }, 0);
+  if (current === 'clock') setTimeout(() => loadAttendanceReport(), 0);
   if (current === 'aiRules') {
     if (options.aiRulesUiState) restoreCustomerAiRulesUiState(options.aiRulesUiState, { restoreDrafts: true });
     else setTimeout(loadCustomerAiRules, 0);
@@ -4205,8 +4210,83 @@ async function analyzeFieldSalesReport(id) {
 
 function desktopClockView() {
   const records = state.clockRecords || [];
-  return `<div class="desktop-staff-grid"><section class="panel staff-action-panel"><div class="panel-head"><h3>${lang === 'zh' ? '电脑定位打卡' : 'Computer Location Clock'}</h3></div><label class="desktop-consent"><input id="desktopClockConsent" type="checkbox" /> <span>${lang === 'zh' ? '我同意本次打卡使用电脑定位' : 'I agree to use this computer location for this clock record'}</span></label><p class="note">${lang === 'zh' ? '系统只在点击打卡时获取一次定位，用于核对是否在公司附近，不会持续跟踪。浏览器可能会询问定位权限。' : 'Location is requested only when you clock in or out. It is not continuously tracked.'}</p><div class="desktop-clock-actions"><button class="btn primary" onclick="desktopClock('in')">${lang === 'zh' ? '上班打卡' : 'Clock In'}</button><button class="btn" onclick="desktopClock('out')">${lang === 'zh' ? '下班打卡' : 'Clock Out'}</button></div></section><section class="panel"><div class="panel-head"><h3>${lang === 'zh' ? '打卡记录' : 'Clock Records'}</h3></div>${desktopClockTable(records)}</section></div>`;
+  return `<div class="desktop-staff-grid"><section class="panel staff-action-panel"><div class="panel-head"><h3>${lang === 'zh' ? '电脑定位打卡' : 'Computer Location Clock'}</h3></div><label class="desktop-consent"><input id="desktopClockConsent" type="checkbox" /> <span>${lang === 'zh' ? '我同意本次打卡使用电脑定位' : 'I agree to use this computer location for this clock record'}</span></label><p class="note">${lang === 'zh' ? '系统只在点击打卡时获取一次定位，用于核对是否在公司附近，不会持续跟踪。浏览器可能会询问定位权限。' : 'Location is requested only when you clock in or out. It is not continuously tracked.'}</p><div class="desktop-clock-actions"><button class="btn primary" onclick="desktopClock('in')">${lang === 'zh' ? '上班打卡' : 'Clock In'}</button><button class="btn" onclick="desktopClock('out')">${lang === 'zh' ? '下班打卡' : 'Clock Out'}</button></div></section><section class="panel"><div class="panel-head"><h3>${lang === 'zh' ? '最近打卡记录' : 'Recent Clock Records'}</h3></div>${desktopClockTable(records)}</section></div>${attendanceCenterView()}`;
 }
+
+const attendanceHours = value => {
+  const hours = Number(value || 0);
+  return Number.isFinite(hours) ? hours.toFixed(2).replace(/\.00$/, '') : '0';
+};
+
+function attendanceCenterView() {
+  const title = lang === 'zh' ? '员工月度考勤汇总' : 'Monthly Attendance Summary';
+  if (!attendanceReport || attendanceReport.month !== attendanceMonth) return `<section class="panel attendance-center"><div class="panel-head"><h3>${title}</h3></div><div class="empty-state">${lang === 'zh' ? '正在计算考勤、请假、调休和异常记录…' : 'Calculating attendance, leave, rest days, and exceptions…'}</div></section>`;
+  const employees = attendanceReport.employees || [];
+  if (!employees.some(row => row.employee.id === attendanceSelectedUserId)) attendanceSelectedUserId = employees[0]?.employee?.id || '';
+  const selected = employees.find(row => row.employee.id === attendanceSelectedUserId);
+  return `<section class="panel attendance-center">${attendanceToolbar()}<div class="attendance-policy">${lang === 'zh' ? '统计口径：当天有上班卡即计 1 个出勤日；工时只累计完整、有效的上下班配对；缺卡、重复卡和范围外打卡单独标记，不虚构工时。' : 'Policy: a clock-in counts as one attendance day; hours only include valid in/out pairs. Missing, duplicate, and out-of-range punches are reported separately.'}</div>${employees.length ? `${attendanceSummaryTable(employees)}${attendanceEmployeeDetail(selected)}` : `<div class="empty-state">${lang === 'zh' ? '这个月暂无员工考勤数据' : 'No attendance data for this month'}</div>`}</section>`;
+}
+
+function attendanceToolbar() {
+  return `<div class="panel-head attendance-head"><div><h3>${lang === 'zh' ? '员工月度考勤汇总' : 'Monthly Attendance Summary'}</h3><p class="note">${lang === 'zh' ? '点击员工可查看每天的打卡、排班、调休、请假和异常地点。' : 'Select an employee for daily clock, schedule, leave, and location details.'}</p></div><div class="attendance-month-tools"><button class="btn" onclick="shiftAttendanceMonth(-1)">‹</button><input type="month" value="${escapeHtml(attendanceMonth)}" onchange="setAttendanceMonth(this.value)"><button class="btn" onclick="shiftAttendanceMonth(1)">›</button><button class="btn" onclick="loadAttendanceReport(true)">${lang === 'zh' ? '刷新统计' : 'Refresh'}</button></div></div>`;
+}
+
+function attendanceSummaryTable(employees) {
+  return `<div class="table-wrap attendance-summary-table"><table><thead><tr><th>${lang === 'zh' ? '员工' : 'Employee'}</th><th>${lang === 'zh' ? '出勤天数' : 'Days worked'}</th><th>${lang === 'zh' ? '总工时' : 'Hours'}</th><th>${lang === 'zh' ? '批准请假' : 'Approved leave'}</th><th>${lang === 'zh' ? '调休/补班' : 'Rest / Makeup'}</th><th>${lang === 'zh' ? '缺卡天数' : 'Incomplete days'}</th><th>${lang === 'zh' ? '异常地点' : 'Location issues'}</th></tr></thead><tbody>${employees.map(row => { const s = row.summary || {}; return `<tr class="attendance-person-row ${row.employee.id === attendanceSelectedUserId ? 'selected' : ''}" onclick="selectAttendanceEmployee('${escapeHtml(row.employee.id)}')"><td><strong>${escapeHtml(row.employee.name || row.employee.email || '')}</strong><br><small>${escapeHtml(row.employee.role || '')}</small></td><td>${Number(s.attendanceDays || 0)}</td><td><strong>${attendanceHours(s.workedHours)} h</strong></td><td>${Number(s.approvedLeaveDays || 0)} ${lang === 'zh' ? '天' : 'd'} / ${attendanceHours(s.approvedLeaveHours)} h</td><td>${Number(s.adjustedRestDays || 0)} / ${Number(s.makeupDays || 0)}</td><td class="${s.incompleteClockDays ? 'attendance-danger' : ''}">${Number(s.incompleteClockDays || 0)}</td><td class="${s.abnormalLocationDays ? 'attendance-danger' : ''}">${Number(s.abnormalLocationDays || 0)}</td></tr>`; }).join('')}</tbody></table></div>`;
+}
+
+function attendanceScheduleText(rows) {
+  const labels = { work:lang === 'zh' ? '正常上班' : 'Work', makeup:lang === 'zh' ? '补班' : 'Makeup', off:lang === 'zh' ? '休息' : 'Off', adjustedRest:lang === 'zh' ? '调休' : 'Adjusted rest' };
+  return (rows || []).map(row => `${labels[row.type] || escapeHtml(row.type || '—')}${row.startTime || row.endTime ? ` ${escapeHtml(row.startTime || '')}-${escapeHtml(row.endTime || '')}` : ''}`).join('<br>') || '—';
+}
+
+function attendanceLeaveText(rows) {
+  if (!(rows || []).length) return '—';
+  return rows.map(row => `<div class="attendance-leave"><strong>${escapeHtml(row.leaveType || '')}</strong> · ${attendanceHours(row.allocatedHours)}h · ${escapeHtml(row.status || '')}<br><small>${escapeHtml([row.startDate, row.startTime, '-', row.endDate, row.endTime].filter(Boolean).join(' '))}${row.reason ? ` · ${escapeHtml(row.reason)}` : ''}</small></div>`).join('');
+}
+
+function attendanceClockText(day) {
+  if (!(day.clockRecords || []).length) return '—';
+  return day.clockRecords.map(row => `<div><strong>${row.type === 'in' ? (lang === 'zh' ? '上班' : 'In') : (lang === 'zh' ? '下班' : 'Out')}</strong> ${escapeHtml(formatAppDateTime(row.at).slice(11))}${row.address ? `<br><small>${row.mapUrl ? `<a href="${escapeHtml(row.mapUrl)}" target="_blank" rel="noopener">${escapeHtml(row.address)}</a>` : escapeHtml(row.address)}</small>` : ''}</div>`).join('');
+}
+
+function attendanceEmployeeDetail(row) {
+  const s = row.summary || {};
+  const days = row.days || [];
+  const monthLabel = lang === 'zh' ? `${attendanceMonth.slice(0, 4)}年${Number(attendanceMonth.slice(5))}月` : attendanceMonth;
+  return `<div class="attendance-detail"><div class="attendance-detail-title"><div><h3>${escapeHtml(row.employee.name || row.employee.email || '')} · ${monthLabel}</h3><p>${lang === 'zh' ? `出勤 ${s.attendanceDays || 0} 天，完整配对工时 ${attendanceHours(s.workedHours)} 小时` : `${s.attendanceDays || 0} days, ${attendanceHours(s.workedHours)} paired hours`}</p></div><div class="attendance-kpis"><span>${lang === 'zh' ? '请假' : 'Leave'} <strong>${attendanceHours(s.approvedLeaveHours)}h</strong></span><span>${lang === 'zh' ? '调休' : 'Rest'} <strong>${s.adjustedRestDays || 0}</strong></span><span>${lang === 'zh' ? '异常' : 'Issues'} <strong>${Number(s.incompleteClockDays || 0) + Number(s.abnormalLocationDays || 0)}</strong></span></div></div>${days.length ? `<div class="table-wrap"><table><thead><tr><th>${lang === 'zh' ? '日期' : 'Date'}</th><th>${lang === 'zh' ? '排班/调休' : 'Schedule'}</th><th>${lang === 'zh' ? '打卡和地点' : 'Clocks & location'}</th><th>${lang === 'zh' ? '有效工时' : 'Valid hours'}</th><th>${lang === 'zh' ? '请假时间和理由' : 'Leave & reason'}</th><th>${lang === 'zh' ? '异常报告' : 'Exception report'}</th></tr></thead><tbody>${days.map(day => `<tr class="${day.anomalies?.length ? 'attendance-anomaly-row' : ''}"><td><strong>${escapeHtml(day.date)}</strong></td><td>${attendanceScheduleText(day.schedules)}</td><td>${attendanceClockText(day)}</td><td>${attendanceHours(day.workedHours)} h${(day.pairs || []).length > 1 ? `<br><small>${day.pairs.length} ${lang === 'zh' ? '段工时' : 'segments'}</small>` : ''}</td><td>${attendanceLeaveText(day.leaveRequests)}</td><td>${day.anomalies?.length ? day.anomalies.map(text => `<span class="attendance-alert">${escapeHtml(text)}</span>`).join('') : `<span class="attendance-ok">${lang === 'zh' ? '正常' : 'OK'}</span>`}</td></tr>`).join('')}</tbody></table></div>` : `<div class="empty-state">${lang === 'zh' ? '该员工本月暂无打卡、排班或请假记录' : 'No records for this employee'}</div>`}</div>`;
+}
+
+async function loadAttendanceReport(force = false) {
+  if (current !== 'clock') return;
+  const key = `${attendanceMonth}:${lastDataRevision}`;
+  if (!force && attendanceReportKey === key && attendanceReport?.month === attendanceMonth) return;
+  try {
+    const requestedMonth = attendanceMonth;
+    const report = await api(`/api/attendance-report?month=${encodeURIComponent(requestedMonth)}`);
+    if (current !== 'clock' || requestedMonth !== attendanceMonth) return;
+    attendanceReport = report;
+    attendanceReportKey = `${requestedMonth}:${lastDataRevision}`;
+    if (!attendanceSelectedUserId || !(report.employees || []).some(row => row.employee.id === attendanceSelectedUserId)) attendanceSelectedUserId = report.employees?.[0]?.employee?.id || '';
+    render();
+  } catch (error) { console.error('Unable to load attendance report', error); }
+}
+
+function setAttendanceMonth(month) {
+  if (!/^\d{4}-\d{2}$/.test(String(month || ''))) return;
+  attendanceMonth = month;
+  attendanceReportKey = '';
+  attendanceSelectedUserId = '';
+  render();
+}
+
+function shiftAttendanceMonth(delta) {
+  const date = new Date(`${attendanceMonth}-01T12:00:00`);
+  date.setMonth(date.getMonth() + Number(delta || 0));
+  setAttendanceMonth(`${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`);
+}
+
+function selectAttendanceEmployee(userId) { attendanceSelectedUserId = userId; render(); }
 
 function desktopClockTable(records) {
   if (!records.length) return `<div class="empty-state">${lang === 'zh' ? '暂无打卡记录' : 'No clock records'}</div>`;
@@ -4217,7 +4297,7 @@ async function desktopClock(type) {
   if (!document.getElementById('desktopClockConsent')?.checked) return alert(lang === 'zh' ? '请先勾选同意本次打卡使用电脑定位。' : 'Please consent to using this computer location.');
   if (!navigator.geolocation) return alert(lang === 'zh' ? '当前浏览器不支持定位。' : 'This browser does not support location.');
   navigator.geolocation.getCurrentPosition(async position => {
-    try { await api('/api/mobile/clock', { method:'POST', body:JSON.stringify({ type, lat:position.coords.latitude, lng:position.coords.longitude, accuracy:position.coords.accuracy, locationConsent:true }) }); await sync({ silent:true }); alert(type === 'in' ? (lang === 'zh' ? '上班打卡成功' : 'Clock-in successful') : (lang === 'zh' ? '下班打卡成功' : 'Clock-out successful')); } catch (error) { alert(error.message); }
+    try { await api('/api/mobile/clock', { method:'POST', body:JSON.stringify({ type, lat:position.coords.latitude, lng:position.coords.longitude, accuracy:position.coords.accuracy, locationConsent:true }) }); attendanceReportKey = ''; await sync({ silent:true }); alert(type === 'in' ? (lang === 'zh' ? '上班打卡成功' : 'Clock-in successful') : (lang === 'zh' ? '下班打卡成功' : 'Clock-out successful')); } catch (error) { alert(error.message); }
   }, error => alert((lang === 'zh' ? '无法获取定位：' : 'Unable to get location: ') + error.message), { enableHighAccuracy:true, timeout:15000, maximumAge:0 });
 }
 
