@@ -120,11 +120,16 @@ let personalReminderTimer = null;
 let personalReminderSoundTimer = null;
 let activePersonalReminderId = '';
 let activeAppointmentReminderId = '';
+let activePersistentAlertKind = '';
+let activePersistentAlertIds = [];
+let persistentAlertTimer = null;
 let activePersonalNoteId = '';
 let personalNoteSaving = false;
 const personalNoteUpdatingIds = new Set();
 const AUTO_SYNC_MS = 5 * 60 * 1000;
 const DATA_REVISION_POLL_MS = 15 * 1000;
+const PERSISTENT_ALERT_CHECK_MS = 60 * 1000;
+const PERSISTENT_ALERT_REPEAT_MS = 60 * 60 * 1000;
 const MAX_MESSAGE_ATTACHMENT_BYTES = 20 * 1024 * 1024;
 const MAX_VOICE_MESSAGE_MS = 60 * 1000;
 const MAX_CLOUD_VIDEO_BYTES = 200 * 1024 * 1024;
@@ -863,6 +868,7 @@ async function api(path, options = {}) {
       localStorage.removeItem('filmShopCloud.token');
       stopAutoSync();
       stopRealtimeSync();
+      stopPersistentAlertChecks();
       state = null;
       user = null;
       renderAuth();
@@ -899,6 +905,7 @@ async function login() {
       renderAuth();
       render();
       checkNewAppointmentAlerts();
+      startPersistentAlertChecks();
       startAiBossReminderLoop();
       startAutoSync();
       startRealtimeSync();
@@ -926,6 +933,7 @@ async function logout() {
   stopAutoSync();
   stopRealtimeSync();
   stopPersonalReminderChecks();
+  stopPersistentAlertChecks();
   stopAiBossReminderLoop();
   renderAuth();
 }
@@ -981,6 +989,7 @@ async function sync(options = {}) {
     if (!uiChangedDuringSync) render({ aiRulesUiState });
     else updateMessageBadge();
     checkNewAppointmentAlerts();
+    startPersistentAlertChecks();
     startAiBossReminderLoop();
     if (sameMessageContext && !internalMessageInputActive()) {
       renderMessageModal();
@@ -6348,6 +6357,35 @@ function appointmentAlertStorageKey() {
   return `filmShopCloud.appointmentAlertCutoff.${user?.id || user?.email || 'user'}`;
 }
 
+function persistentAlertStorageKey() {
+  return `filmShopCloud.persistentAlerts.v1.${user?.id || user?.email || 'user'}`;
+}
+
+function persistentAlertState() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(persistentAlertStorageKey()) || '{}');
+    return {
+      appointments: saved.appointments && typeof saved.appointments === 'object' ? saved.appointments : {},
+      messages: saved.messages && typeof saved.messages === 'object' ? saved.messages : {}
+    };
+  } catch {
+    return { appointments: {}, messages: {} };
+  }
+}
+
+function savePersistentAlertState(value) {
+  localStorage.setItem(persistentAlertStorageKey(), JSON.stringify(value));
+}
+
+function registerAppointmentAlerts(items) {
+  if (!items.length) return;
+  const saved = persistentAlertState();
+  items.forEach(item => {
+    if (item?.id && !saved.appointments[item.id]) saved.appointments[item.id] = { nextAt: 0 };
+  });
+  savePersistentAlertState(saved);
+}
+
 function checkNewAppointmentAlerts() {
   if (!state || !user || !['manager', 'owner'].includes(user.role)) return;
   const key = appointmentAlertStorageKey();
@@ -6359,11 +6397,11 @@ function checkNewAppointmentAlerts() {
     const created = new Date(item.createdAt || item.updatedAt || 0).getTime();
     return ['已预约', '已到店'].includes(String(item.status || '')) && Number.isFinite(created) && created > previous && created <= now;
   });
-  if (!incoming.length) return;
-  showAppointmentAlert(incoming[0], incoming.length);
+  registerAppointmentAlerts(incoming);
+  checkPersistentAlerts();
 }
 
-function showAppointmentAlert(item, count = 1) {
+function showAppointmentAlert(item, count = 1, reminderIds = [item.id]) {
   activeAppointmentReminderId = item.id;
   let overlay = document.getElementById('appointmentReminderOverlay');
   if (!overlay) {
@@ -6373,20 +6411,99 @@ function showAppointmentAlert(item, count = 1) {
     document.body.appendChild(overlay);
   }
   const appointment = [item.appointmentDate, item.appointmentTime].filter(Boolean).join(' ') || (lang === 'zh' ? '时间待确认' : 'Time pending');
-  overlay.innerHTML = `<div class="appointment-reminder-box"><div class="appointment-reminder-bell">⭐</div><div><small>${lang === 'zh' ? `店长提醒 · 新增 ${count} 位预约客户` : `${count} new appointment customer(s)`}</small><h2>${escapeHtml(item.customer || item.phone || (lang === 'zh' ? '新预约客户' : 'New appointment'))}</h2><p><strong>${lang === 'zh' ? '预约时间' : 'Appointment'}：</strong>${escapeHtml(appointment)}<br><strong>${lang === 'zh' ? '车辆 / 需求' : 'Vehicle / request'}：</strong>${escapeHtml([item.vehicle, item.need].filter(Boolean).join(' · ') || '—')}</p><div class="personal-reminder-buttons"><button class="btn" onclick="closeAppointmentAlert()">${lang === 'zh' ? '稍后查看' : 'Later'}</button><button class="btn primary" onclick="openAppointmentAlertCustomer('${item.id}')">${lang === 'zh' ? '立即查看并跟进' : 'View and follow up'}</button></div></div></div>`;
+  activePersistentAlertKind = 'appointment';
+  activePersistentAlertIds = reminderIds.filter(Boolean);
+  overlay.innerHTML = `<div class="appointment-reminder-box"><div class="appointment-reminder-bell">⭐</div><div><small>${lang === 'zh' ? `店长提醒 · ${count} 位预约客户待查看（每1小时提醒）` : `${count} appointment customer(s) need attention (hourly reminder)`}</small><h2>${escapeHtml(item.customer || item.phone || (lang === 'zh' ? '新预约客户' : 'New appointment'))}</h2><p><strong>${lang === 'zh' ? '预约时间' : 'Appointment'}：</strong>${escapeHtml(appointment)}<br><strong>${lang === 'zh' ? '车辆 / 需求' : 'Vehicle / request'}：</strong>${escapeHtml([item.vehicle, item.need].filter(Boolean).join(' · ') || '—')}</p><div class="personal-reminder-buttons"><button class="btn" onclick="closeAppointmentAlert(true)">${lang === 'zh' ? '1小时后再提醒' : 'Remind in 1 hour'}</button><button class="btn primary" onclick="openAppointmentAlertCustomer('${item.id}')">${lang === 'zh' ? '立即查看并跟进' : 'View and follow up'}</button></div></div></div>`;
   overlay.classList.add('open');
   playPersonalReminderSound();
 }
 
-function closeAppointmentAlert() {
+function closeAppointmentAlert(snooze = false) {
+  if (snooze && activeAppointmentReminderId) {
+    const saved = persistentAlertState();
+    const group = activePersistentAlertKind === 'message' ? saved.messages : saved.appointments;
+    (activePersistentAlertIds.length ? activePersistentAlertIds : [activeAppointmentReminderId]).forEach(id => {
+      group[id] = { nextAt: Date.now() + PERSISTENT_ALERT_REPEAT_MS };
+    });
+    savePersistentAlertState(saved);
+  }
   document.getElementById('appointmentReminderOverlay')?.classList.remove('open');
   activeAppointmentReminderId = '';
+  activePersistentAlertKind = '';
+  activePersistentAlertIds = [];
 }
 
 function openAppointmentAlertCustomer(id) {
+  const saved = persistentAlertState();
+  delete saved.appointments[id];
+  savePersistentAlertState(saved);
   closeAppointmentAlert();
   setPage('prospects');
   openProspectWorkspace('prospects', id);
+}
+
+function internalMessageReminderThreadId(message) {
+  if (message.scope === 'group') return GROUP_CHAT_ID;
+  return message.fromUserId || GROUP_CHAT_ID;
+}
+
+function showInternalMessageAlert(message, count, reminderIds = [message.id]) {
+  activeAppointmentReminderId = message.id;
+  activePersistentAlertKind = 'message';
+  activePersistentAlertIds = reminderIds.filter(Boolean);
+  let overlay = document.getElementById('appointmentReminderOverlay');
+  if (!overlay) {
+    overlay = document.createElement('div');
+    overlay.id = 'appointmentReminderOverlay';
+    overlay.className = 'appointment-reminder-overlay';
+    document.body.appendChild(overlay);
+  }
+  const sender = message.fromName || messageUsers().find(item => item.id === message.fromUserId)?.name || (lang === 'zh' ? '同事' : 'Coworker');
+  const preview = message.text || message.attachment?.name || (lang === 'zh' ? '新的附件消息' : 'New attachment');
+  overlay.innerHTML = `<div class="appointment-reminder-box"><div class="appointment-reminder-bell">📩</div><div><small>${lang === 'zh' ? `站内新消息 · ${count} 条未读（每1小时提醒）` : `${count} unread internal message(s) (hourly reminder)`}</small><h2>${escapeHtml(sender)}</h2><p>${escapeHtml(shortText(preview, 220))}</p><div class="personal-reminder-buttons"><button class="btn" onclick="closeAppointmentAlert(true)">${lang === 'zh' ? '1小时后再提醒' : 'Remind in 1 hour'}</button><button class="btn primary" onclick="openInternalMessageAlert('${message.id}','${escapeJs(internalMessageReminderThreadId(message))}')">${lang === 'zh' ? '立即查看' : 'View now'}</button></div></div></div>`;
+  overlay.classList.add('open');
+  playPersonalReminderSound();
+}
+
+function openInternalMessageAlert(messageId, threadId) {
+  const saved = persistentAlertState();
+  delete saved.messages[messageId];
+  savePersistentAlertState(saved);
+  closeAppointmentAlert();
+  openMessages(threadId);
+}
+
+function checkPersistentAlerts() {
+  if (!state || !user || document.querySelector('.appointment-reminder-overlay.open')) return;
+  const now = Date.now();
+  const saved = persistentAlertState();
+  const validAppointments = new Map((state.prospects || []).filter(item => ['已预约', '已到店'].includes(String(item.status || ''))).map(item => [item.id, item]));
+  Object.keys(saved.appointments).forEach(id => { if (!validAppointments.has(id)) delete saved.appointments[id]; });
+  const dueAppointments = Object.entries(saved.appointments).filter(([id, value]) => validAppointments.has(id) && Number(value?.nextAt || 0) <= now);
+  if (dueAppointments.length) {
+    savePersistentAlertState(saved);
+    showAppointmentAlert(validAppointments.get(dueAppointments[0][0]), dueAppointments.length, dueAppointments.map(([id]) => id));
+    return;
+  }
+  const unread = unreadMessages();
+  const unreadById = new Map(unread.map(message => [message.id, message]));
+  Object.keys(saved.messages).forEach(id => { if (!unreadById.has(id)) delete saved.messages[id]; });
+  unread.forEach(message => { if (!saved.messages[message.id]) saved.messages[message.id] = { nextAt: 0 }; });
+  const dueMessages = unread.filter(message => Number(saved.messages[message.id]?.nextAt || 0) <= now);
+  savePersistentAlertState(saved);
+  if (dueMessages.length) showInternalMessageAlert(dueMessages[0], dueMessages.length, dueMessages.map(message => message.id));
+}
+
+function startPersistentAlertChecks() {
+  if (!token || !state) return;
+  if (!persistentAlertTimer) persistentAlertTimer = setInterval(checkPersistentAlerts, PERSISTENT_ALERT_CHECK_MS);
+  checkPersistentAlerts();
+}
+
+function stopPersistentAlertChecks() {
+  clearInterval(persistentAlertTimer);
+  persistentAlertTimer = null;
+  closeAppointmentAlert();
 }
 
 function allCustomerCenterRows() {
