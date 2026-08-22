@@ -27,6 +27,31 @@ body.modal-lock {
 }
 
 .hidden { display: none !important; }
+
+.nurture-filter-grid,
+.nurture-compose-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(150px, 1fr));
+  gap: 14px;
+  align-items: end;
+}
+.nurture-filter-grid label,
+.nurture-compose-grid label { display: grid; gap: 7px; color: var(--muted); }
+.nurture-filter-grid fieldset { border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; display: flex; flex-wrap: wrap; gap: 8px 12px; }
+.nurture-filter-grid fieldset legend { color: var(--muted); padding: 0 5px; }
+.nurture-filter-grid fieldset label { display: flex; align-items: center; gap: 5px; color: var(--text); }
+.nurture-compose-grid .full { grid-column: 1 / -1; }
+.nurture-summary { display: flex; flex-wrap: wrap; gap: 12px 22px; align-items: center; margin: 18px 0 10px; }
+.nurture-campaign-list { display: grid; gap: 10px; }
+.nurture-campaign-card { border: 1px solid var(--line); border-radius: 14px; padding: 14px; display: grid; grid-template-columns: minmax(220px, 1fr) auto auto; gap: 16px; align-items: center; }
+.nurture-campaign-card > div:first-child { display: grid; grid-template-columns: auto auto 1fr; gap: 8px; align-items: center; }
+.nurture-campaign-card small { grid-column: 1 / -1; color: var(--muted); }
+.nurture-campaign-stats { display: flex; flex-wrap: wrap; gap: 10px; color: var(--muted); }
+.safety-note { background: #fff8df; border: 1px solid #efd58a; color: #725400; border-radius: 12px; padding: 12px; }
+@media (max-width: 1000px) {
+  .nurture-filter-grid, .nurture-compose-grid { grid-template-columns: 1fr 1fr; }
+  .nurture-campaign-card { grid-template-columns: 1fr; }
+}
 .login {
   min-height: 100vh;
   display: grid;

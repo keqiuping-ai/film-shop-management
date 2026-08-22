@@ -355,6 +355,8 @@ function seedDb() {
     prospects: [],
     customerConversations: [],
     replyTemplates: [],
+    customerNurtureCampaigns: [],
+    customerNurtureDeliveries: [],
     expenses: [
       { id: id(), date: new Date().toISOString().slice(0, 10), category: '房屋租金', vendor: 'Landlord', amount: 10000, recurring: true, note: '月租金' },
       { id: id(), date: new Date().toISOString().slice(0, 10), category: '水电费', vendor: 'Utilities', amount: 1200, recurring: true, note: '水、电、网、电费预估' }
@@ -402,6 +404,8 @@ function readDb() {
   if (!Array.isArray(db.prospects)) db.prospects = [];
   if (!Array.isArray(db.customerConversations)) db.customerConversations = [];
   if (!Array.isArray(db.replyTemplates)) db.replyTemplates = [];
+  if (!Array.isArray(db.customerNurtureCampaigns)) db.customerNurtureCampaigns = [];
+  if (!Array.isArray(db.customerNurtureDeliveries)) db.customerNurtureDeliveries = [];
   if (!Array.isArray(db.shipments)) db.shipments = [];
   if (!Array.isArray(db.shipmentReceipts)) db.shipmentReceipts = [];
   if (!Array.isArray(db.shipmentExceptions)) db.shipmentExceptions = [];
@@ -1277,6 +1281,8 @@ function sanitizeDbForUser(db, user) {
     prospects: p.prospectsView ? (db.prospects || []).map(item => enrichCustomerIdentity(db, { ...item })) : [],
     customerConversations: p.prospectsView ? (db.customerConversations || []).map(item => enrichCustomerIdentity(db, { ...item })) : [],
     replyTemplates: p.prospectsView ? (db.replyTemplates || []) : [],
+    customerNurtureCampaigns: p.prospectsView ? (db.customerNurtureCampaigns || []).slice(0, 100) : [],
+    customerNurtureDeliveries: p.prospectsView ? (db.customerNurtureDeliveries || []).slice(0, 500) : [],
     expenses: p.expensesView || p.fullFinanceView ? branchVisibleRecords(db, user, db.expenses || []) : [],
     reimbursements: p.reimbursementsView ? branchVisibleRecords(db, user, db.reimbursements || []).filter(item => canApproveReimbursements || item.employeeUserId === user.id) : [],
     canApproveLeave: canApproveLeave(user),
@@ -3235,6 +3241,7 @@ function importCustomerRecords(db, user, body, collection = 'prospects') {
     }
     const duplicate = findProspectDuplicate(db[collection], candidate);
     if (duplicate) {
+      const existingMessageKeys = new Set((duplicate.conversationMessages || []).map(prospectMessageKey));
       const externalEventId = String(candidate.externalEventId || '').trim();
       const processedEventIds = new Set((duplicate.processedExternalEventIds || []).map(value => String(value || '').trim()));
       if (externalEventId && (processedEventIds.has(externalEventId) || String(duplicate.externalEventId || '').trim() === externalEventId)) {
@@ -3266,6 +3273,12 @@ function importCustomerRecords(db, user, body, collection = 'prospects') {
         updatedByUserId: user.id
       });
       enrichCustomerIdentity(db, next);
+      const newInboundMessage = (candidate.conversationMessages || []).find(message =>
+        customerServiceMessageRole(message) === 'customer' && !existingMessageKeys.has(prospectMessageKey(message))
+      );
+      if (newInboundMessage && prospectTextKey(candidate.source).includes('yelp')) {
+        customerNurtureMarkInbound(db, collection, next, newInboundMessage.text, newInboundMessage.timestamp || candidate.sourceUpdatedAt || candidate.importedAt, 'yelp');
+      }
       if (waitingForCustomer) {
         next.intentLevel = duplicate.intentLevel || candidate.intentLevel;
         next.intentReason = duplicate.intentReason || next.intentReason;
@@ -3661,6 +3674,7 @@ async function handleMetaMessengerWebhook(req, res, db, url) {
       }
       if (appendMetaMessengerMessage(match.item, event.message, recipientId || pageId, psid, 'inbound', match.item.customer || 'Meta Customer')) {
         enrichCustomerIdentity(db, match.item);
+        customerNurtureMarkInbound(db, match.collection, match.item, text, new Date().toISOString(), 'meta');
         updated += 1;
       } else {
         skipped += 1;
@@ -3700,6 +3714,21 @@ async function sendMetaMessengerReply(db, item, text) {
     messageId: String(body.message_id || ''),
     status: 'sent'
   };
+}
+
+async function sendMetaMessengerImage(db, item, imageUrl) {
+  const config = metaMessengerConfig(db);
+  if (!config.pageAccessToken) throw new Error('Meta Page Access Token 尚未配置，请先在设置里填写');
+  const psid = metaPsidFromItem(item);
+  if (!psid) throw new Error('这条客户记录没有 Meta PSID，不能通过 Meta 私信回复');
+  const endpoint = `https://graph.facebook.com/${encodeURIComponent(config.graphVersion)}/me/messages?access_token=${encodeURIComponent(config.pageAccessToken)}`;
+  const response = await fetch(endpoint, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ recipient: { id: psid }, messaging_type: 'RESPONSE', message: { attachment: { type: 'image', payload: { url: imageUrl, is_reusable: false } } } })
+  });
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(body?.error?.message || `Meta 图片发送失败 (${response.status})`);
+  return { messageId: String(body.message_id || ''), status: 'sent' };
 }
 
 async function handleMetaLeadWebhook(req, res, db, url) {
@@ -4132,6 +4161,225 @@ function reactivateConversationOnInbound(item, receivedAt = new Date().toISOStri
   item.reactivatedBy = fromStatus === '暂时无需回复' ? '等待中的客户发来新消息' : '无效客户短信回复';
   item.updatedAt = receivedAt;
   return fromStatus;
+}
+
+function customerNurtureOptOutText(text) {
+  const normalized = String(text || '').trim().toLowerCase().replace(/[.!?,，。！？]+$/g, '').trim();
+  if (!normalized) return false;
+  const exact = new Set(['stop', 'stopall', 'unsubscribe', 'cancel', 'end', 'quit', '停止', '退订', '不需要', '不用了', '别发了']);
+  return exact.has(normalized)
+    || /\b(do not|don\x27t)\s+(text|message|contact)\s+me\b/i.test(normalized)
+    || /\bremove\s+me\b/i.test(normalized)
+    || /(不要再联系|不要再发|别再联系|取消订阅)/.test(normalized);
+}
+
+function customerNurtureLatestActivityAt(item) {
+  const customerActivity = [item?.sourceUpdatedAt, item?.sourceCreatedAt, item?.date];
+  for (const message of (Array.isArray(item?.conversationMessages) ? item.conversationMessages : [])) customerActivity.push(message?.timestamp);
+  const parsedActivity = customerActivity.map(value => Date.parse(String(value || ''))).filter(Number.isFinite);
+  if (parsedActivity.length) return parsedActivity.sort((a, b) => b - a)[0];
+  return [item?.createdAt, item?.importedAt, item?.updatedAt]
+    .map(value => Date.parse(String(value || ''))).filter(Number.isFinite).sort((a, b) => b - a)[0] || 0;
+}
+
+function customerNurtureServiceText(item) {
+  return prospectTextKey([item?.service, item?.need, item?.vehicle, item?.chatContext].join(' '));
+}
+
+function customerNurtureServiceMatches(serviceText, selectedServices = []) {
+  if (!selectedServices.length) return true;
+  const aliases = {
+    tint: ['tint', 'window tint', '窗膜', '隔热膜', '玻璃膜'],
+    wrap: ['wrap', 'tpu', '彩色 ppf', '彩色ppf', '改色膜', '全车改色'],
+    vinyl: ['vinyl', 'pvc', '喷绘膜', '车衣改色'],
+    ppf: ['ppf', 'paint protection', '透明车衣', '隐形车衣', '保护膜']
+  };
+  return selectedServices.some(service => {
+    const key = prospectTextKey(service);
+    const terms = aliases[key] || [key];
+    return terms.map(prospectTextKey).some(term => term && serviceText.includes(term));
+  });
+}
+
+function customerNurtureVehicleYear(item) {
+  const match = String([item?.vehicle, item?.need].join(' ')).match(/\b(19\d{2}|20\d{2})\b/);
+  return match ? Number(match[1]) : 0;
+}
+
+function customerNurtureChannel(item) {
+  if (normalizedPhone(item?.phone).length === 10) return 'sms';
+  if (metaPsidFromItem(item)) return 'meta';
+  return '';
+}
+
+function customerNurtureConverted(db, item, collection) {
+  if (customerRecordHasGeneratedJob(db, item, collection)) return true;
+  if (['已转施工单', '已成交', '已交车'].includes(String(item?.status || ''))) return true;
+  const phone = normalizedPhone(item?.phone);
+  if (!phone) return false;
+  return (db.jobs || []).some(job => !job.deletedAt && normalizedPhone(job.phone) === phone)
+    || (db.salesOrders || []).some(order => normalizedPhone(order.phone || order.contact || order.customerPhone) === phone && !['取消', '已取消'].includes(String(order.status || '')));
+}
+
+function customerNurtureCandidateRows(db, filters = {}) {
+  const inactiveDays = Math.max(30, Math.min(730, Number(filters.inactiveDays || 30)));
+  const cutoff = Date.now() - inactiveDays * 86400000;
+  const services = (Array.isArray(filters.services) ? filters.services : []).map(prospectTextKey).filter(Boolean);
+  const vehicleTerms = (Array.isArray(filters.vehicleTerms) ? filters.vehicleTerms : String(filters.vehicleTerms || '').split(','))
+    .map(prospectTextKey).filter(Boolean);
+  const yearMin = Number(filters.yearMin || 0);
+  const yearMax = Number(filters.yearMax || 0);
+  const seen = new Set();
+  const rows = [];
+  for (const collection of ['customerConversations', 'prospects']) {
+    for (const item of (db[collection] || [])) {
+      if (!item || item.deletedAt || item.marketingOptOutAt || customerNurtureConverted(db, item, collection)) continue;
+      if (['无效', '暂时无需回复'].includes(String(item.status || ''))) continue;
+      const lastActivityAt = customerNurtureLatestActivityAt(item);
+      if (!lastActivityAt || lastActivityAt > cutoff) continue;
+      const channel = customerNurtureChannel(item);
+      if (!channel) continue;
+      const serviceText = customerNurtureServiceText(item);
+      if (!customerNurtureServiceMatches(serviceText, services)) continue;
+      const vehicleText = prospectTextKey([item.vehicle, item.need].join(' '));
+      if (vehicleTerms.length && !vehicleTerms.some(term => vehicleText.includes(term))) continue;
+      const year = customerNurtureVehicleYear(item);
+      if (yearMin && (!year || year < yearMin)) continue;
+      if (yearMax && (!year || year > yearMax)) continue;
+      const identity = normalizedPhone(item.phone) || metaPsidFromItem(item) || `${collection}:${item.id}`;
+      if (seen.has(identity)) continue;
+      seen.add(identity);
+      rows.push({
+        collection, recordId: item.id, customer: item.customer || '未命名客户', phone: item.phone || '',
+        vehicle: item.vehicle || '', need: item.need || '', service: item.service || '', year,
+        channel, lastActivityAt: new Date(lastActivityAt).toISOString()
+      });
+    }
+  }
+  return rows.sort((a, b) => String(a.lastActivityAt).localeCompare(String(b.lastActivityAt))).slice(0, 2000);
+}
+
+function customerNurtureMarkInbound(db, collection, item, text, receivedAt, channel) {
+  if (!item) return;
+  const now = receivedAt || new Date().toISOString();
+  const optedOut = customerNurtureOptOutText(text);
+  if (optedOut) {
+    item.marketingOptOutAt = now;
+    item.marketingOptOutChannel = channel || '';
+    item.marketingOptOutReason = String(text || '').slice(0, 300);
+  } else {
+    item.nurtureRepliedAt = now;
+    item.nurtureReplyChannel = channel || '';
+    if (!['已转施工单', '已成交', '已交车'].includes(String(item.status || ''))) item.status = '新意向';
+  }
+  for (const delivery of (db.customerNurtureDeliveries || [])) {
+    if (delivery.collection !== collection || delivery.recordId !== item.id || delivery.status !== 'pending') continue;
+    delivery.status = optedOut ? 'opted-out' : 'replied';
+    delivery.finishedAt = now;
+  }
+  const latestSent = (db.customerNurtureDeliveries || [])
+    .filter(delivery => delivery.collection === collection && delivery.recordId === item.id && delivery.status === 'sent')
+    .sort((a, b) => String(b.sentAt || '').localeCompare(String(a.sentAt || '')))[0];
+  if (latestSent) {
+    latestSent.status = optedOut ? 'opted-out' : 'replied';
+    latestSent.repliedAt = now;
+    latestSent.replyChannel = channel || '';
+    latestSent.finishedAt = now;
+  }
+}
+
+function customerNurtureTodayKey(db, date = new Date()) {
+  return instantDateInTimezone(date, db.settings?.timezone || 'America/Los_Angeles');
+}
+
+async function sendCustomerNurtureDelivery(db, campaign, delivery) {
+  const item = (db[delivery.collection] || []).find(row => row.id === delivery.recordId);
+  if (!item || item.marketingOptOutAt || customerNurtureConverted(db, item, delivery.collection)) {
+    delivery.status = item?.marketingOptOutAt ? 'opted-out' : 'skipped';
+    delivery.finishedAt = new Date().toISOString();
+    return;
+  }
+  const now = new Date().toISOString();
+  const actor = { id: campaign.createdByUserId || 'customer-nurture', name: campaign.createdBy || '未成交客户经营中心' };
+  if (delivery.channel === 'sms') {
+    const digits = normalizedPhone(item.phone);
+    if (digits.length !== 10) throw new Error('客户电话号码已失效');
+    const optOutLine = /reply\s+stop/i.test(campaign.message) ? '' : '\nReply STOP to opt out.';
+    let text = `${campaign.message}${optOutLine}`.slice(0, 1600);
+    let mediaUrl = '';
+    if (campaign.attachment?.url) {
+      let publicBaseUrl = '';
+      try { publicBaseUrl = new URL(campaign.attachment.url).origin; } catch {}
+      const media = await twilioMediaForAttachment(campaign.attachment, publicBaseUrl);
+      mediaUrl = media.mediaUrl;
+      if (media.linkText) text = `${campaign.message}\n${media.linkText}${optOutLine}`.slice(0, 1600);
+    }
+    const sent = await sendTwilioSms({ to: `+1${digits}`, body: text, mediaUrl: mediaUrl || undefined });
+    appendSmsMessage(item, {
+      id: `twilio-${sent.sid || id()}`, speaker: 'shop', speakerName: actor.name, direction: 'outbound', channel: 'sms',
+      text, timestamp: now, provider: 'twilio', providerSid: String(sent.sid || ''), status: String(sent.status || 'queued'),
+      from: String(sent.from || twilioConfig().fromNumber), to: `+1${digits}`, nurtureCampaignId: campaign.id,
+      attachment: campaign.attachment || null
+    });
+    delivery.providerId = String(sent.sid || '');
+  } else if (delivery.channel === 'meta') {
+    const sent = await sendMetaMessengerReply(db, item, campaign.message);
+    appendMetaMessengerMessage(item, { mid: sent.messageId || `quad-meta-${id()}`, text: campaign.message, timestamp: Date.parse(now) }, String(item.externalBusinessId || ''), metaPsidFromItem(item), 'outbound', actor.name);
+    delivery.providerId = String(sent.messageId || '');
+    if (campaign.attachment?.url) {
+      const imageSent = await sendMetaMessengerImage(db, item, campaign.attachment.url);
+      delivery.attachmentProviderId = String(imageSent.messageId || '');
+    }
+  } else {
+    throw new Error('没有可用发送通道');
+  }
+  item.lastNurtureAt = now;
+  item.lastNurtureCampaignId = campaign.id;
+  delivery.status = 'sent';
+  delivery.sentAt = now;
+  delivery.finishedAt = now;
+}
+
+let customerNurtureWorkerBusy = false;
+async function processCustomerNurtureQueue() {
+  if (customerNurtureWorkerBusy) return;
+  customerNurtureWorkerBusy = true;
+  try {
+    const db = readDb();
+    const active = (db.customerNurtureCampaigns || []).filter(item => item.status === 'active');
+    if (!active.length) return;
+    const localHour = Number(new Intl.DateTimeFormat('en-US', {
+      timeZone: db.settings?.timezone || 'America/Los_Angeles', hour: '2-digit', hour12: false
+    }).format(new Date()));
+    if (localHour < 9 || localHour >= 18) return;
+    const today = customerNurtureTodayKey(db);
+    const sentToday = (db.customerNurtureDeliveries || []).filter(item => item.sentAt && customerNurtureTodayKey(db, new Date(item.sentAt)) === today).length;
+    if (sentToday >= 40) return;
+    for (const campaign of active) {
+      const campaignSentToday = (db.customerNurtureDeliveries || []).filter(item => item.campaignId === campaign.id && item.sentAt && customerNurtureTodayKey(db, new Date(item.sentAt)) === today).length;
+      if (campaignSentToday >= Math.min(40, Number(campaign.dailyLimit || 40))) continue;
+      const delivery = (db.customerNurtureDeliveries || []).find(item => item.campaignId === campaign.id && item.status === 'pending');
+      if (!delivery) {
+        campaign.status = 'completed';
+        campaign.completedAt = new Date().toISOString();
+        writeDb(db);
+        continue;
+      }
+      delivery.attemptedAt = new Date().toISOString();
+      try { await sendCustomerNurtureDelivery(db, campaign, delivery); }
+      catch (err) { delivery.status = 'failed'; delivery.error = String(err.message || err).slice(0, 500); delivery.finishedAt = new Date().toISOString(); }
+      campaign.updatedAt = new Date().toISOString();
+      writeDb(db);
+      notifyDataChanged('customer-nurture-delivery', delivery.id);
+      break;
+    }
+  } finally {
+    customerNurtureWorkerBusy = false;
+  }
+}
+
+function startCustomerNurtureWorker() {
+  setInterval(() => processCustomerNurtureQueue().catch(err => console.warn(err.message)), 60 * 1000);
 }
 
 function startTwilioReconciliationWorker() {
@@ -5601,6 +5849,7 @@ async function api(req, res) {
           status: String(params.SmsStatus || 'received')
         });
         reactivated = reactivateConversationOnInbound(match.item, receivedAt);
+        customerNurtureMarkInbound(db, match.collection, match.item, body, receivedAt, 'sms');
       }
       audit(db, { id: 'twilio-webhook', name: 'Twilio' }, 'receive-customer-sms', {
         collection: match.collection,
@@ -6943,6 +7192,90 @@ async function api(req, res) {
     writeDb(db);
     notifyDataChanged('delete-customer-message', item.id);
     return send(res, 200, sanitizeDbForUser(db, user));
+  }
+
+  if (req.method === 'POST' && url.pathname === '/api/customer-nurture/preview') {
+    if (!canAccess(user, 'prospectsView')) return send(res, 403, { error: '没有查看未成交客户的权限' });
+    const body = await readBody(req);
+    const candidates = customerNurtureCandidateRows(db, body.filters || body);
+    return send(res, 200, {
+      ok: true,
+      candidates,
+      summary: {
+        total: candidates.length,
+        sms: candidates.filter(item => item.channel === 'sms').length,
+        meta: candidates.filter(item => item.channel === 'meta').length
+      }
+    });
+  }
+
+  if (req.method === 'POST' && url.pathname === '/api/customer-nurture/campaigns') {
+    if (!canAccess(user, 'prospectsEdit')) return send(res, 403, { error: '没有建立客户经营批次的权限' });
+    const body = await readBody(req);
+    const message = String(body.message || '').trim();
+    if (!message) return send(res, 400, { error: '请填写本次经营话术' });
+    if (message.length > 1400) return send(res, 400, { error: '话术不能超过 1400 个字符' });
+    const filters = body.filters && typeof body.filters === 'object' ? body.filters : {};
+    const template = String(body.replyTemplateId || '').trim()
+      ? (db.replyTemplates || []).find(item => item.id === String(body.replyTemplateId) && item.type === 'image' && item.attachment?.url)
+      : null;
+    const available = customerNurtureCandidateRows(db, filters);
+    const selected = new Set((Array.isArray(body.selected) ? body.selected : []).map(value => String(value)));
+    const rows = selected.size ? available.filter(item => selected.has(`${item.collection}:${item.recordId}`)) : available;
+    if (!rows.length) return send(res, 400, { error: '当前条件没有可加入批次的未成交客户' });
+    const now = new Date().toISOString();
+    const campaign = {
+      id: id(), name: String(body.name || `未成交客户经营 ${dateInTimezone(db.settings?.timezone)}`).trim().slice(0, 120),
+      status: 'draft', message, filters, dailyLimit: Math.max(1, Math.min(40, Number(body.dailyLimit || 40))),
+      attachment: template ? { ...template.attachment, title: template.title || '' } : null,
+      total: rows.length, createdAt: now, updatedAt: now, createdBy: user.name || user.email, createdByUserId: user.id
+    };
+    db.customerNurtureCampaigns.unshift(campaign);
+    const recentCutoff = Date.now() - 30 * 86400000;
+    for (const row of rows) {
+      const recentlySent = (db.customerNurtureDeliveries || []).some(item =>
+        item.collection === row.collection && item.recordId === row.recordId
+        && (item.status === 'pending' || (item.sentAt && Date.parse(item.sentAt) >= recentCutoff))
+      );
+      db.customerNurtureDeliveries.unshift({
+        id: id(), campaignId: campaign.id, collection: row.collection, recordId: row.recordId,
+        customer: row.customer, phone: row.phone, vehicle: row.vehicle, channel: row.channel,
+        status: recentlySent ? 'cooldown' : 'pending', createdAt: now,
+        finishedAt: recentlySent ? now : '', error: recentlySent ? '已在其他待发送批次中，或30天内已发送过客户经营消息' : ''
+      });
+    }
+    audit(db, user, 'create-customer-nurture-campaign', {
+      collection: 'customerNurtureCampaigns', recordId: campaign.id, recordLabel: campaign.name,
+      detail: `建立未成交客户经营待发送批次，共 ${rows.length} 位客户；尚未启动发送`
+    });
+    writeDb(db);
+    notifyDataChanged('create-customer-nurture-campaign', campaign.id);
+    return send(res, 201, { ok: true, campaign, data: sanitizeDbForUser(db, user) });
+  }
+
+  const nurtureActionMatch = url.pathname.match(/^\/api\/customer-nurture\/campaigns\/([^/]+)\/(start|pause)$/);
+  if (req.method === 'POST' && nurtureActionMatch) {
+    if (!canAccess(user, 'prospectsEdit')) return send(res, 403, { error: '没有管理客户经营批次的权限' });
+    const campaign = (db.customerNurtureCampaigns || []).find(item => item.id === nurtureActionMatch[1]);
+    if (!campaign) return send(res, 404, { error: '找不到这个客户经营批次' });
+    const action = nurtureActionMatch[2];
+    if (action === 'start') {
+      if (!(db.customerNurtureDeliveries || []).some(item => item.campaignId === campaign.id && item.status === 'pending')) return send(res, 409, { error: '这个批次已经没有待发送客户' });
+      campaign.status = 'active';
+      campaign.startedAt = campaign.startedAt || new Date().toISOString();
+    } else {
+      campaign.status = 'paused';
+      campaign.pausedAt = new Date().toISOString();
+    }
+    campaign.updatedAt = new Date().toISOString();
+    audit(db, user, action === 'start' ? 'start-customer-nurture-campaign' : 'pause-customer-nurture-campaign', {
+      collection: 'customerNurtureCampaigns', recordId: campaign.id, recordLabel: campaign.name,
+      detail: action === 'start' ? `确认启动客户经营批次；每天最多 ${campaign.dailyLimit} 条，公司总上限 40 条` : '暂停客户经营批次'
+    });
+    writeDb(db);
+    notifyDataChanged(`customer-nurture-${action}`, campaign.id);
+    if (action === 'start') setTimeout(() => processCustomerNurtureQueue().catch(err => console.warn(err.message)), 100);
+    return send(res, 200, { ok: true, campaign, data: sanitizeDbForUser(db, user) });
   }
 
   if (req.method === 'POST' && url.pathname === '/api/yelp/send') {
@@ -8716,6 +9049,7 @@ http.createServer((req, res) => {
   startScheduleReminderWorker();
   startTwilioReconciliationWorker();
   startCustomerAiAutoReplyWorker();
+  startCustomerNurtureWorker();
   setInterval(expireInternalMessageVideos, 6 * 60 * 60 * 1000);
   setInterval(cleanupStaleMediaUploadParts, 6 * 60 * 60 * 1000);
 });

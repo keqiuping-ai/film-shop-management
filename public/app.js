@@ -63,6 +63,12 @@ let attendanceMonth = today().slice(0, 7);
 let attendanceReport = null;
 let attendanceReportKey = '';
 let attendanceSelectedUserId = '';
+let customerNurturePreview = [];
+let customerNurtureSelected = new Set();
+let customerNurtureDraft = {
+  inactiveDays: 30, services: [], vehicleTerms: '', yearMin: '', yearMax: '',
+  campaignName: '', dailyLimit: 40, replyTemplateId: '', message: ''
+};
 let fieldSalesUserFilter = 'all';
 let activityHeartbeatTimer = null;
 let lastEmployeeInteractionAt = Date.now();
@@ -187,6 +193,8 @@ const dict = {
     prospectsSub: '已预约或已到店客户及其到店时间',
     customerCenter: '客户交流中心',
     customerCenterSub: '集中查看所有客户聊天，已预约或已到店后加入预约到店客户',
+    customerNurture: '未成交客户经营中心',
+    customerNurtureSub: '筛选长期未成交客户，分批发送合适的短信或 Meta 私信',
     customerTasks: 'AI客服任务中心',
     customerTasksSub: '统一处理待回复、新客户首聊和到期跟进',
     aiBoss: '智能督办中心',
@@ -450,6 +458,8 @@ const dict = {
     prospectsSub: 'Mat, Yelp, and other appointment-ready customer leads',
     customerCenter: 'Customer Communication Center',
     customerCenterSub: 'Manage all customer conversations and promote qualified customers to high intent',
+    customerNurture: 'Unconverted Customer Nurture',
+    customerNurtureSub: 'Filter older unconverted leads and send controlled SMS or Meta follow-ups',
     customerTasks: 'AI Customer Service Center',
     customerTasksSub: 'Handle replies, first contact, and scheduled follow-ups in one queue',
     aiBoss: 'Smart Supervision Center',
@@ -692,6 +702,7 @@ const pages = [
   ['aiBoss', 'aiBoss', 'aiBossSub'],
   ['fieldSales', 'fieldSales', 'fieldSalesSub'],
   ['customerCenter', 'customerCenter', 'customerCenterSub'],
+  ['customerNurture', 'customerNurture', 'customerNurtureSub'],
   ['replyLibrary', 'replyLibrary', 'replyLibrarySub'],
   ['prospects', 'prospects', 'prospectsSub'],
   ['leads', 'leads', 'leadsSub'],
@@ -725,6 +736,7 @@ const pagePermissions = {
   aiBoss: null,
   fieldSales: 'fieldSalesManage',
   customerCenter: 'prospectsView',
+  customerNurture: 'prospectsView',
   replyLibrary: 'prospectsView',
   prospects: 'prospectsView',
   leads: 'leadsView',
@@ -753,6 +765,7 @@ const writePermissions = {
   fieldSales: 'fieldSalesManage',
   customerTasks: 'prospectsEdit',
   customerCenter: 'prospectsEdit',
+  customerNurture: 'prospectsEdit',
   replyLibrary: 'prospectsEdit',
   prospects: 'prospectsEdit',
   leads: 'leadsEdit',
@@ -1147,7 +1160,7 @@ function setPage(page) {
 
 const COMPANY_SCOPE_PAGES = new Set([
   'modules', 'clock', 'leave', 'warranties', 'pricing', 'customerTasks', 'aiRules', 'aiBoss',
-  'fieldSales', 'customerCenter', 'replyLibrary', 'shipments', 'portalCustomers',
+  'fieldSales', 'customerCenter', 'customerNurture', 'replyLibrary', 'shipments', 'portalCustomers',
   'personalNotes', 'audit', 'settings'
 ]);
 
@@ -2376,7 +2389,7 @@ function updateVoiceButton(recording, label = '') {
 }
 
 function navIcon(id) {
-  return { modules:'▦', clock:'📍', leave:'🗓️', dashboard:'⌂', jobs:'▣', warranties:'◆', installers:'◉', pricing:'$', inventory:'▤', workshopInventory:'▥', inventoryAlerts:'!', customerTasks:'🎧', aiRules:'🤖', aiBoss:'🧠', fieldSales:'🧭', customerCenter:'💬', replyLibrary:'☁', prospects:'★', leads:'☎', orders:'⇄', portalCustomers:'👤', shipments:'✈', schedules:'◫', workTime:'◴', expenses:'◇', reimbursements:'🧾', reports:'◌', audit:'◷', users:'◎', personalNotes:'📝', settings:'⚙' }[id] || '□';
+  return { modules:'▦', clock:'📍', leave:'🗓️', dashboard:'⌂', jobs:'▣', warranties:'◆', installers:'◉', pricing:'$', inventory:'▤', workshopInventory:'▥', inventoryAlerts:'!', customerTasks:'🎧', aiRules:'🤖', aiBoss:'🧠', fieldSales:'🧭', customerCenter:'💬', customerNurture:'📣', replyLibrary:'☁', prospects:'★', leads:'☎', orders:'⇄', portalCustomers:'👤', shipments:'✈', schedules:'◫', workTime:'◴', expenses:'◇', reimbursements:'🧾', reports:'◌', audit:'◷', users:'◎', personalNotes:'📝', settings:'⚙' }[id] || '□';
 }
 
 function moduleGrid(availablePages) {
@@ -4399,6 +4412,131 @@ async function reviewDesktopLeave(id, status) {
   try { await api(`/api/mobile/leave/${encodeURIComponent(id)}`, { method:'PUT', body:JSON.stringify({ status, reviewNote }) }); await sync({ silent:true }); } catch (error) { alert(error.message); }
 }
 
+function customerNurtureFiltersFromForm() {
+  const services = [...document.querySelectorAll('[name="nurtureService"]:checked')].map(input => input.value);
+  return {
+    inactiveDays: Number(document.getElementById('nurtureInactiveDays')?.value || 30),
+    services,
+    vehicleTerms: String(document.getElementById('nurtureVehicleTerms')?.value || '').split(/[,，\n]+/).map(value => value.trim()).filter(Boolean),
+    yearMin: Number(document.getElementById('nurtureYearMin')?.value || 0),
+    yearMax: Number(document.getElementById('nurtureYearMax')?.value || 0)
+  };
+}
+
+function updateCustomerNurtureDraftField(field, value) {
+  customerNurtureDraft[field] = value;
+}
+
+function updateCustomerNurtureService(value, checked) {
+  const next = new Set(customerNurtureDraft.services || []);
+  if (checked) next.add(value); else next.delete(value);
+  customerNurtureDraft.services = [...next];
+}
+
+async function previewCustomerNurture() {
+  try {
+    const result = await api('/api/customer-nurture/preview', { method: 'POST', body: JSON.stringify({ filters: customerNurtureFiltersFromForm() }) });
+    customerNurturePreview = result.candidates || [];
+    customerNurtureSelected = new Set(customerNurturePreview.map(item => `${item.collection}:${item.recordId}`));
+    document.getElementById('customerNurturePreview')?.replaceChildren();
+    render();
+  } catch (err) { alert(err.message); }
+}
+
+function toggleCustomerNurtureRow(key, checked) {
+  if (checked) customerNurtureSelected.add(key); else customerNurtureSelected.delete(key);
+  const count = document.getElementById('nurtureSelectedCount');
+  if (count) count.textContent = String(customerNurtureSelected.size);
+}
+
+function toggleAllCustomerNurture(checked) {
+  customerNurtureSelected = checked ? new Set(customerNurturePreview.map(item => `${item.collection}:${item.recordId}`)) : new Set();
+  document.querySelectorAll('[data-nurture-row]').forEach(input => { input.checked = checked; });
+  const count = document.getElementById('nurtureSelectedCount');
+  if (count) count.textContent = String(customerNurtureSelected.size);
+}
+
+async function createCustomerNurtureCampaign() {
+  const message = String(document.getElementById('nurtureMessage')?.value || '').trim();
+  if (!message) return alert(lang === 'zh' ? '请先填写本次经营话术。' : 'Enter a campaign message.');
+  if (!customerNurtureSelected.size) return alert(lang === 'zh' ? '请先预览并选择客户。' : 'Preview and select customers first.');
+  try {
+    const result = await api('/api/customer-nurture/campaigns', {
+      method: 'POST',
+      body: JSON.stringify({
+        name: document.getElementById('nurtureCampaignName')?.value,
+        message,
+        dailyLimit: Number(document.getElementById('nurtureDailyLimit')?.value || 40),
+        replyTemplateId: document.getElementById('nurtureImageTemplate')?.value || '',
+        filters: customerNurtureFiltersFromForm(),
+        selected: [...customerNurtureSelected]
+      })
+    });
+    state = result.data;
+    customerNurturePreview = [];
+    customerNurtureSelected = new Set();
+    render();
+    alert(lang === 'zh' ? '已建立待发送批次，目前尚未发送。确认内容后再点“启动”。' : 'Draft batch created. Nothing has been sent yet.');
+  } catch (err) { alert(err.message); }
+}
+
+async function customerNurtureCampaignAction(id, action) {
+  if (action === 'start' && !confirm(lang === 'zh'
+    ? '确认启动这个批次？系统只会在洛杉矶时间 09:00–18:00 发送，每天全公司最多 40 条；有电话优先短信，没有电话才发 Meta。'
+    : 'Start this batch? Sending is limited to 9am–6pm Los Angeles time and 40 messages per day.')) return;
+  try {
+    const result = await api(`/api/customer-nurture/campaigns/${encodeURIComponent(id)}/${action}`, { method: 'POST', body: '{}' });
+    state = result.data;
+    render();
+  } catch (err) { alert(err.message); }
+}
+
+function customerNurturePreviewTable() {
+  if (!customerNurturePreview.length) return `<p class="note">${lang === 'zh' ? '先设置条件并点击“预览客户”。预览不会发送消息。' : 'Set filters and preview customers. Preview never sends messages.'}</p>`;
+  return `<div class="nurture-summary"><strong>${lang === 'zh' ? '符合条件' : 'Eligible'} ${customerNurturePreview.length}</strong><span>${lang === 'zh' ? '已选择' : 'Selected'} <b id="nurtureSelectedCount">${customerNurtureSelected.size}</b></span><span>SMS ${customerNurturePreview.filter(item => item.channel === 'sms').length}</span><span>Meta ${customerNurturePreview.filter(item => item.channel === 'meta').length}</span></div>
+  <div class="table-wrap"><table><thead><tr><th><input type="checkbox" checked onchange="toggleAllCustomerNurture(this.checked)"></th><th>${lang === 'zh' ? '客户' : 'Customer'}</th><th>${lang === 'zh' ? '车型/需求' : 'Vehicle / Need'}</th><th>${lang === 'zh' ? '最后联系' : 'Last activity'}</th><th>${lang === 'zh' ? '发送通道' : 'Channel'}</th></tr></thead><tbody>
+  ${customerNurturePreview.map(item => { const key = `${item.collection}:${item.recordId}`; return `<tr><td><input data-nurture-row type="checkbox" ${customerNurtureSelected.has(key) ? 'checked' : ''} onchange="toggleCustomerNurtureRow('${escapeHtml(key)}',this.checked)"></td><td><strong>${escapeHtml(item.customer)}</strong><small>${escapeHtml(item.phone || '')}</small></td><td>${escapeHtml(item.vehicle || item.need || '-')}</td><td>${escapeHtml(formatAppDateTime(item.lastActivityAt))}</td><td><span class="status ${item.channel === 'sms' ? 'ok' : ''}">${item.channel === 'sms' ? 'SMS 优先' : 'Meta'}</span></td></tr>`; }).join('')}
+  </tbody></table></div>`;
+}
+
+function customerNurtureCampaignTable() {
+  const campaigns = state.customerNurtureCampaigns || [];
+  const deliveries = state.customerNurtureDeliveries || [];
+  if (!campaigns.length) return `<p class="note">${lang === 'zh' ? '还没有客户经营批次。' : 'No nurture batches yet.'}</p>`;
+  return `<div class="nurture-campaign-list">${campaigns.map(campaign => {
+    const rows = deliveries.filter(item => item.campaignId === campaign.id);
+    const sent = rows.filter(item => item.status === 'sent').length;
+    const pending = rows.filter(item => item.status === 'pending').length;
+    const failed = rows.filter(item => item.status === 'failed').length;
+    const replied = rows.filter(item => item.status === 'replied').length;
+    const label = { draft:'待确认', active:'发送中', paused:'已暂停', completed:'已完成' }[campaign.status] || campaign.status;
+    return `<div class="nurture-campaign-card"><div><strong>${escapeHtml(campaign.name)}</strong><span class="status">${escapeHtml(label)}</span><small>${escapeHtml(formatAppDateTime(campaign.createdAt))} · ${escapeHtml(campaign.createdBy || '')}</small></div><div class="nurture-campaign-stats"><span>总数 ${rows.length}</span><span>已发 ${sent}</span><span>待发 ${pending}</span><span>已回复 ${replied}</span>${failed ? `<span class="danger">失败 ${failed}</span>` : ''}</div><div class="mini-actions">${['draft','paused'].includes(campaign.status) && pending ? `<button class="btn primary" onclick="customerNurtureCampaignAction('${campaign.id}','start')">启动</button>` : ''}${campaign.status === 'active' ? `<button class="btn" onclick="customerNurtureCampaignAction('${campaign.id}','pause')">暂停</button>` : ''}</div></div>`;
+  }).join('')}</div>`;
+}
+
+function customerNurtureView() {
+  const serviceOptions = [['tint','窗膜'],['wrap','TPU改色'],['vinyl','Vinyl改色'],['ppf','PPF']];
+  const imageTemplates = (state.replyTemplates || []).filter(item => item.type === 'image' && item.attachment?.url);
+  return `<div class="panel"><div class="panel-head"><div><h3>${t('customerNurture')}</h3><p class="note">${lang === 'zh' ? '仅筛选长期未成交客户。客户回复或发送 STOP 后会立即停止后续经营；回复客户自动回到客户交流中心。' : 'Only older unconverted leads are included. Replies and STOP immediately suppress future sends.'}</p></div></div>
+  <div class="nurture-filter-grid">
+    <label>${lang === 'zh' ? '多久没有成交/联系' : 'Inactive period'}<select id="nurtureInactiveDays" onchange="updateCustomerNurtureDraftField('inactiveDays',Number(this.value))">${[30,60,90,180].map(days => `<option value="${days}" ${Number(customerNurtureDraft.inactiveDays) === days ? 'selected' : ''}>${days}天以上</option>`).join('')}</select></label>
+    <fieldset><legend>${lang === 'zh' ? '原留资项目（可多选）' : 'Services'}</legend>${serviceOptions.map(([value,label]) => `<label><input name="nurtureService" type="checkbox" value="${value}" ${(customerNurtureDraft.services || []).includes(value) ? 'checked' : ''} onchange="updateCustomerNurtureService('${value}',this.checked)"> ${label}</label>`).join('')}</fieldset>
+    <label>${lang === 'zh' ? '车型关键词（逗号分隔）' : 'Vehicle terms'}<input id="nurtureVehicleTerms" value="${escapeHtml(customerNurtureDraft.vehicleTerms)}" oninput="updateCustomerNurtureDraftField('vehicleTerms',this.value)" placeholder="Tesla, Cybertruck, BMW, Mercedes"></label>
+    <label>${lang === 'zh' ? '车辆年份从' : 'Year from'}<input id="nurtureYearMin" value="${escapeHtml(customerNurtureDraft.yearMin)}" oninput="updateCustomerNurtureDraftField('yearMin',this.value)" type="number" min="1980" max="2035" placeholder="2020"></label>
+    <label>${lang === 'zh' ? '到' : 'To'}<input id="nurtureYearMax" value="${escapeHtml(customerNurtureDraft.yearMax)}" oninput="updateCustomerNurtureDraftField('yearMax',this.value)" type="number" min="1980" max="2035" placeholder="2026"></label>
+    <button class="btn" onclick="previewCustomerNurture()">${lang === 'zh' ? '预览客户（不发送）' : 'Preview customers'}</button>
+  </div><div id="customerNurturePreview">${customerNurturePreviewTable()}</div></div>
+  <div class="panel" style="margin-top:14px"><div class="panel-head"><h3>${lang === 'zh' ? '建立待发送批次' : 'Create draft batch'}</h3></div><div class="nurture-compose-grid">
+    <label>${lang === 'zh' ? '批次名称' : 'Batch name'}<input id="nurtureCampaignName" value="${escapeHtml(customerNurtureDraft.campaignName)}" oninput="updateCustomerNurtureDraftField('campaignName',this.value)" placeholder="例如：60天未成交 Tesla 改色客户"></label>
+    <label>${lang === 'zh' ? '每天最多发送' : 'Daily limit'}<input id="nurtureDailyLimit" type="number" min="1" max="40" value="${Number(customerNurtureDraft.dailyLimit || 40)}" oninput="updateCustomerNurtureDraftField('dailyLimit',Number(this.value))"></label>
+    <label>${lang === 'zh' ? '配套案例图片（可选）' : 'Case image'}<select id="nurtureImageTemplate" onchange="updateCustomerNurtureDraftField('replyTemplateId',this.value)"><option value="">不发送图片</option>${imageTemplates.map(item => `<option value="${escapeHtml(item.id)}" ${customerNurtureDraft.replyTemplateId === item.id ? 'selected' : ''}>${escapeHtml(item.title || '图片素材')}</option>`).join('')}</select></label>
+    <label class="full">${lang === 'zh' ? '统一话术' : 'Message'}<textarea id="nurtureMessage" rows="5" oninput="updateCustomerNurtureDraftField('message',this.value)" placeholder="填写本次跟进文案。短信会自动附加 Reply STOP to opt out.">${escapeHtml(customerNurtureDraft.message)}</textarea></label>
+    <div class="full safety-note">短信优先；没有有效电话才尝试 Meta。Yelp 只接收客户回复，不主动群发。Meta 对超出允许联系窗口的营销私信可能拒绝，系统会保留失败原因，不会绕过平台限制。建立批次后不会立即发送，必须再次点击“启动”。</div>
+    <button class="btn primary" onclick="createCustomerNurtureCampaign()">${lang === 'zh' ? '创建待发送批次' : 'Create draft batch'}</button>
+  </div></div>
+  <div class="panel" style="margin-top:14px"><div class="panel-head"><h3>${lang === 'zh' ? '发送批次与进度' : 'Batches and progress'}</h3></div>${customerNurtureCampaignTable()}</div>`;
+}
+
 const views = {
   clock() { return desktopClockView(); },
   leave() { return desktopLeaveView(); },
@@ -4476,6 +4614,9 @@ const views = {
   },
   customerCenter() {
     return panel(t('customerCenter'), hasPerm('prospectsEdit') ? `<button class="btn primary" onclick="openProspect(null,'customerConversations')">${lang === 'zh' ? '新增客户交流' : 'New conversation'}</button>` : '', customerCenterSearchBox() + `<div id="customerCenterSearchResults">${customerCenterTable(searchedCustomerCenterRows())}</div>` + `<p class="note">${lang === 'zh' ? '“暂时无需回复”的客户继续保留在这里，但不会进入待回复任务；客户再次发来消息后会自动恢复为“新意向”。已预约和已到店客户自动进入“预约到店客户”，已转施工单客户进入“施工订单”，无效客户默认隐藏。' : 'Customers marked No Reply Needed remain here without reply tasks and automatically return to New Intent when they message again. Appointments move to the appointment board, converted customers move to jobs, and invalid customers are hidden.'}</p>`);
+  },
+  customerNurture() {
+    return customerNurtureView();
   },
   replyLibrary() {
     return panel(t('replyLibrary'), hasPerm('prospectsEdit') ? `<button class="btn primary" onclick="openReplyTemplateEditor('text')">${lang === 'zh' ? '新增回复素材' : 'New reply'}</button>` : '', replyLibraryPageHtml());
