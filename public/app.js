@@ -5876,6 +5876,37 @@ function compareProspectConversationMessages(a, b) {
   return Number(a.importOrder || 0) - Number(b.importOrder || 0);
 }
 
+function yelpInitialRequestMessage(item, structured = []) {
+  if (!String(item?.source || '').trim().toLowerCase().includes('yelp')) return null;
+  let text = cleanConversationText(item?.need || '');
+  if (!text) {
+    const raw = cleanConversationText(item?.chatContext || '');
+    const match = raw.match(/Customer request:\s*([\s\S]*?)(?=\s+\|\s+(Conversation:|Delivered|Sent|Received|My Leads|Contacted Lead Details)\b|$)/i);
+    text = cleanConversationText(match?.[1] || '');
+  }
+  if (!text || ['/','-','—'].includes(text)) return null;
+  const normalized = normalizeCustomerLookupText(text);
+  const alreadyShown = structured.some(message => {
+    const existing = normalizeCustomerLookupText(message.text || '');
+    return existing && (existing === normalized || existing.includes(normalized) || normalized.includes(existing));
+  });
+  if (alreadyShown) return null;
+  const timestamp = String(item.sourceCreatedAt || item.importedAt || (item.date ? `${item.date}T00:00:00` : ''));
+  return {
+    role: 'customer',
+    title: lang === 'zh' ? '客户说 - Yelp 初始询价' : 'Customer - Initial Yelp Request',
+    text,
+    attachment: null,
+    messageId: `yelp-initial-${item.id || item.externalId || ''}`,
+    timestamp,
+    tieId: `yelp-initial-${item.id || item.externalId || ''}`,
+    status: '',
+    meta: [formatAppDateTime(timestamp) || cleanConversationText(timestamp), 'Yelp'].filter(Boolean).join(' · '),
+    order: -1,
+    importOrder: -1
+  };
+}
+
 function prospectConversationSegments(input) {
   const item = typeof input === 'object' && input ? input : null;
   if (item) {
@@ -5913,6 +5944,8 @@ function prospectConversationSegments(input) {
         });
         structured = [...legacy, ...structured];
       }
+      const yelpInitialRequest = yelpInitialRequestMessage(item, structured);
+      if (yelpInitialRequest) structured = [yelpInitialRequest, ...structured];
       const segments = [];
       structured
         .sort(compareProspectConversationMessages)
