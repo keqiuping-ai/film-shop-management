@@ -65,6 +65,7 @@ let attendanceReportKey = '';
 let attendanceSelectedUserId = '';
 let customerNurturePreview = [];
 let customerNurtureSelected = new Set();
+let customerNurturePreviewSummary = null;
 let customerNurtureDraft = {
   inactiveDays: 30, services: [], vehicleTerms: '', yearMin: '', yearMax: '',
   campaignName: '', dailyLimit: 40, replyTemplateId: '', message: ''
@@ -4446,6 +4447,7 @@ async function previewCustomerNurture() {
   try {
     const result = await api('/api/customer-nurture/preview', { method: 'POST', body: JSON.stringify({ filters: customerNurtureFiltersFromForm() }) });
     customerNurturePreview = result.candidates || [];
+    customerNurturePreviewSummary = result.summary || null;
     customerNurtureSelected = new Set(customerNurturePreview.map(item => `${item.collection}:${item.recordId}`));
     document.getElementById('customerNurturePreview')?.replaceChildren();
     render();
@@ -4501,7 +4503,12 @@ async function customerNurtureCampaignAction(id, action) {
 }
 
 function customerNurturePreviewTable() {
-  if (!customerNurturePreview.length) return `<p class="note">${lang === 'zh' ? '先设置条件并点击“预览客户”。预览不会发送消息。' : 'Set filters and preview customers. Preview never sends messages.'}</p>`;
+  if (!customerNurturePreview.length) {
+    if (!customerNurturePreviewSummary) return `<p class="note">${lang === 'zh' ? '直接点击“预览客户”可查看全部符合时间条件的车型；项目、车型和年份不填时均代表不限。预览不会发送消息。' : 'Leave services, vehicle and years blank to include all. Preview never sends messages.'}</p>`;
+    const d = customerNurturePreviewSummary.diagnostics || {};
+    const x = d.excluded || {};
+    return `<div class="nurture-empty-result"><strong>${lang === 'zh' ? '本次没有符合条件的客户' : 'No eligible customers'}</strong><p>${lang === 'zh' ? `共检查 ${Number(d.scanned || 0)} 位客户。被筛除：未满所选间隔 ${Number(x.tooRecent || 0)}、已成交 ${Number(x.converted || 0)}、无可发送渠道 ${Number(x.noChannel || 0)}、项目不符 ${Number(x.service || 0)}、车型不符 ${Number(x.vehicle || 0)}、年份不符或未填写年份 ${Number(x.year || 0)}。` : `Checked ${Number(d.scanned || 0)} customers.`}</p><p class="note">${lang === 'zh' ? '提示：不选项目、不填车型、不填年份都代表“全部”；如果客户尚未达到30天，请缩短未联系时间再预览。' : 'Blank optional filters mean all.'}</p></div>`;
+  }
   return `<div class="nurture-summary"><strong>${lang === 'zh' ? '符合条件' : 'Eligible'} ${customerNurturePreview.length}</strong><span>${lang === 'zh' ? '已选择' : 'Selected'} <b id="nurtureSelectedCount">${customerNurtureSelected.size}</b></span><span>SMS ${customerNurturePreview.filter(item => item.channel === 'sms').length}</span><span>Meta ${customerNurturePreview.filter(item => item.channel === 'meta').length}</span></div>
   <div class="table-wrap"><table><thead><tr><th><input type="checkbox" checked onchange="toggleAllCustomerNurture(this.checked)"></th><th>${lang === 'zh' ? '客户' : 'Customer'}</th><th>${lang === 'zh' ? '车型/需求' : 'Vehicle / Need'}</th><th>${lang === 'zh' ? '最后联系' : 'Last activity'}</th><th>${lang === 'zh' ? '发送通道' : 'Channel'}</th></tr></thead><tbody>
   ${customerNurturePreview.map(item => { const key = `${item.collection}:${item.recordId}`; return `<tr><td><input data-nurture-row type="checkbox" ${customerNurtureSelected.has(key) ? 'checked' : ''} onchange="toggleCustomerNurtureRow('${escapeHtml(key)}',this.checked)"></td><td><strong>${escapeHtml(item.customer)}</strong><small>${escapeHtml(item.phone || '')}</small></td><td>${escapeHtml(item.vehicle || item.need || '-')}</td><td>${escapeHtml(formatAppDateTime(item.lastActivityAt))}</td><td><span class="status ${item.channel === 'sms' ? 'ok' : ''}">${item.channel === 'sms' ? 'SMS 优先' : 'Meta'}</span></td></tr>`; }).join('')}
@@ -4528,12 +4535,12 @@ function customerNurtureView() {
   const imageTemplates = (state.replyTemplates || []).filter(item => item.type === 'image' && item.attachment?.url);
   return `<div class="panel"><div class="panel-head"><div><h3>${t('customerNurture')}</h3><p class="note">${lang === 'zh' ? '仅筛选长期未成交客户。客户回复或发送 STOP 后会立即停止后续经营；回复客户自动回到客户交流中心。' : 'Only older unconverted leads are included. Replies and STOP immediately suppress future sends.'}</p></div></div>
   <div class="nurture-filter-grid">
-    <label>${lang === 'zh' ? '多久没有成交/联系' : 'Inactive period'}<select id="nurtureInactiveDays" onchange="updateCustomerNurtureDraftField('inactiveDays',Number(this.value))">${[30,60,90,180].map(days => `<option value="${days}" ${Number(customerNurtureDraft.inactiveDays) === days ? 'selected' : ''}>${days}天以上</option>`).join('')}</select></label>
-    <fieldset><legend>${lang === 'zh' ? '原留资项目（可多选）' : 'Services'}</legend>${serviceOptions.map(([value,label]) => `<label><input name="nurtureService" type="checkbox" value="${value}" ${(customerNurtureDraft.services || []).includes(value) ? 'checked' : ''} onchange="updateCustomerNurtureService('${value}',this.checked)"> ${label}</label>`).join('')}</fieldset>
-    <label>${lang === 'zh' ? '车型关键词（逗号分隔）' : 'Vehicle terms'}<input id="nurtureVehicleTerms" value="${escapeHtml(customerNurtureDraft.vehicleTerms)}" oninput="updateCustomerNurtureDraftField('vehicleTerms',this.value)" placeholder="Tesla, Cybertruck, BMW, Mercedes"></label>
-    <label>${lang === 'zh' ? '车辆年份从' : 'Year from'}<input id="nurtureYearMin" value="${escapeHtml(customerNurtureDraft.yearMin)}" oninput="updateCustomerNurtureDraftField('yearMin',this.value)" type="number" min="1980" max="2035" placeholder="2020"></label>
-    <label>${lang === 'zh' ? '到' : 'To'}<input id="nurtureYearMax" value="${escapeHtml(customerNurtureDraft.yearMax)}" oninput="updateCustomerNurtureDraftField('yearMax',this.value)" type="number" min="1980" max="2035" placeholder="2026"></label>
-    <button class="btn" onclick="previewCustomerNurture()">${lang === 'zh' ? '预览客户（不发送）' : 'Preview customers'}</button>
+    <label class="nurture-filter-inactive">${lang === 'zh' ? '多久没有成交/联系' : 'Inactive period'}<select id="nurtureInactiveDays" onchange="updateCustomerNurtureDraftField('inactiveDays',Number(this.value))">${[7,14,30,60,90,180].map(days => `<option value="${days}" ${Number(customerNurtureDraft.inactiveDays) === days ? 'selected' : ''}>${days}天以上</option>`).join('')}</select></label>
+    <fieldset class="nurture-service-field"><legend>${lang === 'zh' ? '原留资项目（不选＝全部）' : 'Services (blank = all)'}</legend><div class="nurture-service-options">${serviceOptions.map(([value,label]) => `<label class="nurture-service-option"><input name="nurtureService" type="checkbox" value="${value}" ${(customerNurtureDraft.services || []).includes(value) ? 'checked' : ''} onchange="updateCustomerNurtureService('${value}',this.checked)"><span>${label}</span></label>`).join('')}</div></fieldset>
+    <label class="nurture-filter-vehicle">${lang === 'zh' ? '车型关键词（不填＝全部）' : 'Vehicle terms (blank = all)'}<input id="nurtureVehicleTerms" value="${escapeHtml(customerNurtureDraft.vehicleTerms)}" oninput="updateCustomerNurtureDraftField('vehicleTerms',this.value)" placeholder="Tesla, Cybertruck, BMW, Mercedes"></label>
+    <label class="nurture-filter-year">${lang === 'zh' ? '年份从（不填＝不限）' : 'Year from'}<input id="nurtureYearMin" value="${escapeHtml(customerNurtureDraft.yearMin)}" oninput="updateCustomerNurtureDraftField('yearMin',this.value)" type="number" min="1980" max="2035" placeholder="不限"></label>
+    <label class="nurture-filter-year">${lang === 'zh' ? '到（不填＝不限）' : 'To'}<input id="nurtureYearMax" value="${escapeHtml(customerNurtureDraft.yearMax)}" oninput="updateCustomerNurtureDraftField('yearMax',this.value)" type="number" min="1980" max="2035" placeholder="不限"></label>
+    <button class="btn nurture-preview-button" onclick="previewCustomerNurture()">${lang === 'zh' ? '预览客户（不发送）' : 'Preview customers'}</button>
   </div><div id="customerNurturePreview">${customerNurturePreviewTable()}</div></div>
   <div class="panel" style="margin-top:14px"><div class="panel-head"><h3>${lang === 'zh' ? '建立待发送批次' : 'Create draft batch'}</h3></div><div class="nurture-compose-grid">
     <label>${lang === 'zh' ? '批次名称' : 'Batch name'}<input id="nurtureCampaignName" value="${escapeHtml(customerNurtureDraft.campaignName)}" oninput="updateCustomerNurtureDraftField('campaignName',this.value)" placeholder="例如：60天未成交 Tesla 改色客户"></label>

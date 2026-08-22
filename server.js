@@ -4183,7 +4183,13 @@ function customerNurtureLatestActivityAt(item) {
 }
 
 function customerNurtureServiceText(item) {
-  return prospectTextKey([item?.service, item?.need, item?.vehicle, item?.chatContext].join(' '));
+  return customerNurtureSearchText(item);
+}
+
+function customerNurtureSearchText(item) {
+  const messages = (Array.isArray(item?.conversationMessages) ? item.conversationMessages : [])
+    .map(message => message?.text || message?.body || '').join(' ');
+  return prospectTextKey([item?.service, item?.need, item?.vehicle, item?.chatContext, messages].join(' '));
 }
 
 function customerNurtureServiceMatches(serviceText, selectedServices = []) {
@@ -4202,7 +4208,7 @@ function customerNurtureServiceMatches(serviceText, selectedServices = []) {
 }
 
 function customerNurtureVehicleYear(item) {
-  const match = String([item?.vehicle, item?.need].join(' ')).match(/\b(19\d{2}|20\d{2})\b/);
+  const match = customerNurtureSearchText(item).match(/\b(19\d{2}|20\d{2})\b/);
   return match ? Number(match[1]) : 0;
 }
 
@@ -4221,8 +4227,8 @@ function customerNurtureConverted(db, item, collection) {
     || (db.salesOrders || []).some(order => normalizedPhone(order.phone || order.contact || order.customerPhone) === phone && !['取消', '已取消'].includes(String(order.status || '')));
 }
 
-function customerNurtureCandidateRows(db, filters = {}) {
-  const inactiveDays = Math.max(30, Math.min(730, Number(filters.inactiveDays || 30)));
+function customerNurtureCandidateRows(db, filters = {}, diagnostics = null) {
+  const inactiveDays = Math.max(7, Math.min(730, Number(filters.inactiveDays || 30)));
   const cutoff = Date.now() - inactiveDays * 86400000;
   const services = (Array.isArray(filters.services) ? filters.services : []).map(prospectTextKey).filter(Boolean);
   const vehicleTerms = (Array.isArray(filters.vehicleTerms) ? filters.vehicleTerms : String(filters.vehicleTerms || '').split(','))
@@ -4231,23 +4237,29 @@ function customerNurtureCandidateRows(db, filters = {}) {
   const yearMax = Number(filters.yearMax || 0);
   const seen = new Set();
   const rows = [];
+  const stats = diagnostics || {};
+  Object.assign(stats, {
+    scanned: 0, eligible: 0, duplicate: 0,
+    excluded: { converted: 0, inactiveStatus: 0, tooRecent: 0, noChannel: 0, service: 0, vehicle: 0, year: 0 }
+  });
   for (const collection of ['customerConversations', 'prospects']) {
     for (const item of (db[collection] || [])) {
-      if (!item || item.deletedAt || item.marketingOptOutAt || customerNurtureConverted(db, item, collection)) continue;
-      if (['无效', '暂时无需回复'].includes(String(item.status || ''))) continue;
+      if (!item || item.deletedAt || item.marketingOptOutAt) continue;
+      stats.scanned += 1;
+      if (customerNurtureConverted(db, item, collection)) { stats.excluded.converted += 1; continue; }
+      if (['无效', '暂时无需回复'].includes(String(item.status || ''))) { stats.excluded.inactiveStatus += 1; continue; }
       const lastActivityAt = customerNurtureLatestActivityAt(item);
-      if (!lastActivityAt || lastActivityAt > cutoff) continue;
+      if (!lastActivityAt || lastActivityAt > cutoff) { stats.excluded.tooRecent += 1; continue; }
       const channel = customerNurtureChannel(item);
-      if (!channel) continue;
+      if (!channel) { stats.excluded.noChannel += 1; continue; }
       const serviceText = customerNurtureServiceText(item);
-      if (!customerNurtureServiceMatches(serviceText, services)) continue;
-      const vehicleText = prospectTextKey([item.vehicle, item.need].join(' '));
-      if (vehicleTerms.length && !vehicleTerms.some(term => vehicleText.includes(term))) continue;
+      if (!customerNurtureServiceMatches(serviceText, services)) { stats.excluded.service += 1; continue; }
+      const vehicleText = customerNurtureSearchText(item);
+      if (vehicleTerms.length && !vehicleTerms.some(term => vehicleText.includes(term))) { stats.excluded.vehicle += 1; continue; }
       const year = customerNurtureVehicleYear(item);
-      if (yearMin && (!year || year < yearMin)) continue;
-      if (yearMax && (!year || year > yearMax)) continue;
+      if ((yearMin && (!year || year < yearMin)) || (yearMax && (!year || year > yearMax))) { stats.excluded.year += 1; continue; }
       const identity = normalizedPhone(item.phone) || metaPsidFromItem(item) || `${collection}:${item.id}`;
-      if (seen.has(identity)) continue;
+      if (seen.has(identity)) { stats.duplicate += 1; continue; }
       seen.add(identity);
       rows.push({
         collection, recordId: item.id, customer: item.customer || '未命名客户', phone: item.phone || '',
@@ -4256,6 +4268,7 @@ function customerNurtureCandidateRows(db, filters = {}) {
       });
     }
   }
+  stats.eligible = rows.length;
   return rows.sort((a, b) => String(a.lastActivityAt).localeCompare(String(b.lastActivityAt))).slice(0, 2000);
 }
 
@@ -7197,14 +7210,16 @@ async function api(req, res) {
   if (req.method === 'POST' && url.pathname === '/api/customer-nurture/preview') {
     if (!canAccess(user, 'prospectsView')) return send(res, 403, { error: '没有查看未成交客户的权限' });
     const body = await readBody(req);
-    const candidates = customerNurtureCandidateRows(db, body.filters || body);
+    const diagnostics = {};
+    const candidates = customerNurtureCandidateRows(db, body.filters || body, diagnostics);
     return send(res, 200, {
       ok: true,
       candidates,
       summary: {
         total: candidates.length,
         sms: candidates.filter(item => item.channel === 'sms').length,
-        meta: candidates.filter(item => item.channel === 'meta').length
+        meta: candidates.filter(item => item.channel === 'meta').length,
+        diagnostics
       }
     });
   }
