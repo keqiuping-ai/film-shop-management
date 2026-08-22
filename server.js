@@ -5223,7 +5223,10 @@ async function api(req, res) {
     if (!user || !verifyPassword(body.password, user.passwordHash)) return send(res, 401, { error: '邮箱或密码不正确' });
     const token = createSessionToken(user);
     sessions.set(token, { userId: user.id, at: Date.now() });
-    return send(res, 200, { token, user: safeUser(user) });
+    const desktopBootstrap = body.includeBootstrap === true
+      ? { data: sanitizeDbForUser(db, user), revision: databaseRevision() }
+      : {};
+    return send(res, 200, { token, user: safeUser(user), ...desktopBootstrap }, undefined, req);
   }
 
   if (url.pathname.startsWith('/api/agent/customer-tasks')) {

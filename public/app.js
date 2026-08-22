@@ -860,20 +860,47 @@ async function api(path, options = {}) {
 }
 
 async function login() {
+  const loginButton = document.getElementById('loginButton');
+  if (loginButton?.disabled) return;
   try {
+    if (loginButton) {
+      loginButton.disabled = true;
+      loginButton.textContent = lang === 'zh' ? '登录中…' : 'Signing in…';
+    }
     const body = await api('/api/login', {
       method: 'POST',
       body: JSON.stringify({
         email: document.getElementById('email').value.trim(),
-        password: document.getElementById('password').value
+        password: document.getElementById('password').value,
+        includeBootstrap: true
       })
     });
     token = body.token;
     localStorage.setItem('filmShopCloud.token', token);
     localStorage.setItem('filmShopCloud.lastEmail', body.user.email || document.getElementById('email').value.trim());
-    await sync();
+    if (body.data) {
+      user = body.user;
+      state = body.data;
+      lastDataRevision = String(body.revision || '');
+      lastSyncAt = new Date();
+      renderAuth();
+      render();
+      checkNewAppointmentAlerts();
+      startAiBossReminderLoop();
+      startAutoSync();
+      startRealtimeSync();
+      startPersonalReminderChecks();
+      updateSyncStatus();
+    } else {
+      await sync();
+    }
   } catch (err) {
     alert(err.message);
+  } finally {
+    if (loginButton) {
+      loginButton.disabled = false;
+      loginButton.textContent = t('login');
+    }
   }
 }
 
