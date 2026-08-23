@@ -1649,7 +1649,7 @@ function render(options = {}) {
 
 function messageUsers() {
   return (state.messageUsers || state.users || [])
-    .filter(item => item.active !== false)
+    .filter(item => item.active !== false && item.id !== CUSTOMER_CODEX_ID)
     .sort((left, right) => {
       if (left.id === user?.id) return -1;
       if (right.id === user?.id) return 1;
@@ -1671,6 +1671,12 @@ function messageUserCanCall(item) {
 
 function unreadMessages() {
   return (state.messages || []).filter(message => {
+    const involvesCustomerCodex = message.groupId === CUSTOMER_CODEX_GROUP_ID ||
+      message.fromUserId === CUSTOMER_CODEX_ID ||
+      message.toUserId === CUSTOMER_CODEX_ID;
+    // Older browser state may still contain the retired virtual Codex room
+    // until the next server sync. Never let those messages keep a red badge.
+    if (involvesCustomerCodex) return false;
     if (message.fromUserId === user?.id) return false;
     if (message.scope === 'group') return !(message.readByUserIds || []).includes(user?.id);
     return message.toUserId === user?.id && !message.readAt;
@@ -1724,11 +1730,7 @@ function playMessageSound() {
 
 function unreadCountFromUser(userId) {
   if (userId === GROUP_CHAT_ID) return unreadMessages().filter(message => message.groupId === 'all-staff').length;
-  if (userId === CUSTOMER_CODEX_ID) return unreadMessages().filter(message =>
-    message.groupId === CUSTOMER_CODEX_GROUP_ID ||
-    message.fromUserId === CUSTOMER_CODEX_ID ||
-    message.toUserId === CUSTOMER_CODEX_ID
-  ).length;
+  if (userId === CUSTOMER_CODEX_ID) return 0;
   return unreadMessages().filter(message => message.scope !== 'group' && message.fromUserId === userId).length;
 }
 
@@ -2145,9 +2147,49 @@ async function selectMessageUser(id) {
   await markMessagesRead(id, { forceLatest:true });
 }
 
+function markMessageThreadReadLocally(threadId) {
+  if (!state?.messages || !user?.id) return 0;
+  const readAt = new Date().toISOString();
+  let changed = 0;
+  state.messages.forEach(message => {
+    if (message.fromUserId === user.id) return;
+    const isAllStaff = threadId === GROUP_CHAT_ID && message.scope === 'group' && message.groupId === 'all-staff';
+    const isCustomerCodex = threadId === CUSTOMER_CODEX_ID && message.scope === 'group' && message.groupId === CUSTOMER_CODEX_GROUP_ID;
+    if (isAllStaff || isCustomerCodex) {
+      message.readByUserIds = Array.isArray(message.readByUserIds) ? message.readByUserIds : [];
+      if (!message.readByUserIds.includes(user.id)) {
+        message.readByUserIds.push(user.id);
+        changed += 1;
+      }
+      return;
+    }
+    if (message.scope !== 'group' && message.toUserId === user.id && message.fromUserId === threadId && !message.readAt) {
+      message.readAt = readAt;
+      changed += 1;
+    }
+  });
+  if (changed) {
+    knownUnreadMessageIds = unreadMessageIds();
+    const saved = persistentAlertState();
+    Object.keys(saved.messages || {}).forEach(id => {
+      if (!knownUnreadMessageIds.includes(id)) delete saved.messages[id];
+    });
+    savePersistentAlertState(saved);
+    updateMessageBadge();
+  }
+  return changed;
+}
+
 async function markMessagesRead(fromUserId, options = {}) {
   if (!fromUserId) return;
   if (!unreadCountFromUser(fromUserId)) return;
+  // Clear the visible badges immediately. The server request below persists the
+  // same read state; a slow connection must not leave already-opened messages
+  // looking unread.
+  markMessageThreadReadLocally(fromUserId);
+  if (document.getElementById('modal')?.classList.contains('open') && !internalMessageInputActive()) {
+    renderMessageModal(undefined, { forceLatest:Boolean(options.forceLatest) });
+  }
   try {
     state = await api('/api/messages/read', {
       method: 'PUT',
@@ -6450,6 +6492,7 @@ function openAppointmentAlertCustomer(id) {
 }
 
 function internalMessageReminderThreadId(message) {
+  if (message.groupId === CUSTOMER_CODEX_GROUP_ID) return CUSTOMER_CODEX_ID;
   if (message.scope === 'group') return GROUP_CHAT_ID;
   return message.fromUserId || GROUP_CHAT_ID;
 }

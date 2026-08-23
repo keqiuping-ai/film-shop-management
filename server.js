@@ -1186,8 +1186,10 @@ function safeUser(user) {
 }
 
 function messageUsersFor(db, user) {
-  const codexUsers = effectivePermissions(user).customerCodexChat ? [CUSTOMER_CODEX_USER] : [];
-  return [...codexUsers, ...(db.users || []).filter(item => item.active !== false).map(safeUser)];
+  // The old Customer Codex bridge is an integration endpoint, not an employee
+  // contact. Keep its API available for compatibility, but do not expose the
+  // virtual room in the staff address book.
+  return (db.users || []).filter(item => item.active !== false).map(safeUser);
 }
 
 function normalizeAvatarDataUrl(value) {
@@ -1307,13 +1309,12 @@ function sanitizeDbForUser(db, user) {
 
 function messagesForUser(db, user) {
   const userId = user?.id || '';
-  const canChatWithCustomerCodex = Boolean(effectivePermissions(user).customerCodexChat);
   return (db.messages || [])
     .filter(message => {
       const involvesCustomerCodex = message.groupId === CUSTOMER_CODEX_GROUP_ID
         || message.fromUserId === CUSTOMER_CODEX_USER.id
         || message.toUserId === CUSTOMER_CODEX_USER.id;
-      if (involvesCustomerCodex) return canChatWithCustomerCodex;
+      if (involvesCustomerCodex) return false;
       return (message.scope === 'group' && message.groupId === 'all-staff')
         || message.fromUserId === userId
         || message.toUserId === userId;
