@@ -7108,12 +7108,12 @@ async function api(req, res) {
   }
 
   if (req.method === 'GET' && url.pathname === '/api/customer-ai/settings') {
-    if (!canAccess(user, 'settingsEdit')) return send(res, 403, { error: '没有查看 AI 设置权限' });
+    if (!canAccess(user, 'aiRulesEdit') && !canAccess(user, 'settingsEdit')) return send(res, 403, { error: '没有查看 AI 客服规则的权限' });
     return send(res, 200, customerAiSettingsStatus(db));
   }
 
   if (req.method === 'PUT' && url.pathname === '/api/customer-ai/settings') {
-    if (!canAccess(user, 'settingsEdit')) return send(res, 403, { error: '没有修改 AI 设置权限' });
+    if (!canAccess(user, 'aiRulesEdit') && !canAccess(user, 'settingsEdit')) return send(res, 403, { error: '没有修改 AI 客服规则的权限' });
     const body = await readBody(req);
     const apiKey = String(body.apiKey || '').trim();
     const clearApiKey = Boolean(body.clearApiKey);
@@ -7183,7 +7183,7 @@ async function api(req, res) {
   }
 
   if (req.method === 'POST' && url.pathname === '/api/customer-ai/auto-reply/disable') {
-    if (!canAccess(user, 'settingsEdit')) return send(res, 403, { error: '没有关闭 AI 自动回复的权限' });
+    if (!canAccess(user, 'aiRulesEdit') && !canAccess(user, 'settingsEdit')) return send(res, 403, { error: '没有关闭 AI 自动回复的权限' });
     db.settings = db.settings || {};
     db.settings.customerAiAutoReply = {
       ...customerAiAutoReplySettings(db),

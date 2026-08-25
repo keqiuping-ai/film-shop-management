@@ -192,7 +192,7 @@ const dict = {
     leave: '请假',
     leaveSub: '提交请假申请、查看记录和审批',
     aiRules: 'AI客服规则中心',
-    aiRulesSub: '独立管理产品知识、回复顺序、分店政策和转人工规则',
+    aiRulesSub: '统一管理AI接入、自动回复、产品知识和客服规则',
     dashboard: '仪表盘',
     dashboardSub: '收入、来源渠道和零售批发销售情况',
     jobs: '施工订单',
@@ -457,7 +457,7 @@ const dict = {
     leave: 'Leave',
     leaveSub: 'Submit, review, and approve leave requests',
     aiRules: 'AI Customer Rules',
-    aiRulesSub: 'Manage product knowledge, reply sequence, branch policy, and escalation rules',
+    aiRulesSub: 'Manage AI access, auto replies, product knowledge, and service rules in one place',
     dashboard: 'Dashboard',
     dashboardSub: 'Revenue, source channels, and retail / wholesale sales',
     jobs: 'Job Orders',
@@ -834,7 +834,7 @@ const permissionLabels = [
   ['fullFinanceView', '查看完整财报/成本/利润', 'View full financials / costs / profit'],
   ['usersManage', '管理员工账号和权限', 'Manage users and permissions'],
   ['customerCodexChat', '允许与客服 Codex 沟通', 'Communicate with Customer Service Codex'],
-  ['aiRulesEdit', '查看和修改AI客服规则', 'View and edit AI customer-service rules'],
+  ['aiRulesEdit', '管理AI客服（含API、自动回复和全部规则）', 'Manage AI service, API, auto reply, and all rules'],
   ['settingsEdit', '修改系统设置/检查升级', 'Edit settings / check updates']
 ];
 
@@ -1704,11 +1704,11 @@ function render(options = {}) {
   updateMessageBadge();
   enhanceExpandablePanels();
   enhanceEditableTableRows(document.getElementById('view'));
-  if (current === 'settings') setTimeout(() => { loadCustomerAiSettings(); loadMetaSettings(); }, 0);
+  if (current === 'settings') setTimeout(loadMetaSettings, 0);
   if (current === 'clock') setTimeout(() => loadAttendanceReport(), 0);
   if (current === 'aiRules') {
     if (options.aiRulesUiState) restoreCustomerAiRulesUiState(options.aiRulesUiState, { restoreDrafts: true });
-    else setTimeout(loadCustomerAiRules, 0);
+    else setTimeout(() => { loadCustomerAiRules(); loadCustomerAiSettings(); }, 0);
   }
   if (activeProspectWorkspaceId && !preserveProspectWorkspaceRender) renderProspectWorkspace();
   preserveProspectWorkspaceRender = false;
@@ -4880,7 +4880,7 @@ const views = {
           <label>${lang === 'zh' ? '转接到的电话号码' : 'Forward calls to'}<input id="callForwardNumber" type="tel" value="${escapeHtml(state.settings.callForwardNumber || '')}" placeholder="例如 +1 702-354-8143" /></label>
           <p class="note" style="margin:8px 0 0">${lang === 'zh' ? '客户拨打 QUAD Twilio 号码 +1 725-241-2586 时，会转接到这里填写的号码。您可以随时更换或关闭。电话转接会产生 Twilio 通话费用。' : 'Calls to the QUAD Twilio number +1 725-241-2586 will be forwarded here. You can change or disable it at any time. Twilio voice charges apply.'}</p>
         </div>
-        <div class="wide" style="border:1px solid var(--border);border-radius:14px;padding:16px;background:var(--soft)">
+        <div class="wide" hidden aria-hidden="true" style="border:1px solid var(--border);border-radius:14px;padding:16px;background:var(--soft)">
           <div class="panel-head" style="padding:0;border:0;margin-bottom:10px">
             <h3 style="margin:0">${lang === 'zh' ? '系统内 ChatGPT 客服' : 'In-system ChatGPT Customer Service'}</h3>
             <button class="btn" type="button" onclick="loadCustomerAiSettings()">${lang === 'zh' ? '刷新状态' : 'Refresh'}</button>
@@ -9755,14 +9755,41 @@ function restoreCustomerAiRulesUiState(snapshot, options = {}) {
   requestAnimationFrame(() => requestAnimationFrame(restorePosition));
 }
 
+function customerAiRuntimeSettingsHtml() {
+  return `<section class="customer-ai-rules-section customer-ai-runtime-settings">
+    <div class="customer-ai-auto-reply-head"><div><h4>${lang === 'zh' ? '一、AI 接入与自动回复' : '1. AI access and auto reply'}</h4><p>${lang === 'zh' ? 'API、模型和自动发送统一在这里管理。钥匙保存后加密存储，页面不会显示明文。' : 'Manage the API, model, and automatic sending here. Saved keys are encrypted and never shown in plain text.'}</p></div><button class="btn" type="button" onclick="loadCustomerAiSettings()">${lang === 'zh' ? '刷新状态' : 'Refresh status'}</button></div>
+    <div class="form-grid customer-ai-runtime-grid">
+      <label>OpenAI API Key<input id="customerAiApiKey" type="password" autocomplete="off" placeholder="sk-..." /></label>
+      <label>${lang === 'zh' ? 'AI 模型（客服快速模式）' : 'AI Model (fast customer service)'}<input id="customerAiModel" value="gpt-5-mini" placeholder="gpt-5-mini" /></label>
+      <div class="wide customer-ai-key-actions"><button class="btn" type="button" onclick="clearCustomerAiKey()">${lang === 'zh' ? '清除系统内钥匙' : 'Clear saved key'}</button><span id="customerAiStatus" class="note">${lang === 'zh' ? '正在读取状态...' : 'Loading status...'}</span></div>
+      <section class="wide customer-ai-auto-reply-box">
+        <div class="customer-ai-auto-reply-head"><div><h4>${lang === 'zh' ? 'AI 自动回复' : 'AI Auto Reply'}</h4><p>${lang === 'zh' ? '只自动发送低风险回复；报价不明确、投诉、退款、质保和法律问题只生成草稿并转人工。' : 'Only low-risk replies are sent automatically; uncertain quotes, complaints, refunds, warranty, and legal issues become staff-reviewed drafts.'}</p></div><button class="btn danger" type="button" onclick="disableCustomerAiAutoReply()">${lang === 'zh' ? '一键关闭' : 'Stop now'}</button></div>
+        <label class="check-row"><input id="customerAiAutoEnabled" type="checkbox" /><span>${lang === 'zh' ? '启用AI自动回复总开关' : 'Enable AI auto reply'}</span></label>
+        <div class="customer-ai-auto-grid">
+          <fieldset><legend>${lang === 'zh' ? '自动回复渠道' : 'Channels'}</legend><label class="check-row"><input id="customerAiAutoMeta" type="checkbox" /><span>Meta</span></label><label class="check-row"><input id="customerAiAutoYelp" type="checkbox" /><span>Yelp</span></label><label class="check-row"><input id="customerAiAutoSms" type="checkbox" /><span>${lang === 'zh' ? '短信' : 'SMS'}</span></label></fieldset>
+          <label>${lang === 'zh' ? '收到消息后延迟（秒）' : 'Delay after message (seconds)'}<input id="customerAiAutoDelay" type="number" min="10" max="600" value="30" /></label>
+          <label>${lang === 'zh' ? '回复时段' : 'Schedule'}<select id="customerAiAutoSchedule"><option value="always">${lang === 'zh' ? '全天' : 'Always'}</option><option value="business">${lang === 'zh' ? '仅营业时间' : 'Business hours only'}</option></select></label>
+          <label>${lang === 'zh' ? '营业开始' : 'Business start'}<input id="customerAiAutoStart" type="time" value="09:00" /></label>
+          <label>${lang === 'zh' ? '营业结束' : 'Business end'}<input id="customerAiAutoEnd" type="time" value="18:00" /></label>
+          <label>${lang === 'zh' ? '每位客户连续自动回复上限' : 'Max consecutive auto replies'}<input id="customerAiAutoMax" type="number" min="1" max="5" value="2" /></label>
+        </div>
+        <label class="check-row"><input id="customerAiAutoLowRisk" type="checkbox" checked /><span>${lang === 'zh' ? '低风险自动发送；其他情况只保存草稿' : 'Auto-send low risk; save all other cases as drafts'}</span></label>
+        <div><strong>${lang === 'zh' ? '最近自动回复记录' : 'Recent auto-reply log'}</strong><div id="customerAiAutoLogs" class="customer-ai-auto-logs"></div></div>
+      </section>
+      <p class="wide note">${lang === 'zh' ? '如果 Railway 环境变量 OPENAI_API_KEY 已配置，系统会优先使用环境变量；在这里填写新钥匙不会覆盖环境变量。' : 'If OPENAI_API_KEY is configured in Railway, the environment value takes priority.'}</p>
+    </div>
+  </section>`;
+}
+
 function customerAiRulesView() {
   return `<div class="panel customer-ai-rules-page">
-    <div class="panel-head"><div><h3>${lang === 'zh' ? 'AI 客服规则中心' : 'AI Customer Rules Center'}</h3><p class="note">${lang === 'zh' ? '这里仅管理客服话术、产品资料和分店政策，不显示 API Key、模型或自动发送开关。' : 'This page manages service wording, product knowledge, and branch policies without exposing keys, models, or auto-send controls.'}</p></div><div><button class="btn" onclick="loadCustomerAiRules()">${lang === 'zh' ? '刷新' : 'Refresh'}</button> <button class="btn primary" onclick="saveCustomerAiRules()">${lang === 'zh' ? '保存全部规则' : 'Save all rules'}</button></div></div>
+    <div class="panel-head"><div><h3>${lang === 'zh' ? 'AI 客服规则中心' : 'AI Customer Rules Center'}</h3><p class="note">${lang === 'zh' ? '统一管理 AI 接入、自动回复、客服话术、产品资料和分店政策。拥有“AI客服规则”权限即可在这里管理。' : 'Manage AI access, auto replies, service wording, product knowledge, and branch policies in one place.'}</p></div><div><button class="btn" onclick="loadAllCustomerAiRules()">${lang === 'zh' ? '刷新' : 'Refresh'}</button> <button class="btn primary" onclick="saveCustomerAiRules()">${lang === 'zh' ? '保存全部规则' : 'Save all rules'}</button></div></div>
     <div id="customerAiRulesMeta" class="customer-ai-rules-meta">${lang === 'zh' ? '正在读取已保存规则…' : 'Loading saved rules…'}</div>
-    <section class="customer-ai-rules-section"><div class="customer-ai-auto-reply-head"><div><h4>${lang === 'zh' ? '一、分类知识库' : '1. Layered knowledge base'}</h4><p>${lang === 'zh' ? '每条资料独立保存。AI 只读取当前客户相关的核心规则、分店、产品和报价资料，不再每次读取全部大文本。' : 'Each entry is independent. AI retrieves only relevant core, branch, product, and pricing knowledge.'}</p></div><button class="btn" onclick="addCustomerAiKnowledgeEntry()">${lang === 'zh' ? '+ 新增知识' : '+ Add knowledge'}</button></div><div id="customerAiKnowledgeEntries" class="customer-ai-knowledge-list"></div></section>
-    <section class="customer-ai-rules-section"><div class="customer-ai-auto-reply-head"><div><h4>${lang === 'zh' ? '二、客户聊天顺序与每一步规则' : '2. Conversation sequence and step rules'}</h4><p>${lang === 'zh' ? '规则按页面顺序交给 AI。可以分别设置第一次、第二次、后续沟通、报价、邀约和转人工。' : 'Rules are passed to AI in this order. Configure first, second, ongoing, price, visit, and escalation behavior separately.'}</p></div><button class="btn" onclick="addCustomerAiPlaybookRule()">${lang === 'zh' ? '+ 新增规则' : '+ Add rule'}</button></div><div id="customerAiPlaybook" class="customer-ai-playbook"></div></section>
-    <section class="customer-ai-rules-section"><div class="customer-ai-auto-reply-head"><div><h4>${lang === 'zh' ? '三、分店资料与服务城市' : '3. Branches and service cities'}</h4><p>${lang === 'zh' ? '客户最新明确说出的城市优先；服务城市用于推荐分店，地址空白时 AI 不会编造。' : 'The latest explicit customer city wins; service cities recommend a branch and missing addresses are never invented.'}</p></div><button class="btn" onclick="addCustomerAiBranchEditor()">${lang === 'zh' ? '+ 新增分店' : '+ Add branch'}</button></div><div id="customerAiBranches" class="customer-ai-branches"></div></section>
-    <section class="customer-ai-rules-section"><div class="customer-ai-auto-reply-head"><div><h4>${lang === 'zh' ? '四、AI 待审核经验' : '4. AI experiences awaiting review'}</h4><p>${lang === 'zh' ? '聊天内“教AI”或人工修改草稿会进入这里。审核通过后才会用于客户回复。' : 'Teach-AI submissions and edited drafts appear here. Only approved experiences affect replies.'}</p></div></div><div id="customerAiExperiences" class="customer-ai-experience-list"></div></section>
+    ${customerAiRuntimeSettingsHtml()}
+    <section class="customer-ai-rules-section"><div class="customer-ai-auto-reply-head"><div><h4>${lang === 'zh' ? '二、分类知识库' : '2. Layered knowledge base'}</h4><p>${lang === 'zh' ? '每条资料独立保存。AI 只读取当前客户相关的核心规则、分店、产品和报价资料，不再每次读取全部大文本。' : 'Each entry is independent. AI retrieves only relevant core, branch, product, and pricing knowledge.'}</p></div><button class="btn" onclick="addCustomerAiKnowledgeEntry()">${lang === 'zh' ? '+ 新增知识' : '+ Add knowledge'}</button></div><div id="customerAiKnowledgeEntries" class="customer-ai-knowledge-list"></div></section>
+    <section class="customer-ai-rules-section"><div class="customer-ai-auto-reply-head"><div><h4>${lang === 'zh' ? '三、客户聊天顺序与每一步规则' : '3. Conversation sequence and step rules'}</h4><p>${lang === 'zh' ? '规则按页面顺序交给 AI。可以分别设置第一次、第二次、后续沟通、报价、邀约和转人工。' : 'Rules are passed to AI in this order. Configure first, second, ongoing, price, visit, and escalation behavior separately.'}</p></div><button class="btn" onclick="addCustomerAiPlaybookRule()">${lang === 'zh' ? '+ 新增规则' : '+ Add rule'}</button></div><div id="customerAiPlaybook" class="customer-ai-playbook"></div></section>
+    <section class="customer-ai-rules-section"><div class="customer-ai-auto-reply-head"><div><h4>${lang === 'zh' ? '四、分店资料与服务城市' : '4. Branches and service cities'}</h4><p>${lang === 'zh' ? '客户最新明确说出的城市优先；服务城市用于推荐分店，地址空白时 AI 不会编造。' : 'The latest explicit customer city wins; service cities recommend a branch and missing addresses are never invented.'}</p></div><button class="btn" onclick="addCustomerAiBranchEditor()">${lang === 'zh' ? '+ 新增分店' : '+ Add branch'}</button></div><div id="customerAiBranches" class="customer-ai-branches"></div></section>
+    <section class="customer-ai-rules-section"><div class="customer-ai-auto-reply-head"><div><h4>${lang === 'zh' ? '五、AI 待审核经验' : '5. AI experiences awaiting review'}</h4><p>${lang === 'zh' ? '聊天内“教AI”或人工修改草稿会进入这里。审核通过后才会用于客户回复。' : 'Teach-AI submissions and edited drafts appear here. Only approved experiences affect replies.'}</p></div></div><div id="customerAiExperiences" class="customer-ai-experience-list"></div></section>
     <div class="customer-ai-rules-footer"><button class="btn primary" onclick="saveCustomerAiRules()">${lang === 'zh' ? '保存全部规则' : 'Save all rules'}</button></div>
   </div>`;
 }
@@ -9837,13 +9864,17 @@ async function loadCustomerAiRules() {
   }
 }
 
+async function loadAllCustomerAiRules() {
+  await Promise.all([loadCustomerAiRules(), loadCustomerAiSettings()]);
+}
+
 async function saveCustomerAiRules() {
   const uiState = captureCustomerAiRulesUiState();
   const knowledgeEntries=readCustomerAiKnowledgeEntries(); const branches=readCustomerAiBranches(); const playbook=readCustomerAiPlaybook();
   if(!knowledgeEntries.length||knowledgeEntries.some(row=>!row.title||!row.content))return alert(lang==='zh'?'请至少保留一条知识，并填写标题和内容。':'Keep at least one complete knowledge entry.');
   if(!branches.length||branches.some(row=>!row.name||!row.city))return alert(lang==='zh'?'请填写每个分店的名称和城市。':'Complete every branch name and city.');
   if(!playbook.length||playbook.some(row=>!row.name||!row.instruction))return alert(lang==='zh'?'请填写每一条流程规则的名称和详细内容。':'Complete every playbook rule.');
-  try { const info=await api('/api/customer-ai/rules',{method:'PUT',body:JSON.stringify({knowledgeEntries,branches,playbook})}); customerAiKnowledgeDrafts=info.knowledgeEntries||[]; customerAiBranchDrafts=info.branches; customerAiPlaybookDrafts=info.playbook; renderCustomerAiKnowledgeEditors(); renderCustomerAiBranchEditors(); renderCustomerAiPlaybookEditors(); const meta=document.getElementById('customerAiRulesMeta'); if(meta)meta.textContent=lang==='zh'?`保存成功｜${formatAppDateTime(info.updatedAt)}｜${info.updatedBy||''}`:'Rules saved'; restoreCustomerAiRulesUiState(uiState); alert(lang==='zh'?'AI客服全部规则已经保存，下一次生成回复立即使用新规则。':'All AI rules saved and active for the next reply.'); } catch(err){alert(err.message);}
+  try { if (!(await saveCustomerAiSettings(true))) return; const info=await api('/api/customer-ai/rules',{method:'PUT',body:JSON.stringify({knowledgeEntries,branches,playbook})}); customerAiKnowledgeDrafts=info.knowledgeEntries||[]; customerAiBranchDrafts=info.branches; customerAiPlaybookDrafts=info.playbook; renderCustomerAiKnowledgeEditors(); renderCustomerAiBranchEditors(); renderCustomerAiPlaybookEditors(); const meta=document.getElementById('customerAiRulesMeta'); if(meta)meta.textContent=lang==='zh'?`保存成功｜${formatAppDateTime(info.updatedAt)}｜${info.updatedBy||''}`:'Rules saved'; restoreCustomerAiRulesUiState(uiState); alert(lang==='zh'?'AI接入、自动回复和全部客服规则已经统一保存。':'AI access, auto reply, and all customer-service rules have been saved.'); } catch(err){alert(err.message);}
 }
 
 function renderCustomerAiBranchEditors() {
@@ -10014,7 +10045,7 @@ async function loadCustomerAiSettings() {
   }
 }
 
-async function saveCustomerAiSettings() {
+async function saveCustomerAiSettings(silent = false) {
   const apiKeyInput = document.getElementById('customerAiApiKey');
   const modelInput = document.getElementById('customerAiModel');
   const apiKey = String(apiKeyInput?.value || '').trim();
@@ -10042,9 +10073,11 @@ async function saveCustomerAiSettings() {
     });
     if (apiKeyInput) apiKeyInput.value = '';
     renderCustomerAiStatus(info);
-    alert(lang === 'zh' ? 'AI客服规则和设置已保存。以后每次生成回复都会使用这些内容。' : 'AI rules and settings saved. Future reply drafts will use this content.');
+    if (!silent) alert(lang === 'zh' ? 'AI运行设置已保存。' : 'AI runtime settings saved.');
+    return true;
   } catch (err) {
     alert(err.message);
+    return false;
   }
 }
 
