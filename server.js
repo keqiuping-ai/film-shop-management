@@ -2011,7 +2011,17 @@ function normalizeCustomerBranch(value = {}, index = 0) {
 
 function customerBranches(db) {
   const saved = Array.isArray(db?.settings?.customerBranches) ? db.settings.customerBranches : [];
-  return (saved.length ? saved : DEFAULT_CUSTOMER_BRANCHES).slice(0, 20).map(normalizeCustomerBranch);
+  const coreById = new Map(DEFAULT_CUSTOMER_BRANCHES.map(branch => [branch.id, branch]));
+  const merged = saved.map((branch, index) => {
+    const normalized = normalizeCustomerBranch(branch, index);
+    const core = coreById.get(normalized.id);
+    return core ? { ...normalized, name: core.name, city: normalized.city || core.city, address: normalized.address || core.address, active: true } : normalized;
+  });
+  const savedIds = new Set(merged.map(branch => branch.id));
+  DEFAULT_CUSTOMER_BRANCHES.forEach(branch => {
+    if (!savedIds.has(branch.id)) merged.push(normalizeCustomerBranch(branch, merged.length));
+  });
+  return (merged.length ? merged : DEFAULT_CUSTOMER_BRANCHES.map(normalizeCustomerBranch)).slice(0, 20);
 }
 
 function userBranchIds(db, user) {
