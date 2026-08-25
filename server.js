@@ -2378,6 +2378,33 @@ async function translateCustomerAiReplyToChinese({ apiKey, openAiBaseUrl, model,
   return String(parseAiBossDraft(value?.choices?.[0]?.message?.content)?.chineseReplyText || '').trim().slice(0, 1600);
 }
 
+async function translateCustomerReplyChineseToEnglish(db, chineseText) {
+  const apiKey = openAiCustomerReplyKey(db);
+  if (!apiKey) throw new Error('OpenAI API Key 尚未配置，暂时不能使用中英 AI 翻译');
+  const sourceText = String(chineseText || '').trim().slice(0, 3000);
+  if (!sourceText) throw new Error('请先在回复框输入中文内容');
+  const model = customerAiReplyModel(db);
+  const openAiBaseUrl = String(process.env.OPENAI_API_BASE_URL || 'https://api.openai.com/v1').replace(/\/+$/, '');
+  const requestBody = {
+    model,
+    messages: [{
+      role: 'user',
+      content: `Translate the Chinese message below into natural, concise, professional American English that can be sent directly to a customer. Preserve the exact meaning, questions, names, numbers, prices, dates, phone numbers, addresses, links, promises, and uncertainty. Do not add any new business fact, offer, address, appointment, guarantee, or sales claim. Return JSON only with one field: englishText.\n\nChinese message:\n${sourceText}`
+    }],
+    response_format: { type: 'json_object' },
+    max_completion_tokens: 700
+  };
+  if (/^gpt-5(?:\.|-|$)/i.test(model)) requestBody.reasoning_effort = 'minimal';
+  const value = await fetchAiJson(`${openAiBaseUrl}/chat/completions`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
+    body: JSON.stringify(requestBody)
+  });
+  const englishText = String(parseAiBossDraft(value?.choices?.[0]?.message?.content)?.englishText || '').trim().slice(0, 3000);
+  if (!englishText) throw new Error('AI 没有生成英文，请稍后重试');
+  return { chineseText: sourceText, englishText, model };
+}
+
 function customerAiReplyModel(db) {
   const configured = String(process.env.OPENAI_CUSTOMER_REPLY_MODEL || db?.settings?.openAiCustomerReplyModel || 'gpt-5-mini').trim();
   return configured === 'gpt-5.6-luna' ? 'gpt-5-mini' : configured;
@@ -6304,6 +6331,14 @@ async function api(req, res) {
       draft: item.agentReplyDraft,
       data: sanitizeDbForUser(db, user)
     });
+  }
+
+  if (req.method === 'POST' && url.pathname === '/api/customer-ai/translate-reply') {
+    if (!canAccess(user, 'prospectsEdit')) return send(res, 403, { error: '没有使用客户回复翻译的权限' });
+    const body = await readBody(req);
+    if (!String(body.text || '').trim()) return send(res, 400, { error: '请先在回复框输入中文内容' });
+    const result = await translateCustomerReplyChineseToEnglish(db, body.text);
+    return send(res, 200, { ok: true, ...result });
   }
 
   if (req.method === 'POST' && url.pathname === '/api/customer-ai/reply-drafts/batch') {

@@ -7241,6 +7241,7 @@ function renderProspectWorkspace() {
         </main>
         <footer class="prospect-workspace-composer">
           ${customerAgentDraftHtml(item)}
+          <div id="prospectManualTranslation" class="prospect-manual-translation hidden"></div>
           <div class="prospect-sms-status" id="prospectChannelStatus">${canReplyYelp
             ? (lang === 'zh' ? '通过 Yelp 站内消息回复；也可以切换到手机短信' : 'Reply in Yelp, or switch to SMS')
             : isMetaSource
@@ -7264,7 +7265,7 @@ function renderProspectWorkspace() {
             <span class="prospect-tool-divider"></span>
             <button class="reply-reference-button" type="button" onclick="openReplyReferenceLibrary('text')">💬 ${lang === 'zh' ? '回复文字' : 'Reply text'}</button>
             <button class="reply-reference-button prospect-media-button" type="button" onclick="openReplyReferenceLibrary('image')">🖼 ${lang === 'zh' ? '回复图片' : 'Reply image'}</button>
-            <button class="reply-reference-button prospect-media-button" type="button" onclick="openReplyReferenceLibrary('video')">▶ ${lang === 'zh' ? '回复视频' : 'Reply video'}</button>
+            <button id="customerReplyTranslateButton" class="reply-reference-button" type="button" onclick="translateCustomerReplyChineseToEnglish()" ${hasPerm('prospectsEdit') ? '' : 'disabled'}>🌐 ${lang === 'zh' ? '中英AI翻译' : 'Chinese → English'}</button>
             <button id="customerAiDraftButton" class="reply-reference-button" type="button" onclick="generateCustomerAiReplyDraft()" ${hasPerm('prospectsEdit') ? '' : 'disabled'}>AI ${lang === 'zh' ? '生成回复' : 'Draft reply'}</button>
             <button class="reply-reference-button ai-coach-button" type="button" onclick="openCustomerAiCoach()" ${hasPerm('prospectsEdit') ? '' : 'disabled'}>🎓 ${lang === 'zh' ? '教AI' : 'Teach AI'}</button>
             <button id="customerSmsRefreshButton" class="reply-reference-button" type="button" onclick="reconcileCustomerSmsNow()">${lang === 'zh' ? '收短信' : 'Check SMS'}</button>
@@ -7470,6 +7471,45 @@ function insertProspectReplyText(text) {
   input.value = [input.value.trim(), String(text || '').trim()].filter(Boolean).join('\n');
   input.dispatchEvent(new Event('input', { bubbles: true }));
   input.focus();
+}
+
+async function translateCustomerReplyChineseToEnglish() {
+  const input = document.getElementById('prospectReplyInput');
+  const button = document.getElementById('customerReplyTranslateButton');
+  const sourceText = String(input?.value || '').trim();
+  if (!sourceText) return alert(lang === 'zh' ? '请先在下面的回复框输入中文。' : 'Enter the Chinese reply first.');
+  if (button) {
+    button.disabled = true;
+    button.textContent = lang === 'zh' ? '正在翻译…' : 'Translating…';
+  }
+  try {
+    const result = await api('/api/customer-ai/translate-reply', {
+      method: 'POST',
+      body: JSON.stringify({ text: sourceText })
+    });
+    const preview = document.getElementById('prospectManualTranslation');
+    if (preview) {
+      preview.classList.remove('hidden');
+      preview.innerHTML = `<div><strong>${lang === 'zh' ? '中文原文' : 'Chinese original'}</strong><p>${escapeHtml(result.chineseText || sourceText)}</p></div><div><strong>${lang === 'zh' ? '英文发送内容' : 'English to send'}</strong><p>${escapeHtml(result.englishText || '')}</p></div><button type="button" onclick="clearCustomerReplyTranslation()" aria-label="${lang === 'zh' ? '关闭中英文对照' : 'Close translation preview'}">×</button>`;
+    }
+    input.value = result.englishText || '';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    input.focus();
+  } catch (error) {
+    alert(error.message);
+  } finally {
+    if (button) {
+      button.disabled = false;
+      button.textContent = lang === 'zh' ? '🌐 中英AI翻译' : '🌐 Chinese → English';
+    }
+  }
+}
+
+function clearCustomerReplyTranslation() {
+  const preview = document.getElementById('prospectManualTranslation');
+  if (!preview) return;
+  preview.classList.add('hidden');
+  preview.innerHTML = '';
 }
 
 async function generateCustomerAiReplyDraft() {
