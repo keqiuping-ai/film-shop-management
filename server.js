@@ -1986,7 +1986,7 @@ const DEFAULT_CUSTOMER_BRANCHES = [
   {
     id: 'los-angeles', name: '洛杉矶分店', city: 'Los Angeles', aliases: 'Los Angeles, LA',
     serviceCities: 'Los Angeles, LA, San Diego, Orange County, Irvine',
-    address: '', aiKnowledge: '', active: true
+    address: '3212 Santa Monica Blvd, Santa Monica, CA 90404', aiKnowledge: '', active: true
   }
 ];
 
@@ -2000,7 +2000,10 @@ function normalizeCustomerBranch(value = {}, index = 0) {
     city,
     aliases: String(Array.isArray(value.aliases) ? value.aliases.join(', ') : value.aliases || '').trim().slice(0, 500),
     serviceCities: String(Array.isArray(value.serviceCities) ? value.serviceCities.join(', ') : value.serviceCities || value.aliases || '').trim().slice(0, 1000),
-    address: String(value.address || '').trim().slice(0, 300),
+    address: String(value.address || ({
+      'las-vegas': '3359 W Oquendo Rd, Las Vegas, NV 89118',
+      'los-angeles': '3212 Santa Monica Blvd, Santa Monica, CA 90404'
+    }[rawId] || '')).trim().slice(0, 300),
     aiKnowledge: String(value.aiKnowledge || '').trim().slice(0, 6000),
     active: value.active !== false
   };
