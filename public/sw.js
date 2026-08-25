@@ -1,4 +1,4 @@
-const CACHE_NAME = 'film-shop-v107-customer-workspace-performance';
+const CACHE_NAME = 'film-shop-v108-complete-login-bootstrap';
 const ASSETS = [
     '/mobile.html',
     '/warranty.html',

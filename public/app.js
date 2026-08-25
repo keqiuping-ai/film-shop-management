@@ -934,11 +934,11 @@ async function login() {
     }
     const body = await api('/api/login', {
       method: 'POST',
-      timeoutMs: 15000,
+      timeoutMs: 30000,
       body: JSON.stringify({
         email: document.getElementById('email').value.trim(),
         password: document.getElementById('password').value,
-        includeBootstrap: false
+        includeBootstrap: true
       })
     });
     token = body.token;
@@ -958,30 +958,7 @@ async function login() {
       startRealtimeSync();
       startPersonalReminderChecks();
       updateSyncStatus();
-    } else {
-      // Authentication should not wait for the mature production database to
-      // be sanitized, compressed, downloaded, and parsed. Enter the module
-      // home immediately with a safe empty shell, then hydrate all business
-      // records through the normal bootstrap sync in the background.
-      user = body.user;
-      state = {
-        settings: {}, users: [body.user], messageUsers: [body.user], messages: [],
-        voiceCalls: [], personalNotes: [], aiBossTasks: [], fieldSales: {},
-        aiBossProfiles: [], installers: [], products: [], priceRules: [], jobs: [],
-        salesOrders: [], portalCustomers: [], warranties: [], shipments: [],
-        shipmentReceipts: [], shipmentExceptions: [], schedules: [],
-        scheduleReminderLogs: [], customerServiceReps: [], leads: [], prospects: [],
-        customerConversations: [], replyTemplates: [], customerNurtureCampaigns: [],
-        customerNurtureDeliveries: [], expenses: [], reimbursements: [],
-        clockRecords: [], leaveRequests: [], movements: [], workshopMovements: [],
-        branchInventory: [], branchTransfers: [], branchTransferExceptions: [],
-        auditLogs: [], employeeActivity: [], permissions: body.user.permissions || {}
-      };
-      renderAuth();
-      render();
-      updateSyncStatus(lang === 'zh' ? '登录成功，正在加载业务数据…' : 'Signed in. Loading business data…');
-      await sync();
-    }
+    } else await sync();
   } catch (err) {
     alert(err.message);
   } finally {
