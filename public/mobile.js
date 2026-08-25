@@ -9,10 +9,14 @@ let syncTimer = null;
 let eventSource = null;
 let syncInFlight = false;
 let realtimeRetryTimer = null;
+let realtimeConnected = false;
+let lastDataRevision = '';
+let deferredDataSyncTimer = null;
 let lastRenderSnapshot = '';
 let lastUserInputAt = 0;
 let markReadTimer = null;
 const chatDrafts = new Map();
+const mobileMessageUploadQueue = new Map();
 let leaveDraft = {};
 let reimbursementDraft = {};
 let reimbursementAttachments = [];
@@ -321,19 +325,35 @@ function fmtDateTime(value) {
 }
 
 async function api(path, options = {}) {
-  const res = await fetch(path, {
-    ...options,
+  const { timeoutMs = 30000, ...fetchOptions } = options;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  let res;
+  try {
+    res = await fetch(path, {
+    ...fetchOptions,
+    signal: fetchOptions.signal || controller.signal,
     headers: {
       'Content-Type': 'application/json',
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...(options.headers || {})
     }
-  });
+    });
+  } catch (error) {
+    if (error?.name === 'AbortError') throw new Error(lang === 'zh' ? '请求超时，请检查网络后重试' : 'Request timed out. Please check the network and try again.');
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
   const body = await res.json().catch(() => ({}));
   if (!res.ok) {
     if (res.status === 401) logout(false);
     throw new Error(body.error || t('requestFailed'));
   }
+  const revision = String(res.headers.get('x-data-revision') || '');
+  // sync-status must compare the server revision with the revision from the
+  // last actual snapshot. Updating it here first would hide every change.
+  if (revision && path !== '/api/sync-status') lastDataRevision = revision;
   return body;
 }
 
@@ -391,24 +411,49 @@ async function sync(options = {}) {
 function ensureSyncTimer() {
   if (syncTimer) return;
   syncTimer = setInterval(() => {
-    if (!document.hidden) sync();
+    if (!document.hidden) checkServerDataRevision();
   }, 30000);
+}
+
+async function checkServerDataRevision() {
+  if (!token || syncInFlight || document.hidden) return;
+  try {
+    const body = await api('/api/sync-status', { timeoutMs: 10000 });
+    const revision = String(body.revision || '');
+    if (revision && lastDataRevision && revision !== lastDataRevision) {
+      await sync();
+      return;
+    }
+    if (revision) lastDataRevision = revision;
+  } catch {}
+}
+
+function queueDataRevisionCheck(revision = '') {
+  if (revision && lastDataRevision && revision === lastDataRevision) return;
+  if (deferredDataSyncTimer) clearTimeout(deferredDataSyncTimer);
+  deferredDataSyncTimer = setTimeout(() => {
+    deferredDataSyncTimer = null;
+    checkServerDataRevision();
+  }, 1200);
 }
 
 function startRealtimeSync() {
   if (eventSource || !token || !window.EventSource || document.hidden) return;
   eventSource = new EventSource(`/api/events?token=${encodeURIComponent(token)}`);
+  eventSource.addEventListener('ready', () => { realtimeConnected = true; });
   eventSource.addEventListener('data-changed', event => {
+    let payload = {};
     try {
-      const payload = JSON.parse(event.data || '{}');
+      payload = JSON.parse(event.data || '{}');
       if (String(payload.action || '').startsWith('voice-call-')) {
         window.dispatchEvent(new CustomEvent('quad-voice-call', { detail: payload }));
         return;
       }
     } catch {}
-    sync();
+    queueDataRevisionCheck(String(payload.revision || ''));
   });
   eventSource.onerror = () => {
+    realtimeConnected = false;
     stopRealtimeSync();
     if (realtimeRetryTimer) clearTimeout(realtimeRetryTimer);
     realtimeRetryTimer = setTimeout(() => {
@@ -419,10 +464,13 @@ function startRealtimeSync() {
 }
 
 function stopRealtimeSync() {
+  realtimeConnected = false;
   if (eventSource) eventSource.close();
   eventSource = null;
   if (realtimeRetryTimer) clearTimeout(realtimeRetryTimer);
   realtimeRetryTimer = null;
+  if (deferredDataSyncTimer) clearTimeout(deferredDataSyncTimer);
+  deferredDataSyncTimer = null;
 }
 
 document.addEventListener('visibilitychange', () => {
@@ -430,7 +478,7 @@ document.addEventListener('visibilitychange', () => {
     stopRealtimeSync();
     return;
   }
-  sync({ force: !userRecentlyEditing() });
+  queueDataRevisionCheck();
   checkSupervisionReminder();
 });
 window.addEventListener('focus', () => { if (token) checkSupervisionReminder(); });
@@ -712,21 +760,27 @@ function selectNextUnreadConversation() {
 }
 
 function conversation(otherUserId) {
+  const queued = [...mobileMessageUploadQueue.values()];
+  const withQueued = messages => [...messages, ...queued.filter(message => {
+    if (otherUserId === GROUP_CHAT_ID) return message.groupId === 'all-staff';
+    if (otherUserId === CUSTOMER_CODEX_ID) return message.groupId === CUSTOMER_CODEX_GROUP_ID;
+    return message.toUserId === otherUserId;
+  })];
   if (otherUserId === GROUP_CHAT_ID) {
-    return (state.messages || []).filter(message => message.groupId === 'all-staff')
+    return withQueued((state.messages || []).filter(message => message.groupId === 'all-staff'))
       .sort((a, b) => String(a.createdAt || '').localeCompare(String(b.createdAt || '')));
   }
   if (otherUserId === CUSTOMER_CODEX_ID) {
-    return (state.messages || []).filter(message =>
+    return withQueued((state.messages || []).filter(message =>
       message.groupId === CUSTOMER_CODEX_GROUP_ID ||
       message.fromUserId === CUSTOMER_CODEX_ID ||
       message.toUserId === CUSTOMER_CODEX_ID
-    ).sort((a, b) => String(a.createdAt || '').localeCompare(String(b.createdAt || '')));
+    )).sort((a, b) => String(a.createdAt || '').localeCompare(String(b.createdAt || '')));
   }
-  return (state.messages || []).filter(message =>
+  return withQueued((state.messages || []).filter(message =>
     (message.fromUserId === user?.id && message.toUserId === otherUserId) ||
     (message.fromUserId === otherUserId && message.toUserId === user?.id)
-  ).sort((a, b) => String(a.createdAt || '').localeCompare(String(b.createdAt || '')));
+  )).sort((a, b) => String(a.createdAt || '').localeCompare(String(b.createdAt || '')));
 }
 
 function isMobileChatViewport() {
@@ -853,10 +907,10 @@ function messageHtml(message) {
   const read = mine && message.scope !== 'group' ? ` · ${message.readAt ? t('read') : t('unread')}` : '';
   const sender = (state.messageUsers || state.users || []).find(item => item.id === message.fromUserId) || { name: message.fromName || '' };
   return `<div class="message-line ${mine ? 'mine' : ''}">${!mine ? avatarHtml(sender) : ''}<div class="bubble ${mine ? 'mine' : ''}">
-    ${mine ? `<button class="delete" onclick="deleteMessage('${message.id}')">×</button>` : ''}
+    ${mine ? (message.pending ? (message.failed ? `<button class="mobile-message-retry" onclick="retryMobileMessageUpload('${message.id}')">${lang === 'zh' ? '重试' : 'Retry'}</button>` : '') : `<button class="delete" onclick="deleteMessage('${message.id}')">×</button>`) : ''}
     ${message.text ? `<div>${escapeHtml(message.text || '')}</div>` : ''}
     ${messageAttachmentHtml(message.attachment)}
-    <small>${mine ? t('self') : escapeHtml(message.fromName || '')} · ${fmtDateTime(message.createdAt)}${read}</small>
+    <small>${mine ? t('self') : escapeHtml(message.fromName || '')} · ${fmtDateTime(message.createdAt)}${message.pending ? ` · ${message.failed ? (lang === 'zh' ? '发送失败' : 'Failed') : (lang === 'zh' ? '后台发送中…' : 'Sending in background…')}` : read}</small>
   </div>${mine ? avatarHtml(user) : ''}</div>`;
 }
 
@@ -1014,23 +1068,70 @@ async function sendMessageFile(file, kind) {
     alert(t('attachmentLimit'));
     return;
   }
+  queueMobileMessageUpload(file, kind, activeUserId);
+}
+
+function queueMobileMessageUpload(file, kind, targetUserId) {
+  if (!file || !targetUserId) return;
+  const isGroup = targetUserId === GROUP_CHAT_ID || targetUserId === CUSTOMER_CODEX_ID;
+  const groupId = targetUserId === CUSTOMER_CODEX_ID ? CUSTOMER_CODEX_GROUP_ID : 'all-staff';
+  const pendingId = `mobile-upload-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  const localUrl = URL.createObjectURL(file);
+  mobileMessageUploadQueue.set(pendingId, {
+    id: pendingId, pending: true, failed: false, file, kind, localUrl,
+    scope: isGroup ? 'group' : 'direct', groupId: isGroup ? groupId : '',
+    fromUserId: user?.id, fromName: user?.name || user?.email || '',
+    toUserId: isGroup ? '' : targetUserId, text: '',
+    attachment: { kind, name: file.name || kind, type: file.type || 'application/octet-stream', size: file.size, url: localUrl },
+    createdAt: new Date().toISOString(), readAt: '', readByUserIds: isGroup ? [user?.id] : []
+  });
+  render({ preserveActiveInput: true });
+  void runMobileMessageUpload(pendingId);
+}
+
+async function runMobileMessageUpload(pendingId) {
+  const queued = mobileMessageUploadQueue.get(pendingId);
+  if (!queued?.file) return;
+  queued.failed = false;
+  if (tab === 'chat' && !chatListMode) render({ preserveActiveInput: true });
   try {
     const uploaded = await api('/api/message-media/upload', {
+      method: 'POST', timeoutMs: 120000,
+      headers: {
+        'Content-Type': queued.file.type || 'application/octet-stream',
+        'X-File-Name': encodeURIComponent(queued.file.name || 'attachment')
+      },
+      body: queued.file
+    });
+    const attachment = {
+      kind: queued.kind, name: uploaded.name || queued.file.name || queued.kind,
+      type: uploaded.type || queued.file.type || 'application/octet-stream',
+      size: uploaded.size || queued.file.size, url: uploaded.url
+    };
+    await api('/api/messages', {
       method: 'POST',
-      body: JSON.stringify({ name: file.name, type: file.type || 'application/octet-stream', dataUrl: await fileToDataUrl(file) })
+      body: JSON.stringify(queued.scope === 'group'
+        ? { groupId: queued.groupId, attachment, clientRequestId: pendingId }
+        : { toUserId: queued.toUserId, attachment, clientRequestId: pendingId })
     });
-    await postMessage({
-      attachment: {
-        kind,
-        name: uploaded.name || file.name || kind,
-        type: uploaded.type || file.type || 'application/octet-stream',
-        size: uploaded.size || file.size,
-        url: uploaded.url
-      }
-    });
+    URL.revokeObjectURL(queued.localUrl);
+    mobileMessageUploadQueue.delete(pendingId);
+    state = await api('/api/mobile/bootstrap');
+    renderAuth();
+    if (tab === 'chat' && !messageRecorder && !messageVoiceStarting) render({ preserveActiveInput: true });
   } catch (err) {
-    alert(err.message);
+    queued.failed = true;
+    queued.error = String(err?.message || err || '');
+    if (tab === 'chat' && !chatListMode) render({ preserveActiveInput: true });
   }
+}
+
+function retryMobileMessageUpload(pendingId) {
+  const queued = mobileMessageUploadQueue.get(pendingId);
+  if (!queued) return;
+  queued.failed = false;
+  render({ preserveActiveInput: true });
+  void runMobileMessageUpload(pendingId);
 }
 
 function updateMobileVoiceButton(mode = 'idle', label = '') {

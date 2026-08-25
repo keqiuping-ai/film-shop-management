@@ -82,12 +82,17 @@ let lastDataRevision = '';
 let syncInFlight = false;
 let eventSource = null;
 let realtimeConnected = false;
+let deferredDataSyncTimer = null;
 let activeMessageUserId = '';
 let messageThreadResizeObserver = null;
 let messageThreadLatestTimers = [];
 let messageTimeZoneTimer = null;
 let sidebarTimeZoneTimer = null;
 let internalMessagePendingImage = null;
+// Attachments upload without holding the message window open. Queue entries
+// stay separate from the server snapshot so realtime refreshes cannot make an
+// in-flight upload disappear.
+const internalMessageUploadQueue = new Map();
 let activeProspectWorkspaceId = '';
 let prospectWorkspaceReadOnly = false;
 let prospectWorkspaceSyncTimer = null;
@@ -101,6 +106,11 @@ let prospectReplyRevision = 0;
 let customerCenterSearch = '';
 let customerCenterPendingOnly = false;
 let customerCenterShowInvalid = false;
+let customerCenterRenderLimit = 200;
+let customerCenterAllRowsCache = null;
+let aiCoachRecorder = null;
+let aiCoachStream = null;
+let aiCoachChunks = [];
 let customerTaskFilter = 'all';
 let prospectSearch = '';
 let warrantySearch = '';
@@ -127,7 +137,10 @@ let persistentAlertTimer = null;
 let activePersonalNoteId = '';
 let personalNoteSaving = false;
 const personalNoteUpdatingIds = new Set();
-const AUTO_SYNC_MS = 5 * 60 * 1000;
+// SSE plus the lightweight revision check keep normal sessions current.  The
+// full bootstrap is only a long-stop recovery path because it can be large on
+// mature installations and re-rendering it too often interrupts active work.
+const AUTO_SYNC_MS = 30 * 60 * 1000;
 const DATA_REVISION_POLL_MS = 15 * 1000;
 const PERSISTENT_ALERT_CHECK_MS = 60 * 1000;
 const PERSISTENT_ALERT_REPEAT_MS = 60 * 60 * 1000;
@@ -854,14 +867,42 @@ if ('serviceWorker' in navigator) {
 }
 
 async function api(path, options = {}) {
-  const res = await fetch(path, {
-    ...options,
-    headers: {
-      'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...(options.headers || {})
+  const timeoutMs = Math.max(0, Number(options.timeoutMs || 0));
+  const fetchOptions = { ...options };
+  delete fetchOptions.timeoutMs;
+  const controller = timeoutMs ? new AbortController() : null;
+  const upstreamSignal = fetchOptions.signal;
+  let timeoutId = null;
+  let removeAbortListener = null;
+  if (controller) {
+    if (upstreamSignal?.aborted) controller.abort(upstreamSignal.reason);
+    else if (upstreamSignal) {
+      const abortFromUpstream = () => controller.abort(upstreamSignal.reason);
+      upstreamSignal.addEventListener('abort', abortFromUpstream, { once: true });
+      removeAbortListener = () => upstreamSignal.removeEventListener('abort', abortFromUpstream);
     }
-  });
+    fetchOptions.signal = controller.signal;
+    timeoutId = setTimeout(() => controller.abort(new DOMException('Request timed out', 'TimeoutError')), timeoutMs);
+  }
+  let res;
+  try {
+    res = await fetch(path, {
+      ...fetchOptions,
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...(fetchOptions.headers || {})
+      }
+    });
+  } catch (error) {
+    if (controller?.signal.aborted && !upstreamSignal?.aborted) {
+      throw new Error(lang === 'zh' ? '网络响应超时，请重试；页面不会继续卡在同步状态。' : 'The request timed out. Please try again.');
+    }
+    throw error;
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId);
+    removeAbortListener?.();
+  }
   const body = await res.json().catch(() => ({}));
   if (!res.ok) {
     if (res.status === 401) {
@@ -876,6 +917,9 @@ async function api(path, options = {}) {
     }
     throw new Error(body.error || '请求失败');
   }
+  const requestMethod = String(fetchOptions.method || 'GET').toUpperCase();
+  const responseRevision = String(res.headers.get('x-data-revision') || '');
+  if (requestMethod !== 'GET' && responseRevision) lastDataRevision = responseRevision;
   return body;
 }
 
@@ -889,6 +933,7 @@ async function login() {
     }
     const body = await api('/api/login', {
       method: 'POST',
+      timeoutMs: 30000,
       body: JSON.stringify({
         email: document.getElementById('email').value.trim(),
         password: document.getElementById('password').value,
@@ -960,7 +1005,7 @@ async function sync(options = {}) {
   try {
     syncInFlight = true;
     updateSyncStatus(lang === 'zh' ? '同步中...' : 'Syncing...');
-    const body = await api('/api/bootstrap');
+    const body = await api('/api/bootstrap', { timeoutMs: 30000 });
     const previousUnreadIds = knownUnreadMessageIds;
     user = body.user;
     state = body.data;
@@ -1061,7 +1106,7 @@ function markEmployeeInteraction() {
 async function sendEmployeeActivityHeartbeat() {
   if (!token || document.hidden || Date.now() - lastEmployeeInteractionAt > 5 * 60 * 1000) return;
   try {
-    await api('/api/activity-heartbeat', { method: 'POST', body: JSON.stringify({ page: current }) });
+    await api('/api/activity-heartbeat', { method: 'POST', timeoutMs: 15000, body: JSON.stringify({ page: current }) });
   } catch {}
 }
 
@@ -1074,7 +1119,7 @@ function startEmployeeActivityTracking() {
 async function checkServerDataRevision() {
   if (!token || syncInFlight) return;
   try {
-    const body = await api('/api/sync-status');
+    const body = await api('/api/sync-status', { timeoutMs: 10000 });
     const revision = String(body.revision || '');
     if (!revision) return;
     if (lastDataRevision && revision !== lastDataRevision) {
@@ -1108,7 +1153,7 @@ function startRealtimeSync() {
         playMessageSound();
       }
     } catch {}
-    sync({ silent: true });
+    queueDataRevisionCheck(String(payload.revision || ''));
   });
   eventSource.onerror = () => {
     realtimeConnected = false;
@@ -1120,6 +1165,21 @@ function stopRealtimeSync() {
   realtimeConnected = false;
   if (eventSource) eventSource.close();
   eventSource = null;
+  if (deferredDataSyncTimer) clearTimeout(deferredDataSyncTimer);
+  deferredDataSyncTimer = null;
+}
+
+function queueDataRevisionCheck(revision = '') {
+  if (!token) return;
+  if (revision && revision === lastDataRevision) return;
+  if (deferredDataSyncTimer) clearTimeout(deferredDataSyncTimer);
+  // Mutating endpoints commonly return the updated state themselves. Waiting
+  // briefly lets that response finish, then the lightweight revision check
+  // decides whether a full bootstrap is actually still necessary.
+  deferredDataSyncTimer = setTimeout(() => {
+    deferredDataSyncTimer = null;
+    checkServerDataRevision();
+  }, 1200);
 }
 
 function updateSyncStatus(message) {
@@ -1141,7 +1201,7 @@ function broadcastDataChange() {
 }
 
 window.addEventListener('storage', event => {
-  if (event.key === 'filmShopCloud.dataChangedAt' && token) sync({ silent: true });
+  if (event.key === 'filmShopCloud.dataChangedAt' && token) queueDataRevisionCheck();
 });
 
 ['pointerdown', 'keydown', 'wheel', 'touchstart'].forEach(eventName => {
@@ -1152,7 +1212,7 @@ window.addEventListener('storage', event => {
 
 document.addEventListener('visibilitychange', () => {
   if (!document.hidden && token) {
-    sync({ silent: true });
+    queueDataRevisionCheck();
     checkAiBossReminder();
   }
 });
@@ -1206,6 +1266,7 @@ function setJobSearch(value) {
 }
 
 function setCustomerCenterSearch(value) {
+  if (value !== customerCenterSearch) customerCenterRenderLimit = 200;
   customerCenterSearch = value || '';
   const input = document.getElementById('customerCenterSearchInput');
   if (input && input.value !== customerCenterSearch) input.value = customerCenterSearch;
@@ -1607,6 +1668,10 @@ function jobPersonOptions() {
 
 function render(options = {}) {
   if (!state) return;
+  // Reuse the customer-center sort/search projection only within the current
+  // rendered state. Any navigation, sync, mutation, branch switch, or language
+  // repaint rebuilds it from current data.
+  customerCenterAllRowsCache = null;
   const availablePages = pages.filter(([id]) => !pagePermissions[id] || hasAnyPerm(pagePermissions[id]));
   if (current !== 'modules' && !availablePages.some(([id]) => id === current)) current = 'modules';
   document.body.classList.toggle('modules-home', current === 'modules');
@@ -2039,21 +2104,27 @@ window.getQuadCallContext = () => ({ user, state });
 window.setQuadCallState = value => { state = value; };
 
 function conversationMessages(otherUserId) {
+  const queued = [...internalMessageUploadQueue.values()];
+  const withQueued = messages => [...messages, ...queued.filter(message => {
+    if (otherUserId === GROUP_CHAT_ID) return message.groupId === 'all-staff';
+    if (otherUserId === CUSTOMER_CODEX_ID) return message.groupId === CUSTOMER_CODEX_GROUP_ID;
+    return message.toUserId === otherUserId;
+  })];
   if (otherUserId === GROUP_CHAT_ID) {
-    return (state.messages || []).filter(message => message.groupId === 'all-staff')
+    return withQueued((state.messages || []).filter(message => message.groupId === 'all-staff'))
       .sort((a, b) => String(a.createdAt || '').localeCompare(String(b.createdAt || '')));
   }
   if (otherUserId === CUSTOMER_CODEX_ID) {
-    return (state.messages || []).filter(message =>
+    return withQueued((state.messages || []).filter(message =>
       message.groupId === CUSTOMER_CODEX_GROUP_ID ||
       message.fromUserId === CUSTOMER_CODEX_ID ||
       message.toUserId === CUSTOMER_CODEX_ID
-    ).sort((a, b) => String(a.createdAt || '').localeCompare(String(b.createdAt || '')));
+    )).sort((a, b) => String(a.createdAt || '').localeCompare(String(b.createdAt || '')));
   }
-  return (state.messages || []).filter(message =>
+  return withQueued((state.messages || []).filter(message =>
     (message.fromUserId === user?.id && message.toUserId === otherUserId) ||
     (message.fromUserId === otherUserId && message.toUserId === user?.id)
-  ).sort((a, b) => String(a.createdAt || '').localeCompare(String(b.createdAt || '')));
+  )).sort((a, b) => String(a.createdAt || '').localeCompare(String(b.createdAt || '')));
 }
 
 function messageBubbleHtml(message) {
@@ -2067,11 +2138,11 @@ function messageBubbleHtml(message) {
   return `<div class="message-row ${mine ? 'mine' : 'theirs'}">
     <div class="message-row-avatar">${userAvatarHtml(sender, 'small')}</div>
     <div class="message-bubble ${mine ? 'mine' : 'theirs'} ${attachmentOnly ? 'attachment-only' : ''}">
-      ${message.pending ? '' : `<button class="message-delete" type="button" title="${lang === 'zh' ? '删除/撤销' : 'Delete'}" onclick="deleteMessage('${message.id}')">×</button>`}
+      ${message.pending ? (message.failed ? `<button class="message-retry" type="button" onclick="retryInternalMessageUpload('${message.id}')">${lang === 'zh' ? '重试' : 'Retry'}</button>` : '') : `<button class="message-delete" type="button" title="${lang === 'zh' ? '删除/撤销' : 'Delete'}" onclick="deleteMessage('${message.id}')">×</button>`}
       <div class="message-sender-name">${escapeHtml(mine ? (user?.name || (lang === 'zh' ? '我' : 'Me')) : (message.fromName || ''))}</div>
       ${message.text ? `<div class="message-text">${escapeHtml(message.text || '')}</div>` : ''}
       ${messageAttachmentHtml(message.attachment)}
-      <small>${escapeHtml(time)}${message.pending ? ` · ${lang === 'zh' ? '发送中…' : 'Sending…'}` : readStatus}</small>
+      <small>${escapeHtml(time)}${message.pending ? ` · ${message.failed ? (lang === 'zh' ? '发送失败，可重试' : 'Failed, tap retry') : (lang === 'zh' ? '后台发送中…' : 'Sending in background…')}` : readStatus}</small>
     </div>
   </div>`;
 }
@@ -2216,24 +2287,68 @@ async function sendInternalMessage() {
     await postInternalMessage({ text, restoreTextOnError: true });
     return;
   }
+  const file = pendingImage.file;
+  const previewUrl = pendingImage.previewUrl;
+  internalMessagePendingImage = null;
+  refreshInternalMessagePendingImage();
+  queueInternalMessageUpload({ file, kind: 'image', text, previewUrl, recipientId: activeMessageUserId });
+}
+
+function queueInternalMessageUpload({ file, kind, text = '', previewUrl = '', recipientId }) {
+  if (!file || !recipientId) return;
+  const isGroup = recipientId === GROUP_CHAT_ID || recipientId === CUSTOMER_CODEX_ID;
+  const groupId = recipientId === CUSTOMER_CODEX_ID ? CUSTOMER_CODEX_GROUP_ID : 'all-staff';
+  const pendingId = `upload-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  const localUrl = previewUrl || URL.createObjectURL(file);
+  internalMessageUploadQueue.set(pendingId, {
+    id: pendingId, pending: true, failed: false, file, kind, localUrl,
+    scope: isGroup ? 'group' : 'direct', groupId: isGroup ? groupId : '',
+    fromUserId: user?.id, fromName: user?.name || user?.email || '',
+    toUserId: isGroup ? '' : recipientId, text: String(text || '').trim(),
+    attachment: { kind, name: file.name || kind, type: file.type || 'application/octet-stream', size: file.size, url: localUrl },
+    createdAt: new Date().toISOString(), readAt: '', readByUserIds: isGroup ? [user?.id] : []
+  });
+  renderMessageModal(undefined, { forceLatest:true });
+  void runInternalMessageUpload(pendingId);
+}
+
+async function runInternalMessageUpload(pendingId) {
+  const queued = internalMessageUploadQueue.get(pendingId);
+  if (!queued || !queued.file) return;
+  queued.failed = false;
+  if (activeMessageUserId && document.getElementById('messageThread')) renderMessageModal();
   try {
-    const uploaded = await uploadCloudMedia('/api/message-media/upload', pendingImage.file);
-    const sent = await postInternalMessage({
-      text,
-      restoreTextOnError: true,
-      attachment: {
-        kind: 'image',
-        name: uploaded.name || pendingImage.file.name || 'image',
-        type: uploaded.type || pendingImage.file.type || 'image/jpeg',
-        size: uploaded.size || pendingImage.file.size,
-        url: uploaded.url
-      }
+    const uploaded = await uploadCloudMedia('/api/message-media/upload', queued.file);
+    const attachment = {
+      kind: queued.kind, name: uploaded.name || queued.file.name || queued.kind,
+      type: uploaded.type || queued.file.type || 'application/octet-stream',
+      size: uploaded.size || queued.file.size, url: uploaded.url
+    };
+    const result = await api('/api/messages', {
+      method: 'POST',
+      body: JSON.stringify(queued.scope === 'group'
+        ? { groupId: queued.groupId, text: queued.text, attachment, clientRequestId: pendingId }
+        : { toUserId: queued.toUserId, text: queued.text, attachment, clientRequestId: pendingId })
     });
-    if (sent) clearInternalMessagePendingImage();
+    if (queued.localUrl) URL.revokeObjectURL(queued.localUrl);
+    internalMessageUploadQueue.delete(pendingId);
+    state = result;
+    broadcastDataChange();
+    if (document.getElementById('messageThread') && !internalMessageInputActive()) renderMessageModal();
+    updateMessageBadge();
   } catch (err) {
-    if (input && !input.value) input.value = text;
-    alert(err.message || (lang === 'zh' ? '照片发送失败。' : 'Could not send the image.'));
+    queued.failed = true;
+    queued.error = String(err?.message || err || '');
+    if (document.getElementById('messageThread')) renderMessageModal();
   }
+}
+
+function retryInternalMessageUpload(pendingId) {
+  const queued = internalMessageUploadQueue.get(pendingId);
+  if (!queued) return;
+  queued.failed = false;
+  renderMessageModal(undefined, { forceLatest:true });
+  void runInternalMessageUpload(pendingId);
 }
 
 async function postInternalMessage({ text = '', attachment = null, restoreTextOnError = false }) {
@@ -2262,8 +2377,8 @@ async function postInternalMessage({ text = '', attachment = null, restoreTextOn
     state = await api('/api/messages', {
       method: 'POST',
       body: JSON.stringify(isGroup
-        ? { groupId, text: String(text || '').trim(), attachment }
-        : { toUserId: recipientId, text: String(text || '').trim(), attachment })
+        ? { groupId, text: String(text || '').trim(), attachment, clientRequestId: pendingId }
+        : { toUserId: recipientId, text: String(text || '').trim(), attachment, clientRequestId: pendingId })
     });
     broadcastDataChange();
     if (!internalMessageInputActive()) renderMessageModal(undefined, { forceLatest:true });
@@ -2305,18 +2420,7 @@ async function sendMessageFile(file, kind) {
       : (kind === 'image' ? 'The processed image is still over 20MB.' : kind === 'video' ? 'Internal videos must be 200MB or smaller and no longer than 30 seconds; they are retained for 5 days.' : 'Attachments must be 20MB or smaller.'));
     return;
   }
-  try {
-    const uploaded = await uploadCloudMedia('/api/message-media/upload', file);
-    await postInternalMessage({ attachment: {
-      kind,
-      name: uploaded.name || file.name || (kind === 'image' ? 'image' : 'file'),
-      type: uploaded.type || file.type || 'application/octet-stream',
-      size: uploaded.size || file.size,
-      url: uploaded.url
-    } });
-  } catch (err) {
-    alert(err.message || (lang === 'zh' ? '附件发送失败。' : 'Could not send attachment.'));
-  }
+  queueInternalMessageUpload({ file, kind, recipientId: activeMessageUserId });
 }
 
 async function toggleVoiceMessageRecording(event) {
@@ -2579,11 +2683,10 @@ function jobFixedPay(job, installer = {}) {
 }
 
 function jobPaidAmount(job) {
-  return Number(job.paidAmount ?? job.deposit ?? 0);
+  return Math.max(Number(job.paidAmount || 0), Number(job.deposit || 0));
 }
 
 function jobPaymentStatusValue(job) {
-  if (job.paymentStatus) return job.paymentStatus;
   const price = Number(job.price || 0);
   const paid = jobPaidAmount(job);
   if (price > 0 && paid >= price) return 'paid';
@@ -3312,8 +3415,10 @@ async function savePersonalNote(noteId) {
   closeModal();
   render();
   try {
-    const result = await api(`/api/personal-notes${noteId ? `/${noteId}` : ''}`, { method: noteId ? 'PUT' : 'POST', body: JSON.stringify(body) });
-    state = result.data;
+    const result = await api(`/api/personal-notes${noteId ? `/${noteId}` : ''}`, { method: noteId ? 'PUT' : 'POST', body: JSON.stringify(body), timeoutMs: 30000 });
+    state.personalNotes = noteId
+      ? state.personalNotes.map(item => item.id === noteId ? result.item : item)
+      : state.personalNotes.map(item => item.id === optimistic.id ? result.item : item);
     render();
     startPersonalReminderChecks();
     broadcastDataChange();
@@ -3340,8 +3445,8 @@ async function updatePersonalNote(noteId, patch) {
   state.personalNotes = previousNotes.map(row => row.id === noteId ? { ...row, ...patch, updatedAt: new Date().toISOString(), _pending: true } : row);
   render();
   try {
-    const result = await api(`/api/personal-notes/${noteId}`, { method: 'PUT', body: JSON.stringify({ ...item, ...patch }) });
-    state = result.data;
+    const result = await api(`/api/personal-notes/${noteId}`, { method: 'PUT', body: JSON.stringify({ ...item, ...patch }), timeoutMs: 30000 });
+    state.personalNotes = state.personalNotes.map(row => row.id === noteId ? result.item : row);
     render();
     startPersonalReminderChecks();
     broadcastDataChange();
@@ -3371,8 +3476,7 @@ async function deletePersonalNote(noteId) {
   if (activePersonalReminderId === noteId) closePersonalReminder();
   render();
   try {
-    const result = await api(`/api/personal-notes/${noteId}`, { method: 'DELETE' });
-    state = result.data;
+    await api(`/api/personal-notes/${noteId}`, { method: 'DELETE', timeoutMs: 30000 });
     render();
     broadcastDataChange();
   } catch (err) {
@@ -3492,7 +3596,7 @@ function financialStatementSummary(statement, range) {
         <div class="financial-balance-card"><h3>${lang === 'zh' ? '会计余额摘要' : 'Accounting balance summary'}</h3>
           <div><span>${lang === 'zh' ? '应收账款' : 'Accounts receivable'}</span><strong>${reportAmount(statement.accountsReceivable)}</strong></div>
           <div><span>${lang === 'zh' ? '客户预收 / 合同负债' : 'Customer deposits / contract liabilities'}</span><strong>${reportAmount(statement.customerDeposits)}</strong></div>
-          <p>${lang === 'zh' ? '施工应收包含已交车但尚未收齐的金额；商品应收包含已出库但尚未收齐的金额。商品销售收入按销售单实际已收金额确认，不受是否出库影响。' : 'Service receivables include delivered jobs not fully collected; product receivables include shipped orders not fully collected. Product sales revenue is recognized from actual collections regardless of shipment status.'}</p>
+          <p>${lang === 'zh' ? '施工应收包含已交车但尚未收齐的金额；商品应收包含已出库但尚未收齐的金额。商品销售收入在完成出库时按订单总额确认，出库前收款列为客户预收。' : 'Service receivables include delivered jobs not fully collected; product receivables include shipped orders not fully collected. Product revenue is recognized at the order total after shipment; pre-shipment collections remain customer deposits.'}</p>
         </div>
         <div class="financial-quality-card"><h3>${lang === 'zh' ? '数据完整性检查' : 'Data integrity checks'}</h3><ul>${qualityWarnings.map(item => `<li>${escapeHtml(item)}</li>`).join('')}</ul>
           <p>${lang === 'zh' ? '现有付款记录没有独立的收款日期，因此本报表不能可靠生成本期现金流量表。资产负债表还需要现金账户、应付账款、固定资产、折旧、税费和期末盘点数据。' : 'Payment records do not have separate receipt dates, so a reliable period cash flow statement cannot yet be produced. A full balance sheet also requires cash accounts, payables, fixed assets, depreciation, taxes, and period-end inventory counts.'}</p>
@@ -4431,8 +4535,8 @@ function ownerBranchComparison() {
     const jobs = (state.jobs || []).filter(row => !row.deletedAt && String(row.branchId || '') === branchId);
     const orders = (state.salesOrders || []).filter(row => String(row.branchId || '') === branchId);
     const expenses = [...(state.expenses || []), ...reimbursedExpenseRows()].filter(row => String(row.branchId || '') === branchId);
-    const jobRevenue = jobs.reduce((sum, row) => sum + Number(jobCalc(row).price || 0), 0);
-    const orderRevenue = orders.reduce((sum, row) => sum + Number(orderCalc(row).total || 0), 0);
+    const jobRevenue = jobs.filter(isRecognizedJobRevenue).reduce((sum, row) => sum + Number(jobCalc(row).price || 0), 0);
+    const orderRevenue = orders.filter(isRecognizedSalesRevenue).reduce((sum, row) => sum + Number(recognizedSalesCollection(row) || 0), 0);
     const expense = expenses.reduce((sum, row) => sum + Number(row.amount || 0), 0);
     return { branchId, name, jobs:jobs.length, orders:orders.length, revenue:jobRevenue + orderRevenue, expense, net:jobRevenue + orderRevenue - expense };
   });
@@ -5597,9 +5701,9 @@ function movementTable() {
   </tbody></table></div>`;
 }
 
-function workshopStockQty(sku) {
+function workshopStockQty(sku, branchId = '') {
   return (state.workshopMovements || [])
-    .filter(movement => String(movement.sku || '') === String(sku || ''))
+    .filter(movement => String(movement.sku || '') === String(sku || '') && (!branchId || String(movement.branchId || '') === String(branchId)))
     .reduce((sum, movement) => {
       const qty = Number(movement.qty || 0);
       if (movement.type === 'transfer') return sum + qty;
@@ -5609,9 +5713,10 @@ function workshopStockQty(sku) {
 }
 
 function workshopStockRows() {
-  const touched = new Set((state.workshopMovements || []).map(movement => movement.sku).filter(Boolean));
+  const branchId = inventoryBranchFilter !== 'all' ? inventoryBranchFilter : '';
+  const touched = new Set((state.workshopMovements || []).filter(movement => !branchId || movement.branchId === branchId).map(movement => movement.sku).filter(Boolean));
   return (state.products || [])
-    .map(product => ({ product, workshopQty: workshopStockQty(product.sku), touched: touched.has(product.sku) }))
+    .map(product => ({ product, workshopQty: workshopStockQty(product.sku, branchId), touched: touched.has(product.sku) }))
     .filter(row => row.workshopQty > 0 || row.touched)
     .sort((a, b) => b.workshopQty - a.workshopQty || String(a.product.sku).localeCompare(String(b.product.sku)));
 }
@@ -6557,17 +6662,19 @@ function stopPersistentAlertChecks() {
 }
 
 function allCustomerCenterRows() {
+  if (customerCenterAllRowsCache) return customerCenterAllRowsCache;
   const scopedProspects = branchScopedRows(state.prospects || []);
   const promotedIds = new Set(scopedProspects.map(item => item.id));
   const regular = branchScopedRows(state.customerConversations || [])
     .filter(item => !item.promotedProspectId || !promotedIds.has(item.promotedProspectId))
     .map(item => ({ ...item, _collection: 'customerConversations', _highIntent: false }));
   const highIntent = scopedProspects.map(item => ({ ...item, _collection: 'prospects', _highIntent: true }));
-  return [...regular, ...highIntent].sort((a, b) => {
+  customerCenterAllRowsCache = [...regular, ...highIntent].sort((a, b) => {
     const newDifference = Number(Boolean(b.newCustomer) && String(b.status || '') !== '暂时无需回复') - Number(Boolean(a.newCustomer) && String(a.status || '') !== '暂时无需回复');
     const pendingDifference = Number(customerAwaitingReply(b)) - Number(customerAwaitingReply(a));
     return newDifference || pendingDifference || new Date(prospectActivityTime(b)).getTime() - new Date(prospectActivityTime(a)).getTime();
   });
+  return customerCenterAllRowsCache;
 }
 
 function customerCenterRows() {
@@ -6809,13 +6916,22 @@ function scheduleCustomerFollowUp(collection, id) {
 }
 
 function customerCenterSearchText(item) {
+  if (item._customerCenterSearchText) return item._customerCenterSearchText;
   const rep = (state.customerServiceReps || []).find(row => row.id === item.ownerId);
-  return [
+  const messageText = (Array.isArray(item.conversationMessages) ? item.conversationMessages : [])
+    .map(message => message?.text || message?.message || message?.content || '')
+    .join(' ');
+  const text = [
     item.date, item.source, item.customer, item.phone, item.vehicle, item.need,
     item.appointmentDate, item.appointmentTime, rep?.name, item.ownerName,
     item.intentLevel, item.status, item.callNote, item.note,
-    prospectConversationSummary(item)
+    item.chatContext, item.chatTranslation, item.intentReason, messageText
   ].map(normalizeCustomerLookupText).join('|');
+  // Customer-center view rows are disposable copies, so caching the normalized
+  // lookup text here avoids reparsing every message for every keystroke without
+  // risking stale persisted data.
+  item._customerCenterSearchText = text;
+  return text;
 }
 
 function normalizeCustomerLookupText(value) {
@@ -6850,6 +6966,7 @@ function customerCenterSearchBox() {
 
 function toggleCustomerPendingOnly() {
   customerCenterPendingOnly = !customerCenterPendingOnly;
+  customerCenterRenderLimit = 200;
   render();
 }
 
@@ -6857,13 +6974,23 @@ function toggleInvalidCustomers() {
   customerCenterShowInvalid = !customerCenterShowInvalid;
   customerCenterPendingOnly = false;
   customerCenterSearch = '';
+  customerCenterRenderLimit = 200;
   render();
+}
+
+function showMoreCustomerCenterRows() {
+  customerCenterRenderLimit += 200;
+  const results = document.getElementById('customerCenterSearchResults');
+  if (results) results.innerHTML = customerCenterTable(searchedCustomerCenterRows());
+  const count = document.getElementById('customerCenterSearchCount');
+  if (count) count.textContent = customerCenterSearchCountText();
 }
 
 function customerCenterTable(rows = searchedCustomerCenterRows()) {
   const addedLabel = lang === 'zh' ? '加入/更新' : 'Added / Updated';
+  const visibleRows = rows.slice(0, customerCenterRenderLimit);
   return `<div class="table-wrap customer-center-table"><table><thead><tr><th>${t('date')}</th><th>${addedLabel}</th><th>${t('source')}</th><th>${t('customer')}</th><th>${t('vehicleNeed')}</th><th>${t('appointmentAt')}</th><th>${t('contactOwner')}</th><th class="customer-center-status-col">${t('prospectStatus')}</th><th class="customer-center-intent-col">${t('intentLevel')}</th></tr></thead><tbody>
-    ${rows.map(item => {
+    ${visibleRows.map(item => {
       const rep = (state.customerServiceReps || []).find(row => row.id === item.ownerId);
       const appointment = item.appointmentDate || item.appointmentTime ? `${escapeHtml(item.appointmentDate || '')}<br><span class="note">${escapeHtml(item.appointmentTime || '')}</span>` : '';
       const replyState = customerReplyState(item);
@@ -6874,7 +7001,7 @@ function customerCenterTable(rows = searchedCustomerCenterRows()) {
       return `<tr class="click-row ${replyState.pending ? 'customer-pending-row' : ''} ${isNew ? 'customer-new-row' : ''}" onclick="openProspectWorkspace('${item._collection}','${item.id}')"><td class="prospect-nowrap">${escapeHtml(item.date || '')}</td><td class="prospect-time">${prospectTimeCell(item)}</td><td><div class="prospect-clamp prospect-clamp-2">${escapeHtml(item.source || '')}</div>${newBadge}</td><td><div class="customer-name-with-alert"><div class="prospect-clamp prospect-clamp-2">${escapeHtml(item.customer || (lang === 'zh' ? '未命名客户' : 'Unnamed'))}</div>${pendingBadge}</div><span class="note prospect-nowrap">${escapeHtml(item.phone || '')}</span>${replyState.pending && latestText ? `<div class="customer-pending-preview" title="${escapeHtml(latestText)}">${escapeHtml(shortText(latestText, 28))}</div>` : ''}</td><td><div class="prospect-clamp prospect-clamp-2">${escapeHtml(item.vehicle || '')}</div><div class="note prospect-clamp prospect-clamp-2">${escapeHtml(item.need || '')}</div></td><td class="prospect-time">${appointment}</td><td><div class="prospect-clamp prospect-clamp-2">${rep ? escapeHtml(rep.name) : escapeHtml(item.ownerName || '') || t('unassigned')}</div></td><td class="customer-center-status-col">${prospectStatusPill(item.status)}</td><td class="customer-center-intent-col">${prospectIntentPill(item.intentLevel)}</td></tr>`;
     }).join('')}
     ${rows.length ? '' : `<tr><td colspan="9" class="note">${lang === 'zh' ? (customerCenterShowInvalid ? '目前没有无效客户。' : '目前没有需要继续跟进的客户。') : (customerCenterShowInvalid ? 'No invalid customers.' : 'No customers need follow-up.')}</td></tr>`}
-  </tbody></table></div>`;
+  </tbody></table></div>${visibleRows.length < rows.length ? `<div class="customer-center-load-more"><span class="note">${lang === 'zh' ? `当前显示 ${visibleRows.length} / ${rows.length} 位客户` : `Showing ${visibleRows.length} / ${rows.length} customers`}</span><button class="btn" onclick="showMoreCustomerCenterRows()">${lang === 'zh' ? '继续显示200位' : 'Show 200 more'}</button></div>` : ''}`;
 }
 
 function ensureProspectWorkspace() {
@@ -6986,8 +7113,15 @@ function cancelProspectWorkspaceChanges() {
 function startProspectWorkspaceSync() {
   if (prospectWorkspaceSyncTimer || !token) return;
   prospectWorkspaceSyncTimer = setInterval(() => {
-    if (activeProspectWorkspaceId && !document.hidden) sync({ silent: true });
-  }, 5000);
+    // The global revision poll and EventSource already keep this workspace up
+    // to date.  A dedicated five-second full bootstrap used to rebuild the
+    // entire app while staff were typing or clicking, which could make the
+    // customer workspace appear frozen.  Keep only a lightweight fallback
+    // when realtime delivery is unavailable.
+    if (activeProspectWorkspaceId && !document.hidden && !realtimeConnected) {
+      checkServerDataRevision();
+    }
+  }, DATA_REVISION_POLL_MS);
 }
 
 function stopProspectWorkspaceSync() {
@@ -7021,6 +7155,7 @@ function renderProspectWorkspace() {
   const branches = (state.settings?.customerBranches || []).filter(branch => branch.active !== false);
   const branchOptions = [['', lang === 'zh' ? '待确认分店' : 'Branch not confirmed'], ...branches.map(branch => [branch.id, `${branch.name}${branch.city ? `（${branch.city}）` : ''}`])];
   const activeBranch = branches.find(branch => branch.id === item.branchId);
+  const suggestedBranch = branches.find(branch => branch.id === item.suggestedBranchId);
   const canReplyYelp = String(item.source || '').trim().toLowerCase() === 'yelp' && Boolean(String(item.externalId || '').trim());
   const canReplySms = customerPhoneMatchKey(item.phone).length === 10;
   const isMetaSource = normalizeSourceKey(item.source) === 'meta';
@@ -7077,6 +7212,7 @@ function renderProspectWorkspace() {
         ${hasPerm('prospectsEdit') ? `<div class="prospect-sidebar-actions"><button type="button" class="btn" onclick="cancelProspectWorkspaceChanges()">${lang === 'zh' ? '取消修改' : 'Cancel'}</button><button id="workspaceSaveDetailsButton" class="btn primary prospect-sidebar-save" onclick="saveProspectWorkspaceDetails()">${lang === 'zh' ? '保存客户资料' : 'Save customer details'}</button></div>` : ''}
       </aside>
       <section class="prospect-workspace-conversation">
+        ${item.branchConflict && suggestedBranch ? `<div class="customer-branch-conflict"><strong>${lang === 'zh' ? '发现新的客户城市' : 'New customer city detected'}</strong><span>${escapeHtml(item.city || '')} ${lang === 'zh' ? `更符合“${suggestedBranch.name}”。系统已按客户最新明确位置更新，请保存客户资料确认。` : `matches ${suggestedBranch.name}. The latest explicit location has been applied; save to confirm.`}</span></div>` : ''}
         <main class="prospect-workspace-chat">
           ${segments.length ? segments.map(segment => `<article class="prospect-chat-message ${segment.role} ${segment.messageId && segment.role === 'shop' ? 'has-delete' : ''}">
             ${segment.messageId && segment.role === 'shop' ? `<button class="prospect-message-delete" type="button" onclick="deleteProspectMessage('${escapeHtml(segment.messageId)}')" title="${lang === 'zh' ? '删除这条记录' : 'Delete this message'}">×</button>` : ''}
@@ -7108,6 +7244,7 @@ function renderProspectWorkspace() {
             <button class="reply-reference-button prospect-media-button" type="button" onclick="openReplyReferenceLibrary('image')">🖼 ${lang === 'zh' ? '回复图片' : 'Reply image'}</button>
             <button class="reply-reference-button prospect-media-button" type="button" onclick="openReplyReferenceLibrary('video')">▶ ${lang === 'zh' ? '回复视频' : 'Reply video'}</button>
             <button id="customerAiDraftButton" class="reply-reference-button" type="button" onclick="generateCustomerAiReplyDraft()" ${hasPerm('prospectsEdit') ? '' : 'disabled'}>AI ${lang === 'zh' ? '生成回复' : 'Draft reply'}</button>
+            <button class="reply-reference-button ai-coach-button" type="button" onclick="openCustomerAiCoach()" ${hasPerm('prospectsEdit') ? '' : 'disabled'}>🎓 ${lang === 'zh' ? '教AI' : 'Teach AI'}</button>
             <button id="customerSmsRefreshButton" class="reply-reference-button" type="button" onclick="reconcileCustomerSmsNow()">${lang === 'zh' ? '收短信' : 'Check SMS'}</button>
             <span id="prospectAttachmentPreview">${prospectPendingAttachment ? `${escapeHtml(prospectPendingAttachment.name)} <button type="button" onclick="clearProspectAttachment()">×</button>` : ''}</span>
             <input class="hidden" id="prospectImageInput" type="file" accept="image/*" onchange="uploadProspectAttachment(this.files[0]); this.value=''">
@@ -7353,6 +7490,65 @@ async function generateCustomerAiReplyDraft() {
       inlineButton.textContent = lang === 'zh' ? '生成客服建议回复' : 'Generate suggested reply';
     }
   }
+}
+
+function openCustomerAiCoach() {
+  const { item } = activeCustomerWorkspaceItem();
+  if (!item) return;
+  const wrong = item.agentReplyDraft?.text || [...(item.conversationMessages || [])].reverse().find(message => message.speaker === 'shop')?.text || '';
+  const branches = (state.settings?.customerBranches || []).filter(branch => branch.active !== false);
+  const body = `<div class="ai-coach-panel">
+    <p class="note">${lang === 'zh' ? '这里的教学先进入待审核经验库，不会立刻影响全部客户。审核通过后，AI只在匹配的客户、分店或产品中使用。' : 'Teaching is saved for review first and only applies to matching contexts after approval.'}</p>
+    <label><span>${lang === 'zh' ? 'AI哪里说错了（修改前）' : 'What AI said incorrectly'}</span><textarea id="aiCoachWrong" rows="5">${escapeHtml(wrong)}</textarea></label>
+    <label><span>${lang === 'zh' ? '正确应该怎么说 / 应遵守的经验' : 'Correct wording or guidance'}</span><textarea id="aiCoachCorrect" rows="6" placeholder="${lang === 'zh' ? '例如：客户最新说在 San Diego，应按洛杉矶分店服务范围处理，不再邀请去拉斯维加斯。' : 'Explain the correct response.'}"></textarea></label>
+    <div class="ai-coach-actions"><button id="aiCoachVoiceButton" class="btn" type="button" onclick="toggleAiCoachVoice()">🎙 ${lang === 'zh' ? '开始语音教学' : 'Record teaching'}</button><span id="aiCoachVoiceStatus" class="note"></span></div>
+    <div class="ai-coach-grid">
+      <label><span>${lang === 'zh' ? '适用范围' : 'Scope'}</span><select id="aiCoachScope"><option value="customer">${lang === 'zh' ? '只用于当前客户' : 'Current customer'}</option><option value="branch">${lang === 'zh' ? '当前分店' : 'Current branch'}</option><option value="product">${lang === 'zh' ? '当前产品/项目' : 'Current product'}</option><option value="company">${lang === 'zh' ? '全公司' : 'Company'}</option></select></label>
+      <label><span>${lang === 'zh' ? '分店' : 'Branch'}</span><select id="aiCoachBranch"><option value="">${lang === 'zh' ? '不限定' : 'Any'}</option>${branches.map(branch => `<option value="${escapeHtml(branch.id)}" ${branch.id === item.branchId ? 'selected' : ''}>${escapeHtml(branch.name)}</option>`).join('')}</select></label>
+      <label><span>${lang === 'zh' ? '产品/项目' : 'Product'}</span><input id="aiCoachProduct" value="${escapeHtml(item.need || item.service || '')}"></label>
+    </div>
+    <div class="ai-coach-preview"><strong>${lang === 'zh' ? '保存结果' : 'Result'}</strong><span>${lang === 'zh' ? '待审核；通过前不参与生成回复。' : 'Pending review; not used before approval.'}</span></div>
+  </div>`;
+  openModal(lang === 'zh' ? '聊天内 AI 教练' : 'In-chat AI Coach', body, saveCustomerAiCoachExperience);
+}
+
+async function toggleAiCoachVoice() {
+  const button = document.getElementById('aiCoachVoiceButton');
+  const status = document.getElementById('aiCoachVoiceStatus');
+  if (aiCoachRecorder?.state === 'recording') { aiCoachRecorder.stop(); return; }
+  if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) return alert(lang === 'zh' ? '当前浏览器不支持录音。' : 'Recording is unavailable.');
+  try {
+    aiCoachStream = await navigator.mediaDevices.getUserMedia({ audio:true }); aiCoachChunks = [];
+    aiCoachRecorder = new MediaRecorder(aiCoachStream);
+    aiCoachRecorder.ondataavailable = event => { if (event.data?.size) aiCoachChunks.push(event.data); };
+    aiCoachRecorder.onstop = async () => {
+      aiCoachStream?.getTracks().forEach(track => track.stop());
+      if (button) button.textContent = `🎙 ${lang === 'zh' ? '开始语音教学' : 'Record teaching'}`;
+      if (status) status.textContent = lang === 'zh' ? '正在识别…' : 'Transcribing…';
+      try {
+        const blob = new Blob(aiCoachChunks, { type: aiCoachRecorder.mimeType || 'audio/webm' });
+        const result = await api('/api/ai-boss/transcribe', { method:'POST', body:JSON.stringify({ dataUrl:await fileToDataUrl(blob), language:lang === 'zh' ? 'zh' : 'en' }) });
+        const input = document.getElementById('aiCoachCorrect'); if (input) input.value = [input.value.trim(), result.text].filter(Boolean).join('\n');
+        if (status) status.textContent = lang === 'zh' ? '识别完成，请确认文字后保存。' : 'Transcribed. Review before saving.';
+      } catch (error) { if (status) status.textContent = error.message; }
+    };
+    aiCoachRecorder.start();
+    if (button) button.textContent = `⏹ ${lang === 'zh' ? '停止并识别' : 'Stop and transcribe'}`;
+    if (status) status.textContent = lang === 'zh' ? '正在录音…' : 'Recording…';
+  } catch (error) { alert(error.message); }
+}
+
+async function saveCustomerAiCoachExperience() {
+  const { item } = activeCustomerWorkspaceItem();
+  const correctGuidance = String(document.getElementById('aiCoachCorrect')?.value || '').trim();
+  if (!correctGuidance) return alert(lang === 'zh' ? '请填写或录入正确应该怎么说。' : 'Enter the correct guidance.');
+  const payload = { wrongReply:String(document.getElementById('aiCoachWrong')?.value || '').trim(), correctGuidance,
+    scope:document.getElementById('aiCoachScope')?.value || 'customer', customerId:item.id, customerName:item.customer || '',
+    branchId:document.getElementById('aiCoachBranch')?.value || '', city:item.city || '', vehicle:item.vehicle || '',
+    product:String(document.getElementById('aiCoachProduct')?.value || '').trim(), sourceMessageAt:(item.conversationMessages || []).at(-1)?.timestamp || '' };
+  if (!confirm(lang === 'zh' ? '确认将这条教学保存为“待审核经验”吗？审核通过前不会影响客户回复。' : 'Save as a pending experience?')) return;
+  try { await api('/api/customer-ai/experiences', { method:'POST', body:JSON.stringify(payload) }); closeModal(); alert(lang === 'zh' ? '已进入待审核经验库。' : 'Saved for review.'); }
+  catch (error) { alert(error.message); }
 }
 
 async function reconcileCustomerSmsNow() {
@@ -7666,7 +7862,8 @@ async function saveProspectWorkspaceDetails() {
     appointmentTime: value('workspaceAppointmentTime'), ownerId, ownerName: rep?.name || '',
     intentLevel: value('workspaceIntentLevel'), status: value('workspaceStatus'),
     callNote: value('workspaceCallNote'), followUpDate: value('workspaceFollowUpDate'),
-    followUpTime: value('workspaceFollowUpTime'), followUpReason: value('workspaceFollowUpReason')
+    followUpTime: value('workspaceFollowUpTime'), followUpReason: value('workspaceFollowUpReason'),
+    branchConflict: false, suggestedBranchId: ''
   };
   if (!updated.customer && !updated.phone) return alert(lang === 'zh' ? '客户姓名或电话至少填写一个。' : 'Please enter at least a customer name or phone.');
   if (button) { button.disabled = true; button.textContent = lang === 'zh' ? '保存中…' : 'Saving…'; }
@@ -7725,6 +7922,20 @@ async function sendProspectMessage() {
   const button = document.getElementById('prospectSendSmsButton');
   const channel = document.getElementById('prospectReplyChannel')?.value || 'sms';
   const text = String(input?.value || '').trim();
+  const originalAiDraft = String(item?.agentReplyDraft?.text || '').trim();
+  const editedAiDraftExperience = originalAiDraft && text && originalAiDraft !== text && text.length >= 12 ? {
+    wrongReply: originalAiDraft,
+    correctGuidance: text,
+    scope: 'customer',
+    customerId: item.id,
+    customerName: item.customer || '',
+    branchId: item.branchId || '',
+    city: item.city || '',
+    vehicle: item.vehicle || '',
+    product: item.need || item.service || '',
+    sourceMessageAt: (item.conversationMessages || []).at(-1)?.timestamp || '',
+    sourceType: 'edited_ai_draft'
+  } : null;
   if (!item || (!text && !prospectPendingAttachment)) return;
   if (channel === 'meta' && prospectPendingAttachment) return alert(lang === 'zh' ? 'Meta 私信第一版只发送文字；如需发送图片或视频，请切换到手机短信。' : 'Meta currently supports text replies here. Switch to SMS for attachments.');
   const workspaceKey = activeProspectWorkspaceId;
@@ -7763,6 +7974,9 @@ async function sendProspectMessage() {
     state = result.data;
     lastDataRevision = String(result.revision || lastDataRevision || '');
     broadcastDataChange();
+    if (editedAiDraftExperience) {
+      api('/api/customer-ai/experiences', { method:'POST', body:JSON.stringify(editedAiDraftExperience) }).catch(() => {});
+    }
     preserveProspectWorkspaceRender = false;
     render();
   } catch (err) {
@@ -8618,7 +8832,7 @@ function openWorkshopMovement(type = 'transfer') {
       const product = state.products.find(p => p.sku === data.sku);
       if (!product) return alert(lang === 'zh' ? '找不到这个 SKU。' : 'Cannot find this SKU.');
       if (data.qty <= 0) return alert(lang === 'zh' ? '数量必须大于 0。' : 'Quantity must be greater than 0.');
-      const availableQty = data.type === 'transfer' ? Number((state.branchInventory || []).find(row => row.sku === data.sku && row.branchId === data.branchId)?.qty ?? product.qty ?? 0) : workshopStockQty(data.sku);
+      const availableQty = data.type === 'transfer' ? Number((state.branchInventory || []).find(row => row.sku === data.sku && row.branchId === data.branchId)?.qty ?? 0) : workshopStockQty(data.sku, data.branchId);
       if (data.qty > availableQty) {
         const label = data.type === 'transfer' ? t('mainWarehouseStock') : t('workshopCurrentStock');
         const availableUnit = data.type === 'transfer' ? (product.unit || '') : t('meter');
@@ -8693,14 +8907,23 @@ function readWorkshopConsumeLines() {
   return [...document.querySelectorAll('#workshopConsumeLines .workshop-consume-line')].map(row => ({ sku: row.querySelector('.workshop-line-sku')?.value || '', qty: Number(row.querySelector('.workshop-line-qty')?.value || 0) }));
 }
 
+function selectedWorkshopJobBranchId() {
+  const jobId = document.getElementById('jobId')?.value || '';
+  const job = (state.jobs || []).find(item => item.id === jobId);
+  return job?.branchId || '';
+}
+
 function updateWorkshopConsumeLines() {
   const type = document.getElementById('type')?.value || 'consume';
+  const branchId = selectedWorkshopJobBranchId();
   const totals = new Map();
   readWorkshopConsumeLines().forEach(line => totals.set(line.sku, Number(totals.get(line.sku) || 0) + line.qty));
   document.querySelectorAll('#workshopConsumeLines .workshop-consume-line').forEach(row => {
     const sku = row.querySelector('.workshop-line-sku')?.value || '';
     const product = state.products.find(item => item.sku === sku);
-    const available = type === 'transfer' ? Number(product?.qty || 0) : workshopStockQty(sku);
+    const available = type === 'transfer'
+      ? Number((state.branchInventory || []).find(item => item.sku === sku && item.branchId === branchId)?.qty || 0)
+      : workshopStockQty(sku, branchId);
     const requested = Number(totals.get(sku) || 0);
     const output = row.querySelector('.workshop-line-stock');
     if (output) output.innerHTML = sku ? `${available.toLocaleString()} ${type === 'transfer' ? escapeHtml(product?.unit || '') : t('meter')}${requested > available ? `<small class="workshop-line-over">${lang === 'zh' ? `本单共 ${requested}` : `Order total ${requested}`}</small>` : ''}` : '—';
@@ -8716,10 +8939,11 @@ async function saveWorkshopMovementBatch(data) {
 
 function openWorkshopConsumeBatch() {
   const jobOptions = [['', lang === 'zh' ? '请选择施工单' : 'Select a job'], ...(state.jobs || []).filter(job => !job.deletedAt && !['取消', '无效'].includes(job.status)).map(job => [job.id, `${job.date || ''} · ${job.customer || ''} · ${job.vehicle || ''}`])];
-  const fields = [['date',t('date'),'date',today()], ['type',t('type'),'select','consume',[['consume',t('workshopConsume')],['transfer',t('workshopTransfer')]]], ['operator',t('operator'),'text',user?.name || ''], ['jobId',lang === 'zh' ? '关联施工单' : 'Linked job','select','',jobOptions], ['jobCustomer',t('workshopUsage'),'text',''], ['note',t('note'),'textarea','', null, 'wide']];
+  const fields = [['date',t('date'),'date',today()], ['type',t('type'),'select','consume',[['consume',t('workshopConsume')]]], ['operator',t('operator'),'text',user?.name || ''], ['jobId',lang === 'zh' ? '关联施工单' : 'Linked job','select','',jobOptions], ['jobCustomer',t('workshopUsage'),'text',''], ['note',t('note'),'textarea','', null, 'wide']];
   const lines = `<div class="sales-order-lines workshop-consume-lines wide"><div class="sales-order-lines-head"><strong>${lang === 'zh' ? '膜料明细' : 'Film details'}</strong><button class="btn" type="button" onclick="addWorkshopConsumeLine()">+ ${lang === 'zh' ? '新增一行' : 'Add line'}</button></div><div class="table-wrap"><table class="sales-lines-table workshop-consume-table"><thead><tr><th>SKU</th><th>${t('qtyMeters')}</th><th>${lang === 'zh' ? '可用库存' : 'Available'}</th><th></th></tr></thead><tbody id="workshopConsumeLines">${workshopConsumeLineRowHtml()}</tbody></table></div><div class="stock-hint">${lang === 'zh' ? '同一个 SKU 填写多行时会自动合并数量；任意一行库存不足，整张单都不会保存。' : 'Duplicate SKUs are combined. If any item lacks stock, the whole batch is rejected.'}</div></div>`;
   openModal(t('workshopConsume'), formHtml(fields) + lines, () => {
     const data = readForm(['date','type','operator','jobId','jobCustomer','note']);
+    data.branchId = selectedWorkshopJobBranchId();
     data.items = readWorkshopConsumeLines();
     const dateError = validateTodayEntryDate(data.date);
     if (dateError) return alert(dateError);
@@ -8731,12 +8955,13 @@ function openWorkshopConsumeBatch() {
     for (const [sku, qty] of totals) {
       const product = state.products.find(item => item.sku === sku);
       if (!product) return alert(lang === 'zh' ? `找不到 SKU：${sku}` : `Cannot find SKU: ${sku}`);
-      const available = data.type === 'transfer' ? Number(product.qty || 0) : workshopStockQty(sku);
+      const available = workshopStockQty(sku, data.branchId);
       if (qty > available) return alert(`${sku}：${data.type === 'transfer' ? t('mainWarehouseStock') : t('workshopCurrentStock')} ${available}，${lang === 'zh' ? '本单数量' : 'Batch quantity'} ${qty}`);
     }
     return saveWorkshopMovementBatch(data);
   });
   document.getElementById('type')?.addEventListener('change', updateWorkshopConsumeLines);
+  document.getElementById('jobId')?.addEventListener('change', updateWorkshopConsumeLines);
   document.getElementById('workshopConsumeLines')?.addEventListener('focusout', event => { if (event.target.matches('.workshop-line-sku-search-input')) setTimeout(() => event.target.closest('.workshop-line-sku-search')?.querySelector('.workshop-line-sku-results')?.classList.remove('open'), 120); });
   updateWorkshopConsumeLines();
 }
@@ -9412,6 +9637,8 @@ async function saveSettings() {
 
 let customerAiBranchDrafts = [];
 let customerAiPlaybookDrafts = [];
+let customerAiKnowledgeDrafts = [];
+let customerAiExperienceDrafts = [];
 
 function customerAiRulesFieldKey(element) {
   if (!element) return '';
@@ -9422,6 +9649,9 @@ function customerAiRulesFieldKey(element) {
   const branchCard = element.closest?.('[data-branch-index]');
   const branchField = element.getAttribute?.('data-branch-field');
   if (branchCard && branchField) return `branch:${branchCard.dataset.branchIndex}:${branchField}`;
+  const knowledgeCard = element.closest?.('[data-knowledge-index]');
+  const knowledgeField = element.getAttribute?.('data-knowledge-field');
+  if (knowledgeCard && knowledgeField) return `knowledge:${knowledgeCard.dataset.knowledgeIndex}:${knowledgeField}`;
   return '';
 }
 
@@ -9431,6 +9661,7 @@ function customerAiRulesFieldByKey(key) {
   const [kind, index, field] = key.split(':');
   if (kind === 'rule') return document.querySelector(`[data-rule-index="${index}"] [data-rule-field="${field}"]`);
   if (kind === 'branch') return document.querySelector(`[data-branch-index="${index}"] [data-branch-field="${field}"]`);
+  if (kind === 'knowledge') return document.querySelector(`[data-knowledge-index="${index}"] [data-knowledge-field="${field}"]`);
   return null;
 }
 
@@ -9449,7 +9680,7 @@ function captureCustomerAiRulesUiState() {
     documentTop: document.scrollingElement?.scrollTop || 0,
     viewTop: document.getElementById('view')?.scrollTop || 0,
     pageTop: page.scrollTop || 0,
-    knowledge: document.getElementById('customerAiKnowledge')?.value || '',
+    knowledgeEntries: readCustomerAiKnowledgeEntries(),
     branches: readCustomerAiBranches(),
     playbook: readCustomerAiPlaybook(),
     activeKey: customerAiRulesFieldKey(active),
@@ -9462,12 +9693,12 @@ function captureCustomerAiRulesUiState() {
 function restoreCustomerAiRulesUiState(snapshot, options = {}) {
   if (!snapshot || current !== 'aiRules') return;
   if (options.restoreDrafts) {
-    const knowledge = document.getElementById('customerAiKnowledge');
-    if (knowledge) knowledge.value = snapshot.knowledge || '';
+    customerAiKnowledgeDrafts = (snapshot.knowledgeEntries || []).map(row => ({ ...row }));
     customerAiBranchDrafts = (snapshot.branches || []).map(row => ({ ...row }));
     customerAiPlaybookDrafts = (snapshot.playbook || []).map(row => ({ ...row }));
     renderCustomerAiBranchEditors();
     renderCustomerAiPlaybookEditors();
+    renderCustomerAiKnowledgeEditors();
   }
   const restorePosition = () => {
     const view = document.getElementById('view');
@@ -9498,12 +9729,42 @@ function customerAiRulesView() {
   return `<div class="panel customer-ai-rules-page">
     <div class="panel-head"><div><h3>${lang === 'zh' ? 'AI 客服规则中心' : 'AI Customer Rules Center'}</h3><p class="note">${lang === 'zh' ? '这里仅管理客服话术、产品资料和分店政策，不显示 API Key、模型或自动发送开关。' : 'This page manages service wording, product knowledge, and branch policies without exposing keys, models, or auto-send controls.'}</p></div><div><button class="btn" onclick="loadCustomerAiRules()">${lang === 'zh' ? '刷新' : 'Refresh'}</button> <button class="btn primary" onclick="saveCustomerAiRules()">${lang === 'zh' ? '保存全部规则' : 'Save all rules'}</button></div></div>
     <div id="customerAiRulesMeta" class="customer-ai-rules-meta">${lang === 'zh' ? '正在读取已保存规则…' : 'Loading saved rules…'}</div>
-    <section class="customer-ai-rules-section"><h4>${lang === 'zh' ? '一、公司知识与产品规则' : '1. Company and product rules'}</h4><p class="note">${lang === 'zh' ? '填写所有分店共同使用的产品、价格、质保、公司优势和禁止回答内容。' : 'Shared product, pricing, warranty, company advantage, and prohibited-answer rules.'}</p><textarea id="customerAiKnowledge" rows="14" maxlength="12000" placeholder="${lang === 'zh' ? '填写产品规则、报价依据、质保和公司优势…' : 'Enter product, pricing, warranty, and company rules…'}"></textarea></section>
+    <section class="customer-ai-rules-section"><div class="customer-ai-auto-reply-head"><div><h4>${lang === 'zh' ? '一、分类知识库' : '1. Layered knowledge base'}</h4><p>${lang === 'zh' ? '每条资料独立保存。AI 只读取当前客户相关的核心规则、分店、产品和报价资料，不再每次读取全部大文本。' : 'Each entry is independent. AI retrieves only relevant core, branch, product, and pricing knowledge.'}</p></div><button class="btn" onclick="addCustomerAiKnowledgeEntry()">${lang === 'zh' ? '+ 新增知识' : '+ Add knowledge'}</button></div><div id="customerAiKnowledgeEntries" class="customer-ai-knowledge-list"></div></section>
     <section class="customer-ai-rules-section"><div class="customer-ai-auto-reply-head"><div><h4>${lang === 'zh' ? '二、客户聊天顺序与每一步规则' : '2. Conversation sequence and step rules'}</h4><p>${lang === 'zh' ? '规则按页面顺序交给 AI。可以分别设置第一次、第二次、后续沟通、报价、邀约和转人工。' : 'Rules are passed to AI in this order. Configure first, second, ongoing, price, visit, and escalation behavior separately.'}</p></div><button class="btn" onclick="addCustomerAiPlaybookRule()">${lang === 'zh' ? '+ 新增规则' : '+ Add rule'}</button></div><div id="customerAiPlaybook" class="customer-ai-playbook"></div></section>
-    <section class="customer-ai-rules-section"><div class="customer-ai-auto-reply-head"><div><h4>${lang === 'zh' ? '三、分店资料与分店专用规则' : '3. Branch information and rules'}</h4><p>${lang === 'zh' ? '不同分店可以使用不同地址、报价、营业时间和政策。' : 'Each branch can have different address, pricing, hours, and policy.'}</p></div><button class="btn" onclick="addCustomerAiBranchEditor()">${lang === 'zh' ? '+ 新增分店' : '+ Add branch'}</button></div><div id="customerAiBranches" class="customer-ai-branches"></div></section>
+    <section class="customer-ai-rules-section"><div class="customer-ai-auto-reply-head"><div><h4>${lang === 'zh' ? '三、分店资料与服务城市' : '3. Branches and service cities'}</h4><p>${lang === 'zh' ? '客户最新明确说出的城市优先；服务城市用于推荐分店，地址空白时 AI 不会编造。' : 'The latest explicit customer city wins; service cities recommend a branch and missing addresses are never invented.'}</p></div><button class="btn" onclick="addCustomerAiBranchEditor()">${lang === 'zh' ? '+ 新增分店' : '+ Add branch'}</button></div><div id="customerAiBranches" class="customer-ai-branches"></div></section>
+    <section class="customer-ai-rules-section"><div class="customer-ai-auto-reply-head"><div><h4>${lang === 'zh' ? '四、AI 待审核经验' : '4. AI experiences awaiting review'}</h4><p>${lang === 'zh' ? '聊天内“教AI”或人工修改草稿会进入这里。审核通过后才会用于客户回复。' : 'Teach-AI submissions and edited drafts appear here. Only approved experiences affect replies.'}</p></div></div><div id="customerAiExperiences" class="customer-ai-experience-list"></div></section>
     <div class="customer-ai-rules-footer"><button class="btn primary" onclick="saveCustomerAiRules()">${lang === 'zh' ? '保存全部规则' : 'Save all rules'}</button></div>
   </div>`;
 }
+
+function renderCustomerAiKnowledgeEditors() {
+  const container = document.getElementById('customerAiKnowledgeEntries');
+  if (!container) return;
+  const categories = [['core','公司核心规则'],['product','产品知识'],['pricing_warranty','价格与质保'],['branch','分店规则'],['workflow','聊天流程'],['safety','禁止回答/转人工']];
+  container.innerHTML = customerAiKnowledgeDrafts.map((row,index) => `<article class="customer-ai-knowledge-card" data-knowledge-index="${index}">
+    <div class="customer-ai-playbook-row"><label>${lang==='zh'?'标题':'Title'}<input data-knowledge-field="title" value="${escapeHtml(row.title||'')}"></label><label>${lang==='zh'?'分类':'Category'}<select data-knowledge-field="category">${categories.map(([value,label])=>`<option value="${value}" ${row.category===value?'selected':''}>${lang==='zh'?label:value}</option>`).join('')}</select></label><label class="check-row"><input data-knowledge-field="enabled" type="checkbox" ${row.enabled!==false?'checked':''}><span>${lang==='zh'?'启用':'Enabled'}</span></label></div>
+    <div class="customer-ai-playbook-row"><label>${lang==='zh'?'所属分店（可空）':'Branch (optional)'}<select data-knowledge-field="branchId"><option value="">${lang==='zh'?'全公司/不限':'Company / any'}</option>${customerAiBranchDrafts.map(branch=>`<option value="${escapeHtml(branch.id||'')}" ${row.branchId===branch.id?'selected':''}>${escapeHtml(branch.name||branch.city||'')}</option>`).join('')}</select></label><label>${lang==='zh'?'产品关键词（逗号分隔）':'Product keywords'}<input data-knowledge-field="productKeywords" value="${escapeHtml(row.productKeywords||'')}" placeholder="TPU, PPF, 窗膜"></label></div>
+    <label>${lang==='zh'?'知识内容':'Knowledge content'}<textarea data-knowledge-field="content" rows="6" maxlength="20000">${escapeHtml(row.content||'')}</textarea></label>
+    <div class="mini-actions"><button class="btn danger" type="button" onclick="removeCustomerAiKnowledgeEntry(${index})">${lang==='zh'?'删除知识':'Delete'}</button></div>
+  </article>`).join('') || `<div class="empty">${lang==='zh'?'还没有知识条目，请新增。':'No knowledge entries yet.'}</div>`;
+}
+
+function readCustomerAiKnowledgeEntries() {
+  return [...document.querySelectorAll('#customerAiKnowledgeEntries .customer-ai-knowledge-card')].map((card,index)=>{
+    const existing=customerAiKnowledgeDrafts[index]||{}; const value=field=>String(card.querySelector(`[data-knowledge-field="${field}"]`)?.value||'').trim();
+    return {id:existing.id||`knowledge-${Date.now()}-${index}`,title:value('title'),category:value('category')||'core',branchId:value('branchId'),productKeywords:value('productKeywords'),content:value('content'),enabled:Boolean(card.querySelector('[data-knowledge-field="enabled"]')?.checked)};
+  });
+}
+
+function addCustomerAiKnowledgeEntry(){ customerAiKnowledgeDrafts=readCustomerAiKnowledgeEntries(); customerAiKnowledgeDrafts.push({id:`knowledge-${Date.now()}`,title:'',category:'product',branchId:'',productKeywords:'',content:'',enabled:true}); renderCustomerAiKnowledgeEditors(); }
+function removeCustomerAiKnowledgeEntry(index){ if(!confirm(lang==='zh'?'确定删除这条知识吗？保存后生效。':'Delete this knowledge entry?'))return; customerAiKnowledgeDrafts=readCustomerAiKnowledgeEntries().filter((_,i)=>i!==index); renderCustomerAiKnowledgeEditors(); }
+
+function renderCustomerAiExperienceEditors(){
+  const container=document.getElementById('customerAiExperiences'); if(!container)return;
+  container.innerHTML=customerAiExperienceDrafts.map(row=>`<article class="customer-ai-experience-card ${escapeHtml(row.status||'pending')}"><div class="customer-ai-experience-head"><strong>${escapeHtml(row.customerName||row.product||row.city||(lang==='zh'?'AI 教学经验':'AI experience'))}</strong><span>${row.status==='approved'?(lang==='zh'?'已通过':'Approved'):row.status==='rejected'?(lang==='zh'?'已拒绝':'Rejected'):(lang==='zh'?'待审核':'Pending')}</span></div><div class="customer-ai-experience-grid"><div><small>${lang==='zh'?'原错误回复':'Before'}</small><p>${escapeHtml(row.wrongReply||'—')}</p></div><div><small>${lang==='zh'?'正确说法':'Correction'}</small><p>${escapeHtml(row.correctGuidance||'')}</p></div></div><p class="note">${escapeHtml([row.scope,row.city,row.vehicle,row.product,row.createdBy].filter(Boolean).join(' · '))} · ${formatAppDateTime(row.createdAt||'')}</p><p class="customer-ai-experience-stats">${lang==='zh'?`使用 ${Number(row.useCount||0)} 次 · 客户回复 ${Number(row.customerReplyCount||0)} 次 · 预约 ${Number(row.appointmentCount||0)} 次 · 成交 ${Number(row.saleCount||0)} 次`:`Used ${Number(row.useCount||0)} · Replies ${Number(row.customerReplyCount||0)} · Appointments ${Number(row.appointmentCount||0)} · Sales ${Number(row.saleCount||0)}`}</p><div class="mini-actions">${row.status!=='approved'?`<button class="btn primary" onclick="reviewCustomerAiExperience('${escapeHtml(row.id)}','approved')">${lang==='zh'?'审核通过':'Approve'}</button>`:''}${row.status!=='rejected'?`<button class="btn danger" onclick="reviewCustomerAiExperience('${escapeHtml(row.id)}','rejected')">${lang==='zh'?'拒绝':'Reject'}</button>`:''}</div></article>`).join('')||`<div class="empty">${lang==='zh'?'暂无教学经验。':'No experiences yet.'}</div>`;
+}
+
+async function reviewCustomerAiExperience(id,status){ if(!confirm(lang==='zh'?(status==='approved'?'确认审核通过？通过后 AI 会在相关客户中使用。':'确认拒绝这条经验？'):'Confirm review?'))return; try{await api(`/api/customer-ai/experiences/${encodeURIComponent(id)}`,{method:'PUT',body:JSON.stringify({status})}); await loadCustomerAiRules();}catch(err){alert(err.message);} }
 
 function renderCustomerAiPlaybookEditors() {
   const container = document.getElementById('customerAiPlaybook');
@@ -9529,12 +9790,14 @@ async function loadCustomerAiRules() {
   const uiState = captureCustomerAiRulesUiState();
   try {
     const info = await api('/api/customer-ai/rules');
-    const knowledge = document.getElementById('customerAiKnowledge');
-    if (knowledge) knowledge.value = info.knowledge || '';
+    customerAiKnowledgeDrafts = (info.knowledgeEntries || []).map(row => ({ ...row }));
+    customerAiExperienceDrafts = (info.experiences || []).map(row => ({ ...row }));
     customerAiBranchDrafts = (info.branches || []).map(row => ({ ...row }));
     customerAiPlaybookDrafts = (info.playbook || []).map(row => ({ ...row }));
     renderCustomerAiBranchEditors();
     renderCustomerAiPlaybookEditors();
+    renderCustomerAiKnowledgeEditors();
+    renderCustomerAiExperienceEditors();
     const meta = document.getElementById('customerAiRulesMeta');
     if (meta) meta.textContent = info.updatedAt ? (lang === 'zh' ? `最后修改：${formatAppDateTime(info.updatedAt)}｜${info.updatedBy || ''}` : `Last updated: ${formatAppDateTime(info.updatedAt)} | ${info.updatedBy || ''}`) : (lang === 'zh' ? '尚未保存独立规则' : 'No saved rules yet');
     restoreCustomerAiRulesUiState(uiState);
@@ -9546,10 +9809,11 @@ async function loadCustomerAiRules() {
 
 async function saveCustomerAiRules() {
   const uiState = captureCustomerAiRulesUiState();
-  const knowledge=String(document.getElementById('customerAiKnowledge')?.value||'').trim(); const branches=readCustomerAiBranches(); const playbook=readCustomerAiPlaybook();
+  const knowledgeEntries=readCustomerAiKnowledgeEntries(); const branches=readCustomerAiBranches(); const playbook=readCustomerAiPlaybook();
+  if(!knowledgeEntries.length||knowledgeEntries.some(row=>!row.title||!row.content))return alert(lang==='zh'?'请至少保留一条知识，并填写标题和内容。':'Keep at least one complete knowledge entry.');
   if(!branches.length||branches.some(row=>!row.name||!row.city))return alert(lang==='zh'?'请填写每个分店的名称和城市。':'Complete every branch name and city.');
   if(!playbook.length||playbook.some(row=>!row.name||!row.instruction))return alert(lang==='zh'?'请填写每一条流程规则的名称和详细内容。':'Complete every playbook rule.');
-  try { const info=await api('/api/customer-ai/rules',{method:'PUT',body:JSON.stringify({knowledge,branches,playbook})}); customerAiBranchDrafts=info.branches; customerAiPlaybookDrafts=info.playbook; renderCustomerAiBranchEditors(); renderCustomerAiPlaybookEditors(); const meta=document.getElementById('customerAiRulesMeta'); if(meta)meta.textContent=lang==='zh'?`保存成功｜${formatAppDateTime(info.updatedAt)}｜${info.updatedBy||''}`:'Rules saved'; restoreCustomerAiRulesUiState(uiState); alert(lang==='zh'?'AI客服全部规则已经保存，下一次生成回复立即使用新规则。':'All AI rules saved and active for the next reply.'); } catch(err){alert(err.message);}
+  try { const info=await api('/api/customer-ai/rules',{method:'PUT',body:JSON.stringify({knowledgeEntries,branches,playbook})}); customerAiKnowledgeDrafts=info.knowledgeEntries||[]; customerAiBranchDrafts=info.branches; customerAiPlaybookDrafts=info.playbook; renderCustomerAiKnowledgeEditors(); renderCustomerAiBranchEditors(); renderCustomerAiPlaybookEditors(); const meta=document.getElementById('customerAiRulesMeta'); if(meta)meta.textContent=lang==='zh'?`保存成功｜${formatAppDateTime(info.updatedAt)}｜${info.updatedBy||''}`:'Rules saved'; restoreCustomerAiRulesUiState(uiState); alert(lang==='zh'?'AI客服全部规则已经保存，下一次生成回复立即使用新规则。':'All AI rules saved and active for the next reply.'); } catch(err){alert(err.message);}
 }
 
 function renderCustomerAiBranchEditors() {
@@ -9562,6 +9826,7 @@ function renderCustomerAiBranchEditors() {
         <label>${lang === 'zh' ? '分店名称' : 'Branch name'}<input data-branch-field="name" value="${escapeHtml(branch.name || '')}" placeholder="${lang === 'zh' ? '例如：拉斯维加斯分店' : 'Las Vegas Branch'}"></label>
         <label>${lang === 'zh' ? '主要城市' : 'Primary city'}<input data-branch-field="city" value="${escapeHtml(branch.city || '')}" placeholder="Las Vegas"></label>
         <label class="wide">${lang === 'zh' ? '城市别名（逗号分隔）' : 'City aliases (comma-separated)'}<input data-branch-field="aliases" value="${escapeHtml(branch.aliases || '')}" placeholder="Las Vegas, Vegas"></label>
+        <label class="wide">${lang === 'zh' ? '服务城市（逗号分隔）' : 'Service cities (comma-separated)'}<input data-branch-field="serviceCities" value="${escapeHtml(branch.serviceCities || '')}" placeholder="San Diego, Orange County, Irvine"></label>
         <label class="wide">${lang === 'zh' ? '分店地址' : 'Branch address'}<input data-branch-field="address" value="${escapeHtml(branch.address || '')}" placeholder="${lang === 'zh' ? '未填写时 AI 不会编造地址' : 'AI will not invent a missing address'}"></label>
         <label class="wide">${lang === 'zh' ? '该分店专用 AI 规则 / 报价 / 政策' : 'Branch-specific AI rules / pricing / policy'}<textarea data-branch-field="aiKnowledge" rows="5" maxlength="6000" placeholder="${lang === 'zh' ? '只填写本分店独有的价格、营业时间、优惠、政策和话术。' : 'Rules, pricing, hours, promotions, and wording unique to this branch.'}">${escapeHtml(branch.aiKnowledge || '')}</textarea></label>
         <label class="check-row"><input data-branch-field="active" type="checkbox" ${branch.active !== false ? 'checked' : ''}><span>${lang === 'zh' ? '启用该分店' : 'Branch active'}</span></label>
@@ -9575,7 +9840,7 @@ function readCustomerAiBranches() {
     const existing = customerAiBranchDrafts[index] || {};
     return {
       id: existing.id || `branch-${Date.now()}-${index + 1}`,
-      name: value('name'), city: value('city'), aliases: value('aliases'), address: value('address'),
+      name: value('name'), city: value('city'), aliases: value('aliases'), serviceCities: value('serviceCities'), address: value('address'),
       aiKnowledge: value('aiKnowledge'), active: Boolean(card.querySelector('[data-branch-field="active"]')?.checked)
     };
   });
@@ -9583,7 +9848,7 @@ function readCustomerAiBranches() {
 
 function addCustomerAiBranchEditor() {
   customerAiBranchDrafts = readCustomerAiBranches();
-  customerAiBranchDrafts.push({ id: `branch-${Date.now()}`, name: '', city: '', aliases: '', address: '', aiKnowledge: '', active: true });
+  customerAiBranchDrafts.push({ id: `branch-${Date.now()}`, name: '', city: '', aliases: '', serviceCities: '', address: '', aiKnowledge: '', active: true });
   renderCustomerAiBranchEditors();
 }
 

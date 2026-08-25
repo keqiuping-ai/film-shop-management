@@ -354,6 +354,8 @@ function seedDb() {
     ],
     prospects: [],
     customerConversations: [],
+    customerAiKnowledgeEntries: [],
+    customerAiExperiences: [],
     replyTemplates: [],
     customerNurtureCampaigns: [],
     customerNurtureDeliveries: [],
@@ -403,6 +405,8 @@ function readDb() {
   if (!Array.isArray(db.leads)) db.leads = [];
   if (!Array.isArray(db.prospects)) db.prospects = [];
   if (!Array.isArray(db.customerConversations)) db.customerConversations = [];
+  if (!Array.isArray(db.customerAiKnowledgeEntries)) db.customerAiKnowledgeEntries = [];
+  if (!Array.isArray(db.customerAiExperiences)) db.customerAiExperiences = [];
   if (!Array.isArray(db.replyTemplates)) db.replyTemplates = [];
   if (!Array.isArray(db.customerNurtureCampaigns)) db.customerNurtureCampaigns = [];
   if (!Array.isArray(db.customerNurtureDeliveries)) db.customerNurtureDeliveries = [];
@@ -436,7 +440,19 @@ function readDb() {
 }
 
 function writeDb(db) {
-  fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2));
+  // Never overwrite the live database file in place. A process or machine
+  // interruption during writeFileSync could otherwise leave a truncated JSON
+  // file that cannot be opened on the next start. Write the complete snapshot
+  // beside it first, flush the file, then atomically replace the old snapshot.
+  const tempFile = `${DB_FILE}.${process.pid}.tmp`;
+  const handle = fs.openSync(tempFile, 'w');
+  try {
+    fs.writeFileSync(handle, JSON.stringify(db, null, 2));
+    fs.fsyncSync(handle);
+  } finally {
+    fs.closeSync(handle);
+  }
+  fs.renameSync(tempFile, DB_FILE);
   cachedDb = db;
   cachedDbRevision = databaseRevision();
 }
@@ -1587,7 +1603,7 @@ function completedJobExportCalc(db, job) {
     if (installer.mode === 'percent') labor = price * Math.max(0, ...rates) / 100;
     if (installer.mode === 'fixed') labor = rates.reduce((sum, rate) => sum + rate, 0);
   }
-  const paid = Number(job?.paidAmount ?? job?.deposit ?? 0);
+  const paid = Math.max(Number(job?.paidAmount || 0), Number(job?.deposit || 0));
   return { price, paid, balance:Math.max(0, price - paid), material, labor, gross:price - material - labor };
 }
 
@@ -1826,6 +1842,96 @@ function customerAiKnowledge(db) {
   return String(db?.settings?.customerAiKnowledge || '').trim().slice(0, 12000);
 }
 
+const CUSTOMER_AI_KNOWLEDGE_CATEGORIES = new Set(['core', 'product', 'pricing_warranty', 'branch', 'workflow', 'safety']);
+
+function normalizeCustomerAiKnowledgeEntry(value = {}, index = 0) {
+  const category = CUSTOMER_AI_KNOWLEDGE_CATEGORIES.has(String(value.category || '')) ? String(value.category) : 'core';
+  return {
+    id: String(value.id || `knowledge-${index + 1}`),
+    title: String(value.title || '未命名知识').trim().slice(0, 120),
+    category,
+    content: String(value.content || '').trim().slice(0, 20000),
+    branchId: String(value.branchId || '').trim(),
+    productKeywords: String(value.productKeywords || '').trim().slice(0, 500),
+    enabled: value.enabled !== false,
+    createdAt: value.createdAt || new Date().toISOString(),
+    updatedAt: value.updatedAt || value.createdAt || new Date().toISOString(),
+    updatedBy: String(value.updatedBy || '').slice(0, 120)
+  };
+}
+
+function customerAiKnowledgeEntries(db) {
+  let rows = (Array.isArray(db.customerAiKnowledgeEntries) ? db.customerAiKnowledgeEntries : []).map(normalizeCustomerAiKnowledgeEntry);
+  const legacy = customerAiKnowledge(db);
+  if (!rows.length && legacy) rows = [normalizeCustomerAiKnowledgeEntry({ id: 'legacy-company-knowledge', title: '原公司知识与产品规则', category: 'core', content: legacy, enabled: true }, 0)];
+  if (!rows.length) rows = [normalizeCustomerAiKnowledgeEntry({
+    id: 'default-safety-knowledge',
+    title: '核心安全与转人工规则',
+    category: 'safety',
+    content: '不得编造价格、折扣、库存、工期、预约空档、质保或任何承诺。投诉、退款、质保争议、法律责任及无法确认的信息必须转人工。客户城市或所属分店无法确认时先询问客户，不得猜测。',
+    enabled: true
+  }, 0)];
+  return rows;
+}
+
+function normalizeCustomerAiExperience(value = {}) {
+  const allowedScopes = new Set(['customer', 'branch', 'product', 'company']);
+  const allowedStatuses = new Set(['pending', 'approved', 'rejected']);
+  return {
+    id: String(value.id || id()),
+    wrongReply: String(value.wrongReply || '').trim().slice(0, 5000),
+    correctGuidance: String(value.correctGuidance || '').trim().slice(0, 5000),
+    scope: allowedScopes.has(String(value.scope || '')) ? String(value.scope) : 'customer',
+    customerId: String(value.customerId || '').trim(), customerName: String(value.customerName || '').trim().slice(0, 160),
+    branchId: String(value.branchId || '').trim(), city: String(value.city || '').trim().slice(0, 100),
+    vehicle: String(value.vehicle || '').trim().slice(0, 200), product: String(value.product || '').trim().slice(0, 120),
+    sourceMessageAt: String(value.sourceMessageAt || '').trim(),
+    status: allowedStatuses.has(String(value.status || '')) ? String(value.status) : 'pending',
+    createdAt: value.createdAt || new Date().toISOString(), createdBy: String(value.createdBy || '').slice(0, 120),
+    reviewedAt: String(value.reviewedAt || ''), reviewedBy: String(value.reviewedBy || '').slice(0, 120),
+    useCount: Math.max(0, Number(value.useCount || 0)), customerReplyCount: Math.max(0, Number(value.customerReplyCount || 0)),
+    appointmentCount: Math.max(0, Number(value.appointmentCount || 0)), saleCount: Math.max(0, Number(value.saleCount || 0))
+  };
+}
+
+function scoreCustomerAiExperience(row, item, branch) {
+  let score = row.scope === 'company' ? 1 : 0;
+  if (row.scope === 'customer' && row.customerId === item.id) score += 20;
+  if (row.branchId && row.branchId === branch?.id) score += 8;
+  if (row.city && textIncludesBranchAlias(item.city, row.city)) score += 6;
+  const text = `${item.vehicle || ''} ${item.need || ''} ${item.service || ''}`.toLowerCase();
+  if (row.product && text.includes(row.product.toLowerCase())) score += 5;
+  if (row.vehicle && text.includes(row.vehicle.toLowerCase())) score += 4;
+  return score;
+}
+
+function relevantCustomerAiExperiences(db, item, branch) {
+  return (db.customerAiExperiences || []).map(normalizeCustomerAiExperience)
+    .filter(row => row.status === 'approved')
+    .map(row => ({ row, score: scoreCustomerAiExperience(row, item, branch) }))
+    .filter(value => value.score > 0)
+    .sort((a, b) => b.score - a.score || String(b.row.reviewedAt || b.row.createdAt).localeCompare(String(a.row.reviewedAt || a.row.createdAt)))
+    .slice(0, 3).map(value => value.row);
+}
+
+function relevantCustomerAiKnowledge(db, item, branch) {
+  const haystack = `${item.vehicle || ''} ${item.need || ''} ${item.service || ''}`.toLowerCase();
+  const priorities = { safety: 100, core: 90, branch: 80, product: 70, pricing_warranty: 65, workflow: 60 };
+  const selected = customerAiKnowledgeEntries(db).filter(row => row.enabled && (
+    ['core', 'safety'].includes(row.category)
+    || (row.category === 'branch' && row.branchId === branch?.id)
+    || (row.category === 'workflow')
+    || (['product', 'pricing_warranty'].includes(row.category) && (!row.productKeywords || row.productKeywords.split(/[,，;；\n]/).some(keyword => haystack.includes(keyword.trim().toLowerCase()))))
+  )).sort((a, b) => (priorities[b.category] || 0) - (priorities[a.category] || 0));
+  let total = 0;
+  return selected.map(row => {
+    if (total >= 9000) return null;
+    const content = row.content.slice(0, Math.min(3500, 9000 - total));
+    total += content.length;
+    return content ? { ...row, content } : null;
+  }).filter(Boolean);
+}
+
 const DEFAULT_CUSTOMER_AI_PLAYBOOK = [
   { id: 'first-reply', name: '第一次回复', trigger: 'first', enabled: true, instruction: '简短欢迎客户，确认车型、年份和想做的项目；已有资料不要重复询问。只提出一个最关键的问题。' },
   { id: 'second-reply', name: '第二次回复', trigger: 'second', enabled: true, instruction: '承接客户刚补充的资料，不要重新自我介绍；补齐报价或预约所缺的下一项信息。' },
@@ -1867,10 +1973,12 @@ function applicableCustomerAiPlaybook(db, task) {
 const DEFAULT_CUSTOMER_BRANCHES = [
   {
     id: 'las-vegas', name: '拉斯维加斯分店', city: 'Las Vegas', aliases: 'Las Vegas, Vegas',
+    serviceCities: 'Las Vegas, Vegas, Henderson, North Las Vegas',
     address: '3359 W Oquendo Rd, Las Vegas, NV 89118', aiKnowledge: '', active: true
   },
   {
     id: 'los-angeles', name: '洛杉矶分店', city: 'Los Angeles', aliases: 'Los Angeles, LA',
+    serviceCities: 'Los Angeles, LA, San Diego, Orange County, Irvine',
     address: '', aiKnowledge: '', active: true
   }
 ];
@@ -1884,6 +1992,7 @@ function normalizeCustomerBranch(value = {}, index = 0) {
     name: name || city || `分店 ${index + 1}`,
     city,
     aliases: String(Array.isArray(value.aliases) ? value.aliases.join(', ') : value.aliases || '').trim().slice(0, 500),
+    serviceCities: String(Array.isArray(value.serviceCities) ? value.serviceCities.join(', ') : value.serviceCities || value.aliases || '').trim().slice(0, 1000),
     address: String(value.address || '').trim().slice(0, 300),
     aiKnowledge: String(value.aiKnowledge || '').trim().slice(0, 6000),
     active: value.active !== false
@@ -2033,7 +2142,7 @@ function assignRecordBranch(db, user, item, collection) {
 }
 
 function customerBranchAliases(branch) {
-  return [branch?.city, branch?.name, ...String(branch?.aliases || '').split(/[,，;；\n]/)]
+  return [branch?.city, branch?.name, ...String(branch?.aliases || '').split(/[,，;；\n]/), ...String(branch?.serviceCities || '').split(/[,，;；\n]/)]
     .map(value => String(value || '').trim()).filter(value => value.length >= 2);
 }
 
@@ -2057,26 +2166,69 @@ function extractCustomerPhone(item = {}) {
   return String(labeled?.[1] || '').trim();
 }
 
-function extractCustomerCity(item = {}, branches = []) {
-  if (String(item.city || '').trim()) return String(item.city).trim();
-  const text = customerIdentityText(item);
-  const labeled = text.match(/(?:^|\n)\s*(?:city|城市|地区)\s*[:：-]\s*([^\n,，;；]{2,80})/i);
+function explicitCityFromText(text = '', branches = []) {
+  const raw = String(text || '').trim();
+  const labeled = raw.match(/(?:^|\n)\s*(?:city|城市|地区)\s*[:：-]\s*([^\n,，;；.!?]{2,80})/i);
   if (labeled?.[1]) return String(labeled[1]).trim();
+  const spoken = raw.match(/(?:i\s*(?:am|'m)|i live|i'm located|located|based|live|from)\s+(?:in|near|around)\s+([A-Za-z][A-Za-z .'-]{1,50})/i);
+  if (spoken?.[1]) {
+    const phrase = spoken[1].replace(/\s+(?:and|but|so|which|that|need|looking)\b.*$/i, '').trim();
+    const known = branches.flatMap(branch => customerBranchAliases(branch)).find(alias => textIncludesBranchAlias(phrase, alias));
+    return known || phrase;
+  }
   for (const branch of branches) {
-    const alias = customerBranchAliases(branch).find(value => textIncludesBranchAlias(text, value));
-    if (alias) return branch.city || alias;
+    const alias = customerBranchAliases(branch).find(value => textIncludesBranchAlias(raw, value));
+    if (alias) return alias;
   }
   return '';
+}
+
+function latestExplicitCustomerCity(item = {}, branches = []) {
+  const incoming = [...(item.conversationMessages || [])]
+    .filter(message => message?.speaker === 'customer' || message?.direction === 'inbound')
+    .sort((a, b) => String(b.timestamp || '').localeCompare(String(a.timestamp || '')));
+  for (const message of incoming) {
+    const city = explicitCityFromText(message?.text || '', branches);
+    if (city) return { city, at: message.timestamp || '', messageId: message.id || '' };
+  }
+  return null;
+}
+
+function branchForCity(branches = [], city = '') {
+  return branches.find(branch => customerBranchAliases(branch).some(alias => textIncludesBranchAlias(city, alias))) || null;
+}
+
+function extractCustomerCity(item = {}, branches = []) {
+  const latest = latestExplicitCustomerCity(item, branches);
+  if (latest?.city) return latest.city;
+  if (String(item.city || '').trim()) return String(item.city).trim();
+  return explicitCityFromText(customerIdentityText(item), branches);
 }
 
 function enrichCustomerIdentity(db, item = {}) {
   const branches = customerBranches(db);
   if (!String(item.phone || '').trim()) item.phone = extractCustomerPhone(item);
-  if (!String(item.city || '').trim()) item.city = extractCustomerCity(item, branches);
-  if (!String(item.branchId || '').trim()) {
-    const haystack = `${item.city || ''}\n${customerIdentityText(item)}`;
-    const match = branches.find(branch => customerBranchAliases(branch).some(alias => textIncludesBranchAlias(haystack, alias)));
-    if (match) item.branchId = match.id;
+  const latest = latestExplicitCustomerCity(item, branches);
+  if (latest?.city) {
+    item.formCity = item.formCity || item.city || '';
+    item.city = latest.city;
+    item.citySource = 'latest-chat';
+    item.cityDetectedAt = latest.at;
+  } else if (!String(item.city || '').trim()) {
+    item.city = extractCustomerCity(item, branches);
+    if (item.city) item.citySource = 'form-or-import';
+  }
+  const suggested = branchForCity(branches, item.city);
+  if (suggested && String(item.branchId || '') !== suggested.id) {
+    item.suggestedBranchId = suggested.id;
+    item.branchConflict = Boolean(item.branchId);
+    if (!item.branchId || latest) item.branchId = suggested.id;
+  } else if (suggested && latest && item.branchConflict) {
+    item.suggestedBranchId = suggested.id;
+    item.branchConflict = true;
+  } else {
+    item.suggestedBranchId = '';
+    item.branchConflict = false;
   }
   return item;
 }
@@ -2087,7 +2239,7 @@ function customerBranchForItem(db, item = {}) {
   return branches.find(branch => branch.id === item.branchId) || null;
 }
 
-function customerAiReplyPrompt(task, channel = '', knowledge = '', branch = null, playbook = []) {
+function customerAiReplyPrompt(task, channel = '', knowledgeEntries = [], branch = null, playbook = [], experiences = []) {
   const lastMessages = (task.messages || []).slice(-10).map(message => ({
     role: message.role,
     channel: message.channel,
@@ -2106,14 +2258,17 @@ ${branch ? `- Branch: ${branch.name}\n- City: ${branch.city || '(not configured)
 - Do not invent exact prices, discounts, stock, legal tint compliance, installation duration, or appointment availability if not present in the customer record or operator-maintained knowledge below.
 - If the customer asks about complaint, refund, legal responsibility, uncertain price, warranty dispute, or a firm delivery/appointment promise, do not make a commitment; set disposition to "needs_human".
 
-Operator-maintained customer-service rules, company knowledge, and pricing:
-${knowledge || '(No additional knowledge configured.)'}
+Relevant operator-maintained knowledge (only items selected for this customer):
+${knowledgeEntries.length ? knowledgeEntries.map(entry => `[${entry.category}] ${entry.title}\n${entry.content}`).join('\n\n') : '(No additional knowledge configured.)'}
 
 Rules for this assigned branch:
 ${branch?.aiKnowledge || '(No branch-specific rules configured.)'}
 
 Applicable conversation playbook rules (follow in this order):
 ${playbook.length ? playbook.map((rule, index) => `${index + 1}. ${rule.name}: ${rule.instruction}`).join('\n') : '(No additional playbook rule applies.)'}
+
+Approved experience learned from prior reviewed conversations (use only when relevant; newer customer facts win):
+${experiences.length ? experiences.map((entry, index) => `${index + 1}. Do not repeat: ${entry.wrongReply || '(unspecified mistake)'}\nCorrect approach: ${entry.correctGuidance}`).join('\n') : '(No approved experience matched.)'}
 
 Treat the operator-maintained content above as the authoritative business policy and follow it before any general sales advice. It controls what may be answered, what must not be answered, approved company advantages, quoting rules, escalation rules, and preferred wording. If the customer asks a price and an exact matching price is present there, mention it clearly. If only a range, rule, or required vehicle/detail is present, explain that and ask for the missing detail. Never create prices, guarantees, discounts, or company claims outside that content.
 
@@ -2275,7 +2430,9 @@ async function createCustomerAiReplyDraft(db, row, requestedChannel = '') {
   const branch = customerBranchForItem(db, row.item);
   task.city = String(row.item?.city || '');
   task.branch = branch ? { id: branch.id, name: branch.name, city: branch.city } : null;
-  const prompt = customerAiReplyPrompt(task, requestedChannel, customerAiKnowledge(db), branch, applicableCustomerAiPlaybook(db, task));
+  const knowledgeEntries = relevantCustomerAiKnowledge(db, row.item, branch);
+  const experiences = relevantCustomerAiExperiences(db, row.item, branch);
+  const prompt = customerAiReplyPrompt(task, requestedChannel, knowledgeEntries, branch, applicableCustomerAiPlaybook(db, task), experiences);
   const openAiBaseUrl = String(process.env.OPENAI_API_BASE_URL || 'https://api.openai.com/v1').replace(/\/+$/, '');
   const model = customerAiReplyModel(db);
   const requestBody = {
@@ -2295,7 +2452,9 @@ async function createCustomerAiReplyDraft(db, row, requestedChannel = '') {
     provider: 'openai',
     model,
     durationMs: Date.now() - startedAt,
-    draft: normalizeCustomerAiDraft(parseAiBossDraft(value?.choices?.[0]?.message?.content))
+    draft: normalizeCustomerAiDraft(parseAiBossDraft(value?.choices?.[0]?.message?.content)),
+    knowledgeEntryIds: knowledgeEntries.map(entry => entry.id),
+    experienceIds: experiences.map(entry => entry.id)
   };
 }
 
@@ -2313,8 +2472,14 @@ async function saveCustomerAiReplyDraft(db, user, item, collection, requestedCha
     provider: result.provider,
     model: result.model,
     durationMs: result.durationMs,
+    knowledgeEntryIds: result.knowledgeEntryIds,
+    experienceIds: result.experienceIds,
     apiVersion: 2
   };
+  for (const experienceId of result.experienceIds || []) {
+    const experience = (db.customerAiExperiences || []).find(row => row.id === experienceId);
+    if (experience) experience.useCount = Number(experience.useCount || 0) + 1;
+  }
   item.updatedAt = now;
   return result;
 }
@@ -2647,11 +2812,41 @@ function validateSalesOrder(db, order) {
       return `${product.sku} 最低售价是 $${minPrice}，当前单价 $${line.unitPrice} 低于最低售价，不能保存订单`;
     }
   }
+  const total = items.reduce((sum, line) => sum + Number(line.qty || 0) * Number(line.unitPrice || 0), 0);
+  const paid = Number(order.paid || 0);
+  if (!Number.isFinite(paid) || paid < 0) return '已收款金额必须是大于或等于 0 的有效数字';
+  if (paid > total + 0.001) return `已收款金额不能超过订单总额。订单总额 $${total.toFixed(2)}，已收款 $${paid.toFixed(2)}`;
   order.items = items;
   order.item = items[0].item;
   order.qty = items[0].qty;
   order.unitPrice = items[0].unitPrice;
   return '';
+}
+
+function normalizeJobPayment(job) {
+  const price = Number(job.price || 0);
+  const deposit = Number(job.deposit || 0);
+  const enteredPaid = Number(job.paidAmount ?? deposit);
+  const paid = Math.max(deposit, enteredPaid);
+  if (!Number.isFinite(price) || price < 0) return '施工单报价必须是大于或等于 0 的有效数字';
+  if (!Number.isFinite(deposit) || deposit < 0 || !Number.isFinite(enteredPaid) || enteredPaid < 0) return '施工单订金和已收款必须是大于或等于 0 的有效数字';
+  if (paid > price + 0.001) return `施工单已收款不能超过报价。报价 $${price.toFixed(2)}，已收款 $${paid.toFixed(2)}`;
+  job.price = price;
+  job.deposit = deposit;
+  job.paidAmount = paid;
+  job.paymentStatus = price > 0 && paid >= price ? 'paid' : paid > 0 ? 'partial' : 'unpaid';
+  return '';
+}
+
+function productSkuReferences(db, sku) {
+  const value = String(sku || '');
+  return [
+    ...(db.movements || []).filter(row => String(row.sku || '') === value),
+    ...(db.workshopMovements || []).filter(row => String(row.sku || '') === value),
+    ...(db.salesOrders || []).filter(order => salesOrderItems(order).some(line => line.item === value)),
+    ...(db.shipmentReceipts || []).filter(row => String(row.sku || '') === value),
+    ...(db.branchTransfers || []).filter(row => String(row.sku || '') === value)
+  ];
 }
 
 function validateEntryDate(db, item, collection) {
@@ -3345,13 +3540,15 @@ function acceptsGzip(req) {
 }
 
 function send(res, status, body, type = 'application/json; charset=utf-8', req = null) {
+  req = req || res._quadRequest || null;
   const raw = type.includes('json') ? JSON.stringify(body) : String(body);
   const buffer = Buffer.from(raw);
   const headers = { 'Content-Type': type, 'Cache-Control': 'no-store' };
+  if (type.includes('json')) headers['X-Data-Revision'] = databaseRevision();
   if (req && acceptsGzip(req) && buffer.length > 1024 && /json|text|javascript|css|svg/.test(type)) {
     headers['Content-Encoding'] = 'gzip';
     headers.Vary = 'Accept-Encoding';
-    const gzipped = zlib.gzipSync(buffer);
+    const gzipped = zlib.gzipSync(buffer, { level: zlib.constants.Z_BEST_SPEED });
     headers['Content-Length'] = gzipped.length;
     res.writeHead(status, headers);
     return res.end(gzipped);
@@ -3674,6 +3871,7 @@ async function handleMetaMessengerWebhook(req, res, db, url) {
         imported += 1;
       }
       if (appendMetaMessengerMessage(match.item, event.message, recipientId || pageId, psid, 'inbound', match.item.customer || 'Meta Customer')) {
+        creditCustomerAiExperienceReply(db, match.item, (match.item.conversationMessages || []).at(-1));
         enrichCustomerIdentity(db, match.item);
         customerNurtureMarkInbound(db, match.collection, match.item, text, new Date().toISOString(), 'meta');
         updated += 1;
@@ -3893,6 +4091,40 @@ function appendSmsMessage(item, message) {
   item.lastSmsDirection = message.direction;
 }
 
+function creditCustomerAiExperienceReply(db, item, inboundMessage) {
+  if (!db || !item || !inboundMessage || inboundMessage.direction !== 'inbound') return;
+  const messages = Array.isArray(item.conversationMessages) ? item.conversationMessages : [];
+  const outbound = [...messages].reverse().find(message => message.direction === 'outbound' && Array.isArray(message.aiExperienceIds) && message.aiExperienceIds.length);
+  if (!outbound) return;
+  const already = new Set(Array.isArray(inboundMessage.creditedExperienceIds) ? inboundMessage.creditedExperienceIds : []);
+  const credited = [];
+  for (const experienceId of outbound.aiExperienceIds) {
+    if (already.has(experienceId)) continue;
+    const record = (db.customerAiExperiences || []).find(row => row.id === experienceId);
+    if (!record) continue;
+    record.customerReplyCount = Math.max(0, Number(record.customerReplyCount || 0)) + 1;
+    credited.push(experienceId);
+  }
+  if (credited.length) inboundMessage.creditedExperienceIds = [...already, ...credited];
+}
+
+function creditCustomerAiExperienceOutcome(db, item, outcome) {
+  const field = outcome === 'sale' ? 'saleCount' : 'appointmentCount';
+  if (!db || !item) return;
+  const ids = [...new Set((item.conversationMessages || []).flatMap(message => Array.isArray(message.aiExperienceIds) ? message.aiExperienceIds : []))];
+  item.aiExperienceOutcomes = item.aiExperienceOutcomes && typeof item.aiExperienceOutcomes === 'object' ? item.aiExperienceOutcomes : {};
+  const already = new Set(Array.isArray(item.aiExperienceOutcomes[outcome]) ? item.aiExperienceOutcomes[outcome] : []);
+  const credited = [];
+  for (const experienceId of ids) {
+    if (already.has(experienceId)) continue;
+    const record = (db.customerAiExperiences || []).find(row => row.id === experienceId);
+    if (!record) continue;
+    record[field] = Math.max(0, Number(record[field] || 0)) + 1;
+    credited.push(experienceId);
+  }
+  if (credited.length) item.aiExperienceOutcomes[outcome] = [...already, ...credited];
+}
+
 function isCustomerConversationPromotionEligible(item) {
   return ['已预约', '已到店'].includes(String(item?.status || ''));
 }
@@ -4084,7 +4316,11 @@ function applyCustomerNumberRemoval() {
   console.log(`Customer number removal cleared ${removed} records. Backup saved as ${backupName}.`);
 }
 
+let twilioReconciliationRunning = false;
 async function reconcileRecentTwilioInboundMessages() {
+  if (twilioReconciliationRunning) return { added: 0, scanned: 0, matched: 0, unmatched: 0, skipped: 0, busy: true };
+  twilioReconciliationRunning = true;
+  try {
   if (!twilioConfigured()) return { added: 0, scanned: 0, matched: 0, unmatched: 0, skipped: 0 };
   const config = twilioConfig();
   const auth = Buffer.from(`${config.accountSid}:${config.authToken}`).toString('base64');
@@ -4139,6 +4375,7 @@ async function reconcileRecentTwilioInboundMessages() {
       timestamp: Number.isNaN(parsedTimestamp.getTime()) ? String(rawTimestamp) : parsedTimestamp.toISOString(),
       provider: 'twilio', providerSid: String(message.sid || ''), status: String(message.status || 'received')
     });
+    creditCustomerAiExperienceReply(db, match.item, (match.item.conversationMessages || []).at(-1));
     reactivateConversationOnInbound(match.item, Number.isNaN(parsedTimestamp.getTime()) ? String(rawTimestamp) : parsedTimestamp.toISOString());
     added += 1;
   }
@@ -4148,6 +4385,9 @@ async function reconcileRecentTwilioInboundMessages() {
   notifyDataChanged('reconcile-customer-sms', String(added));
   console.log(`Twilio inbound messages reconciled: ${added}.`);
   return { added, scanned, matched, unmatched, skipped };
+  } finally {
+    twilioReconciliationRunning = false;
+  }
 }
 
 function reactivateConversationOnInbound(item, receivedAt = new Date().toISOString()) {
@@ -4503,7 +4743,17 @@ async function processCustomerAiAutoReplies() {
       const channel = String(inbound.channel || '').toLowerCase();
       if (!['meta', 'yelp', 'sms'].includes(channel) || !settings.channels[channel]) continue;
       const inboundKey = prospectMessageKey(inbound);
-      if (!inboundKey || item.lastAiAutoReplyInboundKey === inboundKey) continue;
+      if (!inboundKey) continue;
+      if (item.lastAiAutoReplyInboundKey === inboundKey) {
+        const latestLog = [...(db.customerAiAutoReplyLogs || [])].reverse()
+          .find(log => log.collection === collection && log.recordId === item.id);
+        if (latestLog?.status !== 'error') continue;
+        delete item.lastAiAutoReplyInboundKey;
+      }
+      const retryNotBefore = Date.parse(item.aiAutoReplyRetryNotBefore || '');
+      if (Number.isFinite(retryNotBefore) && retryNotBefore > now) continue;
+      const claimedAt = Date.parse(item.lastAiAutoReplyClaimedAt || '');
+      if (item.lastAiAutoReplyClaimedInboundKey === inboundKey && Number.isFinite(claimedAt) && now - claimedAt < 5 * 60 * 1000) continue;
       const receivedAt = Date.parse(inbound.timestamp || inbound.time || inbound.createdAt || '');
       if (!Number.isFinite(receivedAt) || now - receivedAt < settings.delaySeconds * 1000) continue;
       const forceHumanReason = customerAiAutoReplyForceHumanReason(inbound);
@@ -4522,7 +4772,7 @@ async function processCustomerAiAutoReplies() {
       }
       try {
         const actor = { id: 'customer-ai-auto-reply', name: 'AI自动客服', email: 'ai-auto-reply@system.local' };
-        item.lastAiAutoReplyInboundKey = inboundKey;
+        item.lastAiAutoReplyClaimedInboundKey = inboundKey;
         item.lastAiAutoReplyClaimedAt = new Date().toISOString();
         writeDb(db);
         const result = await saveCustomerAiReplyDraft(db, actor, item, collection, channel, 'reply');
@@ -4534,10 +4784,17 @@ async function processCustomerAiAutoReplies() {
         } else {
           addCustomerAiAutoReplyLog(db, { collection, recordId: item.id, customer: item.customer || item.phone, channel, status: 'draft', riskLevel: draft.riskLevel, detail: draft.note || '高风险或需人工确认，仅保存草稿' });
         }
+        item.lastAiAutoReplyInboundKey = inboundKey;
+        delete item.lastAiAutoReplyClaimedInboundKey;
+        delete item.aiAutoReplyRetryNotBefore;
+        item.aiAutoReplyRetryCount = 0;
         changed = true;
       } catch (err) {
-        item.lastAiAutoReplyInboundKey = inboundKey;
-        addCustomerAiAutoReplyLog(db, { collection, recordId: item.id, customer: item.customer || item.phone, channel, status: 'error', detail: String(err.message || err).slice(0, 500) });
+        delete item.lastAiAutoReplyClaimedInboundKey;
+        const retryCount = Math.min(6, Number(item.aiAutoReplyRetryCount || 0) + 1);
+        item.aiAutoReplyRetryCount = retryCount;
+        item.aiAutoReplyRetryNotBefore = new Date(Date.now() + Math.min(15 * 60, 30 * (2 ** (retryCount - 1))) * 1000).toISOString();
+        addCustomerAiAutoReplyLog(db, { collection, recordId: item.id, customer: item.customer || item.phone, channel, status: 'error', detail: `${String(err.message || err).slice(0, 400)}；系统将在 ${item.aiAutoReplyRetryNotBefore} 后重试` });
         changed = true;
       }
     }
@@ -5025,7 +5282,7 @@ function openEventStream(req, res, user) {
 }
 
 function notifyDataChanged(action, detail, targetUserIds = []) {
-  const payload = JSON.stringify({ action, detail, at: new Date().toISOString() });
+  const payload = JSON.stringify({ action, detail, revision: databaseRevision(), at: new Date().toISOString() });
   const targets = new Set((targetUserIds || []).map(String).filter(Boolean));
   for (const client of [...eventClients]) {
     if (targets.size && !targets.has(String(client.userId))) continue;
@@ -5862,6 +6119,7 @@ async function api(req, res) {
           providerSid: messageSid,
           status: String(params.SmsStatus || 'received')
         });
+        creditCustomerAiExperienceReply(db, match.item, (match.item.conversationMessages || []).at(-1));
         reactivated = reactivateConversationOnInbound(match.item, receivedAt);
         customerNurtureMarkInbound(db, match.collection, match.item, body, receivedAt, 'sms');
       }
@@ -6176,7 +6434,10 @@ async function api(req, res) {
     }
     const cutoff = Date.now() - 120 * 24 * 60 * 60 * 1000;
     db.employeeActivity = rows.filter(row => new Date(row.bucketAt).getTime() >= cutoff);
-    writeDb(db);
+    // Activity heartbeats are high-frequency telemetry, not a business
+    // transaction. Batch the disk write so a growing database cannot block
+    // every other request once per minute for every active employee.
+    scheduleDbWrite(db, 5000);
     return send(res, 200, { ok: true, bucketAt });
   }
 
@@ -6551,15 +6812,15 @@ async function api(req, res) {
       if (!title) return send(res, 400, { error: '请填写记事标题' });
       if (type === 'task' && (!remindAt || Number.isNaN(new Date(remindAt).getTime()))) return send(res, 400, { error: '请选择正确的提醒日期和时间' });
       const duplicate = requestId ? (db.personalNotes || []).find(item => item.ownerUserId === user.id && item.requestId === requestId) : null;
-      if (duplicate) return send(res, 200, { item: personalNoteForUser(db, duplicate, user), data: sanitizeDbForUser(db, user) });
+      if (duplicate) return send(res, 200, { item: personalNoteForUser(db, duplicate, user) });
       const now = new Date().toISOString();
       const sharing = normalizePersonalNoteSharing(db, user, body);
       const item = { id: id(), ownerUserId: user.id, ownerName: user.name || user.email || '员工', requestId, type, title, content, remindAt, snoozedUntil: '', status: 'pending', createdAt: now, updatedAt: now, completedAt: '', ...sharing };
       db.personalNotes.push(item);
       audit(db, user, 'create-personal-note', { collection: 'personalNotes', recordId: item.id, recordLabel: '个人记事', detail: sharing.shareScope === 'private' ? '新增私人记事' : '新增并分享记事' });
       writeDb(db);
-      notifyDataChanged('personal-note-created', { ownerUserId: user.id });
-      return send(res, 201, { item: personalNoteForUser(db, item, user), data: sanitizeDbForUser(db, user) });
+      notifyDataChanged('personal-note-created', { ownerUserId: user.id }, (db.users || []).filter(row => row.active !== false && row.id !== user.id).map(row => row.id));
+      return send(res, 201, { item: personalNoteForUser(db, item, user) });
     }
     const index = (db.personalNotes || []).findIndex(item => item.id === noteId && item.ownerUserId === user.id);
     if (index < 0) return send(res, 404, { error: '没有找到这条记事' });
@@ -6580,15 +6841,15 @@ async function api(req, res) {
       db.personalNotes[index] = item;
       audit(db, user, 'update-personal-note', { collection: 'personalNotes', recordId: item.id, recordLabel: '个人记事', detail: status === 'completed' ? '完成个人待办' : '修改个人记事或分享范围' });
       writeDb(db);
-      notifyDataChanged('personal-note-updated', { ownerUserId: user.id });
-      return send(res, 200, { item: personalNoteForUser(db, item, user), data: sanitizeDbForUser(db, user) });
+      notifyDataChanged('personal-note-updated', { ownerUserId: user.id }, (db.users || []).filter(row => row.active !== false && row.id !== user.id).map(row => row.id));
+      return send(res, 200, { item: personalNoteForUser(db, item, user) });
     }
     if (req.method === 'DELETE') {
       db.personalNotes.splice(index, 1);
       audit(db, user, 'delete-personal-note', { collection: 'personalNotes', recordId: noteId, recordLabel: '私人记事', detail: '删除个人记事（内容保持私密）' });
       writeDb(db);
-      notifyDataChanged('personal-note-deleted', { ownerUserId: user.id });
-      return send(res, 200, { ok: true, data: sanitizeDbForUser(db, user) });
+      notifyDataChanged('personal-note-deleted', { ownerUserId: user.id }, (db.users || []).filter(row => row.active !== false && row.id !== user.id).map(row => row.id));
+      return send(res, 200, { ok: true });
     }
     return send(res, 405, { error: 'Method not allowed' });
   }
@@ -6766,6 +7027,8 @@ async function api(req, res) {
     if (!canAccess(user, 'aiRulesEdit') && !canAccess(user, 'settingsEdit')) return send(res, 403, { error: '没有查看 AI 客服规则的权限' });
     return send(res, 200, {
       knowledge: customerAiKnowledge(db),
+      knowledgeEntries: customerAiKnowledgeEntries(db),
+      experiences: (db.customerAiExperiences || []).map(normalizeCustomerAiExperience).sort((a,b) => String(b.createdAt).localeCompare(String(a.createdAt))),
       branches: customerBranches(db),
       playbook: customerAiPlaybook(db),
       updatedAt: db?.settings?.customerAiRulesUpdatedAt || db?.settings?.customerAiKnowledgeUpdatedAt || '',
@@ -6777,14 +7040,17 @@ async function api(req, res) {
     if (!canAccess(user, 'aiRulesEdit') && !canAccess(user, 'settingsEdit')) return send(res, 403, { error: '没有修改 AI 客服规则的权限' });
     const body = await readBody(req);
     const knowledge = String(body.knowledge || '').trim();
+    const knowledgeEntries = Array.isArray(body.knowledgeEntries) ? body.knowledgeEntries.slice(0, 200).map((row, index) => normalizeCustomerAiKnowledgeEntry({ ...row, updatedAt: new Date().toISOString(), updatedBy: user.name || user.email }, index)) : customerAiKnowledgeEntries(db);
     const branches = Array.isArray(body.branches) ? body.branches.slice(0, 20).map(normalizeCustomerBranch) : [];
     const playbook = Array.isArray(body.playbook) ? body.playbook.slice(0, 30).map(normalizeCustomerAiPlaybookRule) : [];
-    if (knowledge.length > 12000) return send(res, 400, { error: '公司知识和产品规则最多 12000 个字符' });
+    if (knowledge.length > 20000) return send(res, 400, { error: '单条公司知识最多 20000 个字符，请拆分成多个分类条目' });
+    if (knowledgeEntries.some(row => !row.title || !row.content)) return send(res, 400, { error: '每条知识需要标题和内容' });
     if (!branches.length || branches.some(branch => !branch.name || !branch.city)) return send(res, 400, { error: '至少保留一个分店，并填写分店名称和城市' });
     if (!playbook.length || playbook.some(rule => !rule.name || !rule.instruction)) return send(res, 400, { error: '至少保留一条完整的客服流程规则' });
     const before = { knowledge: customerAiKnowledge(db), branches: customerBranches(db), playbook: customerAiPlaybook(db) };
     db.settings = db.settings || {};
     db.settings.customerAiKnowledge = knowledge;
+    db.customerAiKnowledgeEntries = knowledgeEntries;
     db.settings.customerBranches = branches;
     db.settings.customerAiPlaybook = playbook;
     db.settings.customerAiKnowledgeUpdatedAt = new Date().toISOString();
@@ -6794,7 +7060,32 @@ async function api(req, res) {
     audit(db, user, 'update-customer-ai-rules', { collection: 'settings', recordId: 'customer-ai-rules', before, after: { knowledge, branches, playbook }, detail: `修改 AI 客服规则，共 ${playbook.length} 条流程规则、${branches.length} 个分店` });
     writeDb(db);
     notifyDataChanged('update-customer-ai-rules', { rules: playbook.length, branches: branches.length });
-    return send(res, 200, { knowledge, branches, playbook, updatedAt: db.settings.customerAiRulesUpdatedAt, updatedBy: db.settings.customerAiRulesUpdatedBy });
+    return send(res, 200, { knowledge, knowledgeEntries, experiences: (db.customerAiExperiences || []).map(normalizeCustomerAiExperience), branches, playbook, updatedAt: db.settings.customerAiRulesUpdatedAt, updatedBy: db.settings.customerAiRulesUpdatedBy });
+  }
+
+  if (req.method === 'POST' && url.pathname === '/api/customer-ai/experiences') {
+    if (!canAccess(user, 'prospectsEdit') && !canAccess(user, 'aiRulesEdit')) return send(res, 403, { error: '没有提交 AI 教学经验的权限' });
+    const body = await readBody(req);
+    if (!String(body.correctGuidance || '').trim()) return send(res, 400, { error: '请填写正确应该怎么说' });
+    const record = normalizeCustomerAiExperience({ ...body, id: id(), status: 'pending', createdAt: new Date().toISOString(), createdBy: user.name || user.email });
+    db.customerAiExperiences.push(record);
+    audit(db, user, 'create-customer-ai-experience', { collection: 'customerAiExperiences', recordId: record.id, detail: `提交待审核 AI 经验：${record.customerName || record.scope}` });
+    writeDb(db); notifyDataChanged('customer-ai-experience', record.id);
+    return send(res, 201, record);
+  }
+
+  const experienceMatch = url.pathname.match(/^\/api\/customer-ai\/experiences\/([^/]+)$/);
+  if (experienceMatch && req.method === 'PUT') {
+    if (!canAccess(user, 'aiRulesEdit') && !canAccess(user, 'settingsEdit')) return send(res, 403, { error: '没有审核 AI 经验的权限' });
+    const index = db.customerAiExperiences.findIndex(row => row.id === decodeURIComponent(experienceMatch[1]));
+    if (index < 0) return send(res, 404, { error: '找不到 AI 经验' });
+    const body = await readBody(req);
+    const before = db.customerAiExperiences[index];
+    const next = normalizeCustomerAiExperience({ ...before, ...body, id: before.id, reviewedAt: new Date().toISOString(), reviewedBy: user.name || user.email });
+    db.customerAiExperiences[index] = next;
+    audit(db, user, 'review-customer-ai-experience', { collection: 'customerAiExperiences', recordId: next.id, before, after: next, detail: `AI 经验审核为 ${next.status}` });
+    writeDb(db); notifyDataChanged('customer-ai-experience', next.id);
+    return send(res, 200, next);
   }
 
   if (req.method === 'GET' && url.pathname === '/api/customer-ai/settings') {
@@ -6816,7 +7107,7 @@ async function api(req, res) {
     if (apiKey && apiKey.length < 20) return send(res, 400, { error: 'OpenAI API Key 太短，请检查后再保存' });
     if (apiKey && !/^sk-[A-Za-z0-9_\-]+/.test(apiKey)) return send(res, 400, { error: 'OpenAI API Key 通常以 sk- 开头，请检查后再保存' });
     if (!model) return send(res, 400, { error: '请输入 AI 模型名称' });
-    if (knowledge.length > 12000) return send(res, 400, { error: 'AI 客服资料库最多 12000 个字符，请精简后再保存' });
+    if (knowledge.length > 20000) return send(res, 400, { error: '旧版公司知识最多 20000 个字符；请在 AI 客服规则中心拆分为独立分类知识' });
     if (branchesProvided && !branches.length) return send(res, 400, { error: '至少保留一个分店' });
     if (branches.some(branch => !branch.name || !branch.city)) return send(res, 400, { error: '每个分店都需要填写分店名称和城市' });
 
@@ -7342,7 +7633,8 @@ async function api(req, res) {
       } : null,
       timestamp: now,
       provider: 'yelp-zapier',
-      status: 'accepted'
+      status: 'accepted',
+      aiExperienceIds: Array.isArray(item.agentReplyDraft?.experienceIds) ? item.agentReplyDraft.experienceIds : []
     };
     item.conversationMessages = [...(Array.isArray(item.conversationMessages) ? item.conversationMessages : []), yelpMessage];
     item.updatedAt = now;
@@ -7384,6 +7676,8 @@ async function api(req, res) {
       text,
       timestamp: Date.parse(now)
     }, String(item.externalBusinessId || ''), metaPsidFromItem(item), 'outbound', user.name || user.email);
+    const savedMetaMessage = (item.conversationMessages || []).at(-1);
+    if (savedMetaMessage) savedMetaMessage.aiExperienceIds = Array.isArray(item.agentReplyDraft?.experienceIds) ? item.agentReplyDraft.experienceIds : [];
     if (item.followUpDate) {
       item.lastFollowUpCompletedAt = now;
       item.lastFollowUpReason = item.followUpReason || '';
@@ -7460,7 +7754,8 @@ async function api(req, res) {
       providerSid: String(sent.sid || ''),
       status: String(sent.status || 'queued'),
       from: String(sent.from || twilioConfig().fromNumber),
-      to
+      to,
+      aiExperienceIds: Array.isArray(item.agentReplyDraft?.experienceIds) ? item.agentReplyDraft.experienceIds : []
     });
     if (item.followUpDate) {
       item.lastFollowUpCompletedAt = now;
@@ -7529,6 +7824,7 @@ async function api(req, res) {
       const isCustomerCodexGroup = groupId === CUSTOMER_CODEX_GROUP_ID || toUserId === CUSTOMER_CODEX_USER.id;
       const isGroup = groupId === 'all-staff' || isCustomerCodexGroup;
       const text = String(body.text || '').trim();
+      const clientRequestId = String(body.clientRequestId || '').trim().slice(0, 120);
       const attachment = sanitizeMessageAttachment(body.attachment);
       if (attachment?.error) return send(res, 400, { error: attachment.error });
       if (isCustomerCodexGroup && !canAccess(user, 'customerCodexChat')) {
@@ -7542,6 +7838,12 @@ async function api(req, res) {
       if (!isGroup && !recipient) return send(res, 400, { error: '收件人不存在或未启用' });
       if (!text && !attachment) return send(res, 400, { error: '留言内容不能为空' });
       if (text.length > 2000) return send(res, 400, { error: '留言内容不能超过 2000 个字' });
+      // A browser may lose the response after the server has already saved the
+      // attachment. Reusing the same client request id makes Retry safe instead
+      // of creating a duplicate message.
+      if (clientRequestId && (db.messages || []).some(item => item.fromUserId === user.id && item.clientRequestId === clientRequestId)) {
+        return send(res, 200, sanitizeDbForUser(db, user));
+      }
       const createdAt = new Date().toISOString();
       const isSelfMessage = !isGroup && recipient.id === user.id;
       const message = {
@@ -7554,6 +7856,7 @@ async function api(req, res) {
         toName: isCustomerCodexGroup ? CUSTOMER_CODEX_USER.name : (isGroup ? '全体员工' : (recipient.name || recipient.email)),
         text,
         attachment,
+        clientRequestId,
         createdAt,
         readAt: isSelfMessage ? createdAt : '',
         readByUserIds: isGroup ? [user.id] : []
@@ -7863,10 +8166,11 @@ async function api(req, res) {
       groupedItems.set(sku, Number(groupedItems.get(sku) || 0) + qty);
     }
 
+    const linkedJob = body.jobId ? (db.jobs || []).find(row => row.id === String(body.jobId) && !row.deletedAt) : null;
     const common = {
       date: String(body.date || '').trim(),
       type: body.type === 'transfer' ? 'transfer' : 'consume',
-      branchId: String(body.branchId || user.defaultBranchId || '').trim(),
+      branchId: String((body.type === 'transfer' ? body.branchId : linkedJob?.branchId) || body.branchId || user.defaultBranchId || '').trim(),
       operator: String(body.operator || '').trim(),
       jobId: String(body.jobId || '').trim(),
       jobCustomer: String(body.jobCustomer || '').trim(),
@@ -8380,10 +8684,16 @@ async function api(req, res) {
         return send(res, 400, { error: '这位高意向客户已经有施工单，请直接编辑现有施工单' });
       }
       normalizeJobServices(item);
+      const paymentError = normalizeJobPayment(item);
+      if (paymentError) return send(res, 400, { error: paymentError });
       item.preparedBy = user.name || '';
       item.preparedByUserId = user.id;
       item.createdAt = new Date().toISOString();
       if (String(item.status || '').trim() === '已交车') item.deliveredAt = item.deliveredAt || item.createdAt;
+      if (item.sourceProspectId) {
+        const sourceCustomer = (db.prospects || []).find(row => row.id === item.sourceProspectId);
+        if (sourceCustomer) creditCustomerAiExperienceOutcome(db, sourceCustomer, 'sale');
+      }
       if (!canSeeCosts) item.materialCost = 0;
     }
     if (collection === 'warranties') {
@@ -8398,6 +8708,13 @@ async function api(req, res) {
     }
     if (collection === 'products' && !canSeeCosts) {
       item.cost = 0;
+    }
+    if (collection === 'products') {
+      item.sku = String(item.sku || '').trim().slice(0, 160);
+      if (!item.sku) return send(res, 400, { error: '商品 SKU 不能为空' });
+      if ((db.products || []).some(row => String(row.sku || '').toLowerCase() === item.sku.toLowerCase())) {
+        return send(res, 400, { error: `商品 SKU ${item.sku} 已存在，不能重复建立` });
+      }
     }
     if (collection === 'products' && Number(item.qty || 0) !== 0) {
       return send(res, 400, { error: '新增商品的库存必须从 0 开始。请保存商品后通过入库流水增加库存，保证数量可追溯。' });
@@ -8539,6 +8856,9 @@ async function api(req, res) {
   }
 
   if (req.method === 'PUT' && recordId) {
+    if (collection === 'movements') {
+      return send(res, 400, { error: '库存流水不能直接修改。误入库请使用“撤销误入库”；订单出库必须保留原流水，避免账面库存失真。' });
+    }
     if (collection === 'workshopMovements') {
       return send(res, 400, { error: '贴膜间库存流水不能直接修改。录错时请新增一条反向领料/消耗流水修正，避免库存对不上。' });
     }
@@ -8577,7 +8897,14 @@ async function api(req, res) {
     }
     if (collection === 'jobs') {
       const previousStatus = String(db[collection][idx].status || '').trim();
+      const deliveredStatuses = new Set(['已交车', 'delivered', 'completed']);
       normalizeJobServices(next);
+      const paymentError = normalizeJobPayment(next);
+      if (paymentError) return send(res, 400, { error: paymentError });
+      if (deliveredStatuses.has(previousStatus.toLowerCase())) {
+        if (!deliveredStatuses.has(String(next.status || '').trim().toLowerCase())) return send(res, 400, { error: '已交车施工单不能退回未交车状态；需要冲销时请保留原单并建立更正记录。' });
+        if (String(next.branchId || '') !== String(db[collection][idx].branchId || '')) return send(res, 400, { error: '已交车施工单不能更改所属分店，避免已经确认的分店收入被转移。' });
+      }
       next.preparedBy = db[collection][idx].preparedBy || user.name || '';
       next.preparedByUserId = db[collection][idx].preparedByUserId || user.id;
       next.updatedBy = user.name || '';
@@ -8600,6 +8927,15 @@ async function api(req, res) {
       next.cost = db[collection][idx].cost || 0;
     }
     if (collection === 'products') {
+      next.sku = String(next.sku || '').trim().slice(0, 160);
+      if (!next.sku) return send(res, 400, { error: '商品 SKU 不能为空' });
+      if ((db.products || []).some(row => row.id !== recordId && String(row.sku || '').toLowerCase() === next.sku.toLowerCase())) {
+        return send(res, 400, { error: `商品 SKU ${next.sku} 已存在，不能重复使用` });
+      }
+      const previousSku = String(db[collection][idx].sku || '');
+      if (next.sku !== previousSku && productSkuReferences(db, previousSku).length) {
+        return send(res, 400, { error: `商品 ${previousSku} 已有订单或库存流水，SKU 不能改名。请新建 SKU 并保留原档案。` });
+      }
       if (Number(next.qty || 0) !== Number(db[collection][idx].qty || 0)) {
         return send(res, 400, { error: '库存数量不能在商品档案中直接修改。请使用入库、订单出库或盘点调整流水。' });
       }
@@ -8665,7 +9001,7 @@ async function api(req, res) {
       if (previousStatus === '已出库') {
         const beforeLines = salesOrderItems(previousOrder).map(({ item, qty, unitPrice }) => ({ item, qty, unitPrice }));
         const afterLines = salesOrderItems(next).map(({ item, qty, unitPrice }) => ({ item, qty, unitPrice }));
-        if (nextStatus !== '已出库' || JSON.stringify(beforeLines) !== JSON.stringify(afterLines)) {
+        if (nextStatus !== '已出库' || JSON.stringify(beforeLines) !== JSON.stringify(afterLines) || String(next.branchId || '') !== String(previousOrder.branchId || '')) {
           return send(res, 400, { error: '已出库订单不能改变状态或商品明细；退款和退货请使用冲销记录，不能改写原单。' });
         }
       }
@@ -8706,6 +9042,9 @@ async function api(req, res) {
     }
     const autoPromoted = collection === 'customerConversations' ? promoteEligibleCustomerConversation(db, next, user) : null;
     const before = db[collection][idx];
+    if (['customerConversations','prospects'].includes(collection) && !['已预约','已到店'].includes(String(before.status || '')) && ['已预约','已到店'].includes(String(next.status || ''))) {
+      creditCustomerAiExperienceOutcome(db, next, 'appointment');
+    }
     const changedFields = diffRecords(before, next);
     db[collection][idx] = next;
     const syncedSalesOrderCustomer = collection === 'salesOrders' ? syncSalesOrderCustomer(db, next) : null;
@@ -8761,6 +9100,13 @@ async function api(req, res) {
     if (collection === 'jobs') {
       const existingJob = db.jobs.find(x => x.id === recordId);
       if (!existingJob) return send(res, 404, { error: 'Record not found' });
+      const jobStatus = String(existingJob.status || '').trim().toLowerCase();
+      const paid = Math.max(Number(existingJob.paidAmount || 0), Number(existingJob.deposit || 0));
+      const hasLinkedRecords = (db.workshopMovements || []).some(row => row.jobId === recordId)
+        || (db.warranties || []).some(row => row.jobId === recordId);
+      if (['已交车', 'delivered', 'completed'].includes(jobStatus) || paid > 0 || hasLinkedRecords) {
+        return send(res, 400, { error: '已交车、已收款或已有领料/质保记录的施工单必须保留，不能移到已删除。需要更正时请保留原单并建立冲销或备注。' });
+      }
       if (!existingJob.deletedAt) {
         existingJob.deletedAt = new Date().toISOString();
         existingJob.deletedBy = user.name || user.email || '';
@@ -8787,20 +9133,15 @@ async function api(req, res) {
       const order = (db.salesOrders || []).find(row => row.id === recordId);
       if (!order) return send(res, 404, { error: 'Record not found' });
       const hasMovement = (db.movements || []).some(row => row.salesOrderId === recordId);
-      if (hasMovement || ['已出库', 'shipped', 'delivered', 'completed'].includes(String(order.status || '').trim().toLowerCase())) {
-        return send(res, 400, { error: '已产生库存流水或已出库的订单必须保留，不能删除。需要作废时请保留原单并建立退货/冲销记录。' });
+      if (hasMovement || Number(order.paid || 0) > 0 || ['已出库', 'shipped', 'delivered', 'completed'].includes(String(order.status || '').trim().toLowerCase())) {
+        return send(res, 400, { error: '已收款、已产生库存流水或已出库的订单必须保留，不能删除。需要作废时请保留原单并建立退款/退货/冲销记录。' });
       }
     }
     if (collection === 'products') {
       const product = (db.products || []).find(row => row.id === recordId);
       if (!product) return send(res, 404, { error: 'Record not found' });
       const sku = String(product.sku || '');
-      const references = [
-        ...(db.movements || []).filter(row => String(row.sku || '') === sku),
-        ...(db.workshopMovements || []).filter(row => String(row.sku || '') === sku),
-        ...(db.salesOrders || []).filter(order => salesOrderItems(order).some(line => line.item === sku)),
-        ...(db.shipmentReceipts || []).filter(row => String(row.sku || '') === sku)
-      ];
+      const references = productSkuReferences(db, sku);
       if (references.length) return send(res, 400, { error: `商品 ${sku} 已有订单或库存流水引用，不能删除。可以把它停用或隐藏，但必须保留历史主档。` });
     }
     const existing = db[collection].find(x => x.id === recordId);
@@ -8902,9 +9243,9 @@ function applyMovement(db, movement) {
   }
 }
 
-function workshopStockQty(db, sku) {
+function workshopStockQty(db, sku, branchId = '') {
   return (db.workshopMovements || [])
-    .filter(movement => String(movement.sku || '') === String(sku || ''))
+    .filter(movement => String(movement.sku || '') === String(sku || '') && (!branchId || String(movement.branchId || '') === String(branchId)))
     .reduce((sum, movement) => {
       const qty = Number(movement.qty || 0);
       if (movement.type === 'transfer') return sum + qty;
@@ -8928,8 +9269,10 @@ function validateWorkshopMovement(db, movement) {
     if (!movement.jobId) return '施工消耗必须关联施工单，不能只填写客户姓名';
     const job = (db.jobs || []).find(row => row.id === movement.jobId && !row.deletedAt);
     if (!job) return '找不到关联的施工单';
+    if (job.branchId && movement.branchId && job.branchId !== movement.branchId) return '施工消耗分店必须与关联施工单所属分店一致';
+    movement.branchId = String(job.branchId || movement.branchId || '').trim();
     movement.jobCustomer = job.customer || movement.jobCustomer || '';
-    const currentQty = workshopStockQty(db, movement.sku);
+    const currentQty = workshopStockQty(db, movement.sku, movement.branchId);
     if (qty > currentQty) return `贴膜间库存不足。${product.sku} 贴膜间当前库存 ${currentQty}，本次消耗 ${qty}`;
   }
   return '';
@@ -8989,12 +9332,15 @@ function staticFile(req, res) {
   });
 }
 
+let scheduleReminderWorkerRunning = false;
 function startScheduleReminderWorker() {
   if (!process.env.RESEND_API_KEY || !(process.env.REMINDER_FROM_EMAIL || process.env.RESEND_FROM_EMAIL)) {
     console.log('Schedule email reminders are disabled until RESEND_API_KEY and REMINDER_FROM_EMAIL are configured.');
     return;
   }
   const run = async () => {
+    if (scheduleReminderWorkerRunning) return;
+    scheduleReminderWorkerRunning = true;
     try {
       const db = readDb();
       const targetDate = dateInTimezone(db.settings?.timezone, 1);
@@ -9002,6 +9348,8 @@ function startScheduleReminderWorker() {
       if (result.sent || result.failed) console.log(`Schedule reminders for ${targetDate}: sent ${result.sent}, failed ${result.failed}.`);
     } catch (err) {
       console.warn(`Schedule reminder worker failed: ${err.message}`);
+    } finally {
+      scheduleReminderWorkerRunning = false;
     }
   };
   setTimeout(run, 30 * 1000);
@@ -9049,6 +9397,11 @@ applyLasVegasLegacyBranchMigration();
 expireInternalMessageVideos();
 cleanupStaleMediaUploadParts();
 http.createServer((req, res) => {
+  // Keep the request available to the shared responder so every sufficiently
+  // large JSON/text response can honor Accept-Encoding.  Previously only a
+  // handful of endpoints passed req explicitly, leaving large snapshots
+  // uncompressed and making slow connections look like an application freeze.
+  res._quadRequest = req;
   if (req.url.startsWith('/customer-media/')) {
     serveCustomerMedia(req, res);
   } else if (req.url.startsWith('/api/')) {

@@ -13,6 +13,8 @@
   let ringTimeout = null;
   let polling = false;
   let pollTimer = null;
+  let pollWakeTimer = null;
+  let lastPollAt = 0;
   let actionBusy = false;
   let recording = null;
   let recordingChunks = [];
@@ -470,7 +472,7 @@
   function close() { stopIncomingAlerts(incomingCallId || activeCall?.id); incomingCallId = ''; activeCall = null; closePicker(); ensureLayer().innerHTML = ''; }
 
   async function poll() {
-    if (polling || !me()?.id) return; polling = true;
+    if (polling || !me()?.id) return; polling = true; lastPollAt = Date.now();
     try {
       const result = await request('/api/voice-calls');
       if (Array.isArray(result.calls)) store().voiceCalls = result.calls;
@@ -488,11 +490,24 @@
     } catch {} finally { polling = false; }
   }
 
+  function requestPoll() {
+    if (!me()?.id) return;
+    const wait = Math.max(0, 3000 - (Date.now() - lastPollAt));
+    if (!wait) return poll();
+    if (pollWakeTimer) return;
+    pollWakeTimer = setTimeout(() => {
+      pollWakeTimer = null;
+      poll();
+    }, wait);
+  }
+
   function startPolling() {
     if (pollTimer) return;
-    // Incoming calls must still be discovered while QUaD is open in a
-    // background tab. Browsers may throttle the timer, but must not skip it.
-    pollTimer = setInterval(poll, 250);
+    // EventSource delivers call changes immediately. Polling is only a safety
+    // net for a dropped realtime connection. The old 250 ms interval issued
+    // about 240 requests per minute per open device even when nobody was on a
+    // call, which could overload the server and make unrelated screens freeze.
+    pollTimer = setInterval(poll, 5000);
   }
 
   function receiveVoiceEvent(event) {
@@ -532,15 +547,15 @@
   window.addEventListener('quad-voice-call', receiveVoiceEvent);
   document.addEventListener('pointerdown', unlockIncomingAlerts, { once:true, capture:true });
   document.addEventListener('keydown', unlockIncomingAlerts, { once:true, capture:true });
-  document.addEventListener('visibilitychange', poll);
-  window.addEventListener('focus', poll);
-  window.addEventListener('pageshow', poll);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) requestPoll(); });
+  window.addEventListener('focus', requestPoll);
+  window.addEventListener('pageshow', requestPoll);
   navigator.serviceWorker?.addEventListener?.('message', event => {
     if (event.data?.type === 'quad-incoming-call') {
       window.focus();
-      poll();
+      requestPoll();
     }
   });
   startPolling();
-  setTimeout(poll, 1200);
+  setTimeout(requestPoll, 1200);
 })();

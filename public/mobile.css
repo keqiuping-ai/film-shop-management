@@ -419,6 +419,16 @@ button {
   background: transparent;
   color: var(--muted);
 }
+.bubble .mobile-message-retry {
+  min-height: 28px;
+  padding: 2px 8px;
+  border: 1px solid #b91c1c;
+  border-radius: 999px;
+  background: #fff;
+  color: #b91c1c;
+  font-size: 12px;
+  font-weight: 800;
+}
 .chat-send {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 72px;

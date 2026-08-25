@@ -9,7 +9,8 @@
     "livekit-server-sdk": "^2.17.0"
   },
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "audit:data": "node scripts/audit-data-integrity.js"
   },
   "engines": {
     "node": ">=18"
