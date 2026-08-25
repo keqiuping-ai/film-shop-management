@@ -108,6 +108,7 @@ let customerCenterPendingOnly = false;
 let customerCenterShowInvalid = false;
 let customerCenterRenderLimit = 200;
 let customerCenterAllRowsCache = null;
+const customerCenterRowsCache = new Map();
 let aiCoachRecorder = null;
 let aiCoachStream = null;
 let aiCoachChunks = [];
@@ -933,11 +934,11 @@ async function login() {
     }
     const body = await api('/api/login', {
       method: 'POST',
-      timeoutMs: 30000,
+      timeoutMs: 15000,
       body: JSON.stringify({
         email: document.getElementById('email').value.trim(),
         password: document.getElementById('password').value,
-        includeBootstrap: true
+        includeBootstrap: false
       })
     });
     token = body.token;
@@ -958,6 +959,27 @@ async function login() {
       startPersonalReminderChecks();
       updateSyncStatus();
     } else {
+      // Authentication should not wait for the mature production database to
+      // be sanitized, compressed, downloaded, and parsed. Enter the module
+      // home immediately with a safe empty shell, then hydrate all business
+      // records through the normal bootstrap sync in the background.
+      user = body.user;
+      state = {
+        settings: {}, users: [body.user], messageUsers: [body.user], messages: [],
+        voiceCalls: [], personalNotes: [], aiBossTasks: [], fieldSales: {},
+        aiBossProfiles: [], installers: [], products: [], priceRules: [], jobs: [],
+        salesOrders: [], portalCustomers: [], warranties: [], shipments: [],
+        shipmentReceipts: [], shipmentExceptions: [], schedules: [],
+        scheduleReminderLogs: [], customerServiceReps: [], leads: [], prospects: [],
+        customerConversations: [], replyTemplates: [], customerNurtureCampaigns: [],
+        customerNurtureDeliveries: [], expenses: [], reimbursements: [],
+        clockRecords: [], leaveRequests: [], movements: [], workshopMovements: [],
+        branchInventory: [], branchTransfers: [], branchTransferExceptions: [],
+        auditLogs: [], employeeActivity: [], permissions: body.user.permissions || {}
+      };
+      renderAuth();
+      render();
+      updateSyncStatus(lang === 'zh' ? '登录成功，正在加载业务数据…' : 'Signed in. Loading business data…');
       await sync();
     }
   } catch (err) {
@@ -1672,6 +1694,7 @@ function render(options = {}) {
   // rendered state. Any navigation, sync, mutation, branch switch, or language
   // repaint rebuilds it from current data.
   customerCenterAllRowsCache = null;
+  customerCenterRowsCache.clear();
   const availablePages = pages.filter(([id]) => !pagePermissions[id] || hasAnyPerm(pagePermissions[id]));
   if (current !== 'modules' && !availablePages.some(([id]) => id === current)) current = 'modules';
   document.body.classList.toggle('modules-home', current === 'modules');
@@ -6678,12 +6701,18 @@ function allCustomerCenterRows() {
 }
 
 function customerCenterRows() {
+  const cacheKey = customerCenterShowInvalid ? 'invalid' : 'active';
+  if (customerCenterRowsCache.has(cacheKey)) return customerCenterRowsCache.get(cacheKey);
   const movedStatuses = new Set(['已预约', '已到店']);
-  return allCustomerCenterRows().filter(item => {
+  const rows = allCustomerCenterRows().filter(item => {
     const status = String(item.status || '');
     if (customerCenterShowInvalid) return status === '无效';
-    return status !== '无效' && !movedStatuses.has(status) && !prospectHasGeneratedJob(item);
+    if (status === '无效' || movedStatuses.has(status)) return false;
+    if (!Object.hasOwn(item, '_customerCenterHasGeneratedJob')) item._customerCenterHasGeneratedJob = prospectHasGeneratedJob(item);
+    return !item._customerCenterHasGeneratedJob;
   });
+  customerCenterRowsCache.set(cacheKey, rows);
+  return rows;
 }
 
 function invalidCustomerCenterCount() {
@@ -6691,7 +6720,8 @@ function invalidCustomerCenterCount() {
 }
 
 function customerReplyState(item) {
-  if (String(item?.status || '') === '暂时无需回复') return { pending: false, count: 0, latest: null };
+  if (item?._customerReplyState) return item._customerReplyState;
+  if (String(item?.status || '') === '暂时无需回复') return (item._customerReplyState = { pending: false, count: 0, latest: null });
   const messages = (Array.isArray(item?.conversationMessages) ? item.conversationMessages : [])
     .map((message, index) => ({
       message,
@@ -6708,10 +6738,10 @@ function customerReplyState(item) {
     .filter(row => row.role === 'customer' || row.role === 'shop')
     .sort((a, b) => (Number.isFinite(a.at) && Number.isFinite(b.at) && a.at !== b.at) ? a.at - b.at : a.index - b.index);
   const latest = messages[messages.length - 1];
-  if (!latest || latest.role !== 'customer') return { pending: false, count: 0, latest: null };
+  if (!latest || latest.role !== 'customer') return (item._customerReplyState = { pending: false, count: 0, latest: null });
   let count = 0;
   for (let index = messages.length - 1; index >= 0 && messages[index].role === 'customer'; index -= 1) count += 1;
-  return { pending: true, count, latest: latest.message };
+  return (item._customerReplyState = { pending: true, count, latest: latest.message });
 }
 
 function customerAwaitingReply(item) {
@@ -7040,7 +7070,7 @@ async function markCustomerRecordSeen(collection, id) {
 const prospectWorkspaceFieldIds = [
   'workspaceDate', 'workspaceSource', 'workspaceCustomer', 'workspacePhone', 'workspaceCity', 'workspaceBranchId', 'workspaceVehicle',
   'workspaceNeed', 'workspaceService', 'workspaceAppointmentDate', 'workspaceAppointmentTime',
-  'workspaceOwnerId', 'workspaceIntentLevel', 'workspaceStatus', 'workspaceCallNote',
+  'workspaceOwnerName', 'workspaceIntentLevel', 'workspaceStatus', 'workspaceCallNote',
   'workspaceFollowUpDate', 'workspaceFollowUpTime', 'workspaceFollowUpReason'
 ];
 
@@ -7149,7 +7179,11 @@ function renderProspectWorkspace() {
   }).join('')}</select>`;
   const sources = leadSourceOptions();
   const services = serviceOptions();
-  const owners = customerServiceOptions();
+  const activeOwners = activeCustomerServiceReps();
+  const selectedOwner = (state.customerServiceReps || []).find(rep => rep.id === item.ownerId);
+  const ownerName = selectedOwner?.name || item.ownerName || '';
+  const ownerInput = `<input id="workspaceOwnerName" list="workspaceOwnerSuggestions" value="${escapeHtml(ownerName)}" placeholder="${lang === 'zh' ? '可选择或直接输入姓名' : 'Select or type a name'}" ${hasPerm('prospectsEdit') ? '' : 'disabled'}>
+    <datalist id="workspaceOwnerSuggestions">${activeOwners.map(rep => `<option value="${escapeHtml(rep.name)}"></option>`).join('')}</datalist>`;
   const intents = prospectIntentOptions();
   const statuses = prospectStatusOptions(false);
   const branches = (state.settings?.customerBranches || []).filter(branch => branch.active !== false);
@@ -7197,7 +7231,7 @@ function renderProspectWorkspace() {
           ${field(t('appointmentDate'), `<input id="workspaceAppointmentDate" type="date" value="${escapeHtml(item.appointmentDate || '')}" ${hasPerm('prospectsEdit') ? '' : 'disabled'}>`)}
           ${field(t('appointmentTime'), `<input id="workspaceAppointmentTime" type="time" value="${escapeHtml(item.appointmentTime || '')}" ${hasPerm('prospectsEdit') ? '' : 'disabled'}>`)}
         </div>
-        ${field(t('contactOwner'), select('workspaceOwnerId', item.ownerId || '', owners))}
+        ${field(t('contactOwner'), ownerInput)}
         ${field(t('intentLevel'), select('workspaceIntentLevel', normalizeProspectIntentValue(item.intentLevel || '高意向'), intents))}
         ${field(t('prospectStatus'), select('workspaceStatus', item.status || '新意向', statuses))}
         <label class="prospect-sidebar-field prospect-call-note"><span>${lang === 'zh' ? '电话沟通备注' : 'Call notes'}</span><textarea id="workspaceCallNote" placeholder="${lang === 'zh' ? '例如：已电话沟通、客户关注价格、周五方便到店……' : 'Example: Called customer, discussed price, available Friday…'}" ${hasPerm('prospectsEdit') ? '' : 'disabled'}>${escapeHtml(item.callNote || '')}</textarea></label>
@@ -7237,7 +7271,10 @@ function renderProspectWorkspace() {
             <button class="prospect-media-button" type="button" onclick="document.getElementById('prospectImageInput').click()">🖼️ ${lang === 'zh' ? '图片' : 'Image'}</button>
             <button class="prospect-media-button" type="button" onclick="document.getElementById('prospectVideoInput').click()">🎬 ${lang === 'zh' ? '视频' : 'Video'}</button>
             <button class="prospect-media-button" type="button" onclick="document.getElementById('prospectFileInput').click()">📎 ${lang === 'zh' ? '文件' : 'File'}</button>
-            <button type="button" onclick="insertProspectAddress()">📍 ${lang === 'zh' ? '地址' : 'Address'}</button>
+            <select class="prospect-address-picker" aria-label="${lang === 'zh' ? '选择分店地址' : 'Choose branch address'}" onchange="insertProspectAddress(this.value);this.value=''">
+              <option value="">${lang === 'zh' ? '📍 地址' : '📍 Address'}</option>
+              ${branches.map(branch => `<option value="${escapeHtml(branch.id)}" ${branch.address ? '' : 'disabled'}>${escapeHtml(branch.name)}${branch.address ? '' : (lang === 'zh' ? '（地址未配置）' : ' (address not configured)')}</option>`).join('')}
+            </select>
             <button type="button" onclick="insertProspectWebsite()">🌐 ${lang === 'zh' ? '公司网站' : 'Website'}</button>
             <span class="prospect-tool-divider"></span>
             <button class="reply-reference-button" type="button" onclick="openReplyReferenceLibrary('text')">💬 ${lang === 'zh' ? '回复文字' : 'Reply text'}</button>
@@ -7273,7 +7310,7 @@ function renderProspectWorkspace() {
   }
   restoreProspectWorkspaceDraft();
   const agentDraftInput = document.getElementById('prospectReplyInput');
-  if (agentDraftInput && !agentDraftInput.value && item.agentReplyDraft?.text) agentDraftInput.value = item.agentReplyDraft.text;
+  if (agentDraftInput && !agentDraftInput.value && item.agentReplyDraft?.text) agentDraftInput.value = customerAiCustomerFacingText(item.agentReplyDraft.text);
   updateProspectReplyChannel();
   workspace.querySelectorAll('.prospect-workspace-sidebar input, .prospect-workspace-sidebar textarea, .prospect-workspace-sidebar select')
     .forEach(control => {
@@ -7427,8 +7464,11 @@ function clearProspectAttachment() {
   renderProspectWorkspace();
 }
 
-function insertProspectAddress() {
-  insertProspectReplyText('📍 3359 W Oquendo Rd, Las Vegas, NV 89118');
+function insertProspectAddress(branchId) {
+  if (!branchId) return;
+  const branch = (state.settings?.customerBranches || []).find(item => item.id === branchId && item.active !== false);
+  if (!branch?.address) return alert(lang === 'zh' ? '这个分店还没有配置地址。' : 'This branch does not have an address configured yet.');
+  insertProspectReplyText(`📍 ${branch.name ? `${branch.name}\n` : ''}${branch.address}`);
 }
 
 function insertProspectWebsite() {
@@ -7470,7 +7510,7 @@ async function generateCustomerAiReplyDraft() {
     renderProspectWorkspace();
     const nextInput = document.getElementById('prospectReplyInput');
     if (nextInput && result.draft?.text) {
-      nextInput.value = result.draft.text;
+      nextInput.value = customerAiCustomerFacingText(result.draft.text);
       nextInput.dispatchEvent(new Event('input', { bubbles: true }));
       nextInput.focus();
     } else if (nextInput && previousText) {
@@ -7582,9 +7622,15 @@ async function reconcileCustomerSmsNow() {
 function customerAgentDraftHtml(item) {
   const draft = item?.agentReplyDraft || {};
   if (draft.text) {
-    return `<div class="customer-agent-draft"><strong>${lang === 'zh' ? '客服助手建议回复（发送前请人工确认）' : 'Agent draft (review before sending)'}</strong><span>${escapeHtml(draft.createdBy || '')} · ${escapeHtml(formatAppDateTime(draft.createdAt || ''))}</span><p>${escapeHtml(draft.text)}</p></div>`;
+    return `<div class="customer-agent-draft"><strong>${lang === 'zh' ? 'AI 建议（发送前请确认）' : 'AI draft (review before sending)'}</strong><span>${escapeHtml(draft.createdBy || '')} · ${escapeHtml(formatAppDateTime(draft.createdAt || ''))}</span><p>${escapeHtml(draft.text)}</p></div>`;
   }
-  return `<div class="customer-agent-draft customer-agent-draft-empty"><strong>${lang === 'zh' ? '客服助手建议回复（发送前请人工确认）' : 'Agent draft (review before sending)'}</strong><span>${lang === 'zh' ? '还没有生成草稿。每个客户都可以直接生成，系统只保存草稿，不会自动发送。' : 'No draft yet. Every customer can generate one; it is saved for review and never sent automatically.'}</span><button id="customerAiDraftInlineButton" type="button" onclick="generateCustomerAiReplyDraft()" ${hasPerm('prospectsEdit') ? '' : 'disabled'}>${lang === 'zh' ? '生成客服建议回复' : 'Generate suggested reply'}</button></div>`;
+  return `<div class="customer-agent-draft customer-agent-draft-empty"><strong>${lang === 'zh' ? 'AI 建议' : 'AI draft'}</strong><span>${lang === 'zh' ? '点击下方“AI 生成”，中文会显示在上，英文显示在下。' : 'Choose AI draft below to generate Chinese first and English below.'}</span></div>`;
+}
+
+function customerAiCustomerFacingText(text) {
+  const value = String(text || '').trim();
+  const englishMatch = value.match(/(?:^|\n)English:\s*([\s\S]+)$/i);
+  return (englishMatch?.[1] || value).trim();
 }
 
 async function handleProspectReplyPaste(event) {
@@ -7852,14 +7898,15 @@ async function saveProspectWorkspaceDetails() {
   if (!item || !hasPerm('prospectsEdit')) return;
   const value = id => String(document.getElementById(id)?.value || '').trim();
   const button = document.getElementById('workspaceSaveDetailsButton');
-  const ownerId = value('workspaceOwnerId');
-  const rep = (state.customerServiceReps || []).find(row => row.id === ownerId);
+  const ownerNameInput = value('workspaceOwnerName');
+  const rep = activeCustomerServiceReps().find(row => String(row.name || '').trim().toLowerCase() === ownerNameInput.toLowerCase());
+  const ownerId = rep?.id || '';
   const updated = {
     ...item,
     date: value('workspaceDate'), source: value('workspaceSource'), customer: value('workspaceCustomer'),
     phone: value('workspacePhone'), city: value('workspaceCity'), branchId: value('workspaceBranchId'), vehicle: value('workspaceVehicle'), need: value('workspaceNeed'),
     service: value('workspaceService'), appointmentDate: value('workspaceAppointmentDate'),
-    appointmentTime: value('workspaceAppointmentTime'), ownerId, ownerName: rep?.name || '',
+    appointmentTime: value('workspaceAppointmentTime'), ownerId, ownerName: rep?.name || ownerNameInput,
     intentLevel: value('workspaceIntentLevel'), status: value('workspaceStatus'),
     callNote: value('workspaceCallNote'), followUpDate: value('workspaceFollowUpDate'),
     followUpTime: value('workspaceFollowUpTime'), followUpReason: value('workspaceFollowUpReason'),
@@ -7922,7 +7969,7 @@ async function sendProspectMessage() {
   const button = document.getElementById('prospectSendSmsButton');
   const channel = document.getElementById('prospectReplyChannel')?.value || 'sms';
   const text = String(input?.value || '').trim();
-  const originalAiDraft = String(item?.agentReplyDraft?.text || '').trim();
+  const originalAiDraft = customerAiCustomerFacingText(item?.agentReplyDraft?.text);
   const editedAiDraftExperience = originalAiDraft && text && originalAiDraft !== text && text.length >= 12 ? {
     wrongReply: originalAiDraft,
     correctGuidance: text,
@@ -10505,7 +10552,8 @@ function numeric(data, keys) { keys.forEach(k => data[k] = Number(data[k] || 0))
 function serviceOptions() { return [['tint',t('tint')], ['wrap',t('wrap')], ['vinylWrap',t('vinylWrap')], ['ppf',t('ppf')], ['ceramic',t('ceramic')]]; }
 function installerOptions() { return [['',t('unassigned')], ...state.installers.map(i => [i.id, i.name])]; }
 function installerMultiOptions() { return state.installers.map(i => [i.id, i.name]); }
-function customerServiceOptions() { return [['',t('unassigned')], ...(state.customerServiceReps || []).filter(rep => rep.active !== false).map(rep => [rep.id, rep.name])]; }
+function activeCustomerServiceReps() { return (state.customerServiceReps || []).filter(rep => rep.active !== false); }
+function customerServiceOptions() { return [['',t('unassigned')], ...activeCustomerServiceReps().map(rep => [rep.id, rep.name])]; }
 function activeEmployeeOptions() {
   return (state.users || []).filter(employee => employee.active && employee.role !== 'owner').map(employee => [employee.id, `${employee.name} · ${employee.email || ''}`]);
 }

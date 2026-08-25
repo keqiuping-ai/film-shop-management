@@ -1,4 +1,4 @@
-const CACHE_NAME = 'film-shop-v106-meta-messenger';
+const CACHE_NAME = 'film-shop-v107-customer-workspace-performance';
 const ASSETS = [
     '/mobile.html',
     '/warranty.html',

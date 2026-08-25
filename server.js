@@ -12,6 +12,7 @@ const ROOT = __dirname;
 const PUBLIC = path.join(ROOT, 'public');
 const DATA_DIR = process.env.DATA_DIR || path.join(ROOT, 'data');
 const DB_FILE = path.join(DATA_DIR, 'db.json');
+const EMPLOYEE_ACTIVITY_FILE = path.join(DATA_DIR, 'employee-activity.json');
 const BACKUP_DIR = path.join(DATA_DIR, 'backups');
 const CUSTOMER_MEDIA_DIR = path.join(DATA_DIR, 'customer-media');
 const MEDIA_UPLOAD_PARTS_DIR = path.join(DATA_DIR, 'media-upload-parts');
@@ -431,6 +432,10 @@ function readDb() {
   if (!Array.isArray(db.clockRecords)) db.clockRecords = [];
   if (!Array.isArray(db.leaveRequests)) db.leaveRequests = [];
   if (!Array.isArray(db.employeeActivity)) db.employeeActivity = [];
+  try {
+    const activity = JSON.parse(fs.readFileSync(EMPLOYEE_ACTIVITY_FILE, 'utf8'));
+    if (Array.isArray(activity)) db.employeeActivity = activity;
+  } catch {}
   if (!Array.isArray(db.workshopMovements)) db.workshopMovements = [];
   if (!Array.isArray(db.branchTransfers)) db.branchTransfers = [];
   if (!Array.isArray(db.branchTransferExceptions)) db.branchTransferExceptions = [];
@@ -2249,7 +2254,7 @@ function customerAiReplyPrompt(task, channel = '', knowledgeEntries = [], branch
   const preferredChannel = channel || task.preferredChannel || task.availableChannels?.[0] || '';
   return `You are the built-in AI customer service assistant for QUAD Film / QD Auto Image, an automotive window tint, PPF, TPU color PPF/color change, vinyl wrap, and architectural film business with multiple branches.
 
-Write a customer-facing English reply draft for an employee to review before sending.
+Write one bilingual reply draft for an employee to review before sending. The Chinese translation is for the employee; the English text is the customer-facing reply.
 
 Assigned branch:
 ${branch ? `- Branch: ${branch.name}\n- City: ${branch.city || '(not configured)'}\n- Address: ${branch.address || '(not configured; do not invent one)'}` : '- No branch has been confirmed. Do not assume Las Vegas or Los Angeles; ask which city/location only when it is needed.'}
@@ -2298,7 +2303,7 @@ Conversation continuity rules:
 - Do not restart with the same company introduction or repeat the same sales pitch. Acknowledge only new information and ask the next useful question.
 
 Return JSON only with exactly these fields:
-- replyText: English text ready to paste to the customer. Keep it concise, warm, and professional. End with one clear question that moves toward visit, quote details, or scheduling.
+- replyText: exactly two clearly separated sections in this order: "中文：" followed by a faithful natural Chinese translation, then a blank line, then "English:" followed by the English customer-facing reply. Keep both versions concise, warm, and professional. The Chinese must accurately mirror the English without adding promises or facts. End the English version with one clear question that moves toward visit, quote details, or scheduling.
 - disposition: one of "ready_for_review", "needs_human", "no_reply_needed".
 - note: short Chinese note for the employee explaining why.
 - riskLevel: one of "low", "medium", "high".
@@ -2439,7 +2444,7 @@ async function createCustomerAiReplyDraft(db, row, requestedChannel = '') {
     model,
     messages: [{ role: 'user', content: prompt }],
     response_format: { type: 'json_object' },
-    max_completion_tokens: 450
+    max_completion_tokens: 650
   };
   if (/^gpt-5(?:\.|-|$)/i.test(model)) requestBody.reasoning_effort = 'minimal';
   const startedAt = Date.now();
@@ -6434,10 +6439,11 @@ async function api(req, res) {
     }
     const cutoff = Date.now() - 120 * 24 * 60 * 60 * 1000;
     db.employeeActivity = rows.filter(row => new Date(row.bucketAt).getTime() >= cutoff);
-    // Activity heartbeats are high-frequency telemetry, not a business
-    // transaction. Batch the disk write so a growing database cannot block
-    // every other request once per minute for every active employee.
-    scheduleDbWrite(db, 5000);
+    // Activity heartbeats are high-frequency telemetry, not business data.
+    // Persist them separately so their once-per-minute updates do not change
+    // db.json's revision and force every signed-in browser to download and
+    // repaint the complete production database.
+    fs.writeFileSync(EMPLOYEE_ACTIVITY_FILE, JSON.stringify(db.employeeActivity));
     return send(res, 200, { ok: true, bucketAt });
   }
 
