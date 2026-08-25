@@ -9281,7 +9281,7 @@ function updateSalesOrderLinesTotal() {
 }
 
 function openSalesOrder(id) {
-  const item = state.salesOrders.find(x => x.id === id) || { date: today(), branchId: defaultBranchId(), type: 'retail-us', customer: '', customerAddress: '', customerContact: '', salesRep: '', preparedBy: user?.name || '', item: '', qty: 1, unitPrice: 0, status: '待收款', shipping: '', trackingNo: '', paid: 0, paymentMethod: '' };
+  const item = state.salesOrders.find(x => x.id === id) || { date: today(), branchId: defaultBranchId(), type: 'retail-us', customer: '', customerAddress: '', customerContact: '', salesRep: '', preparedBy: user?.name || '', notes: '', item: '', qty: 1, unitPrice: 0, status: '待收款', shipping: '', trackingNo: '', paid: 0, paymentMethod: '' };
   if (id && item.portalSource && (item.portalNew || item.portalCustomerUnread)) markPortalOrderRead(id);
   const lines = salesOrderLineItems(item);
   const shippingTracking = [...new Set([item.shipping, item.trackingNo].map(value => String(value || '').trim()).filter(Boolean))].join(' · ');
@@ -9295,7 +9295,8 @@ function openSalesOrder(id) {
     ['customerContact',lang === 'zh' ? '客户联系方式（电话 / Email）' : 'Customer contact (phone / email)','text',item.customerContact || ''],
     ['salesRep',t('orderSalesRep'),'text',item.salesRep || ''], ['status',t('status'),'select',item.status, editableSalesStatuses], ['paid',`${t('paid')} $`,'number',item.paid],
     ['paymentMethod',t('paymentMethod'),'select',item.paymentMethod || '', paymentMethodOptions()], ['shippingTracking',lang === 'zh' ? '物流/单号' : 'Shipping / Tracking','text',shippingTracking],
-    ['preparedBy',t('preparedBy'),'text',item.preparedBy || user?.name || '']
+    ['preparedBy',t('preparedBy'),'text',item.preparedBy || user?.name || ''],
+    ['notes',lang === 'zh' ? '备注' : 'Notes','textarea',item.notes || '',null,'wide']
   ];
   const lineTable = `<div class="sales-order-lines wide">
     <div class="sales-order-lines-head"><strong>${lang === 'zh' ? '商品明细' : 'Order Items'}</strong><button class="btn" type="button" onclick="addSalesOrderLine()">+ ${lang === 'zh' ? '新增一行' : 'Add line'}</button></div>
@@ -9306,7 +9307,7 @@ function openSalesOrder(id) {
     id ? (lang === 'zh' ? '编辑零售/批发订单' : 'Edit Sales Order') : (lang === 'zh' ? '新增零售/批发订单' : 'New Sales Order'),
     formHtml(fields) + lineTable + portalOrderConversationHtml(item),
     () => {
-      const data = numeric(readForm(['date','branchId','type','customer','customerAddress','customerContact','salesRep','status','paid','paymentMethod','shippingTracking','preparedBy']), ['paid']);
+      const data = numeric(readForm(['date','branchId','type','customer','customerAddress','customerContact','salesRep','status','paid','paymentMethod','shippingTracking','preparedBy','notes']), ['paid']);
       data.shipping = String(data.shippingTracking || '').trim();
       data.trackingNo = data.shipping;
       delete data.shippingTracking;

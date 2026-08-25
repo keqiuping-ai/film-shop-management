@@ -8859,6 +8859,7 @@ async function api(req, res) {
       item.salesRep = String(item.salesRep || '').trim();
       item.customerAddress = String(item.customerAddress || '').trim().slice(0, 500);
       item.customerContact = String(item.customerContact || '').trim().slice(0, 500);
+      item.notes = String(item.notes || '').trim().slice(0, 3000);
       const error = validateSalesOrder(db, item);
       if (error) return send(res, 400, { error });
       if (String(item.status || '').trim() === '已出库') {
@@ -9106,6 +9107,7 @@ async function api(req, res) {
       next.salesRep = String(next.salesRep || '').trim();
       next.customerAddress = String(next.customerAddress || '').trim().slice(0, 500);
       next.customerContact = String(next.customerContact || '').trim().slice(0, 500);
+      next.notes = String(next.notes || '').trim().slice(0, 3000);
       const error = validateSalesOrder(db, next);
       if (error) return send(res, 400, { error });
       const nextStatus = String(next.status || '').trim();
