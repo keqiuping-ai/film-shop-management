@@ -1,4 +1,4 @@
-const CACHE_NAME = 'film-shop-v109-large-bootstrap-safety';
+const CACHE_NAME = 'film-shop-v110-unified-ai-rules';
 const ASSETS = [
     '/mobile.html',
     '/warranty.html',
