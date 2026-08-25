@@ -7259,10 +7259,7 @@ function renderProspectWorkspace() {
             <button class="prospect-media-button" type="button" onclick="document.getElementById('prospectImageInput').click()">🖼️ ${lang === 'zh' ? '图片' : 'Image'}</button>
             <button class="prospect-media-button" type="button" onclick="document.getElementById('prospectVideoInput').click()">🎬 ${lang === 'zh' ? '视频' : 'Video'}</button>
             <button class="prospect-media-button" type="button" onclick="document.getElementById('prospectFileInput').click()">📎 ${lang === 'zh' ? '文件' : 'File'}</button>
-            <select class="prospect-address-picker" aria-label="${lang === 'zh' ? '选择分店地址' : 'Choose branch address'}" title="${lang === 'zh' ? '选择分店地址并加入回复' : 'Choose a branch address and add it to the reply'}" onchange="insertProspectAddress(this.value);this.value=''">
-              <option value="">${lang === 'zh' ? '📍 地址' : '📍 Address'}</option>
-              ${branches.map(branch => `<option value="${escapeHtml(branch.id)}" ${branch.address ? '' : 'disabled'}>${escapeHtml(branch.name)}${branch.address ? '' : (lang === 'zh' ? '（地址未配置）' : ' (address not configured)')}</option>`).join('')}
-            </select>
+            <button class="prospect-media-button prospect-address-picker" type="button" onclick="insertProspectAllBranchAddresses()" aria-label="${lang === 'zh' ? '加入两个分店地址' : 'Add both shop addresses'}" title="${lang === 'zh' ? '把洛杉矶和拉斯维加斯地址加入回复' : 'Add the Los Angeles and Las Vegas addresses to the reply'}">${lang === 'zh' ? '📍 地址' : '📍 Address'}</button>
             <button type="button" onclick="insertProspectWebsite()">🌐 ${lang === 'zh' ? '公司网站' : 'Website'}</button>
             <span class="prospect-tool-divider"></span>
             <button class="reply-reference-button" type="button" onclick="openReplyReferenceLibrary('text')">💬 ${lang === 'zh' ? '回复文字' : 'Reply text'}</button>
@@ -7452,6 +7449,15 @@ function insertProspectAddress(branchId) {
   const branch = (state.settings?.customerBranches || []).find(item => item.id === branchId && item.active !== false);
   if (!branch?.address) return alert(lang === 'zh' ? '这个分店还没有配置地址。' : 'This branch does not have an address configured yet.');
   insertProspectReplyText(`📍 ${branch.name ? `${branch.name}\n` : ''}${branch.address}`);
+}
+
+function insertProspectAllBranchAddresses() {
+  const configured = state.settings?.customerBranches || [];
+  const addressFor = (id, fallback) => configured.find(item => item.id === id && item.active !== false)?.address || fallback;
+  insertProspectReplyText([
+    `Los Angeles: ${addressFor('los-angeles', '3212 Santa Monica Blvd, Santa Monica, CA 90404')}`,
+    `Las Vegas: ${addressFor('las-vegas', '3359 W Oquendo Rd, Las Vegas, NV 89118')}`
+  ].join('\n'));
 }
 
 function insertProspectWebsite() {
