@@ -7247,10 +7247,15 @@ function renderProspectWorkspace() {
                   : (lang === 'zh' ? 'Meta / Facebook 来源客户；缺少 Meta PSID，且未填写可用手机号' : 'Meta / Facebook lead without PSID and no usable phone is available.')))
             : (lang === 'zh' ? '通过 Twilio 发送和接收短信 · 发送号码：+1 725-241-2586' : 'Send and receive SMS through Twilio · Sender: +1 725-241-2586')}</div>
           <div class="prospect-attachment-tools">
+            <select id="prospectReplyChannel" class="prospect-channel-picker" onchange="updateProspectReplyChannel()" aria-label="${lang === 'zh' ? '回复渠道' : 'Reply channel'}" title="${lang === 'zh' ? '选择发送渠道' : 'Choose sending channel'}">
+              <option value="yelp" ${defaultReplyChannel === 'yelp' ? 'selected' : ''} ${canReplyYelp && (!requiredReplyChannel || requiredReplyChannel === 'yelp') ? '' : 'disabled'}>${lang === 'zh' ? 'Yelp 站内消息' : 'Yelp message'}</option>
+              ${isMetaSource ? `<option value="meta" ${defaultReplyChannel === 'meta' ? 'selected' : ''} ${canReplyMeta && (!requiredReplyChannel || requiredReplyChannel === 'meta') ? '' : 'disabled'}>${canReplyMeta ? (lang === 'zh' ? 'Meta 私信' : 'Meta message') : (lang === 'zh' ? 'Meta 私信（缺少PSID）' : 'Meta message (missing PSID)')}</option>` : ''}
+              <option value="sms" ${defaultReplyChannel === 'sms' ? 'selected' : ''} ${canReplySms ? '' : 'disabled'}>${lang === 'zh' ? '手机短信' : 'SMS'}</option>
+            </select>
             <button class="prospect-media-button" type="button" onclick="document.getElementById('prospectImageInput').click()">🖼️ ${lang === 'zh' ? '图片' : 'Image'}</button>
             <button class="prospect-media-button" type="button" onclick="document.getElementById('prospectVideoInput').click()">🎬 ${lang === 'zh' ? '视频' : 'Video'}</button>
             <button class="prospect-media-button" type="button" onclick="document.getElementById('prospectFileInput').click()">📎 ${lang === 'zh' ? '文件' : 'File'}</button>
-            <select class="prospect-address-picker" aria-label="${lang === 'zh' ? '选择分店地址' : 'Choose branch address'}" onchange="insertProspectAddress(this.value);this.value=''">
+            <select class="prospect-address-picker" aria-label="${lang === 'zh' ? '选择分店地址' : 'Choose branch address'}" title="${lang === 'zh' ? '选择分店地址并加入回复' : 'Choose a branch address and add it to the reply'}" onchange="insertProspectAddress(this.value);this.value=''">
               <option value="">${lang === 'zh' ? '📍 地址' : '📍 Address'}</option>
               ${branches.map(branch => `<option value="${escapeHtml(branch.id)}" ${branch.address ? '' : 'disabled'}>${escapeHtml(branch.name)}${branch.address ? '' : (lang === 'zh' ? '（地址未配置）' : ' (address not configured)')}</option>`).join('')}
             </select>
@@ -7268,11 +7273,6 @@ function renderProspectWorkspace() {
             <input class="hidden" id="prospectFileInput" type="file" onchange="uploadProspectAttachment(this.files[0]); this.value=''">
           </div>
           <div class="prospect-compose-row">
-            <select id="prospectReplyChannel" onchange="updateProspectReplyChannel()" aria-label="${lang === 'zh' ? '回复渠道' : 'Reply channel'}">
-              <option value="yelp" ${defaultReplyChannel === 'yelp' ? 'selected' : ''} ${canReplyYelp && (!requiredReplyChannel || requiredReplyChannel === 'yelp') ? '' : 'disabled'}>${lang === 'zh' ? 'Yelp 站内消息' : 'Yelp message'}</option>
-              ${isMetaSource ? `<option value="meta" ${defaultReplyChannel === 'meta' ? 'selected' : ''} ${canReplyMeta && (!requiredReplyChannel || requiredReplyChannel === 'meta') ? '' : 'disabled'}>${canReplyMeta ? (lang === 'zh' ? 'Meta 私信' : 'Meta message') : (lang === 'zh' ? 'Meta 私信（缺少PSID）' : 'Meta message (missing PSID)')}</option>` : ''}
-              <option value="sms" ${defaultReplyChannel === 'sms' ? 'selected' : ''} ${canReplySms ? '' : 'disabled'}>${lang === 'zh' ? '手机短信' : 'SMS'}</option>
-            </select>
             <textarea id="prospectReplyInput" oninput="prospectReplyRevision += 1" onpaste="handleProspectReplyPaste(event)" placeholder="${lang === 'zh' ? '输入或粘贴文字、截图、图片…' : 'Write or paste text, screenshots, or images…'}"></textarea>
             <button id="prospectSendSmsButton" class="btn primary" onclick="sendProspectMessage()" ${hasPerm('prospectsEdit') ? '' : 'disabled'}>${defaultReplyChannel === 'yelp' ? (lang === 'zh' ? '通过 Yelp 发送' : 'Send via Yelp') : defaultReplyChannel === 'meta' ? (lang === 'zh' ? '通过 Meta 发送' : 'Send via Meta') : (lang === 'zh' ? '发送短信' : 'Send SMS')}</button>
           </div>
@@ -7488,8 +7488,8 @@ async function generateCustomerAiReplyDraft() {
     preserveProspectWorkspaceRender = false;
     renderProspectWorkspace();
     const nextInput = document.getElementById('prospectReplyInput');
-    if (nextInput && result.draft?.text) {
-      nextInput.value = customerAiCustomerFacingText(result.draft.text);
+    if (nextInput && (result.draft?.englishText || result.draft?.text)) {
+      nextInput.value = result.draft.englishText || customerAiCustomerFacingText(result.draft.text);
       nextInput.dispatchEvent(new Event('input', { bubbles: true }));
       nextInput.focus();
     } else if (nextInput && previousText) {
@@ -7601,7 +7601,11 @@ async function reconcileCustomerSmsNow() {
 function customerAgentDraftHtml(item) {
   const draft = item?.agentReplyDraft || {};
   if (draft.text) {
-    return `<div class="customer-agent-draft"><strong>${lang === 'zh' ? 'AI 建议（发送前请确认）' : 'AI draft (review before sending)'}</strong><span>${escapeHtml(draft.createdBy || '')} · ${escapeHtml(formatAppDateTime(draft.createdAt || ''))}</span><p>${escapeHtml(draft.text)}</p></div>`;
+    const legacyText = String(draft.text || '').trim();
+    const chineseText = String(draft.chineseText || legacyText.match(/(?:^|\n)中文[：:]\s*([\s\S]*?)(?=\n\s*English:|$)/i)?.[1] || '').trim();
+    const englishText = String(draft.englishText || customerAiCustomerFacingText(legacyText)).trim();
+    const missingChinese = lang === 'zh' ? '旧草稿没有中文，请点击“AI 生成回复”重新生成。' : 'This older draft has no Chinese version; generate a new AI reply.';
+    return `<div class="customer-agent-draft"><strong>${lang === 'zh' ? 'AI 建议（发送前请确认）' : 'AI draft (review before sending)'}</strong><span>${escapeHtml(draft.createdBy || '')} · ${escapeHtml(formatAppDateTime(draft.createdAt || ''))}</span><div class="customer-agent-language"><b>中文</b><p class="${chineseText ? '' : 'customer-agent-missing'}">${escapeHtml(chineseText || missingChinese)}</p></div><div class="customer-agent-language"><b>English</b><p>${escapeHtml(englishText)}</p></div></div>`;
   }
   return `<div class="customer-agent-draft customer-agent-draft-empty"><strong>${lang === 'zh' ? 'AI 建议' : 'AI draft'}</strong><span>${lang === 'zh' ? '点击下方“AI 生成”，中文会显示在上，英文显示在下。' : 'Choose AI draft below to generate Chinese first and English below.'}</span></div>`;
 }

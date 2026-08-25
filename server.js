@@ -2303,7 +2303,8 @@ Conversation continuity rules:
 - Do not restart with the same company introduction or repeat the same sales pitch. Acknowledge only new information and ask the next useful question.
 
 Return JSON only with exactly these fields:
-- replyText: exactly two clearly separated sections in this order: "中文：" followed by a faithful natural Chinese translation, then a blank line, then "English:" followed by the English customer-facing reply. Keep both versions concise, warm, and professional. The Chinese must accurately mirror the English without adding promises or facts. End the English version with one clear question that moves toward visit, quote details, or scheduling.
+- chineseReplyText: a faithful natural Chinese translation for the employee to review. It must accurately mirror the English without adding promises or facts.
+- englishReplyText: the English customer-facing reply that will be sent. Keep it concise, warm, and professional, and end with one clear question that moves toward visit, quote details, or scheduling.
 - disposition: one of "ready_for_review", "needs_human", "no_reply_needed".
 - note: short Chinese note for the employee explaining why.
 - riskLevel: one of "low", "medium", "high".
@@ -2311,8 +2312,15 @@ Return JSON only with exactly these fields:
 }
 
 function normalizeCustomerAiDraft(value) {
+  const legacyReplyText = String(value?.replyText || '').trim();
+  const legacyEnglish = legacyReplyText.match(/(?:^|\n)English:\s*([\s\S]+)$/i)?.[1] || '';
+  const legacyChinese = legacyReplyText.match(/(?:^|\n)中文[：:]\s*([\s\S]*?)(?=\n\s*English:|$)/i)?.[1] || '';
+  const englishReplyText = String(value?.englishReplyText || legacyEnglish || legacyReplyText).trim().slice(0, 1600);
+  const chineseReplyText = String(value?.chineseReplyText || legacyChinese).trim().slice(0, 1600);
   const draft = {
-    replyText: String(value?.replyText || '').trim().slice(0, 1600),
+    replyText: englishReplyText,
+    englishReplyText,
+    chineseReplyText,
     disposition: ['ready_for_review', 'needs_human', 'no_reply_needed'].includes(value?.disposition) ? value.disposition : 'ready_for_review',
     note: String(value?.note || '').trim().slice(0, 1000),
     riskLevel: ['low', 'medium', 'high'].includes(value?.riskLevel) ? value.riskLevel : 'medium',
@@ -2321,6 +2329,9 @@ function normalizeCustomerAiDraft(value) {
   if (draft.disposition === 'ready_for_review' && !draft.replyText) {
     draft.disposition = 'needs_human';
     draft.note = draft.note || 'AI 没有生成可发送文字，需要人工处理。';
+  } else if (draft.disposition === 'ready_for_review' && !draft.chineseReplyText) {
+    draft.disposition = 'needs_human';
+    draft.note = draft.note || 'AI 没有生成中文对照，需重新生成后再发送。';
   }
   return draft;
 }
@@ -2467,7 +2478,9 @@ async function saveCustomerAiReplyDraft(db, user, item, collection, requestedCha
   const result = await createCustomerAiReplyDraft(db, { item, collection, taskType: taskType || customerServiceTaskType(item) || 'first' }, requestedChannel);
   const now = new Date().toISOString();
   item.agentReplyDraft = {
-    text: result.draft.replyText,
+    text: result.draft.englishReplyText,
+    englishText: result.draft.englishReplyText,
+    chineseText: result.draft.chineseReplyText,
     note: result.draft.note,
     disposition: result.draft.disposition,
     riskLevel: result.draft.riskLevel,
@@ -2479,7 +2492,7 @@ async function saveCustomerAiReplyDraft(db, user, item, collection, requestedCha
     durationMs: result.durationMs,
     knowledgeEntryIds: result.knowledgeEntryIds,
     experienceIds: result.experienceIds,
-    apiVersion: 2
+    apiVersion: 3
   };
   for (const experienceId of result.experienceIds || []) {
     const experience = (db.customerAiExperiences || []).find(row => row.id === experienceId);
