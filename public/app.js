@@ -934,7 +934,7 @@ async function login() {
     }
     const body = await api('/api/login', {
       method: 'POST',
-      timeoutMs: 30000,
+      timeoutMs: 120000,
       body: JSON.stringify({
         email: document.getElementById('email').value.trim(),
         password: document.getElementById('password').value,
@@ -1004,7 +1004,7 @@ async function sync(options = {}) {
   try {
     syncInFlight = true;
     updateSyncStatus(lang === 'zh' ? '同步中...' : 'Syncing...');
-    const body = await api('/api/bootstrap', { timeoutMs: 30000 });
+    const body = await api('/api/bootstrap', { timeoutMs: 120000 });
     const previousUnreadIds = knownUnreadMessageIds;
     user = body.user;
     state = body.data;
@@ -1064,6 +1064,8 @@ async function sync(options = {}) {
     localStorage.removeItem('filmShopCloud.token');
     stopAutoSync();
     stopRealtimeSync();
+    state = null;
+    user = null;
     renderAuth();
   } finally {
     syncInFlight = false;
