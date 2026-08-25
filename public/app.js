@@ -938,7 +938,7 @@ async function login() {
       body: JSON.stringify({
         email: document.getElementById('email').value.trim(),
         password: document.getElementById('password').value,
-        includeBootstrap: true
+        includeBootstrap: 'fast'
       })
     });
     token = body.token;
@@ -958,6 +958,10 @@ async function login() {
       startRealtimeSync();
       startPersonalReminderChecks();
       updateSyncStatus();
+      if (state.deferredBootstrapData) {
+        updateSyncStatus(lang === 'zh' ? '已登录，正在后台补齐历史明细…' : 'Signed in; loading history in the background…');
+        setTimeout(() => sync({ silent: true }), 800);
+      }
     } else await sync();
   } catch (err) {
     alert(err.message);

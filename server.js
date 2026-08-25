@@ -1255,8 +1255,9 @@ function normalizePersonalNoteSharing(db, user, body, existing = {}) {
   };
 }
 
-function sanitizeDbForUser(db, user) {
+function sanitizeDbForUser(db, user, options = {}) {
   const p = effectivePermissions(user);
+  const fastLogin = options.fastLogin === true;
   const canSeeCosts = user?.role === 'owner';
   const canApproveReimbursements = Boolean(p.reimbursementsApprove);
   const safeSettings = { ...(db.settings || {}) };
@@ -1298,14 +1299,14 @@ function sanitizeDbForUser(db, user) {
     shipmentReceipts: p.shipmentsView ? (db.shipmentReceipts || []) : [],
     shipmentExceptions: p.shipmentsView ? (db.shipmentExceptions || []) : [],
     schedules: p.schedulesView ? branchVisibleRecords(db, user, db.schedules || []) : [],
-    scheduleReminderLogs: p.schedulesView ? (db.scheduleReminderLogs || []).slice(0, 200) : [],
+    scheduleReminderLogs: p.schedulesView && !fastLogin ? (db.scheduleReminderLogs || []).slice(0, 200) : [],
     customerServiceReps: p.leadsView ? sanitizeCustomerServiceReps(db.customerServiceReps || [], p) : [],
     leads: p.leadsView ? sanitizeLeads(branchVisibleRecords(db, user, db.leads || []), p) : [],
     prospects: p.prospectsView ? (db.prospects || []).map(item => enrichCustomerIdentity(db, { ...item })) : [],
     customerConversations: p.prospectsView ? (db.customerConversations || []).map(item => enrichCustomerIdentity(db, { ...item })) : [],
     replyTemplates: p.prospectsView ? (db.replyTemplates || []) : [],
     customerNurtureCampaigns: p.prospectsView ? (db.customerNurtureCampaigns || []).slice(0, 100) : [],
-    customerNurtureDeliveries: p.prospectsView ? (db.customerNurtureDeliveries || []).slice(0, 500) : [],
+    customerNurtureDeliveries: p.prospectsView && !fastLogin ? (db.customerNurtureDeliveries || []).slice(0, 500) : [],
     expenses: p.expensesView || p.fullFinanceView ? branchVisibleRecords(db, user, db.expenses || []) : [],
     reimbursements: p.reimbursementsView ? branchVisibleRecords(db, user, db.reimbursements || []).filter(item => canApproveReimbursements || item.employeeUserId === user.id) : [],
     canApproveLeave: canApproveLeave(user),
@@ -1322,8 +1323,9 @@ function sanitizeDbForUser(db, user) {
     branchInventory: p.inventoryView ? branchInventorySnapshot(db, user) : [],
     branchTransfers: p.inventoryView ? branchTransferVisibleRecords(db, user, db.branchTransfers || []) : [],
     branchTransferExceptions: p.inventoryView ? branchTransferVisibleRecords(db, user, db.branchTransferExceptions || []) : [],
-    auditLogs: p.usersManage || p.reportsView ? db.auditLogs : [],
-    employeeActivity: p.usersManage || p.reportsView ? (db.employeeActivity || []) : [],
+    auditLogs: !fastLogin && (p.usersManage || p.reportsView) ? db.auditLogs : [],
+    employeeActivity: !fastLogin && (p.usersManage || p.reportsView) ? (db.employeeActivity || []) : [],
+    deferredBootstrapData: fastLogin,
     permissions: p
   };
 }
@@ -5760,8 +5762,9 @@ async function api(req, res) {
     if (!user || !verifyPassword(body.password, user.passwordHash)) return send(res, 401, { error: '邮箱或密码不正确' });
     const token = createSessionToken(user);
     sessions.set(token, { userId: user.id, at: Date.now() });
-    const desktopBootstrap = body.includeBootstrap === true
-      ? { data: sanitizeDbForUser(db, user), revision: databaseRevision() }
+    const includeBootstrap = body.includeBootstrap === true || body.includeBootstrap === 'fast';
+    const desktopBootstrap = includeBootstrap
+      ? { data: sanitizeDbForUser(db, user, { fastLogin: body.includeBootstrap === 'fast' }), revision: databaseRevision() }
       : {};
     return send(res, 200, { token, user: safeUser(user), ...desktopBootstrap }, undefined, req);
   }
