@@ -7555,18 +7555,42 @@ async function generateCustomerAiReplyDraft() {
   }
 }
 
+function customerAiTeachingContext(item = {}) {
+  return (item.conversationMessages || []).slice(-8).map(message => {
+    const incoming = message.speaker === 'customer' || message.direction === 'inbound';
+    return `${incoming ? (lang === 'zh' ? '客户' : 'Customer') : (lang === 'zh' ? '客服' : 'Staff')}：${String(message.text || '').trim()}`;
+  }).filter(line => !/[：:]\s*$/.test(line)).join('\n');
+}
+
+function customerAiTeachingScenario(item = {}) {
+  const messages = item.conversationMessages || [];
+  const customerMessages = messages.filter(message => message.speaker === 'customer' || message.direction === 'inbound');
+  const latest = String(customerMessages.at(-1)?.text || '').toLowerCase();
+  if (/complain|refund|angry|upset|damage|warranty|投诉|退款|生气|损坏|质保/.test(latest)) return 'complaint';
+  if (/price|cost|quote|how much|价格|报价|多少钱/.test(latest)) return 'pricing';
+  if (/visit|come in|appointment|schedule|available|到店|预约|时间/.test(latest)) return 'visit';
+  if (/which|difference|compare|ceramic|film|ppf|wrap|选择|区别|对比|哪种/.test(latest)) return 'product_choice';
+  if (customerMessages.length <= 1) return 'first_contact';
+  return item.followUpDate ? 'follow_up' : 'other';
+}
+
 function openCustomerAiCoach() {
   const { item } = activeCustomerWorkspaceItem();
   if (!item) return;
   const wrong = item.agentReplyDraft?.text || [...(item.conversationMessages || [])].reverse().find(message => message.speaker === 'shop')?.text || '';
+  const context = customerAiTeachingContext(item);
+  const scenario = customerAiTeachingScenario(item);
   const branches = (state.settings?.customerBranches || []).filter(branch => branch.active !== false);
   const body = `<div class="ai-coach-panel">
     <p class="note">${lang === 'zh' ? '这里的教学先进入待审核经验库，不会立刻影响全部客户。审核通过后，AI只在匹配的客户、分店或产品中使用。' : 'Teaching is saved for review first and only applies to matching contexts after approval.'}</p>
+    <label><span>${lang === 'zh' ? '当时的聊天场景（已自动带入，可补充）' : 'Conversation context (automatically captured)'}</span><textarea id="aiCoachContext" rows="6">${escapeHtml(context)}</textarea></label>
     <label><span>${lang === 'zh' ? 'AI哪里说错了（修改前）' : 'What AI said incorrectly'}</span><textarea id="aiCoachWrong" rows="5">${escapeHtml(wrong)}</textarea></label>
+    <label><span>${lang === 'zh' ? '为什么要这样回复 / 训练理由' : 'Why this correction is needed'}</span><textarea id="aiCoachReason" rows="4" placeholder="${lang === 'zh' ? '例如：客户已经明确要先报价，不应该再次询问是否到店。' : 'Explain why the correction is appropriate in this situation.'}"></textarea></label>
     <label><span>${lang === 'zh' ? '正确应该怎么说 / 应遵守的经验' : 'Correct wording or guidance'}</span><textarea id="aiCoachCorrect" rows="6" placeholder="${lang === 'zh' ? '例如：客户最新说在 San Diego，应按洛杉矶分店服务范围处理，不再邀请去拉斯维加斯。' : 'Explain the correct response.'}"></textarea></label>
     <div class="ai-coach-actions"><button id="aiCoachVoiceButton" class="btn" type="button" onclick="toggleAiCoachVoice()">🎙 ${lang === 'zh' ? '开始语音教学' : 'Record teaching'}</button><span id="aiCoachVoiceStatus" class="note"></span></div>
     <div class="ai-coach-grid">
       <label><span>${lang === 'zh' ? '适用范围' : 'Scope'}</span><select id="aiCoachScope"><option value="customer">${lang === 'zh' ? '只用于当前客户' : 'Current customer'}</option><option value="branch">${lang === 'zh' ? '当前分店' : 'Current branch'}</option><option value="product">${lang === 'zh' ? '当前产品/项目' : 'Current product'}</option><option value="company">${lang === 'zh' ? '全公司' : 'Company'}</option></select></label>
+      <label><span>${lang === 'zh' ? '沟通场景' : 'Conversation scenario'}</span><select id="aiCoachScenario">${[['first_contact','首次咨询'],['pricing','询价/报价'],['product_choice','产品选择/对比'],['visit','邀约/预约到店'],['follow_up','后续跟进'],['complaint','投诉/退款/质保'],['other','其他']].map(([value,label]) => `<option value="${value}" ${scenario === value ? 'selected' : ''}>${lang === 'zh' ? label : value}</option>`).join('')}</select></label>
       <label><span>${lang === 'zh' ? '分店' : 'Branch'}</span><select id="aiCoachBranch"><option value="">${lang === 'zh' ? '不限定' : 'Any'}</option>${branches.map(branch => `<option value="${escapeHtml(branch.id)}" ${branch.id === item.branchId ? 'selected' : ''}>${escapeHtml(branch.name)}</option>`).join('')}</select></label>
       <label><span>${lang === 'zh' ? '产品/项目' : 'Product'}</span><input id="aiCoachProduct" value="${escapeHtml(item.need || item.service || '')}"></label>
     </div>
@@ -7605,10 +7629,13 @@ async function saveCustomerAiCoachExperience() {
   const { item } = activeCustomerWorkspaceItem();
   const correctGuidance = String(document.getElementById('aiCoachCorrect')?.value || '').trim();
   if (!correctGuidance) return alert(lang === 'zh' ? '请填写或录入正确应该怎么说。' : 'Enter the correct guidance.');
+  const replyReason = String(document.getElementById('aiCoachReason')?.value || '').trim();
+  if (!replyReason) return alert(lang === 'zh' ? '请填写为什么在这个场景下要这样回复。' : 'Explain why this correction is needed.');
   const payload = { wrongReply:String(document.getElementById('aiCoachWrong')?.value || '').trim(), correctGuidance,
     scope:document.getElementById('aiCoachScope')?.value || 'customer', customerId:item.id, customerName:item.customer || '',
     branchId:document.getElementById('aiCoachBranch')?.value || '', city:item.city || '', vehicle:item.vehicle || '',
-    product:String(document.getElementById('aiCoachProduct')?.value || '').trim(), sourceMessageAt:(item.conversationMessages || []).at(-1)?.timestamp || '' };
+    product:String(document.getElementById('aiCoachProduct')?.value || '').trim(), customerContext:String(document.getElementById('aiCoachContext')?.value || '').trim(),
+    replyReason, conversationScenario:document.getElementById('aiCoachScenario')?.value || 'other', sourceMessageAt:(item.conversationMessages || []).at(-1)?.timestamp || '' };
   if (!confirm(lang === 'zh' ? '确认将这条教学保存为“待审核经验”吗？审核通过前不会影响客户回复。' : 'Save as a pending experience?')) return;
   try { await api('/api/customer-ai/experiences', { method:'POST', body:JSON.stringify(payload) }); closeModal(); alert(lang === 'zh' ? '已进入待审核经验库。' : 'Saved for review.'); }
   catch (error) { alert(error.message); }
@@ -8024,6 +8051,9 @@ async function sendProspectMessage() {
     city: item.city || '',
     vehicle: item.vehicle || '',
     product: item.need || item.service || '',
+    customerContext: customerAiTeachingContext(item),
+    replyReason: lang === 'zh' ? '员工在发送前修改了 AI 草稿；应学习员工最终确认并发送的表达。' : 'The employee corrected the AI draft before sending; learn from the final approved wording.',
+    conversationScenario: customerAiTeachingScenario(item),
     sourceMessageAt: (item.conversationMessages || []).at(-1)?.timestamp || '',
     sourceType: 'edited_ai_draft'
   } : null;
@@ -9880,7 +9910,7 @@ function removeCustomerAiKnowledgeEntry(index){ if(!confirm(lang==='zh'?'确定�
 
 function renderCustomerAiExperienceEditors(){
   const container=document.getElementById('customerAiExperiences'); if(!container)return;
-  container.innerHTML=customerAiExperienceDrafts.map(row=>`<article class="customer-ai-experience-card ${escapeHtml(row.status||'pending')}"><div class="customer-ai-experience-head"><strong>${escapeHtml(row.customerName||row.product||row.city||(lang==='zh'?'AI 教学经验':'AI experience'))}</strong><span>${row.status==='approved'?(lang==='zh'?'已通过':'Approved'):row.status==='rejected'?(lang==='zh'?'已拒绝':'Rejected'):(lang==='zh'?'待审核':'Pending')}</span></div><div class="customer-ai-experience-grid"><div><small>${lang==='zh'?'原错误回复':'Before'}</small><p>${escapeHtml(row.wrongReply||'—')}</p></div><div><small>${lang==='zh'?'正确说法':'Correction'}</small><p>${escapeHtml(row.correctGuidance||'')}</p></div></div><p class="note">${escapeHtml([row.scope,row.city,row.vehicle,row.product,row.createdBy].filter(Boolean).join(' · '))} · ${formatAppDateTime(row.createdAt||'')}</p><p class="customer-ai-experience-stats">${lang==='zh'?`使用 ${Number(row.useCount||0)} 次 · 客户回复 ${Number(row.customerReplyCount||0)} 次 · 预约 ${Number(row.appointmentCount||0)} 次 · 成交 ${Number(row.saleCount||0)} 次`:`Used ${Number(row.useCount||0)} · Replies ${Number(row.customerReplyCount||0)} · Appointments ${Number(row.appointmentCount||0)} · Sales ${Number(row.saleCount||0)}`}</p><div class="mini-actions">${row.status!=='approved'?`<button class="btn primary" onclick="reviewCustomerAiExperience('${escapeHtml(row.id)}','approved')">${lang==='zh'?'审核通过':'Approve'}</button>`:''}${row.status!=='rejected'?`<button class="btn danger" onclick="reviewCustomerAiExperience('${escapeHtml(row.id)}','rejected')">${lang==='zh'?'拒绝':'Reject'}</button>`:''}</div></article>`).join('')||`<div class="empty">${lang==='zh'?'暂无教学经验。':'No experiences yet.'}</div>`;
+  container.innerHTML=customerAiExperienceDrafts.map(row=>`<article class="customer-ai-experience-card ${escapeHtml(row.status||'pending')}"><div class="customer-ai-experience-head"><strong>${escapeHtml(row.customerName||row.product||row.city||(lang==='zh'?'AI 教学经验':'AI experience'))}</strong><span>${row.status==='approved'?(lang==='zh'?'已通过':'Approved'):row.status==='rejected'?(lang==='zh'?'已拒绝':'Rejected'):(lang==='zh'?'待审核':'Pending')}</span></div><div class="customer-ai-experience-context"><small>${lang==='zh'?'当时客户场景':'Customer context'}</small><p>${escapeHtml(row.customerContext||'—')}</p></div><div class="customer-ai-experience-grid"><div><small>${lang==='zh'?'原错误回复':'Before'}</small><p>${escapeHtml(row.wrongReply||'—')}</p></div><div><small>${lang==='zh'?'正确说法':'Correction'}</small><p>${escapeHtml(row.correctGuidance||'')}</p></div></div><div class="customer-ai-experience-context reason"><small>${lang==='zh'?'为什么要这样回复':'Why this correction is needed'}</small><p>${escapeHtml(row.replyReason||'—')}</p></div><p class="note">${escapeHtml([row.conversationScenario,row.scope,row.city,row.vehicle,row.product,row.createdBy].filter(Boolean).join(' · '))} · ${formatAppDateTime(row.createdAt||'')}</p><p class="customer-ai-experience-stats">${lang==='zh'?`使用 ${Number(row.useCount||0)} 次 · 客户回复 ${Number(row.customerReplyCount||0)} 次 · 预约 ${Number(row.appointmentCount||0)} 次 · 成交 ${Number(row.saleCount||0)} 次`:`Used ${Number(row.useCount||0)} · Replies ${Number(row.customerReplyCount||0)} · Appointments ${Number(row.appointmentCount||0)} · Sales ${Number(row.saleCount||0)}`}</p><div class="mini-actions">${row.status!=='approved'?`<button class="btn primary" onclick="reviewCustomerAiExperience('${escapeHtml(row.id)}','approved')">${lang==='zh'?'审核通过':'Approve'}</button>`:''}${row.status!=='rejected'?`<button class="btn danger" onclick="reviewCustomerAiExperience('${escapeHtml(row.id)}','rejected')">${lang==='zh'?'拒绝':'Reject'}</button>`:''}</div></article>`).join('')||`<div class="empty">${lang==='zh'?'暂无教学经验。':'No experiences yet.'}</div>`;
 }
 
 async function reviewCustomerAiExperience(id,status){ if(!confirm(lang==='zh'?(status==='approved'?'确认审核通过？通过后 AI 会在相关客户中使用。':'确认拒绝这条经验？'):'Confirm review?'))return; try{await api(`/api/customer-ai/experiences/${encodeURIComponent(id)}`,{method:'PUT',body:JSON.stringify({status})}); await loadCustomerAiRules();}catch(err){alert(err.message);} }

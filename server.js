@@ -1884,6 +1884,7 @@ function customerAiKnowledgeEntries(db) {
 function normalizeCustomerAiExperience(value = {}) {
   const allowedScopes = new Set(['customer', 'branch', 'product', 'company']);
   const allowedStatuses = new Set(['pending', 'approved', 'rejected']);
+  const allowedScenarios = new Set(['first_contact', 'pricing', 'product_choice', 'visit', 'follow_up', 'complaint', 'other']);
   return {
     id: String(value.id || id()),
     wrongReply: String(value.wrongReply || '').trim().slice(0, 5000),
@@ -1892,6 +1893,9 @@ function normalizeCustomerAiExperience(value = {}) {
     customerId: String(value.customerId || '').trim(), customerName: String(value.customerName || '').trim().slice(0, 160),
     branchId: String(value.branchId || '').trim(), city: String(value.city || '').trim().slice(0, 100),
     vehicle: String(value.vehicle || '').trim().slice(0, 200), product: String(value.product || '').trim().slice(0, 120),
+    customerContext: String(value.customerContext || '').trim().slice(0, 8000),
+    replyReason: String(value.replyReason || '').trim().slice(0, 3000),
+    conversationScenario: allowedScenarios.has(String(value.conversationScenario || '')) ? String(value.conversationScenario) : 'other',
     sourceMessageAt: String(value.sourceMessageAt || '').trim(),
     status: allowedStatuses.has(String(value.status || '')) ? String(value.status) : 'pending',
     createdAt: value.createdAt || new Date().toISOString(), createdBy: String(value.createdBy || '').slice(0, 120),
@@ -1899,6 +1903,33 @@ function normalizeCustomerAiExperience(value = {}) {
     useCount: Math.max(0, Number(value.useCount || 0)), customerReplyCount: Math.max(0, Number(value.customerReplyCount || 0)),
     appointmentCount: Math.max(0, Number(value.appointmentCount || 0)), saleCount: Math.max(0, Number(value.saleCount || 0))
   };
+}
+
+function customerAiExperienceContext(item = {}) {
+  return customerServiceConversation(item).slice(-8).map(({ message, role }) => {
+    const label = role === 'customer' ? '客户' : '客服';
+    return `${label}：${String(message.text || message.message || message.content || '').trim()}`;
+  }).filter(line => !/[：:]\s*$/.test(line)).join('\n').slice(0, 8000);
+}
+
+function customerAiExperienceScenario(item = {}) {
+  const messages = customerServiceConversation(item);
+  const customerMessages = messages.filter(row => row.role === 'customer');
+  const latest = String(customerMessages.at(-1)?.message?.text || '').toLowerCase();
+  if (/complain|refund|angry|upset|damage|warranty|投诉|退款|生气|损坏|质保/.test(latest)) return 'complaint';
+  if (/price|cost|quote|how much|价格|报价|多少钱/.test(latest)) return 'pricing';
+  if (/visit|come in|appointment|schedule|available|到店|预约|时间/.test(latest)) return 'visit';
+  if (/which|difference|compare|ceramic|film|ppf|wrap|选择|区别|对比|哪种/.test(latest)) return 'product_choice';
+  if (customerMessages.length <= 1) return 'first_contact';
+  return customerServiceTaskType(item) === 'followup' ? 'follow_up' : 'other';
+}
+
+function hydratedCustomerAiExperience(db, value = {}) {
+  const row = normalizeCustomerAiExperience(value);
+  const item = [...(db.customerConversations || []), ...(db.prospects || [])].find(candidate => candidate.id === row.customerId);
+  if (!row.customerContext && item) row.customerContext = customerAiExperienceContext(item);
+  if (row.conversationScenario === 'other' && item) row.conversationScenario = customerAiExperienceScenario(item);
+  return row;
 }
 
 function scoreCustomerAiExperience(row, item, branch) {
@@ -1909,11 +1940,12 @@ function scoreCustomerAiExperience(row, item, branch) {
   const text = `${item.vehicle || ''} ${item.need || ''} ${item.service || ''}`.toLowerCase();
   if (row.product && text.includes(row.product.toLowerCase())) score += 5;
   if (row.vehicle && text.includes(row.vehicle.toLowerCase())) score += 4;
+  if (row.conversationScenario !== 'other') score += row.conversationScenario === customerAiExperienceScenario(item) ? 8 : -3;
   return score;
 }
 
 function relevantCustomerAiExperiences(db, item, branch) {
-  return (db.customerAiExperiences || []).map(normalizeCustomerAiExperience)
+  return (db.customerAiExperiences || []).map(row => hydratedCustomerAiExperience(db, row))
     .filter(row => row.status === 'approved')
     .map(row => ({ row, score: scoreCustomerAiExperience(row, item, branch) }))
     .filter(value => value.score > 0)
@@ -2288,7 +2320,7 @@ Applicable conversation playbook rules (follow in this order):
 ${playbook.length ? playbook.map((rule, index) => `${index + 1}. ${rule.name}: ${rule.instruction}`).join('\n') : '(No additional playbook rule applies.)'}
 
 Approved experience learned from prior reviewed conversations (use only when relevant; newer customer facts win):
-${experiences.length ? experiences.map((entry, index) => `${index + 1}. Do not repeat: ${entry.wrongReply || '(unspecified mistake)'}\nCorrect approach: ${entry.correctGuidance}`).join('\n') : '(No approved experience matched.)'}
+${experiences.length ? experiences.map((entry, index) => `${index + 1}. Scenario: ${entry.conversationScenario || 'other'}\nCustomer context: ${entry.customerContext || '(not recorded)'}\nDo not repeat: ${entry.wrongReply || '(unspecified mistake)'}\nWhy the correction is needed: ${entry.replyReason || '(not recorded)'}\nCorrect approach: ${entry.correctGuidance}`).join('\n\n') : '(No approved experience matched.)'}
 
 Treat the operator-maintained content above as the authoritative business policy and follow it before any general sales advice. It controls what may be answered, what must not be answered, approved company advantages, quoting rules, escalation rules, and preferred wording. If the customer asks a price and an exact matching price is present there, mention it clearly. If only a range, rule, or required vehicle/detail is present, explain that and ask for the missing detail. Never create prices, guarantees, discounts, or company claims outside that content.
 
@@ -7142,7 +7174,7 @@ async function api(req, res) {
     return send(res, 200, {
       knowledge: customerAiKnowledge(db),
       knowledgeEntries: customerAiKnowledgeEntries(db),
-      experiences: (db.customerAiExperiences || []).map(normalizeCustomerAiExperience).sort((a,b) => String(b.createdAt).localeCompare(String(a.createdAt))),
+      experiences: (db.customerAiExperiences || []).map(row => hydratedCustomerAiExperience(db, row)).sort((a,b) => String(b.createdAt).localeCompare(String(a.createdAt))),
       branches: customerBranches(db),
       playbook: customerAiPlaybook(db),
       updatedAt: db?.settings?.customerAiRulesUpdatedAt || db?.settings?.customerAiKnowledgeUpdatedAt || '',
@@ -7174,14 +7206,20 @@ async function api(req, res) {
     audit(db, user, 'update-customer-ai-rules', { collection: 'settings', recordId: 'customer-ai-rules', before, after: { knowledge, branches, playbook }, detail: `修改 AI 客服规则，共 ${playbook.length} 条流程规则、${branches.length} 个分店` });
     writeDb(db);
     notifyDataChanged('update-customer-ai-rules', { rules: playbook.length, branches: branches.length });
-    return send(res, 200, { knowledge, knowledgeEntries, experiences: (db.customerAiExperiences || []).map(normalizeCustomerAiExperience), branches, playbook, updatedAt: db.settings.customerAiRulesUpdatedAt, updatedBy: db.settings.customerAiRulesUpdatedBy });
+    return send(res, 200, { knowledge, knowledgeEntries, experiences: (db.customerAiExperiences || []).map(row => hydratedCustomerAiExperience(db, row)), branches, playbook, updatedAt: db.settings.customerAiRulesUpdatedAt, updatedBy: db.settings.customerAiRulesUpdatedBy });
   }
 
   if (req.method === 'POST' && url.pathname === '/api/customer-ai/experiences') {
     if (!canAccess(user, 'prospectsEdit') && !canAccess(user, 'aiRulesEdit')) return send(res, 403, { error: '没有提交 AI 教学经验的权限' });
     const body = await readBody(req);
     if (!String(body.correctGuidance || '').trim()) return send(res, 400, { error: '请填写正确应该怎么说' });
-    const record = normalizeCustomerAiExperience({ ...body, id: id(), status: 'pending', createdAt: new Date().toISOString(), createdBy: user.name || user.email });
+    const customerItem = [...(db.customerConversations || []), ...(db.prospects || [])].find(item => item.id === String(body.customerId || ''));
+    const record = normalizeCustomerAiExperience({
+      ...body,
+      customerContext: String(body.customerContext || '').trim() || customerAiExperienceContext(customerItem),
+      conversationScenario: String(body.conversationScenario || '').trim() || customerAiExperienceScenario(customerItem),
+      id: id(), status: 'pending', createdAt: new Date().toISOString(), createdBy: user.name || user.email
+    });
     db.customerAiExperiences.push(record);
     audit(db, user, 'create-customer-ai-experience', { collection: 'customerAiExperiences', recordId: record.id, detail: `提交待审核 AI 经验：${record.customerName || record.scope}` });
     writeDb(db); notifyDataChanged('customer-ai-experience', record.id);
