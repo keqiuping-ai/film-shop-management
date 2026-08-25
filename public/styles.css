@@ -1177,6 +1177,8 @@ tr:hover td { background: #fbfcfd; }
 .customer-agent-language { grid-column:1/-1; display:grid; grid-template-columns:58px minmax(0,1fr); gap:8px; align-items:start; padding-top:3px; border-top:1px solid #e4ecef; }
 .customer-agent-language b { color:#176d84; font-size:11px; line-height:1.6; }
 .customer-agent-language .customer-agent-missing { color:#9a6700; font-style:italic; }
+.customer-agent-draft-mismatch { padding:7px; border:1px solid #d92d20; border-radius:8px; background:#fff7f6; }
+.customer-agent-parity-warning { grid-column:1/-1; padding:6px 8px; border-radius:6px; background:#fee4e2; color:#b42318; font-size:11px; font-weight:800; }
 .customer-agent-draft-empty { display:flex; align-items:center; gap:8px; min-height:18px; }
 .prospect-workspace {
   position: fixed;

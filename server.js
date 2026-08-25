@@ -2305,8 +2305,7 @@ Conversation continuity rules:
 - Do not restart with the same company introduction or repeat the same sales pitch. Acknowledge only new information and ask the next useful question.
 
 Return JSON only with exactly these fields:
-- chineseReplyText: a faithful natural Chinese translation for the employee to review. It must accurately mirror the English without adding promises or facts.
-- englishReplyText: the English customer-facing reply that will be sent. Keep it concise, warm, and professional, and end with one clear question that moves toward visit, quote details, or scheduling.
+- englishReplyText: the single authoritative English customer-facing reply that will be sent. Keep it concise, warm, and professional, and end with one clear question that moves toward visit, quote details, or scheduling. Do not return a Chinese version; the system translates this final English text separately so the two versions cannot become different sales replies.
 - disposition: one of "ready_for_review", "needs_human", "no_reply_needed".
 - note: short Chinese note for the employee explaining why.
 - riskLevel: one of "low", "medium", "high".
@@ -2336,6 +2335,44 @@ function normalizeCustomerAiDraft(value) {
     draft.note = draft.note || 'AI 没有生成中文对照，需重新生成后再发送。';
   }
   return draft;
+}
+
+function customerAiFactTokens(text = '') {
+  return [...String(text || '').matchAll(/(?:https?:\/\/[^\s]+|\b[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}\b|\+?\d[\d\s().-]*\d%?)/g)]
+    .map(match => match[0].toLowerCase().replace(/[^a-z0-9%+@.]/g, ''))
+    .filter(Boolean)
+    .sort();
+}
+
+function enforceCustomerAiBilingualParity(draft) {
+  if (!draft?.englishReplyText || !draft?.chineseReplyText) return draft;
+  const englishFacts = customerAiFactTokens(draft.englishReplyText);
+  const chineseFacts = customerAiFactTokens(draft.chineseReplyText);
+  if (JSON.stringify(englishFacts) !== JSON.stringify(chineseFacts)) {
+    draft.disposition = 'needs_human';
+    draft.riskLevel = 'high';
+    draft.note = '中英文中的价格、日期、电话号码、门牌号或其他关键数字不一致，系统已禁止直接发送，请重新生成。';
+  }
+  return draft;
+}
+
+async function translateCustomerAiReplyToChinese({ apiKey, openAiBaseUrl, model, englishReplyText }) {
+  const requestBody = {
+    model,
+    messages: [{
+      role: 'user',
+      content: `Translate the exact English customer reply below into natural Simplified Chinese for an employee review screen. This is a literal meaning-preserving translation, not a second sales reply. Do not add, remove, soften, expand, summarize, or change any sentence, question, address, phone number, price, date, percentage, appointment invitation, promise, or business fact. Preserve every number exactly. Return JSON only with one field: chineseReplyText.\n\nEnglish reply:\n${englishReplyText}`
+    }],
+    response_format: { type: 'json_object' },
+    max_completion_tokens: 500
+  };
+  if (/^gpt-5(?:\.|-|$)/i.test(model)) requestBody.reasoning_effort = 'minimal';
+  const value = await fetchAiJson(`${openAiBaseUrl}/chat/completions`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
+    body: JSON.stringify(requestBody)
+  });
+  return String(parseAiBossDraft(value?.choices?.[0]?.message?.content)?.chineseReplyText || '').trim().slice(0, 1600);
 }
 
 function customerAiReplyModel(db) {
@@ -2466,11 +2503,18 @@ async function createCustomerAiReplyDraft(db, row, requestedChannel = '') {
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
     body: JSON.stringify(requestBody)
   });
+  const rawDraft = parseAiBossDraft(value?.choices?.[0]?.message?.content);
+  const englishReplyText = String(rawDraft?.englishReplyText || rawDraft?.replyText || '').trim().slice(0, 1600);
+  rawDraft.englishReplyText = englishReplyText;
+  rawDraft.chineseReplyText = englishReplyText
+    ? await translateCustomerAiReplyToChinese({ apiKey, openAiBaseUrl, model, englishReplyText })
+    : '';
+  const draft = enforceCustomerAiBilingualParity(normalizeCustomerAiDraft(rawDraft));
   return {
     provider: 'openai',
     model,
     durationMs: Date.now() - startedAt,
-    draft: normalizeCustomerAiDraft(parseAiBossDraft(value?.choices?.[0]?.message?.content)),
+    draft,
     knowledgeEntryIds: knowledgeEntries.map(entry => entry.id),
     experienceIds: experiences.map(entry => entry.id)
   };

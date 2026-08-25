@@ -7293,7 +7293,7 @@ function renderProspectWorkspace() {
   }
   restoreProspectWorkspaceDraft();
   const agentDraftInput = document.getElementById('prospectReplyInput');
-  if (agentDraftInput && !agentDraftInput.value && item.agentReplyDraft?.text) agentDraftInput.value = customerAiCustomerFacingText(item.agentReplyDraft.text);
+  if (agentDraftInput && !agentDraftInput.value && item.agentReplyDraft?.text && !customerAiDraftHasFactMismatch(item.agentReplyDraft)) agentDraftInput.value = customerAiCustomerFacingText(item.agentReplyDraft.text);
   updateProspectReplyChannel();
   workspace.querySelectorAll('.prospect-workspace-sidebar input, .prospect-workspace-sidebar textarea, .prospect-workspace-sidebar select')
     .forEach(control => {
@@ -7602,14 +7602,31 @@ async function reconcileCustomerSmsNow() {
   }
 }
 
+function customerAiDraftFactTokens(text = '') {
+  return [...String(text || '').matchAll(/(?:https?:\/\/[^\s]+|\b[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}\b|\+?\d[\d\s().-]*\d%?)/g)]
+    .map(match => match[0].toLowerCase().replace(/[^a-z0-9%+@.]/g, ''))
+    .filter(Boolean)
+    .sort();
+}
+
+function customerAiDraftHasFactMismatch(draft = {}) {
+  const legacyText = String(draft.text || '').trim();
+  const chineseText = String(draft.chineseText || legacyText.match(/(?:^|\n)中文[：:]\s*([\s\S]*?)(?=\n\s*English:|$)/i)?.[1] || '').trim();
+  const englishText = String(draft.englishText || customerAiCustomerFacingText(legacyText)).trim();
+  if (!chineseText || !englishText) return false;
+  return JSON.stringify(customerAiDraftFactTokens(chineseText)) !== JSON.stringify(customerAiDraftFactTokens(englishText));
+}
+
 function customerAgentDraftHtml(item) {
   const draft = item?.agentReplyDraft || {};
   if (draft.text) {
     const legacyText = String(draft.text || '').trim();
     const chineseText = String(draft.chineseText || legacyText.match(/(?:^|\n)中文[：:]\s*([\s\S]*?)(?=\n\s*English:|$)/i)?.[1] || '').trim();
     const englishText = String(draft.englishText || customerAiCustomerFacingText(legacyText)).trim();
+    const factMismatch = customerAiDraftHasFactMismatch(draft);
     const missingChinese = lang === 'zh' ? '旧草稿没有中文，请点击“AI 生成回复”重新生成。' : 'This older draft has no Chinese version; generate a new AI reply.';
-    return `<div class="customer-agent-draft"><strong>${lang === 'zh' ? 'AI 建议（发送前请确认）' : 'AI draft (review before sending)'}</strong><span>${escapeHtml(draft.createdBy || '')} · ${escapeHtml(formatAppDateTime(draft.createdAt || ''))}</span><div class="customer-agent-language"><b>中文</b><p class="${chineseText ? '' : 'customer-agent-missing'}">${escapeHtml(chineseText || missingChinese)}</p></div><div class="customer-agent-language"><b>English</b><p>${escapeHtml(englishText)}</p></div></div>`;
+    const mismatchWarning = factMismatch ? `<div class="customer-agent-parity-warning">${lang === 'zh' ? '⚠️ 中英文关键数字或地址不一致，这条旧草稿不能直接使用，请重新生成。' : '⚠️ Key facts differ between Chinese and English. Regenerate before sending.'}</div>` : '';
+    return `<div class="customer-agent-draft ${factMismatch ? 'customer-agent-draft-mismatch' : ''}"><strong>${lang === 'zh' ? 'AI 建议（发送前请确认）' : 'AI draft (review before sending)'}</strong><span>${escapeHtml(draft.createdBy || '')} · ${escapeHtml(formatAppDateTime(draft.createdAt || ''))}</span>${mismatchWarning}<div class="customer-agent-language"><b>中文</b><p class="${chineseText ? '' : 'customer-agent-missing'}">${escapeHtml(chineseText || missingChinese)}</p></div><div class="customer-agent-language"><b>English</b><p>${escapeHtml(englishText)}</p></div></div>`;
   }
   return `<div class="customer-agent-draft customer-agent-draft-empty"><strong>${lang === 'zh' ? 'AI 建议' : 'AI draft'}</strong><span>${lang === 'zh' ? '点击下方“AI 生成”，中文会显示在上，英文显示在下。' : 'Choose AI draft below to generate Chinese first and English below.'}</span></div>`;
 }
