@@ -383,6 +383,34 @@ function ensureDb() {
   if (!fs.existsSync(DB_FILE)) writeDb(seedDb());
 }
 
+const DEFAULT_REPLY_TEMPLATES = [
+  { id:'default-reply-vehicle', type:'text', category:'uncategorized', title:'询问车型资料', content:'Could you please share the year, make, and model of your vehicle?' },
+  { id:'default-reply-service', type:'text', category:'uncategorized', title:'确认客户需求', content:'Which service are you interested in, and which areas of the vehicle would you like us to work on?' },
+  { id:'default-reply-tint', type:'text', category:'auto-window-film', title:'窗膜需求确认', content:'Which windows would you like tinted, and is your main priority heat reduction, privacy, or appearance?' },
+  { id:'default-reply-wrap', type:'text', category:'color-wrap', title:'改色膜需求确认', content:'Are you looking for a full-body color change or selected panels? Please also let us know the color or finish you prefer.' },
+  { id:'default-reply-ppf', type:'text', category:'ppf', title:'PPF需求确认', content:'Are you interested in full-front PPF, full-body PPF, or protection for selected areas?' },
+  { id:'default-reply-building', type:'text', category:'architectural-film', title:'建筑膜资料确认', content:'Please share the project address, approximate glass size, number of windows, and your main goal, such as heat reduction, privacy, or safety.' },
+  { id:'default-reply-samples', type:'text', category:'shop-display', title:'邀请到店看样品', content:'You are welcome to visit our shop to compare film samples in person. Which location would be more convenient for you?' },
+  { id:'default-reply-la-address', type:'text', category:'shop-display', title:'洛杉矶分店地址', content:'Los Angeles shop: 3212 Santa Monica Blvd, Santa Monica, CA 90404' },
+  { id:'default-reply-vegas-address', type:'text', category:'shop-display', title:'拉斯维加斯分店地址', content:'Las Vegas shop: 3359 W Oquendo Rd, Las Vegas, NV 89118' },
+  { id:'default-reply-followup', type:'text', category:'uncategorized', title:'礼貌跟进客户', content:'Hi, I wanted to follow up and see whether you still need help with your project. Please let us know if you have any questions.' }
+];
+
+function applyDefaultReplyTemplatesMigration() {
+  const version = 'default-reply-templates-2026-08-26-v1';
+  const db = readDb();
+  if (db.defaultReplyTemplatesMigrationVersion === version) return;
+  if (!(db.replyTemplates || []).length) {
+    fs.mkdirSync(BACKUP_DIR, { recursive:true });
+    const backupName = `db-before-default-reply-templates-${new Date().toISOString().replace(/[:.]/g, '-')}.json`;
+    fs.writeFileSync(path.join(BACKUP_DIR, backupName), JSON.stringify(db, null, 2));
+    const now = new Date().toISOString();
+    db.replyTemplates = DEFAULT_REPLY_TEMPLATES.map(template => ({ ...template, attachment:null, createdAt:now, updatedAt:now, createdBy:'系统基础模板' }));
+  }
+  db.defaultReplyTemplatesMigrationVersion = version;
+  writeDb(db);
+}
+
 let cachedDb = null;
 let cachedDbRevision = '';
 let deferredDbWriteTimer = null;
@@ -9532,6 +9560,7 @@ applyStaffContactsImport();
 applyStaffUserAccounts();
 applyShippingCoordinatorAccount();
 applyCommissionPlansImport();
+applyDefaultReplyTemplatesMigration();
 applySabrinaCustomerServiceRep();
 applyFreyaCustomerServiceRep();
 applyInventoryImport();
