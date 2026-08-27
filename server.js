@@ -341,9 +341,11 @@ function seedDb() {
     voiceCalls: [],
     reimbursements: [],
     salesAccounts: [],
+    salesTrips: [],
     salesVisits: [],
     salesCheckInAttempts: [],
     salesTrialRolls: [],
+    salesConsignments: [],
     salesDailyReports: [],
     portalCustomers: [],
     warranties: [],
@@ -450,9 +452,11 @@ function readDb() {
   if (!Array.isArray(db.voiceCalls)) db.voiceCalls = [];
   if (!Array.isArray(db.reimbursements)) db.reimbursements = [];
   if (!Array.isArray(db.salesAccounts)) db.salesAccounts = [];
+  if (!Array.isArray(db.salesTrips)) db.salesTrips = [];
   if (!Array.isArray(db.salesVisits)) db.salesVisits = [];
   if (!Array.isArray(db.salesCheckInAttempts)) db.salesCheckInAttempts = [];
   if (!Array.isArray(db.salesTrialRolls)) db.salesTrialRolls = [];
+  if (!Array.isArray(db.salesConsignments)) db.salesConsignments = [];
   if (!Array.isArray(db.salesDailyReports)) db.salesDailyReports = [];
   if (!Array.isArray(db.portalCustomers)) db.portalCustomers = [];
   if (!Array.isArray(db.warranties)) db.warranties = [];
@@ -1762,6 +1766,9 @@ function fieldSalesSnapshot(db, user) {
     .filter(item => fieldSalesVisible(item, user))
     .sort((a, b) => String(a.nextVisitAt || '9999').localeCompare(String(b.nextVisitAt || '9999')));
   const accountIds = new Set(accounts.map(item => item.id));
+  const trips = (db.salesTrips || [])
+    .filter(item => accountIds.has(item.accountId) && (canManage || item.userId === user.id))
+    .sort((a, b) => String(b.departedAt || b.createdAt || '').localeCompare(String(a.departedAt || a.createdAt || '')));
   const visits = (db.salesVisits || [])
     .filter(item => accountIds.has(item.accountId) && (canManage || fieldSalesVisible(item, user)))
     .sort((a, b) => String(b.startedAt || b.createdAt || '').localeCompare(String(a.startedAt || a.createdAt || '')));
@@ -1772,10 +1779,15 @@ function fieldSalesSnapshot(db, user) {
     enabled: canUseFieldSales(user),
     canManage,
     accounts,
+    trips: trips.slice(0, 500),
     visits: visits.slice(0, 500),
     checkInAttempts: checkInAttempts.slice(0, 500),
     trialRolls: (db.salesTrialRolls || [])
       .filter(item => accountIds.has(item.accountId) && (canManage || fieldSalesVisible(item, user)))
+      .sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')))
+      .slice(0, 500),
+    consignments: (db.salesConsignments || [])
+      .filter(item => accountIds.has(item.accountId) && (canManage || item.userId === user.id))
       .sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')))
       .slice(0, 500),
     dailyReports: (db.salesDailyReports || [])
@@ -2159,7 +2171,7 @@ function applyLasVegasLegacyBranchMigration() {
   const collections = [
     'jobs','salesOrders','shipments','shipmentReceipts','shipmentExceptions','schedules','leads','prospects',
     'customerConversations','expenses','reimbursements','clockRecords','leaveRequests','movements','workshopMovements',
-    'salesAccounts','salesVisits','salesCheckInAttempts','salesTrialRolls','salesDailyReports'
+    'salesAccounts','salesTrips','salesVisits','salesCheckInAttempts','salesTrialRolls','salesConsignments','salesDailyReports'
   ];
   const counts = {};
   collections.forEach(collection => {
@@ -2210,7 +2222,7 @@ function productsForUser(db, user, canSeeCosts) {
 }
 
 function assignRecordBranch(db, user, item, collection) {
-  const branchCollections = new Set(['jobs','warranties','installers','salesOrders','shipments','expenses','reimbursements','leads','prospects','customerConversations','movements','workshopMovements','schedules','salesAccounts','salesVisits','salesCheckInAttempts','salesTrialRolls','salesDailyReports']);
+  const branchCollections = new Set(['jobs','warranties','installers','salesOrders','shipments','expenses','reimbursements','leads','prospects','customerConversations','movements','workshopMovements','schedules','salesAccounts','salesTrips','salesVisits','salesCheckInAttempts','salesTrialRolls','salesConsignments','salesDailyReports']);
   if (!branchCollections.has(collection)) return '';
   if (collection === 'prospects' || collection === 'customerConversations') enrichCustomerIdentity(db, item);
   if (collection === 'warranties' && item.jobId) item.branchId = (db.jobs || []).find(job => job.id === item.jobId)?.branchId || item.branchId;
@@ -2802,6 +2814,51 @@ Return exactly these fields: performanceSummaryZh, performanceSummaryEn, custome
     content = value?.choices?.[0]?.message?.content || '';
   }
   return { provider, analysis: parseAiBossDraft(content) };
+}
+
+function fieldSalesScreenshotDataUrl(mediaUrl) {
+  const raw = String(mediaUrl || '').trim();
+  if (!raw.includes('/customer-media/')) throw new Error('请先上传客户截图');
+  const fileName = path.basename(decodeURIComponent(raw.split('/customer-media/').pop().split('?')[0]));
+  const filePath = path.join(CUSTOMER_MEDIA_DIR, fileName);
+  if (!fileName || !fs.existsSync(filePath)) throw new Error('找不到刚上传的客户截图');
+  const data = fs.readFileSync(filePath);
+  if (!data.length || data.length > 8 * 1024 * 1024) throw new Error('客户截图不能超过 8MB');
+  const extension = path.extname(fileName).toLowerCase();
+  const mime = extension === '.png' ? 'image/png' : extension === '.webp' ? 'image/webp' : 'image/jpeg';
+  return `data:${mime};base64,${data.toString('base64')}`;
+}
+
+async function extractFieldSalesAccountFromScreenshot(db, mediaUrl) {
+  const apiKey = openAiCustomerReplyKey(db);
+  if (!apiKey) throw new Error('OpenAI API Key 尚未配置');
+  const imageUrl = fieldSalesScreenshotDataUrl(mediaUrl);
+  const model = String(process.env.OPENAI_VISION_MODEL || customerAiReplyModel(db) || 'gpt-5-mini').trim();
+  const value = await fetchAiJson(`${String(process.env.OPENAI_API_BASE_URL || 'https://api.openai.com/v1').replace(/\/+$/, '')}/chat/completions`, {
+    method:'POST',
+    headers:{ 'Content-Type':'application/json', Authorization:`Bearer ${apiKey}` },
+    body:JSON.stringify({
+      model,
+      messages:[{ role:'user', content:[
+        { type:'text', text:'Read this business listing screenshot. Extract only facts visibly present. Return JSON with exactly: businessName, address, contactName, phone, email, website, sourceNote. Use empty strings for missing fields. Never guess or invent. Keep the US address in a clean mailing format.' },
+        { type:'image_url', image_url:{ url:imageUrl, detail:'high' } }
+      ] }],
+      response_format:{ type:'json_object' },
+      max_completion_tokens:700
+    })
+  }, 60_000);
+  const parsed = parseAiBossDraft(value?.choices?.[0]?.message?.content);
+  return {
+    businessName:String(parsed.businessName || '').trim().slice(0, 180),
+    address:String(parsed.address || '').trim().slice(0, 500),
+    contactName:String(parsed.contactName || '').trim().slice(0, 120),
+    phone:String(parsed.phone || '').trim().slice(0, 80),
+    email:String(parsed.email || '').trim().slice(0, 180),
+    website:String(parsed.website || '').trim().slice(0, 300),
+    sourceNote:String(parsed.sourceNote || '').trim().slice(0, 1000),
+    mediaUrl:String(mediaUrl || '').trim(),
+    model
+  };
 }
 
 function sanitizeMessageAttachment(input) {
@@ -6619,6 +6676,19 @@ async function api(req, res) {
     return send(res, 200, mobileSnapshot(db, user), undefined, req);
   }
 
+  if (req.method === 'POST' && url.pathname === '/api/field-sales/accounts/extract-screenshot') {
+    if (!canUseFieldSales(user)) return send(res, 403, { error: '当前账号没有业务员管理权限' });
+    const body = await readBody(req);
+    try {
+      const extracted = await extractFieldSalesAccountFromScreenshot(db, body.mediaUrl);
+      audit(db, user, 'extract-field-sales-account-screenshot', { collection:'salesAccounts', detail:`AI 识别业务客户截图 ${extracted.businessName || '未识别名称'}` });
+      writeDb(db);
+      return send(res, 200, { extracted });
+    } catch (error) {
+      return send(res, 502, { error:`客户截图识别失败：${String(error.message || error).slice(0, 300)}` });
+    }
+  }
+
   if (req.method === 'POST' && url.pathname === '/api/field-sales/accounts') {
     if (!canUseFieldSales(user)) return send(res, 403, { error: '当前账号没有业务员管理权限' });
     const body = await readBody(req);
@@ -6663,6 +6733,49 @@ async function api(req, res) {
     audit(db, user, 'create-field-sales-account', { collection: 'salesAccounts', recordId: account.id, recordLabel: businessName, after: account, detail: `新增外勤客户 ${businessName}` });
     writeDb(db);
     notifyDataChanged('field-sales-account-created', account.id);
+    return send(res, 201, mobileSnapshot(db, user));
+  }
+
+  if (req.method === 'POST' && url.pathname === '/api/field-sales/trips/start') {
+    if (!canUseFieldSales(user)) return send(res, 403, { error: '当前账号没有业务员管理权限' });
+    const body = await readBody(req);
+    if (body.locationConsent !== true) return send(res, 400, { error:'请先同意本次行程使用手机定位' });
+    const account = (db.salesAccounts || []).find(item => item.id === body.accountId && fieldSalesVisible(item, user) && canAccessBranch(db, user, item.branchId));
+    if (!account) return send(res, 404, { error:'找不到这个目标客户' });
+    const lat = Number(body.lat); const lng = Number(body.lng); const accuracy = Number(body.accuracy || 0);
+    if (!hasValidCoordinates(lat, lng)) return send(res, 400, { error:'没有取得出发位置，不能开始行程' });
+    const existing = (db.salesTrips || []).find(item => item.userId === user.id && item.status === '前往中');
+    if (existing) {
+      if (existing.accountId === account.id) return send(res, 200, mobileSnapshot(db, user));
+      return send(res, 409, { error:`您正在前往 ${existing.businessName}，请先完成上一段行程` });
+    }
+    if (!hasValidCoordinates(account.lat, account.lng)) {
+      const geocoded = await forwardGeocode(account.address);
+      if (geocoded) {
+        account.lat = geocoded.lat; account.lng = geocoded.lng;
+        account.geocodedAddress = geocoded.displayName;
+        account.locationSource = 'customer-address-geocode';
+        account.locationVerifiedAt = new Date().toISOString();
+      }
+    }
+    if (!hasValidCoordinates(account.lat, account.lng)) return send(res, 422, { error:`客户地址“${account.address}”无法定位，请先补充完整地址` });
+    const straightMeters = distanceMeters(lat, lng, Number(account.lat), Number(account.lng));
+    const estimatedDistanceMeters = Math.max(straightMeters, Math.round(straightMeters * 1.22));
+    const estimatedMinutes = Math.max(5, Math.round((estimatedDistanceMeters / 1000) / 48 * 60 + 3));
+    const now = new Date().toISOString();
+    const trip = {
+      id:id(), accountId:account.id, businessName:account.businessName,
+      branchId:account.branchId || '', userId:user.id, userName:user.name || user.email,
+      status:'前往中', departedAt:now, arrivedAt:'',
+      origin:{ lat, lng, accuracy:Number.isFinite(accuracy) ? Math.round(accuracy) : 0, address:await reverseGeocode(lat, lng), mapUrl:mapUrlForLatLng(lat, lng) },
+      destination:{ lat:Number(account.lat), lng:Number(account.lng), address:account.address, mapUrl:mapUrlForLatLng(Number(account.lat), Number(account.lng)) },
+      estimatedDistanceMeters, estimatedMinutes, actualMinutes:null, delayMinutes:null, routeStatus:'前往中',
+      createdAt:now, updatedAt:now
+    };
+    db.salesTrips.unshift(trip);
+    account.stage = '前往中'; account.updatedAt = now;
+    audit(db, user, 'start-field-sales-trip', { collection:'salesTrips', recordId:trip.id, recordLabel:account.businessName, after:trip, detail:`${trip.userName} 出发前往 ${account.businessName}` });
+    writeDb(db); notifyDataChanged('field-sales-trip-started', trip.id);
     return send(res, 201, mobileSnapshot(db, user));
   }
 
@@ -6726,6 +6839,8 @@ async function api(req, res) {
     if (!photoUrl.includes('/customer-media/')) return send(res, 400, { error: '请现场拍摄客户门店照片' });
     const existing = (db.salesVisits || []).find(item => item.accountId === account.id && item.userId === user.id && item.status === '进行中');
     if (existing) return send(res, 200, { visit: existing, ...mobileSnapshot(db, user) });
+    const activeTrip = (db.salesTrips || []).find(item => item.accountId === account.id && item.userId === user.id && item.status === '前往中');
+    if (!activeTrip) return send(res, 409, { error:'请先在客户卡片点击“准备出发”，到店后再拍照打卡' });
     const address = await reverseGeocode(lat, lng);
     if (!hasValidCoordinates(account.lat, account.lng)) {
       const geocoded = await forwardGeocode(account.address);
@@ -6775,12 +6890,25 @@ async function api(req, res) {
         attemptId: attempt.id
       });
     }
+    const arrivedAt = new Date().toISOString();
+    const actualMinutes = Math.max(1, Math.round((new Date(arrivedAt).getTime() - new Date(activeTrip.departedAt).getTime()) / 60000));
+    const delayMinutes = actualMinutes - Number(activeTrip.estimatedMinutes || 0);
+    const routeStatus = actualMinutes > Number(activeTrip.estimatedMinutes || 0) * 1.8 && delayMinutes > 10 ? '用时异常待说明' : '正常到达';
+    activeTrip.status = '已到达';
+    activeTrip.arrivedAt = arrivedAt;
+    activeTrip.actualMinutes = actualMinutes;
+    activeTrip.delayMinutes = delayMinutes;
+    activeTrip.routeStatus = routeStatus;
+    activeTrip.arrival = { lat, lng, accuracy:Number.isFinite(accuracy) ? Math.round(accuracy) : 0, address, mapUrl:mapUrlForLatLng(lat, lng) };
+    activeTrip.updatedAt = arrivedAt;
     const visit = {
       id: id(), accountId: account.id, businessName: account.businessName,
       branchId: account.branchId || '',
       customerAddress: account.address,
       userId: user.id, userName: user.name || user.email,
-      status: '进行中', startedAt: new Date().toISOString(), completedAt: '',
+      tripId:activeTrip.id,
+      travel:{ departedAt:activeTrip.departedAt, arrivedAt, estimatedDistanceMeters:activeTrip.estimatedDistanceMeters, estimatedMinutes:activeTrip.estimatedMinutes, actualMinutes, delayMinutes, routeStatus },
+      status: '进行中', startedAt: arrivedAt, completedAt: '',
       checkIn: {
         lat, lng, accuracy: Number.isFinite(accuracy) ? Math.round(accuracy) : 0,
         address, mapUrl: mapUrlForLatLng(lat, lng), photoUrl,
@@ -6793,7 +6921,7 @@ async function api(req, res) {
       createdAt: new Date().toISOString(), updatedAt: new Date().toISOString()
     };
     db.salesVisits.unshift(visit);
-    account.stage = account.stage === '待拜访' ? '拜访中' : account.stage;
+    account.stage = '拜访中';
     account.updatedAt = new Date().toISOString();
     audit(db, user, 'start-field-sales-visit', { collection: 'salesVisits', recordId: visit.id, recordLabel: account.businessName, after: visit, detail: `${visit.userName} 到店打卡 ${account.businessName}` });
     writeDb(db);
@@ -6824,16 +6952,11 @@ async function api(req, res) {
       objections: String(body.objections || '').trim().slice(0, 5000),
       nextAction: String(body.nextAction || '').trim().slice(0, 3000),
       nextVisitAt,
+      evidencePhotoUrls: (Array.isArray(body.evidencePhotoUrls) ? body.evidencePhotoUrls : []).filter(value => String(value).includes('/customer-media/')).slice(0, 12),
       ownerPhotoUrl: String(body.ownerPhotoUrl || '').includes('/customer-media/') ? String(body.ownerPhotoUrl) : '',
       aiStatus: (process.env.OPENAI_API_KEY || process.env.DEEPSEEK_API_KEY) ? '待分析' : '未配置',
       aiProvider: process.env.OPENAI_API_KEY ? 'openai' : process.env.DEEPSEEK_API_KEY ? 'deepseek' : ''
     };
-    db.salesVisits[visitIndex] = next;
-    if (account) {
-      account.lastVisitAt = now; account.nextVisitAt = nextVisitAt; account.cadenceDays = cadenceDays;
-      account.stage = String(body.stage || (account.stage === '拜访中' ? '持续跟进' : account.stage) || '持续跟进').trim().slice(0, 40);
-      account.updatedAt = now;
-    }
     if (body.trialDelivered === true) {
       const trialNumber = (value, fallback, minimum) => {
         const parsed = Number(value);
@@ -6846,25 +6969,59 @@ async function api(req, res) {
       if (!validItems.length) {
         return send(res, 400, { error:'已勾选交付试用膜，请至少填写一个产品型号' });
       }
+      const signedBy = String(body.signedBy || '').trim().slice(0, 120);
+      const signatureUrl = String(body.signatureUrl || '').includes('/customer-media/') ? String(body.signatureUrl) : '';
+      if (!signedBy || !signatureUrl) return send(res, 400, { error:'交付试用产品必须填写签收人，并请客户在签名框手写签名' });
+      const consignmentItems = [];
       for (const item of validItems) {
         const requestedSku = String(item?.productSku || '').trim().slice(0, 80);
         if (!requestedSku) continue;
         const product = (db.products || []).find(row => row.sku === requestedSku || row.id === item?.productId);
+        const quantity = trialNumber(item?.quantity, db.settings?.fieldSalesTrialQuantity || 1, 1);
+        const singlePrice = trialNumber(item?.singlePrice, db.settings?.fieldSalesSinglePrice ?? 800, 0);
+        const normalizedItem = {
+          productId:product?.id || '', productSku:product?.sku || requestedSku,
+          productName:product?.name || String(item?.productName || requestedSku || '试用膜').slice(0, 180),
+          quantity, singlePrice, lineTotal:Number((quantity * singlePrice).toFixed(2))
+        };
+        consignmentItems.push(normalizedItem);
         db.salesTrialRolls.unshift({
           id: id(), accountId: visit.accountId, businessName: visit.businessName,
           branchId: visit.branchId || '',
           visitId: visit.id, userId: visit.userId, userName: visit.userName,
-          productId: product?.id || '', productSku: product?.sku || requestedSku,
-          productName: product?.name || String(item?.productName || requestedSku || '试用膜').slice(0, 180),
-          quantity: trialNumber(item?.quantity, db.settings?.fieldSalesTrialQuantity || 1, 1),
+          productId: normalizedItem.productId, productSku: normalizedItem.productSku,
+          productName: normalizedItem.productName,
+          quantity,
           status: '试用中', deliveredAt: now,
           followUpAt: String(body.trialFollowUpAt || '').trim() || addDaysIso(db, 7, 17),
-          singlePrice: trialNumber(item?.singlePrice, db.settings?.fieldSalesSinglePrice ?? 800, 0),
+          singlePrice,
           bulkQuantity: trialNumber(item?.bulkQuantity, db.settings?.fieldSalesBulkQuantity ?? 10, 1),
           bulkUnitPrice: trialNumber(item?.bulkUnitPrice, db.settings?.fieldSalesBulkUnitPrice ?? 500, 0),
           inventoryStatus: '待仓库确认', createdAt: now, updatedAt: now
         });
       }
+      const totalAmount = Number(consignmentItems.reduce((sum, item) => sum + Number(item.lineTotal || 0), 0).toFixed(2));
+      const amountPaid = Math.max(0, Math.min(totalAmount, Number(body.amountPaid || 0)));
+      const consignmentId = id();
+      db.salesConsignments.unshift({
+        id:consignmentId,
+        receiptNumber:`FS-${now.slice(0,10).replace(/-/g,'')}-${consignmentId.slice(-6).toUpperCase()}`,
+        accountId:visit.accountId, businessName:visit.businessName, branchId:visit.branchId || '',
+        visitId:visit.id, userId:visit.userId, userName:visit.userName,
+        items:consignmentItems, totalAmount, amountPaid:Number(amountPaid.toFixed(2)), amountDue:Number((totalAmount - amountPaid).toFixed(2)),
+        paymentDueAt:String(body.paymentDueAt || '').trim() || addDaysIso(db, 7, 17),
+        signedBy, signatureUrl,
+        proofPhotoUrls:(Array.isArray(body.evidencePhotoUrls) ? body.evidencePhotoUrls : []).filter(value => String(value).includes('/customer-media/')).slice(0, 12),
+        termsEn:'Products received for trial/consignment. The customer acknowledges the listed quantities and agreed prices. Any unpaid balance is due by the stated date.',
+        status:totalAmount - amountPaid > 0 ? '待收款' : '已付清',
+        signedAt:now, createdAt:now, updatedAt:now
+      });
+    }
+    db.salesVisits[visitIndex] = next;
+    if (account) {
+      account.lastVisitAt = now; account.nextVisitAt = nextVisitAt; account.cadenceDays = cadenceDays;
+      account.stage = String(body.stage || (account.stage === '拜访中' ? '持续跟进' : account.stage) || '持续跟进').trim().slice(0, 40);
+      account.updatedAt = now;
     }
     const daily = (db.salesDailyReports || []).find(item => item.userId === visit.userId && item.date === dateInTimezone(db.settings?.timezone || 'America/Los_Angeles', 0) && String(item.branchId || '') === String(visit.branchId || ''));
     if (daily) {

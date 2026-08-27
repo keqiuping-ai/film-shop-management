@@ -1,4 +1,4 @@
-const CACHE_NAME = 'film-shop-v110-unified-ai-rules';
+const CACHE_NAME = 'film-shop-v111-field-sales-journey';
 const ASSETS = [
     '/mobile.html',
     '/warranty.html',
