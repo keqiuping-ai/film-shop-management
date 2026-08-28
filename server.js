@@ -458,6 +458,9 @@ function readDb() {
   if (!Array.isArray(db.salesTrialRolls)) db.salesTrialRolls = [];
   if (!Array.isArray(db.salesConsignments)) db.salesConsignments = [];
   if (!Array.isArray(db.salesDailyReports)) db.salesDailyReports = [];
+  if (!Array.isArray(db.salesVisitPlans)) db.salesVisitPlans = [];
+  if (!Array.isArray(db.salesFollowUps)) db.salesFollowUps = [];
+  if (!Array.isArray(db.salesFieldOrders)) db.salesFieldOrders = [];
   if (!Array.isArray(db.portalCustomers)) db.portalCustomers = [];
   if (!Array.isArray(db.warranties)) db.warranties = [];
   if (!Array.isArray(db.messages)) db.messages = [];
@@ -1794,6 +1797,18 @@ function fieldSalesSnapshot(db, user) {
       .filter(item => canManage || item.userId === user.id)
       .sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')))
       .slice(0, 200),
+    visitPlans: (db.salesVisitPlans || [])
+      .filter(item => canManage || item.userId === user.id)
+      .sort((a, b) => String(a.plannedAt || '').localeCompare(String(b.plannedAt || '')))
+      .slice(0, 500),
+    followUps: (db.salesFollowUps || [])
+      .filter(item => canManage || item.userId === user.id || item.assignedUserId === user.id)
+      .sort((a, b) => String(a.dueAt || '').localeCompare(String(b.dueAt || '')))
+      .slice(0, 500),
+    fieldOrders: (db.salesFieldOrders || [])
+      .filter(item => canManage || item.userId === user.id)
+      .sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')))
+      .slice(0, 500),
     products: (db.products || []).map(item => ({
       id: item.id, sku: item.sku, name: item.name, unit: item.unit,
       price: Number(item.price || 0), wholesale: Number(item.wholesale || 0), qty: Number(item.qty || 0)
@@ -6689,6 +6704,88 @@ async function api(req, res) {
     }
   }
 
+  if (req.method === 'POST' && url.pathname === '/api/field-sales/visit-plans') {
+    if (!canUseFieldSales(user)) return send(res, 403, { error: '当前账号没有业务员管理权限' });
+    const body = await readBody(req);
+    const accountIds = [...new Set((Array.isArray(body.accountIds) ? body.accountIds : []).map(String))].slice(0, 30);
+    if (!accountIds.length) return send(res, 400, { error: '请至少选择一位客户' });
+    const date = String(body.date || dateInTimezone(db.settings?.timezone || 'America/Los_Angeles', 1)).slice(0, 10);
+    const startMinutes = Math.max(0, Math.min(1439, Number(body.startMinutes || 570)));
+    const stayMinutes = Math.max(15, Math.min(240, Number(body.stayMinutes || 45)));
+    const now = new Date().toISOString();
+    const created = [];
+    accountIds.forEach((accountId, index) => {
+      const account = (db.salesAccounts || []).find(item => item.id === accountId && fieldSalesVisible(item, user) && canAccessBranch(db, user, item.branchId));
+      if (!account) return;
+      const minute = Math.min(1439, startMinutes + index * (stayMinutes + 20));
+      const hh = String(Math.floor(minute / 60)).padStart(2, '0');
+      const mm = String(minute % 60).padStart(2, '0');
+      const plannedAt = zonedDateTimeToIso(db.settings?.timezone || 'America/Los_Angeles', date, Number(hh), Number(mm));
+      const plan = {
+        id:id(), accountId:account.id, businessName:account.businessName, address:account.address,
+        branchId:account.branchId || '', userId:user.id, userName:user.name || user.email,
+        assignedUserId:account.assignedUserId || user.id, order:index + 1, date, plannedAt,
+        stayMinutes, status:'待出发', note:String(body.note || '').trim().slice(0, 1000), createdAt:now, updatedAt:now
+      };
+      db.salesVisitPlans.unshift(plan); created.push(plan);
+      account.nextVisitAt = plannedAt; account.updatedAt = now;
+    });
+    if (!created.length) return send(res, 404, { error: '找不到可安排的客户' });
+    audit(db, user, 'create-field-sales-visit-plan', { collection:'salesVisitPlans', detail:`安排 ${date} 拜访计划 ${created.length} 家` });
+    writeDb(db); notifyDataChanged('field-sales-plan-created', created[0].id);
+    return send(res, 201, mobileSnapshot(db, user));
+  }
+
+  if (req.method === 'POST' && url.pathname === '/api/field-sales/follow-ups') {
+    if (!canUseFieldSales(user)) return send(res, 403, { error: '当前账号没有业务员管理权限' });
+    const body = await readBody(req);
+    const account = (db.salesAccounts || []).find(item => item.id === body.accountId && fieldSalesVisible(item, user) && canAccessBranch(db, user, item.branchId));
+    if (!account) return send(res, 404, { error:'找不到这个客户' });
+    const dueAt = String(body.dueAt || '').trim();
+    if (!dueAt || !String(body.reason || '').trim()) return send(res, 400, { error:'请填写跟进时间和原因' });
+    const assignedUserId = (db.users || []).some(item => item.id === body.assignedUserId && item.active !== false) ? String(body.assignedUserId) : user.id;
+    const task = {
+      id:id(), accountId:account.id, businessName:account.businessName, branchId:account.branchId || '',
+      userId:user.id, assignedUserId, assignedUserName:(db.users || []).find(item => item.id === assignedUserId)?.name || '',
+      method:String(body.method || '到店拜访').trim().slice(0, 80), type:String(body.type || '客户回访').trim().slice(0, 80),
+      dueAt, reason:String(body.reason || '').trim().slice(0, 3000), status:'待完成', createdAt:new Date().toISOString(), updatedAt:new Date().toISOString()
+    };
+    db.salesFollowUps.unshift(task); account.nextVisitAt = dueAt; account.updatedAt = task.updatedAt;
+    audit(db, user, 'create-field-sales-follow-up', { collection:'salesFollowUps', recordId:task.id, recordLabel:account.businessName, after:task, detail:`新增跟进任务 ${account.businessName}` });
+    writeDb(db); notifyDataChanged('field-sales-follow-up-created', task.id);
+    return send(res, 201, mobileSnapshot(db, user));
+  }
+
+  if (req.method === 'POST' && url.pathname === '/api/field-sales/orders') {
+    if (!canUseFieldSales(user)) return send(res, 403, { error: '当前账号没有业务员管理权限' });
+    const body = await readBody(req);
+    const account = (db.salesAccounts || []).find(item => item.id === body.accountId && fieldSalesVisible(item, user) && canAccessBranch(db, user, item.branchId));
+    if (!account) return send(res, 404, { error:'找不到这个客户' });
+    const items = (Array.isArray(body.items) ? body.items : []).slice(0, 30).map(item => {
+      const sku = String(item?.sku || '').trim().slice(0, 80);
+      const product = (db.products || []).find(row => row.sku === sku || row.id === item?.productId);
+      const quantity = Math.max(0, Number(item?.quantity || 0));
+      const unitPrice = Math.max(0, Number(item?.unitPrice || 0));
+      return { productId:product?.id || '', sku:product?.sku || sku, name:product?.name || String(item?.name || sku).slice(0,180), quantity, unitPrice, lineTotal:Number((quantity * unitPrice).toFixed(2)) };
+    }).filter(item => item.sku && item.quantity > 0);
+    if (!items.length) return send(res, 400, { error:'请至少填写一项订单产品' });
+    const total = Number(items.reduce((sum,item) => sum + item.lineTotal, 0).toFixed(2));
+    const paid = Math.max(0, Math.min(total, Number(body.amountPaid || 0)));
+    const orderId = id(); const now = new Date().toISOString();
+    const order = {
+      id:orderId, orderNumber:`FSO-${now.slice(0,10).replace(/-/g,'')}-${orderId.slice(-6).toUpperCase()}`,
+      accountId:account.id, businessName:account.businessName, branchId:account.branchId || '', userId:user.id, userName:user.name || user.email,
+      visitId:String(body.visitId || ''), type:String(body.type || '批发订单').slice(0,80), warehouse:String(body.warehouse || '').slice(0,120),
+      items, total, amountPaid:Number(paid.toFixed(2)), amountDue:Number((total-paid).toFixed(2)), paymentMethod:String(body.paymentMethod || '').slice(0,80),
+      paymentDueAt:String(body.paymentDueAt || ''), deliveryMethod:String(body.deliveryMethod || '现场交货').slice(0,80), status:'待仓库确认',
+      inventoryStatus:'待仓库确认', note:String(body.note || '').slice(0,3000), createdAt:now, updatedAt:now
+    };
+    db.salesFieldOrders.unshift(order);
+    audit(db, user, 'create-field-sales-order', { collection:'salesFieldOrders', recordId:order.id, recordLabel:order.orderNumber, after:order, detail:`现场订单 ${account.businessName} ${order.orderNumber}` });
+    writeDb(db); notifyDataChanged('field-sales-order-created', order.id);
+    return send(res, 201, mobileSnapshot(db, user));
+  }
+
   if (req.method === 'POST' && url.pathname === '/api/field-sales/accounts') {
     if (!canUseFieldSales(user)) return send(res, 403, { error: '当前账号没有业务员管理权限' });
     const body = await readBody(req);
@@ -6710,6 +6807,9 @@ async function api(req, res) {
       contactName: String(body.contactName || '').trim().slice(0, 120),
       phone: String(body.phone || '').trim().slice(0, 80),
       email: String(body.email || '').trim().slice(0, 180),
+      city: String(body.city || '').trim().slice(0, 120),
+      customerType: String(body.customerType || '').trim().slice(0, 80),
+      source: String(body.source || '').trim().slice(0, 80),
       language: body.language === 'en' ? 'en' : body.language === 'zh' ? 'zh' : 'auto',
       assignedUserId,
       assignedUserName: (db.users || []).find(item => item.id === assignedUserId)?.name || '',
@@ -6773,6 +6873,8 @@ async function api(req, res) {
       createdAt:now, updatedAt:now
     };
     db.salesTrips.unshift(trip);
+    const plannedTrip = (db.salesVisitPlans || []).find(item => item.accountId === account.id && item.userId === user.id && item.status === '待出发');
+    if (plannedTrip) { plannedTrip.status = '前往中'; plannedTrip.tripId = trip.id; plannedTrip.updatedAt = now; }
     account.stage = '前往中'; account.updatedAt = now;
     audit(db, user, 'start-field-sales-trip', { collection:'salesTrips', recordId:trip.id, recordLabel:account.businessName, after:trip, detail:`${trip.userName} 出发前往 ${account.businessName}` });
     writeDb(db); notifyDataChanged('field-sales-trip-started', trip.id);
@@ -6921,6 +7023,8 @@ async function api(req, res) {
       createdAt: new Date().toISOString(), updatedAt: new Date().toISOString()
     };
     db.salesVisits.unshift(visit);
+    const plannedVisit = (db.salesVisitPlans || []).find(item => item.accountId === account.id && item.userId === user.id && item.status === '前往中');
+    if (plannedVisit) { plannedVisit.status = '拜访中'; plannedVisit.visitId = visit.id; plannedVisit.updatedAt = arrivedAt; }
     account.stage = '拜访中';
     account.updatedAt = new Date().toISOString();
     audit(db, user, 'start-field-sales-visit', { collection: 'salesVisits', recordId: visit.id, recordLabel: account.businessName, after: visit, detail: `${visit.userName} 到店打卡 ${account.businessName}` });
@@ -7018,6 +7122,8 @@ async function api(req, res) {
       });
     }
     db.salesVisits[visitIndex] = next;
+    const completedPlan = (db.salesVisitPlans || []).find(item => item.accountId === visit.accountId && item.userId === visit.userId && ['前往中','拜访中','待出发'].includes(item.status));
+    if (completedPlan) { completedPlan.status = '已完成'; completedPlan.visitId = visit.id; completedPlan.updatedAt = now; }
     if (account) {
       account.lastVisitAt = now; account.nextVisitAt = nextVisitAt; account.cadenceDays = cadenceDays;
       account.stage = String(body.stage || (account.stage === '拜访中' ? '持续跟进' : account.stage) || '持续跟进').trim().slice(0, 40);

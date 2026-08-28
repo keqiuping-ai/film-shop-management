@@ -45,6 +45,11 @@ let mobileNoteListMode = true;
 let supervisionReminderTimer = null;
 let supervisionReminderSessionUserId = '';
 let supervisionReminderActivityCheckAt = 0;
+let salesScreen = 'home';
+let salesSelectedAccountIds = [];
+let salesPlanDate = '';
+let salesNearbyOrigin = null;
+let salesActiveAccountId = '';
 
 const I18N = {
   zh: {
@@ -676,7 +681,7 @@ function render(options = {}) {
   if (tab === 'home') view.innerHTML = homeHtml();
   if (tab === 'chat') view.innerHTML = chatHtml();
   if (tab === 'notes') view.innerHTML = moduleBar(t('notes')) + notesHtml();
-  if (tab === 'sales') view.innerHTML = moduleBar(t('sales')) + salesHtml();
+  if (tab === 'sales') view.innerHTML = (salesScreen === 'home' ? moduleBar(t('sales')) : '') + salesHtml();
   if (tab === 'clock') view.innerHTML = moduleBar(t('clock')) + clockHtml();
   if (tab === 'supervision') view.innerHTML = moduleBar(t('supervision')) + supervisionHtml();
   if (tab === 'leave') view.innerHTML = moduleBar(t('leave')) + leaveHtml();
@@ -1407,7 +1412,113 @@ async function deleteNote(noteId) {
   catch (err) { state.personalNotes = before; render(); alert(err.message); }
 }
 
+function salesLocalDate(offsetDays = 0) {
+  const date = new Date(Date.now() + offsetDays * 86400000);
+  return new Intl.DateTimeFormat('en-CA', { timeZone:APP_TIMEZONE, year:'numeric', month:'2-digit', day:'2-digit' }).format(date);
+}
+
+function openSalesScreen(screen) {
+  salesScreen = screen || 'home';
+  window.scrollTo({ top:0, behavior:'smooth' });
+  render();
+}
+
+function salesPage(title, body, action = '') {
+  return `<section class="sales-page"><header class="sales-page-head"><button type="button" onclick="openSalesScreen('home')">‹</button><strong>${escapeHtml(title)}</strong>${action || '<span></span>'}</header>${body}</section>`;
+}
+
+function salesHomeHtml() {
+  const sales = state.fieldSales || {};
+  const today = salesLocalDate();
+  const plans = (sales.visitPlans || []).filter(item => item.date === today && item.userId === user?.id);
+  const completed = (sales.visits || []).filter(item => item.userId === user?.id && item.status === '已完成' && String(item.completedAt || '').slice(0,10) === today).length;
+  const pending = (sales.accounts || []).filter(item => item.nextVisitAt && new Date(item.nextVisitAt) <= new Date()).length;
+  const cards = [
+    ['add','＋','新增客户','录入新客户资料','teal'], ['customers','♟','客户列表','查看全部共享客户','blue'],
+    ['today','⌖','今日拜访','今天计划与进行中','orange'], ['plan','✓','计划拜访','选择客户并安排时间','purple'],
+    ['report','▤','工作日报','记录今天完成事项','green'], ['nearby','⌖','附近客户','洛杉矶 / 拉斯维加斯','rose']
+  ];
+  return `<div class="sales-design-home"><section class="sales-design-hero"><small>QUaD FIELD SALES</small><h2>业务员管理中心</h2><p>客户 · 计划 · 拜访 · 总结</p></section><div class="sales-section-title"><b>常用功能</b><span>点击进入独立页面</span></div><div class="sales-menu-grid">${cards.map(([screen,icon,title,sub,color]) => `<button class="${color}" onclick="openSalesScreen('${screen}')"><i>${icon}</i><b>${title}</b><span>${sub}</span></button>`).join('')}</div><section class="sales-overview"><div class="sales-section-title"><b>今日概览</b><span>只显示数量</span></div><div><p><b>${plans.length}</b><span>计划拜访</span></p><p><b>${completed}</b><span>已经完成</span></p><p><b>${pending}</b><span>待跟进</span></p></div></section></div>`;
+}
+
+function salesCustomerMiniCard(account, selectMode = false) {
+  const selected = salesSelectedAccountIds.includes(account.id);
+  const distance = salesDistanceMiles(account);
+  return `<article class="sales-customer-mini ${selected ? 'selected' : ''}"><div class="sales-customer-icon">🏪</div><div><b>${escapeHtml(account.businessName)}</b><p>${escapeHtml(account.address || '')}</p><small>${escapeHtml(account.customerType || account.stage || '客户')} · ${account.contactName ? `联系人：${escapeHtml(account.contactName)}` : '尚未填写联系人'}${distance !== null ? ` · ${distance.toFixed(1)} mi` : ''}</small></div><div class="sales-card-actions"><button onclick="openSalesReviewDialog('${account.id}')">查看资料</button><button class="primary-inline" onclick="${selectMode ? `toggleSalesPlanAccount('${account.id}')` : `quickPlanSalesAccount('${account.id}')`}">${selectMode ? (selected ? '已选择' : '选择') : '加入拜访计划'}</button></div></article>`;
+}
+
+function salesCustomersHtml(selectMode = false) {
+  const accounts = state.fieldSales?.accounts || [];
+  const title = selectMode ? '计划拜访' : '客户列表';
+  const body = `<section class="sales-share-banner"><b>${selectMode ? '安排拜访客户' : '公司共享客户'}</b><span>${selectMode ? (salesPlanDate || salesLocalDate(1)) : '所有业务员均可查看和拜访'}</span></section><label class="sales-search">⌕<input placeholder="搜索名称、地址、电话或联系人" oninput="filterSalesCards(this.value)"></label><div class="sales-filter-row"><button>全部客户</button><button>城市⌄</button><button>距离⌄</button></div><div id="salesCustomerCards" class="sales-customer-list">${accounts.map(item => salesCustomerMiniCard(item,selectMode)).join('') || '<p class="hint">还没有共享客户</p>'}</div>${selectMode ? `<div class="sales-sticky-action"><span>已经选择 <b>${salesSelectedAccountIds.length}</b> 位客户</span><button onclick="openSalesScreen('schedule')">下一步：安排顺序和时间</button></div>` : ''}`;
+  return salesPage(title, body, selectMode ? '' : '<button class="sales-head-add" onclick="openSalesScreen(\'add\')">＋ 新增</button>');
+}
+
+function filterSalesCards(value) {
+  const query = String(value || '').trim().toLowerCase();
+  document.querySelectorAll('#salesCustomerCards .sales-customer-mini').forEach(card => { card.hidden = query && !card.textContent.toLowerCase().includes(query); });
+}
+
+function toggleSalesPlanAccount(id) {
+  salesSelectedAccountIds = salesSelectedAccountIds.includes(id) ? salesSelectedAccountIds.filter(x => x !== id) : [...salesSelectedAccountIds,id];
+  render();
+}
+
+function quickPlanSalesAccount(id) { salesSelectedAccountIds = [id]; salesPlanDate = salesLocalDate(1); openSalesScreen('schedule'); }
+
+function salesAddCustomerHtml() {
+  return salesPage('新增客户', `<section class="sales-ai-import"><b>📷 拍照，AI 自动识别</b><span>识别店名、地址、电话和邮箱，并自动填入下方</span><input type="file" accept="image/*" capture onchange="analyzeSalesCustomerScreenshot(this)"></section><section class="sales-form-card"><div class="sales-section-title"><b>客户基本资料</b><span>也可以手动填写</span></div><label>客户或门店名称 *<input id="salesBusinessName"></label><label>客户地址 *<textarea id="salesAddress"></textarea></label><label>现场定位<button type="button" class="sales-location-button" onclick="fillSalesCurrentLocation()">📍 已到客户门口？获取当前位置</button></label><div class="sales-two"><label>城市<input id="salesCity"></label><label>联系电话<input id="salesPhone" type="tel"></label></div><label>电子邮箱<input id="salesEmail" type="email"></label><div class="sales-two"><label>客户类型<select id="salesCustomerType"><option>贴膜门店</option><option>汽车改色店</option><option>汽车美容店</option><option>其他</option></select></label><label>客户来源<select id="salesSource"><option>Google 搜集</option><option>Yelp 搜集</option><option>业务员发现</option><option>客户介绍</option></select></label></div><label>联系人<input id="salesContact"></label><label>客户备注<textarea id="salesNote"></textarea></label></section><button class="sales-page-primary" onclick="createSalesAccountFromPage(this)">保存到客户列表</button><p class="sales-page-note">新增客户时不安排拜访时间，保存后再到“计划拜访”选择。</p>`);
+}
+
+async function fillSalesCurrentLocation() {
+  try { const p=await getPosition(); salesNearbyOrigin={lat:p.coords.latitude,lng:p.coords.longitude}; alert('定位已取得，请确认并填写完整门牌地址。'); } catch(e) { alert(e.message || t('locationFailed')); }
+}
+
+async function createSalesAccountFromPage(button) {
+  try { button.disabled=true; state=await api('/api/field-sales/accounts',{method:'POST',body:JSON.stringify({businessName:document.getElementById('salesBusinessName').value,address:document.getElementById('salesAddress').value,city:document.getElementById('salesCity').value,phone:document.getElementById('salesPhone').value,email:document.getElementById('salesEmail').value,customerType:document.getElementById('salesCustomerType').value,source:document.getElementById('salesSource').value,contactName:document.getElementById('salesContact').value,note:document.getElementById('salesNote').value,lat:salesNearbyOrigin?.lat,lng:salesNearbyOrigin?.lng})}); user=state.user; salesScreen='customers'; render(); } catch(e){ alert(e.message); button.disabled=false; }
+}
+
+function salesScheduleHtml() {
+  const accounts=(state.fieldSales?.accounts || []).filter(item=>salesSelectedAccountIds.includes(item.id));
+  if(!salesPlanDate) salesPlanDate=salesLocalDate(1);
+  return salesPage('安排顺序和时间', `<section class="sales-route-hero"><small>拜访路线</small><h3>${escapeHtml(salesPlanDate)}</h3><b>${accounts.length} 位客户</b></section><section class="sales-form-card"><label>计划日期<input id="salesPlanDate" type="date" value="${escapeHtml(salesPlanDate)}" onchange="salesPlanDate=this.value"></label><div class="sales-two"><label>开始时间<input id="salesPlanStart" type="time" value="09:30"></label><label>预计停留<input id="salesPlanStay" type="number" value="45" min="15"> 分钟</label></div></section><div class="sales-route-list">${accounts.map((item,index)=>`<article><i>${index+1}</i><div><b>${escapeHtml(item.businessName)}</b><p>${escapeHtml(item.address)}</p><small>计划到店 ${String(9+Math.floor((30+index*65)/60)).padStart(2,'0')}:${String((30+index*65)%60).padStart(2,'0')}</small></div><span>≡</span></article>`).join('') || '<p class="hint">请先选择客户</p>'}</div><button class="sales-page-primary" onclick="saveSalesVisitPlan(this)">确认并保存拜访计划</button><p class="sales-page-note">保存后将进入“今日拜访”，出发时重新使用地图更新实时路况。</p>`);
+}
+
+async function saveSalesVisitPlan(button){ if(!salesSelectedAccountIds.length)return alert('请先选择客户'); const [h,m]=(document.getElementById('salesPlanStart').value||'09:30').split(':').map(Number); try{button.disabled=true;state=await api('/api/field-sales/visit-plans',{method:'POST',body:JSON.stringify({accountIds:salesSelectedAccountIds,date:document.getElementById('salesPlanDate').value,startMinutes:h*60+m,stayMinutes:Number(document.getElementById('salesPlanStay').value||45)})});user=state.user;salesSelectedAccountIds=[];salesScreen='today';render();}catch(e){alert(e.message);button.disabled=false;}}
+
+function salesPlanAction(plan){if(plan.status==='前往中')return `openSalesStartDialog('${plan.accountId}')`;if(plan.status==='拜访中')return `openSalesExecution('${plan.accountId}')`;return `openSalesDepartureDialog('${plan.accountId}')`;}
+function salesTodayHtml(){ const today=salesLocalDate(); const plans=(state.fieldSales?.visitPlans||[]).filter(item=>item.date===today&&item.userId===user?.id); const visits=state.fieldSales?.visits||[]; const completed=plans.filter(p=>p.status==='已完成').length; const next=plans.find(p=>p.status!=='已完成'); return salesPage('今日拜访', `<section class="sales-today-stats"><p><b>${plans.length}</b><span>计划拜访</span></p><p><b>${completed}</b><span>已经完成</span></p><p><b>${Math.max(0,plans.length-completed)}</b><span>等待拜访</span></p></section>${next?`<section class="sales-next-card"><small>下一位客户</small><h3>${escapeHtml(next.businessName)}</h3><p>${escapeHtml(next.address)}</p><div><button onclick="openSalesReviewDialog('${next.accountId}')">查看资料</button><button onclick="${salesPlanAction(next)}">${next.status==='前往中'?'已到店 · 拍照打卡':next.status==='拜访中'?'继续拜访':'准备出发'}</button></div></section>`:''}<div class="sales-timeline">${plans.map(p=>`<article onclick="${p.status==='拜访中'?`openSalesExecution('${p.accountId}')`:''}"><time>${new Date(p.plannedAt).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}</time><div><b>${escapeHtml(p.businessName)}</b><p>${escapeHtml(p.address)}</p></div><span>${escapeHtml(p.status||'待出发')}</span></article>`).join('')||'<p class="hint">今天还没有拜访计划，请先到“计划拜访”安排。</p>'}</div>`); }
+
+function openSalesExecution(accountId){salesActiveAccountId=accountId;salesScreen='execution';render();}
+function salesExecutionHtml(){const sales=state.fieldSales||{};const account=(sales.accounts||[]).find(x=>x.id===salesActiveAccountId);if(!account)return salesTodayHtml();const visit=(sales.visits||[]).find(x=>x.accountId===account.id&&x.userId===user?.id&&x.status==='进行中');const trip=(sales.trips||[]).find(x=>x.accountId===account.id&&x.userId===user?.id);const items=[['📷','现场照片','门店、样品和陈列照片',`openSalesCompleteDialog('${visit?.id||''}')`],['◉','沟通记录','录音转文字并由 AI 总结',`openSalesCompleteDialog('${visit?.id||''}')`],['▦','样品 / 放货','记录型号、数量和约定价格',`openSalesCompleteDialog('${visit?.id||''}')`],['＋','现场订单','直接建立客户销售订单',`openSalesFieldOrder('${account.id}','${visit?.id||''}')`],['✎','客户签收','英文签收单和手写签名',`openSalesCompleteDialog('${visit?.id||''}')`],['⌚','下次跟进','设置日期、原因和收款提醒',`openSalesFollowUp('${account.id}')`]];return salesPage('拜访执行', `<section class="sales-next-card"><small>已到店</small><h3>${escapeHtml(account.businessName)}</h3><p>${escapeHtml(account.address)}</p><div class="sales-trip-stats"><span>出发<b>${trip?.departedAt?formatMobileDateTime(trip.departedAt):'—'}</b></span><span>到达<b>${visit?.startedAt?formatMobileDateTime(visit.startedAt):'—'}</b></span></div></section><section class="sales-check-ok">✓ 到店打卡已完成<br><small>GPS 位置与客户地址匹配 · 门头照片已上传</small></section><div class="sales-execution-grid">${items.map(([icon,title,sub,action])=>`<button onclick="${action}"><i>${icon}</i><b>${title}</b><span>${sub}</span></button>`).join('')}</div><button class="sales-page-primary" onclick="openSalesCompleteDialog('${visit?.id||''}')">完成本次拜访</button>`);}
+
+function openSalesFollowUp(accountId){const overlay=document.createElement('div');overlay.className='mobile-modal';overlay.innerHTML=`<div class="mobile-dialog"><div class="dialog-head"><strong>下次跟进</strong><button onclick="this.closest('.mobile-modal').remove()">×</button></div><label>跟进方式<input id="salesFollowMethod" value="到店拜访"></label><label>任务类型<input id="salesFollowType" value="样品测试回访"></label><label>跟进时间<input id="salesFollowDue" type="datetime-local" value="${localDateTimeValue(new Date(Date.now()+7*86400000).toISOString())}"></label><label>跟进原因<textarea id="salesFollowReason"></textarea></label><div class="dialog-actions"><button onclick="this.closest('.mobile-modal').remove()">取消</button><button class="primary" onclick="saveSalesFollowUp(this,'${accountId}')">保存跟进任务</button></div></div>`;document.body.appendChild(overlay);}
+async function saveSalesFollowUp(button,accountId){try{button.disabled=true;state=await api('/api/field-sales/follow-ups',{method:'POST',body:JSON.stringify({accountId,method:document.getElementById('salesFollowMethod').value,type:document.getElementById('salesFollowType').value,dueAt:document.getElementById('salesFollowDue').value,reason:document.getElementById('salesFollowReason').value})});user=state.user;button.closest('.mobile-modal').remove();render();}catch(e){alert(e.message);button.disabled=false;}}
+
+function openSalesFieldOrder(accountId,visitId){const overlay=document.createElement('div');overlay.className='mobile-modal';overlay.innerHTML=`<div class="mobile-dialog"><div class="dialog-head"><strong>现场订单</strong><button onclick="this.closest('.mobile-modal').remove()">×</button></div><label>订单类型<input id="salesOrderType" value="批发订单"></label><label>出货仓库<input id="salesOrderWarehouse" placeholder="可选可填"></label><label>产品 SKU<input id="salesOrderSku" list="salesProductModels"></label>${salesProductDatalist()}<div class="sales-two"><label>数量<input id="salesOrderQty" type="number" min="1" value="1"></label><label>成交单价<input id="salesOrderPrice" type="number" min="0"></label></div><div class="sales-two"><label>本次已收<input id="salesOrderPaid" type="number" min="0" value="0"></label><label>余款到期日<input id="salesOrderDue" type="date" value="${salesLocalDate(7)}"></label></div><label>付款方式<input id="salesOrderPayment" placeholder="可选可填"></label><div class="dialog-actions"><button onclick="this.closest('.mobile-modal').remove()">取消</button><button class="primary" onclick="saveSalesFieldOrder(this,'${accountId}','${visitId}')">创建现场订单</button></div></div>`;document.body.appendChild(overlay);}
+async function saveSalesFieldOrder(button,accountId,visitId){try{button.disabled=true;state=await api('/api/field-sales/orders',{method:'POST',body:JSON.stringify({accountId,visitId,type:document.getElementById('salesOrderType').value,warehouse:document.getElementById('salesOrderWarehouse').value,items:[{sku:document.getElementById('salesOrderSku').value,quantity:Number(document.getElementById('salesOrderQty').value),unitPrice:Number(document.getElementById('salesOrderPrice').value)}],amountPaid:Number(document.getElementById('salesOrderPaid').value),paymentDueAt:document.getElementById('salesOrderDue').value,paymentMethod:document.getElementById('salesOrderPayment').value})});user=state.user;button.closest('.mobile-modal').remove();render();}catch(e){alert(e.message);button.disabled=false;}}
+
+function salesDistanceMiles(account){ if(!salesNearbyOrigin||!Number.isFinite(Number(account.lat))||!Number.isFinite(Number(account.lng)))return null; const rad=x=>x*Math.PI/180; const dLat=rad(account.lat-salesNearbyOrigin.lat),dLng=rad(account.lng-salesNearbyOrigin.lng); const a=Math.sin(dLat/2)**2+Math.cos(rad(salesNearbyOrigin.lat))*Math.cos(rad(account.lat))*Math.sin(dLng/2)**2; return 3958.8*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a)); }
+async function locateSalesNearby(){try{const p=await getPosition();salesNearbyOrigin={lat:p.coords.latitude,lng:p.coords.longitude};render();}catch(e){alert(e.message||t('locationFailed'));}}
+function salesNearbyHtml(){const accounts=[...(state.fieldSales?.accounts||[])].sort((a,b)=>(salesDistanceMiles(a)??9999)-(salesDistanceMiles(b)??9999));return salesPage('附近客户', `<section class="sales-nearby-hero"><b>当前位置周边客户</b><span>${salesNearbyOrigin?'GPS 已定位':'请先更新位置'}</span><button onclick="locateSalesNearby()">更新位置</button></section><div class="sales-filter-row"><button>10 mi 内</button><button>未拜访⌄</button><button>客户类型⌄</button></div><div class="sales-customer-list">${accounts.map((a,i)=>`<div class="sales-nearby-rank"><i>${i+1}</i>${salesCustomerMiniCard(a,false)}</div>`).join('')||'<p class="hint">还没有客户</p>'}</div>`);}
+
+function salesReportHtml(){const today=salesLocalDate();const sales=state.fieldSales||{};const visits=(sales.visits||[]).filter(v=>v.userId===user?.id&&v.status==='已完成'&&String(v.completedAt||'').slice(0,10)===today);const trials=(sales.trialRolls||[]).filter(x=>x.userId===user?.id&&String(x.createdAt||'').slice(0,10)===today);const orders=(sales.fieldOrders||[]).filter(x=>x.userId===user?.id&&String(x.createdAt||'').slice(0,10)===today);const follow=(sales.followUps||[]).filter(x=>x.userId===user?.id&&String(x.createdAt||'').slice(0,10)===today);const total=orders.reduce((s,o)=>s+Number(o.total||0),0);const paid=orders.reduce((s,o)=>s+Number(o.amountPaid||0),0);return salesPage('工作日报', `<section class="sales-report-hero"><small>今日工作总结</small><h3>${today} · ${escapeHtml(user?.name||'')}</h3><b>${visits.length} 家已完成</b></section><section class="sales-auto-summary"><div><i>＋</i><span>新增客户</span><b>${(sales.accounts||[]).filter(x=>x.createdByUserId===user?.id&&String(x.createdAt||'').slice(0,10)===today).length} 家</b></div><div><i>⌖</i><span>客户拜访</span><b>${visits.length} 家</b></div><div><i>▦</i><span>样品 / 放货</span><b>${trials.reduce((s,x)=>s+Number(x.quantity||0),0)}</b></div><div><i>＄</i><span>现场订单</span><b>$${total.toLocaleString()}</b></div><div><i>✓</i><span>今日收款</span><b>$${paid.toLocaleString()}</b></div><div><i>⌚</i><span>新增跟进任务</span><b>${follow.length} 项</b></div></section><section class="sales-form-card"><label>AI 工作总结<textarea id="salesDailySummary">今日完成 ${visits.length} 家客户拜访，现场订单 $${total.toLocaleString()}，收款 $${paid.toLocaleString()}，已建立 ${follow.length} 项后续跟进。</textarea></label><label>客户问题／需要公司协助<textarea id="salesDailyBlockers"></textarea></label><label>人工补充<textarea id="salesDailyPlan"></textarea></label></section><button class="sales-page-primary" onclick="submitSalesDailyReport(this)">确认并提交今日工作日报</button><p class="sales-page-note">所有数字来自当天正式业务记录，AI 只负责整理总结。</p>`);}
+
 function salesHtml() {
+  const sales=state.fieldSales||{};
+  if(!sales.enabled)return `<div class="panel"><div class="panel-body hint">当前账号没有业务员管理权限。</div></div>`;
+  if(salesScreen==='add')return salesAddCustomerHtml();
+  if(salesScreen==='customers')return salesCustomersHtml(false);
+  if(salesScreen==='plan'){if(!salesPlanDate)salesPlanDate=salesLocalDate(1);return salesCustomersHtml(true);}
+  if(salesScreen==='schedule')return salesScheduleHtml();
+  if(salesScreen==='today')return salesTodayHtml();
+  if(salesScreen==='nearby')return salesNearbyHtml();
+  if(salesScreen==='report')return salesReportHtml();
+  if(salesScreen==='execution')return salesExecutionHtml();
+  return salesHomeHtml();
+}
+
+function legacySalesHtml() {
   const sales = state.fieldSales || {};
   if (!sales.enabled) return `<div class="panel"><div class="panel-body hint">${lang === 'en' ? 'This account has no field sales access.' : '当前账号没有业务员管理权限。'}</div></div>`;
   const now = Date.now();
@@ -1631,7 +1742,7 @@ async function startSalesTrip(button, accountId) {
     state = await api('/api/field-sales/trips/start', { method:'POST', body:JSON.stringify({
       accountId, locationConsent:true, lat:position.coords.latitude, lng:position.coords.longitude, accuracy:position.coords.accuracy
     }) });
-    user = state.user; button.closest('.mobile-modal').remove(); render();
+    user = state.user; salesScreen = 'today'; button.closest('.mobile-modal').remove(); render();
   } catch (error) { alert(error.message || t('locationFailed')); button.disabled = false; button.textContent = lang === 'en' ? 'Confirm departure' : '确认出发'; }
 }
 
@@ -1668,7 +1779,7 @@ async function startSalesVisit(button, accountId) {
       accuracy:position.coords.accuracy, photoUrl:uploaded.url,
       contactMet:document.getElementById('salesContactMet')?.value || ''
     }) });
-    user = state.user; button.closest('.mobile-modal').remove(); render();
+    user = state.user; salesActiveAccountId = accountId; salesScreen = 'execution'; button.closest('.mobile-modal').remove(); render();
   } catch (error) { alert(error.message || t('locationFailed')); button.disabled = false; button.textContent = lang === 'en' ? 'Check in now' : '确认到店打卡'; }
 }
 
@@ -1807,7 +1918,7 @@ async function completeSalesVisit(button, visitId) {
       signedBy:document.getElementById('salesSignedBy')?.value || '',
       signatureUrl
     }) });
-    user = state.user; button.closest('.mobile-modal').remove(); render();
+    user = state.user; button.closest('.mobile-modal')?.remove(); render();
     const savedVisit = (state.fieldSales?.visits || []).find(item => item.id === visitId);
     if (savedVisit?.aiStatus === '待分析') {
       api(`/api/field-sales/visits/${visitId}/analyze`, { method:'POST', body:'{}' })
@@ -1835,7 +1946,7 @@ async function submitSalesDailyReport(button) {
       blockers:document.getElementById('salesDailyBlockers').value,
       plan:document.getElementById('salesDailyPlan').value
     }) });
-    user = state.user; button.closest('.mobile-modal').remove(); render();
+    user = state.user; button.closest('.mobile-modal')?.remove(); render();
     const report = (state.fieldSales?.dailyReports || []).find(item => item.userId === user?.id);
     if (report?.aiStatus === '待分析') {
       api(`/api/field-sales/daily-reports/${report.id}/analyze`, { method:'POST', body:'{}' })
