@@ -812,3 +812,88 @@ button {
 .supervision-reminder-card footer { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:20px; }
 .supervision-reminder-card footer button { min-height:48px; }
 .sales-check-ok{padding:13px;border:1px solid #a5dfbd;border-radius:13px;color:#147443;background:#eefaf3;font-weight:900}.sales-check-ok small{font-weight:500}.sales-execution-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}.sales-execution-grid button{display:grid;gap:4px;min-height:126px;padding:14px;border:1px solid #dfe8eb;border-radius:15px;background:#fff;text-align:left}.sales-execution-grid i{display:grid;place-items:center;width:35px;height:35px;border-radius:10px;color:#fff;background:#07889a;font-style:normal;font-size:19px}.sales-execution-grid b{font-size:15px}.sales-execution-grid span{color:#68757e;font-size:11px}
+
+/* Keep the field-sales pages comfortably inside narrow phone viewports. */
+.sales-design-home,
+.sales-page {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  padding-right: max(12px, env(safe-area-inset-right));
+  padding-left: max(12px, env(safe-area-inset-left));
+  overflow-x: clip;
+}
+.sales-design-hero {
+  min-width: 0;
+  padding: 17px;
+}
+.sales-design-hero h2 {
+  font-size: 22px;
+}
+.sales-section-title {
+  min-width: 0;
+}
+.sales-section-title h3 {
+  margin: 0;
+  font-size: 17px;
+}
+.sales-section-title span {
+  flex: 0 1 auto;
+  min-width: 0;
+  font-size: 11px;
+  text-align: right;
+}
+.sales-menu-grid,
+.sales-execution-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  min-width: 0;
+}
+.sales-menu-grid button,
+.sales-execution-grid button {
+  box-sizing: border-box;
+  min-width: 0;
+  min-height: 108px;
+  padding: 12px;
+  overflow: hidden;
+}
+.sales-menu-grid button i,
+.sales-execution-grid i {
+  width: 32px;
+  height: 32px;
+  font-size: 18px;
+}
+.sales-menu-grid button b {
+  font-size: 15px;
+  line-height: 1.25;
+}
+.sales-menu-grid button span,
+.sales-execution-grid span {
+  min-width: 0;
+  font-size: 10px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+.sales-overview {
+  min-width: 0;
+}
+.sales-page-head {
+  margin-right: max(-12px, calc(-1 * env(safe-area-inset-right)));
+  margin-left: max(-12px, calc(-1 * env(safe-area-inset-left)));
+}
+
+@media (max-width: 360px) {
+  .sales-design-home,
+  .sales-page {
+    padding-right: max(9px, env(safe-area-inset-right));
+    padding-left: max(9px, env(safe-area-inset-left));
+  }
+  .sales-design-hero {
+    padding: 15px;
+  }
+  .sales-menu-grid button,
+  .sales-execution-grid button {
+    min-height: 102px;
+    padding: 10px;
+  }
+}
