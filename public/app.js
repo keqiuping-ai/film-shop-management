@@ -4942,7 +4942,7 @@ const views = {
           <button class="btn" onclick="changePassword()">${t('changePassword')}</button>
         </div>
       </div>
-      <p class="note">${lang === 'zh' ? 'Mac/iPad 使用方式：浏览器打开系统网址后，Mac 可添加到 Dock，iPad 可点分享按钮后添加到主屏幕。系统会每天自动备份数据库，并保留最近 60 天。' : 'Mac/iPad: open the system URL in a browser. On Mac, add it to Dock. On iPad, use Share -> Add to Home Screen. The system creates a daily database backup and keeps the latest 60 days.'}</p>
+      <p class="note">${lang === 'zh' ? 'Mac/iPad 使用方式：浏览器打开系统网址后，Mac 可添加到 Dock，iPad 可点分享按钮后添加到主屏幕。正式数据备份下载到管理电脑保存；云端临时备份最多保留最近 5 天。' : 'Mac/iPad: open the system URL in a browser. On Mac, add it to Dock. On iPad, use Share -> Add to Home Screen. Production backups are downloaded to the management computer; temporary cloud backups are retained for no more than 5 days.'}</p>
       <div style="margin-top:14px">
         <button class="btn" onclick="showSystemInfo()">${t('showVersion')}</button>
         <button class="btn" onclick="checkUpdate()">${t('checkUpdate')}</button>

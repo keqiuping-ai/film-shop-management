@@ -540,9 +540,10 @@ function listBackups() {
     .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
 }
 
-function pruneDailyBackups(keepDays = 60) {
-  const daily = listBackups().filter(item => item.name.startsWith('daily-')).sort((a, b) => String(b.name).localeCompare(String(a.name)));
-  daily.slice(keepDays).forEach(item => {
+function pruneExpiredBackups(keepDays = 5) {
+  const cutoff = Date.now() - (Math.max(1, Number(keepDays) || 5) * 24 * 60 * 60 * 1000);
+  listBackups().forEach(item => {
+    if (new Date(item.createdAt).getTime() >= cutoff) return;
     try { fs.unlinkSync(backupPath(item.name)); } catch {}
   });
 }
@@ -563,7 +564,7 @@ function createDatabaseBackup(db, kind = 'manual', actor = { id: 'system', name:
     });
     writeDb(db);
   }
-  pruneDailyBackups();
+  pruneExpiredBackups();
   return { fileName, created: true };
 }
 
@@ -9802,6 +9803,11 @@ function startScheduleReminderWorker() {
 }
 
 function startDailyBackupWorker() {
+  pruneExpiredBackups();
+  if (process.env.ENABLE_CLOUD_DAILY_BACKUPS !== 'true') {
+    console.log('Cloud daily database backups are disabled; local computer backups are the primary backup target.');
+    return;
+  }
   const run = () => {
     try {
       const db = readDb();
