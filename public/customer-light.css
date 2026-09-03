@@ -1,0 +1,26 @@
+.brand-site{background:#fff;color:#172027}
+.brand-header{background:#fffffff2;color:#172027;border-bottom:1px solid #e8ecee;box-shadow:0 8px 28px #16313b0a}
+.brand-mark{color:#172027}.brand-mark small{color:#76838a}
+.dealer-button,.hero-actions button,.dealer-cta button{background:#b9ef35;color:#172027;box-shadow:none}
+.brand-hero{background:linear-gradient(135deg,#fff 0%,#f4f8f8 55%,#e6f0f1 100%);color:#172027}
+.brand-hero p{color:#5c6b72}.brand-hero h1{color:#132228}
+.brand-hero-media{background:radial-gradient(circle at 50% 44%,#fff 0%,#eef3f4 58%,#dfe9eb 100%)}
+.brand-hero-media img{filter:drop-shadow(0 28px 24px #36525f2a)}
+.brand-hero-media span{color:#66767d}
+.hero-actions a{color:#172027;border-color:#a8b4b8;background:#fff}
+.story-strip{background:#d8f889}.story-strip article{border-color:#6d8c1924}.story-strip span{color:#52651d}
+.brand-story,.collections{background:#fff}.brand-story p,.section-heading p{color:#66767d}
+.story-gallery figure{color:#172027;border:1px solid #dce5e7}
+.story-gallery .factory{background:linear-gradient(145deg,#f0f8f6,#cde9e3)}
+.story-gallery .drift{background:linear-gradient(145deg,#fff5ee,#f0d8c5)}
+.story-gallery .expo{background:linear-gradient(145deg,#f3f4fa,#dce2f3)}
+.story-gallery span{color:#64747b}
+.collection-card{background:#f7f9f9;color:#172027;border:1px solid #e0e7e8;border-radius:4px}
+.collection-card>img{background:radial-gradient(circle,#fff,#e9f0f1 72%)}
+.collection-card h3{color:#172027}.collection-card p{color:#65757c}
+.collection-card button{background:#fff;border-color:#aab7bb;color:#172027}
+.collection-card.wrap .collection-art{background:linear-gradient(135deg,#d8ceff,#ffbdda 42%,#ffd2a8 72%,#efffa7);color:#253037}
+.collection-card.safety .collection-art{background:linear-gradient(135deg,#e7f5f7cc,#cadfe4),repeating-linear-gradient(90deg,#ffffff75 0 2px,transparent 2px 85px);color:#294047}
+.dealer-cta{background:#eaf3f3;color:#172027}.dealer-cta p{color:#607178}
+.brand-footer{background:#f4f7f7;color:#172027;border-top:1px solid #e1e8e9}.brand-footer span,.brand-footer small{color:#6e7c82}
+@media(max-width:760px){.brand-hero{background:linear-gradient(160deg,#fff 0%,#f3f7f8 100%)}}

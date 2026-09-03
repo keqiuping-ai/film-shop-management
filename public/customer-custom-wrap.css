@@ -1,0 +1,29 @@
+.custom-patterns img {
+  display: block;
+  width: 100%;
+  height: 90px;
+  object-fit: cover;
+  background: #e5e8e5;
+}
+
+.custom-patterns b {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.custom-art {
+  width: 100%;
+}
+
+@media (max-width: 760px) {
+  .custom-patterns {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .custom-patterns img,
+  .custom-patterns i {
+    width: 100%;
+    height: 92px;
+  }
+}
