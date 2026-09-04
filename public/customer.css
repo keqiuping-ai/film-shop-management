@@ -77,10 +77,10 @@
   .brand-hero.text-only p{font-size:12px;line-height:1.35;margin:0}
   .brand-hero.text-only .hero-actions{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:12px}
   .brand-hero.text-only .hero-actions>*{min-height:36px;padding:0 7px;font-size:9px}
-  .order-center-header{gap:7px;padding:7px 9px}
+  .order-center-header{gap:7px;padding:calc(7px + env(safe-area-inset-top)) 9px 7px}
   .order-center-brand{gap:7px}
   .order-center-brand img{width:34px;height:34px;border-radius:7px}
-  .order-center-brand b{font-size:14px}
+  .order-center-brand span{display:none}
   .order-center-header>div{gap:5px}
   .order-home-button{display:block;min-height:34px;padding:0 9px;border-color:#fff;font-size:9px;letter-spacing:0}
   .order-login-button{min-height:34px;padding:0 9px;font-size:9px;letter-spacing:0}
@@ -100,4 +100,8 @@
   .back-home{z-index:3;left:10px;top:10px;min-height:36px;padding:0 10px;background:#101212;color:#fff;border-radius:0}
   .customer-login{align-items:start;padding:58px 10px 12px}
   .login-box{padding:17px;border-radius:10px}
+}
+
+@media(display-mode:standalone){
+  .brand-header{padding-top:calc(7px + env(safe-area-inset-top))}
 }
