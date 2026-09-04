@@ -88,9 +88,6 @@ document.body.insertAdjacentHTML('beforeend', `
         <div><span>01 · 漆面保护膜</span><h1>PPF 产品订购</h1><p>根据表面效果和应用需求选择产品。当前为页面设计预览，型号、价格、库存和下单功能尚未连接。</p></div>
         <img src="/assets/ppf-gloss-green-hero-v1.png" alt="绿色高端汽车透明亮面 PPF 镜面光泽效果">
       </section>
-      <nav class="ppf-filter" aria-label="PPF 产品筛选">
-        <button class="active" type="button">全部产品</button><button type="button">透明亮面</button><button type="button">深哑光</button><button type="button">缎面</button><button type="button">专项保护</button>
-      </nav>
       <section class="ppf-grid">
         <article><div class="ppf-product-media"><img src="/assets/quad-premium-automotive-hero-v1.png" alt="透明亮面 PPF"></div><div class="ppf-product-copy"><span>透明系列</span><h2>高亮透明 PPF</h2><p>突出原车漆光泽，适用于整车及重点部位的日常防护。</p>${ppfOrderControls('高亮透明 PPF')}</div></article>
         <article><div class="ppf-product-media"><img src="/assets/ppf-matte-hero-v1.png" alt="深哑光 PPF 的高雾度低反光效果"></div><div class="ppf-product-copy"><span>高雾度系列</span><h2>深哑光 PPF</h2><p>雾度更高、反光更少，呈现均匀柔和、更加纯粹的深哑光效果。</p>${ppfOrderControls('深哑光 PPF')}</div></article>
