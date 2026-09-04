@@ -327,6 +327,8 @@ function seedDb() {
     jobs: [
       { id: id(), date: new Date().toISOString().slice(0, 10), customer: 'Walk-in 客户', phone: '(702) 000-0000', vehicle: '2024 Tesla Model Y', vin: '', salesRep: '', service: 'tint', vehicleClass: '中型SUV', package: '热门款', installerId: '', status: '排期', price: 499, materialCost: 70, deposit: 100, notes: '前挡和侧后窗确认透光率' }
     ],
+    appointmentReservations: [],
+    stripeWebhookEvents: [],
     salesOrders: [
       { id: id(), date: new Date().toISOString().slice(0, 10), type: 'wholesale-us', customer: 'LA Dealer', salesRep: '', preparedBy: 'System', item: 'CW-TC8870', qty: 200, unitPrice: 3, status: '待出库', shipping: 'UPS Freight', paid: 300 }
     ],
@@ -463,6 +465,8 @@ function readDb() {
   if (!Array.isArray(db.salesFieldOrders)) db.salesFieldOrders = [];
   if (!Array.isArray(db.portalCustomers)) db.portalCustomers = [];
   if (!Array.isArray(db.warranties)) db.warranties = [];
+  if (!Array.isArray(db.appointmentReservations)) db.appointmentReservations = [];
+  if (!Array.isArray(db.stripeWebhookEvents)) db.stripeWebhookEvents = [];
   if (!Array.isArray(db.messages)) db.messages = [];
   if (!Array.isArray(db.clockRecords)) db.clockRecords = [];
   if (!Array.isArray(db.leaveRequests)) db.leaveRequests = [];
@@ -5961,6 +5965,88 @@ function allowWarrantyLookup(req) {
   return true;
 }
 
+const APPOINTMENT_DEPOSIT_CENTS = 10_000;
+const APPOINTMENT_HOLD_MINUTES = 30;
+
+function appointmentPaymentLink() {
+  return String(process.env.STRIPE_APPOINTMENT_PAYMENT_LINK || 'https://book.stripe.com/test_fZu00idJDePzbNe05rdwc00').trim();
+}
+
+function appointmentBayCapacity(branchId) {
+  const configured = Number(process.env.APPOINTMENT_BAY_CAPACITY || 1);
+  return Math.max(1, Math.min(20, Number.isFinite(configured) ? Math.floor(configured) : 1));
+}
+
+function activeReservationAt(row, branchId, date, time, now = Date.now()) {
+  if (String(row.branchId || '') !== branchId || row.appointmentDate !== date || row.appointmentTime !== time) return false;
+  if (row.status === 'confirmed') return true;
+  return row.status === 'pending_payment' && new Date(row.holdExpiresAt || 0).getTime() > now;
+}
+
+function nextAvailableBay(db, branchId, date, time, ignoreReservationId = '') {
+  const used = new Set((db.appointmentReservations || [])
+    .filter(row => row.id !== ignoreReservationId && activeReservationAt(row, branchId, date, time))
+    .map(row => Number(row.bayNumber || 0))
+    .filter(Boolean));
+  for (let bay = 1; bay <= appointmentBayCapacity(branchId); bay += 1) if (!used.has(bay)) return bay;
+  return 0;
+}
+
+function verifyStripeWebhook(rawBody, signatureHeader, secret) {
+  const parts = String(signatureHeader || '').split(',').map(part => part.trim().split('='));
+  const timestamp = parts.find(([key]) => key === 't')?.[1] || '';
+  const signatures = parts.filter(([key]) => key === 'v1').map(([, value]) => value);
+  if (!timestamp || !signatures.length || !secret) return false;
+  if (Math.abs(Date.now() / 1000 - Number(timestamp)) > 300) return false;
+  const expected = crypto.createHmac('sha256', secret).update(`${timestamp}.${rawBody}`).digest('hex');
+  return signatures.some(signature => secureEqualString(signature, expected));
+}
+
+function confirmAppointmentDeposit(db, session, eventId) {
+  const reservationId = String(session.client_reference_id || session.metadata?.reservationId || '').trim();
+  const reservation = (db.appointmentReservations || []).find(row => row.id === reservationId);
+  if (!reservation) return { ok: false, error: 'reservation_not_found' };
+  if (reservation.status === 'confirmed') return { ok: true, duplicate: true, reservation };
+  if (Number(session.amount_total || 0) !== APPOINTMENT_DEPOSIT_CENTS || String(session.currency || '').toLowerCase() !== 'usd' || session.payment_status !== 'paid') {
+    return { ok: false, error: 'payment_not_settled' };
+  }
+  const bayNumber = nextAvailableBay(db, reservation.branchId, reservation.appointmentDate, reservation.appointmentTime, reservation.id);
+  if (!bayNumber) {
+    reservation.status = 'manual_review';
+    reservation.paymentReceived = true;
+    reservation.paymentReviewReason = 'The selected appointment slot became unavailable before payment completed.';
+    return { ok: false, error: 'slot_unavailable', reservation };
+  }
+  const now = new Date().toISOString();
+  const deposit = APPOINTMENT_DEPOSIT_CENTS / 100;
+  const quoteTotal = Math.max(deposit, Number(reservation.quoteTotal || deposit));
+  const job = {
+    id: id(), date: dateInTimezone(db.settings?.timezone || 'America/Los_Angeles', 0),
+    branchId: reservation.branchId, scheduleDate: reservation.appointmentDate,
+    appointmentTime: reservation.appointmentTime, bayNumber,
+    customer: reservation.customerName, phone: reservation.phone, source: 'Stripe appointment deposit',
+    vehicle: reservation.vehicle, service: reservation.service || '', package: reservation.package || '',
+    status: '排期', price: quoteTotal, materialCost: 0, deposit, paidAmount: deposit,
+    paymentStatus: quoteTotal <= deposit ? 'paid' : 'partial', paymentMethod: 'Stripe',
+    stripeCheckoutSessionId: String(session.id || ''), stripePaymentIntentId: String(session.payment_intent || ''),
+    appointmentReservationId: reservation.id,
+    paymentTransactions: [{ id: id(), date: reservation.appointmentDate, amount: deposit, type: 'deposit', method: 'Stripe', providerEventId: eventId, createdAt: now, createdBy: 'Stripe webhook', createdByUserId: 'stripe' }],
+    notes: [`Online appointment deposit paid: $${deposit.toFixed(2)}`, reservation.notes].filter(Boolean).join('\n'),
+    preparedBy: 'Stripe webhook', preparedByUserId: 'stripe', createdAt: now
+  };
+  reservation.status = 'confirmed';
+  reservation.bayNumber = bayNumber;
+  reservation.jobId = job.id;
+  reservation.depositPaid = deposit;
+  reservation.paidAmount = deposit;
+  reservation.remainingBalance = Math.max(0, quoteTotal - deposit);
+  reservation.stripeCheckoutSessionId = String(session.id || '');
+  reservation.stripePaymentIntentId = String(session.payment_intent || '');
+  reservation.confirmedAt = now;
+  db.jobs.push(job);
+  return { ok: true, duplicate: false, reservation, job };
+}
+
 async function api(req, res) {
   const db = readDb();
   const url = new URL(req.url, `http://${req.headers.host}`);
@@ -5971,6 +6057,69 @@ async function api(req, res) {
 
   if (url.pathname === '/api/meta/messenger/webhook') {
     return handleMetaMessengerWebhook(req, res, db, url);
+  }
+
+  if (req.method === 'POST' && url.pathname === '/api/public/appointment-deposit/reservations') {
+    const body = await readBody(req);
+    const customerName = String(body.customerName || '').trim().slice(0, 160);
+    const phone = String(body.phone || '').trim().slice(0, 80);
+    const email = String(body.email || '').trim().toLowerCase().slice(0, 200);
+    const branchId = String(body.branchId || '').trim().slice(0, 120);
+    const appointmentDate = String(body.appointmentDate || '').trim().slice(0, 10);
+    const appointmentTime = String(body.appointmentTime || '').trim().slice(0, 5);
+    const quoteTotal = Number(body.quoteTotal || 0);
+    if (customerName.length < 2 || phone.replace(/\D/g, '').length < 7) return send(res, 400, { error: 'Please enter the customer name and a valid phone number.' });
+    if (!branchId || !/^\d{4}-\d{2}-\d{2}$/.test(appointmentDate) || !/^\d{2}:\d{2}$/.test(appointmentTime)) return send(res, 400, { error: 'Please select a shop, appointment date, and appointment time.' });
+    if (!Number.isFinite(quoteTotal) || quoteTotal < APPOINTMENT_DEPOSIT_CENTS / 100) return send(res, 400, { error: 'The quoted total must be at least $100.' });
+    const branches = customerBranches(db);
+    if (branches.length && !branches.some(branch => branch.id === branchId)) return send(res, 400, { error: 'The selected shop is not available.' });
+    const bayNumber = nextAvailableBay(db, branchId, appointmentDate, appointmentTime);
+    if (!bayNumber) return send(res, 409, { error: 'That appointment time is no longer available. Please choose another time.' });
+    const now = new Date();
+    const reservation = {
+      id: id(), status: 'pending_payment', branchId, appointmentDate, appointmentTime, bayNumber,
+      customerName, phone, email, vehicle: String(body.vehicle || '').trim().slice(0, 240),
+      service: String(body.service || '').trim().slice(0, 120), package: String(body.package || '').trim().slice(0, 160),
+      quoteTotal: Math.round(quoteTotal * 100) / 100, depositDue: APPOINTMENT_DEPOSIT_CENTS / 100,
+      remainingBalance: Math.max(0, Math.round((quoteTotal - APPOINTMENT_DEPOSIT_CENTS / 100) * 100) / 100),
+      notes: String(body.notes || '').trim().slice(0, 2000), createdAt: now.toISOString(),
+      holdExpiresAt: new Date(now.getTime() + APPOINTMENT_HOLD_MINUTES * 60_000).toISOString()
+    };
+    db.appointmentReservations.push(reservation);
+    writeDb(db);
+    const paymentLink = appointmentPaymentLink();
+    const separator = paymentLink.includes('?') ? '&' : '?';
+    return send(res, 201, {
+      reservationId: reservation.id, status: reservation.status, holdExpiresAt: reservation.holdExpiresAt,
+      depositDue: reservation.depositDue, remainingBalance: reservation.remainingBalance,
+      paymentUrl: `${paymentLink}${separator}client_reference_id=${encodeURIComponent(reservation.id)}`
+    });
+  }
+
+  if (req.method === 'POST' && url.pathname === '/api/stripe/appointment-deposit/webhook') {
+    const webhookSecret = String(process.env.STRIPE_APPOINTMENT_WEBHOOK_SECRET || '').trim();
+    if (!webhookSecret) return send(res, 503, { error: 'Stripe appointment webhook is not configured.' });
+    const rawBody = await readRawBody(req);
+    if (!verifyStripeWebhook(rawBody, req.headers['stripe-signature'], webhookSecret)) return send(res, 400, { error: 'Invalid Stripe signature.' });
+    let event;
+    try { event = JSON.parse(rawBody); } catch { return send(res, 400, { error: 'Invalid Stripe event.' }); }
+    if (event.livemode !== false) return send(res, 400, { error: 'Only Stripe sandbox events are accepted by this endpoint.' });
+    if ((db.stripeWebhookEvents || []).some(row => row.id === event.id)) return send(res, 200, { received: true, duplicate: true });
+    const eventRecord = { id: String(event.id || id()), type: String(event.type || ''), createdAt: new Date().toISOString(), processed: false };
+    db.stripeWebhookEvents.push(eventRecord);
+    db.stripeWebhookEvents = db.stripeWebhookEvents.slice(-1000);
+    if (event.type === 'checkout.session.completed' || event.type === 'checkout.session.async_payment_succeeded') {
+      const result = confirmAppointmentDeposit(db, event.data?.object || {}, eventRecord.id);
+      eventRecord.processed = result.ok;
+      eventRecord.result = result.error || (result.duplicate ? 'duplicate' : 'confirmed');
+      eventRecord.reservationId = result.reservation?.id || '';
+      eventRecord.jobId = result.job?.id || result.reservation?.jobId || '';
+    } else {
+      eventRecord.result = 'ignored';
+    }
+    writeDb(db);
+    notifyDataChanged('stripe-appointment-deposit', eventRecord.jobId || eventRecord.reservationId || eventRecord.id);
+    return send(res, 200, { received: true });
   }
 
   if (req.method === 'POST' && url.pathname === '/api/login') {
