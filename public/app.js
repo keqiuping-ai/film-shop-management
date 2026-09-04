@@ -4815,7 +4815,8 @@ const views = {
     const tabs = [['customers','客户资料','Customer profiles'],['pricing','价格方案','Pricing plans'],['orders','订单与应收','Orders & receivables'],['warranty','质保与往来','Warranty & history']];
     const tabBar = `<div class="portal-customer-tabs">${tabs.map(([id,zh,en])=>`<button class="btn ${portalCustomerTab===id?'primary':''}" onclick="setPortalCustomerTab('${id}')">${lang==='zh'?zh:en}</button>`).join('')}</div>`;
     const content = portalCustomerTab === 'pricing' ? portalPriceTierView() : portalCustomerTab === 'orders' ? portalCustomerOrdersView() : portalCustomerTab === 'warranty' ? portalCustomerWarrantyView() : portalCustomerTable() + `<p class="note">${lang === 'zh' ? '资料客户仅用于保存历史联系方式，不能登录客户端。客户登录地址：' : 'Reference customers store historical contact data and cannot sign in. Customer login: '}<a href="/customer.html" target="_blank">${location.origin}/customer.html</a></p>`;
-    return panel(t('portalCustomers'), actions, importInput + tabBar + content);
+    const guide = `<div class="portal-customer-guide"><strong>${lang === 'zh' ? '客户试用账号建立位置' : 'Customer trial account setup'}</strong><span>${lang === 'zh' ? '客户资料 → 新增客户账号 → 生成临时密码 → 选择价格等级 → 保存 → 复制登录信息发给客户' : 'Customer profiles → New customer → Generate password → Assign price tier → Save → Copy login details'}</span></div>`;
+    return panel(t('portalCustomers'), actions, guide + importInput + tabBar + content);
   },
   shipments() {
     const actions = hasPerm('shipmentsEdit') ? `<div class="mini-actions">
@@ -5854,12 +5855,31 @@ function openPortalCustomer(id = '') {
     ['portalEmail', t('email'), 'text', customer.email], ['portalPhone', lang === 'zh' ? '电话' : 'Phone', 'text', customer.phone], ['portalSalesRep', lang === 'zh' ? '负责业务员' : 'Sales rep', 'text', customer.salesRep],
     ['portalAddress', lang === 'zh' ? '地址' : 'Address', 'text', customer.address], ['portalStatus', t('status'), 'select', customer.status || '正常', ['正常','暂停合作','重点客户']], ['portalPassword', id ? (lang === 'zh' ? '重设密码（不改请留空）' : 'Reset password (optional)') : (lang === 'zh' ? '初始密码（至少8位）' : 'Initial password (8+ chars)'), 'password', ''],
     ['portalNote', t('note'), 'textarea', customer.note]
-  ]) + `<label class="wide">${lang==='zh'?'价格等级':'Price tier'}<select id="portalPriceTier">${priceTierOptions.map(([value,label])=>`<option value="${escapeHtml(value)}" ${value===(customer.priceTier||'standard')?'selected':''}>${escapeHtml(label)}</option>`).join('')}</select></label><div class="wide portal-price-editor"><h4>${lang === 'zh' ? '客户特殊协议价' : 'Customer-specific SKU prices'}</h4><p class="note">${lang === 'zh' ? '这里只填写例外价格；其他型号自动继承客户所属价格等级。' : 'Only enter exceptions; other SKUs inherit the assigned price tier.'}</p><div class="table-wrap"><table><thead><tr><th>SKU</th><th>${t('productName')}</th><th>${t('retailPrice')}</th><th>${t('wholesalePrice')}</th><th>${lang === 'zh' ? '特殊协议价' : 'Customer override'}</th></tr></thead><tbody>${portalPriceRows(customer)}</tbody></table></div></div>`;
+  ]) + `<div class="wide portal-credential-tools"><button class="btn" type="button" onclick="generatePortalTemporaryPassword()">${lang === 'zh' ? '生成临时密码' : 'Generate temporary password'}</button><button class="btn" type="button" onclick="copyPortalTrialLogin()">${lang === 'zh' ? '复制客户登录信息' : 'Copy customer login details'}</button><span class="note">${lang === 'zh' ? '密码保存后无法查看，只能重新设置。请在本窗口关闭前复制给客户。' : 'Passwords cannot be viewed after saving; they can only be reset. Copy it before closing this window.'}</span></div><label class="wide">${lang==='zh'?'价格等级':'Price tier'}<select id="portalPriceTier">${priceTierOptions.map(([value,label])=>`<option value="${escapeHtml(value)}" ${value===(customer.priceTier||'standard')?'selected':''}>${escapeHtml(label)}</option>`).join('')}</select></label><div class="wide portal-price-editor"><h4>${lang === 'zh' ? '客户特殊协议价' : 'Customer-specific SKU prices'}</h4><p class="note">${lang === 'zh' ? '这里只填写例外价格；其他型号自动继承客户所属价格等级。' : 'Only enter exceptions; other SKUs inherit the assigned price tier.'}</p><div class="table-wrap"><table><thead><tr><th>SKU</th><th>${t('productName')}</th><th>${t('retailPrice')}</th><th>${t('wholesalePrice')}</th><th>${lang === 'zh' ? '特殊协议价' : 'Customer override'}</th></tr></thead><tbody>${portalPriceRows(customer)}</tbody></table></div></div>`;
   openModal(id ? (lang === 'zh' ? '编辑客户账号' : 'Edit customer') : (lang === 'zh' ? '新增客户账号' : 'New customer'), body, async () => {
     const prices = {}; document.querySelectorAll('.portal-price-input').forEach(input => { if (input.value !== '') prices[input.dataset.sku] = Number(input.value); });
     const payload = { businessName: document.getElementById('portalBusinessName').value, contactName: document.getElementById('portalContactName').value, account: document.getElementById('portalAccount').value, email: document.getElementById('portalEmail').value, phone: document.getElementById('portalPhone').value, salesRep: document.getElementById('portalSalesRep').value, address: document.getElementById('portalAddress').value, status: document.getElementById('portalStatus').value, password: document.getElementById('portalPassword').value, note: document.getElementById('portalNote').value, priceTier: document.getElementById('portalPriceTier').value, prices, active: customer.active !== false };
     try { const result = await api(`/api/portal-customers${id ? `/${id}` : ''}`, { method: id ? 'PUT' : 'POST', body: JSON.stringify(payload) }); state = result.data; closeModal(); render(); broadcastDataChange(); } catch (err) { alert(err.message); }
   });
+}
+
+function generatePortalTemporaryPassword() {
+  const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
+  const bytes = new Uint8Array(12);
+  crypto.getRandomValues(bytes);
+  const password = [...bytes].map(value => alphabet[value % alphabet.length]).join('');
+  const input = document.getElementById('portalPassword');
+  if (input) { input.type = 'text'; input.value = password; input.focus(); input.select(); }
+}
+
+async function copyPortalTrialLogin() {
+  const account = document.getElementById('portalAccount')?.value.trim() || document.getElementById('portalEmail')?.value.trim() || document.getElementById('portalPhone')?.value.trim();
+  const password = document.getElementById('portalPassword')?.value || '';
+  if (!account) return alert(lang === 'zh' ? '请先填写客户登录账号。' : 'Enter the customer login account first.');
+  if (!password) return alert(lang === 'zh' ? '请先填写或生成临时密码。已有客户如不重设密码，系统无法查看原密码。' : 'Enter or generate a temporary password first. Existing passwords cannot be viewed.');
+  const text = `${lang === 'zh' ? 'QUaD 经销商订购系统' : 'QUaD Dealer Ordering'}\n${lang === 'zh' ? '登录地址' : 'Login'}: ${location.origin}/customer.html\n${lang === 'zh' ? '账号' : 'Account'}: ${account}\n${lang === 'zh' ? '临时密码' : 'Temporary password'}: ${password}`;
+  try { await navigator.clipboard.writeText(text); alert(lang === 'zh' ? '登录信息已复制。请先保存客户账号，再发送给客户。' : 'Login details copied. Save the customer account before sending them.'); }
+  catch { window.prompt(lang === 'zh' ? '请复制以下登录信息：' : 'Copy these login details:', text); }
 }
 
 function shipmentTable() {
