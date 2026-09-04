@@ -4,5 +4,14 @@
   "build": "2026.06.26.1",
   "channel": "stable",
   "minimumDataVersion": 1,
-  "dataVersion": 1
+  "dataVersion": 1,
+  "nativeApps": {
+    "ios": {
+      "latestVersion": "2.1.0",
+      "minimumVersion": "2.1.0",
+      "storeUrl": "",
+      "releaseNotesZh": "QUaD 后端接入、美国业务规则与中英文界面基础。",
+      "releaseNotesEn": "QUaD backend integration, U.S. business rules, and bilingual interface foundation."
+    }
+  }
 }

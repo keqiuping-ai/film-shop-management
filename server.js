@@ -240,6 +240,16 @@ function safePortalCustomer(customer) {
   return safe;
 }
 
+function defaultPortalPriceTiers() {
+  return [
+    { id: 'standard', name: '标准批发价', prices: {} },
+    { id: 'bronze', name: '铜牌经销商价', prices: {} },
+    { id: 'silver', name: '银牌经销商价', prices: {} },
+    { id: 'gold', name: '金牌经销商价', prices: {} },
+    { id: 'strategic', name: '战略客户价', prices: {} }
+  ];
+}
+
 function syncSalesOrderCustomer(db, order) {
   const businessName = String(order.customer || '').trim().slice(0, 160);
   if (!businessName) return null;
@@ -260,7 +270,7 @@ function syncSalesOrderCustomer(db, order) {
       account: email || phoneKey || `order-${order.id}`,
       email, phone, address: String(order.customerAddress || '').trim().slice(0, 500),
       salesRep: String(order.salesRep || '').trim().slice(0, 120), status: '正常',
-      note: '由零售/批发订单自动同步', active: true, prices: {},
+      note: '由零售/批发订单自动同步', active: true, priceTier: 'standard', prices: {},
       passwordHash: hashPassword(crypto.randomBytes(32).toString('hex')),
       createdAt: now, updatedAt: now, syncedFromSalesOrder: true
     };
@@ -279,13 +289,19 @@ function syncSalesOrderCustomer(db, order) {
 
 function portalProductForCustomer(db, product, customer) {
   const hasAgreedPrice = Object.prototype.hasOwnProperty.call(customer?.prices || {}, product.sku);
-  const previousLine = hasAgreedPrice ? null : (db.salesOrders || []).filter(order => order.portalCustomerId === customer.id || (!order.portalCustomerId && String(order.customer || '').trim().toLowerCase() === String(customer.businessName || '').trim().toLowerCase())).sort((a, b) => String(b.createdAt || b.date || '').localeCompare(String(a.createdAt || a.date || ''))).flatMap(salesOrderItems).find(line => line.item === product.sku);
-  const agreed = Number(hasAgreedPrice ? customer.prices[product.sku] : previousLine?.unitPrice);
+  const tier = (db.portalPriceTiers || []).find(item => item.id === (customer?.priceTier || 'standard'));
+  const hasTierPrice = Object.prototype.hasOwnProperty.call(tier?.prices || {}, product.sku);
+  const hasStandardWholesale = Number.isFinite(Number(product.wholesale)) && Number(product.wholesale) > 0;
+  const agreed = Number(hasAgreedPrice ? customer.prices[product.sku] : hasTierPrice ? tier.prices[product.sku] : hasStandardWholesale ? product.wholesale : NaN);
   return { sku: product.sku, name: product.name, category: product.category, unit: product.unit, availability: Number(product.qty || 0) <= 0 ? '需预订' : Number(product.reorder || 0) > 0 && Number(product.qty || 0) <= Number(product.reorder || 0) ? '库存紧张' : '有货', price: Number.isFinite(agreed) ? agreed : null, description: String(product.portalDescription || ''), imageUrl: String(product.portalImageUrl || ''), videoUrl: String(product.portalVideoUrl || ''), isNew: Boolean(product.portalNewProduct) };
 }
 
 function portalCustomerSnapshot(db, customer) {
-  return { customer: safePortalCustomer(customer), products: (db.products || []).filter(product => product.portalVisible !== false).map(product => portalProductForCustomer(db, product, customer)), orders: (db.salesOrders || []).filter(order => order.portalCustomerId === customer.id).sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || ''))).map(order => ({ id: order.id, date: order.date, status: order.status, items: salesOrderItems(order), customerDemand: order.customerDemand || '', shipping: order.shipping || '', trackingNo: order.trackingNo || '', paid: Number(order.paid || 0), paymentMethod: order.paymentMethod || '', createdAt: order.createdAt, portalMessages: order.portalMessages || [], attachments: order.portalAttachments || [] })) };
+  const tier = (db.portalPriceTiers || []).find(item => item.id === (customer.priceTier || 'standard'));
+  const phone = normalizedWarrantyPhone(customer.phone);
+  const names = new Set([customer.businessName, customer.contactName].map(normalizedWarrantyName).filter(Boolean));
+  const warranties = (db.warranties || []).filter(item => (phone && normalizedWarrantyPhone(item.phone) === phone) || names.has(normalizedWarrantyName(item.customerName))).sort((a,b)=>String(b.installDate||'').localeCompare(String(a.installDate||''))).map(publicWarrantyRecord);
+  return { customer: { ...safePortalCustomer(customer), priceTierName: tier?.name || '标准批发价' }, products: (db.products || []).filter(product => product.portalVisible !== false).map(product => portalProductForCustomer(db, product, customer)), orders: (db.salesOrders || []).filter(order => order.portalCustomerId === customer.id).sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || ''))).map(order => ({ id: order.id, date: order.date, status: order.status, paymentStatus: order.paymentStatus || '', items: salesOrderItems(order), subtotal: Number(order.subtotal || 0), shippingFee: Number(order.shippingFee || 0), salesTax: Number(order.salesTax || 0), checkoutTotal: Number(order.checkoutTotal || 0), fulfillment: order.fulfillment || '', customerDemand: order.customerDemand || '', shipping: order.shipping || '', trackingNo: order.trackingNo || '', paid: Number(order.paid || 0), paymentMethod: order.paymentMethod || '', createdAt: order.createdAt, portalMessages: order.portalMessages || [], attachments: order.portalAttachments || [] })), warranties };
 }
 
 function seedDb() {
@@ -329,6 +345,8 @@ function seedDb() {
     ],
     appointmentReservations: [],
     stripeWebhookEvents: [],
+    customerCheckoutEvents: [],
+    inventoryReservations: [],
     salesOrders: [
       { id: id(), date: new Date().toISOString().slice(0, 10), type: 'wholesale-us', customer: 'LA Dealer', salesRep: '', preparedBy: 'System', item: 'CW-TC8870', qty: 200, unitPrice: 3, status: '待出库', shipping: 'UPS Freight', paid: 300 }
     ],
@@ -349,7 +367,10 @@ function seedDb() {
     salesTrialRolls: [],
     salesConsignments: [],
     salesDailyReports: [],
+    salesLocationPoints: [],
+    salesAttachments: [],
     portalCustomers: [],
+    portalPriceTiers: defaultPortalPriceTiers(),
     warranties: [],
     customerServiceReps: [
       { id: id(), name: '前台客服', role: '前台', invitePay: 20, closePay: 50, active: true }
@@ -460,13 +481,18 @@ function readDb() {
   if (!Array.isArray(db.salesTrialRolls)) db.salesTrialRolls = [];
   if (!Array.isArray(db.salesConsignments)) db.salesConsignments = [];
   if (!Array.isArray(db.salesDailyReports)) db.salesDailyReports = [];
+  if (!Array.isArray(db.salesLocationPoints)) db.salesLocationPoints = [];
+  if (!Array.isArray(db.salesAttachments)) db.salesAttachments = [];
   if (!Array.isArray(db.salesVisitPlans)) db.salesVisitPlans = [];
   if (!Array.isArray(db.salesFollowUps)) db.salesFollowUps = [];
   if (!Array.isArray(db.salesFieldOrders)) db.salesFieldOrders = [];
   if (!Array.isArray(db.portalCustomers)) db.portalCustomers = [];
+  if (!Array.isArray(db.portalPriceTiers) || !db.portalPriceTiers.length) db.portalPriceTiers = defaultPortalPriceTiers();
   if (!Array.isArray(db.warranties)) db.warranties = [];
   if (!Array.isArray(db.appointmentReservations)) db.appointmentReservations = [];
   if (!Array.isArray(db.stripeWebhookEvents)) db.stripeWebhookEvents = [];
+  if (!Array.isArray(db.customerCheckoutEvents)) db.customerCheckoutEvents = [];
+  if (!Array.isArray(db.inventoryReservations)) db.inventoryReservations = [];
   if (!Array.isArray(db.messages)) db.messages = [];
   if (!Array.isArray(db.clockRecords)) db.clockRecords = [];
   if (!Array.isArray(db.leaveRequests)) db.leaveRequests = [];
@@ -1334,6 +1360,7 @@ function sanitizeDbForUser(db, user, options = {}) {
     jobs: p.jobsView || p.jobsEdit || p.jobsDelete ? branchVisibleRecords(db, user, db.jobs).map(job => sanitizeJob(job, p, canSeeCosts)) : [],
     salesOrders: p.ordersView ? branchVisibleRecords(db, user, db.salesOrders).map(order => sanitizeSalesOrder(order, p)) : [],
     portalCustomers: p.ordersView ? (db.portalCustomers || []).map(safePortalCustomer) : [],
+    portalPriceTiers: p.ordersView ? (db.portalPriceTiers || defaultPortalPriceTiers()) : [],
     warranties: p.jobsView || p.jobsCreate || p.jobsEdit || p.jobsDelete ? (db.warranties || []) : [],
     shipments: p.shipmentsView ? (db.shipments || []) : [],
     shipmentReceipts: p.shipmentsView ? (db.shipmentReceipts || []) : [],
@@ -1802,6 +1829,10 @@ function fieldSalesSnapshot(db, user) {
       .filter(item => canManage || item.userId === user.id)
       .sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')))
       .slice(0, 200),
+    locationPoints: (db.salesLocationPoints || [])
+      .filter(item => canManage || item.userId === user.id)
+      .sort((a, b) => String(a.collectedAt || '').localeCompare(String(b.collectedAt || '')))
+      .slice(-1000),
     visitPlans: (db.salesVisitPlans || [])
       .filter(item => canManage || item.userId === user.id)
       .sort((a, b) => String(a.plannedAt || '').localeCompare(String(b.plannedAt || '')))
@@ -6047,6 +6078,64 @@ function confirmAppointmentDeposit(db, session, eventId) {
   return { ok: true, duplicate: false, reservation, job };
 }
 
+const CUSTOMER_CHECKOUT_HOLD_MINUTES = 35;
+
+function checkoutBranchId(fulfillment) {
+  return fulfillment === 'pickup-las-vegas' ? 'las-vegas' : fulfillment === 'pickup-los-angeles' ? 'los-angeles' : '';
+}
+
+function activeInventoryReservationQty(db, sku, branchId, ignoreOrderId = '') {
+  const now = Date.now();
+  const finished = new Set(['已出库','shipped','delivered','completed','已完成','已取消','canceled','cancelled','已退款','refunded']);
+  return (db.inventoryReservations || []).filter(row => {
+    if (row.orderId === ignoreOrderId || row.sku !== sku || row.branchId !== branchId || !['pending_payment','paid'].includes(row.status)) return false;
+    if (row.status === 'pending_payment') return new Date(row.expiresAt || 0).getTime() > now;
+    const order = (db.salesOrders || []).find(item => item.id === row.orderId);
+    return Boolean(order) && !finished.has(String(order.status || '').trim().toLowerCase());
+  }).reduce((sum,row)=>sum+Number(row.qty||0),0);
+}
+
+function releaseOrderInventoryReservations(db, orderId, status = 'released') {
+  (db.inventoryReservations || []).filter(row => row.orderId === orderId && ['pending_payment','paid'].includes(row.status)).forEach(row => { row.status = status; row.updatedAt = new Date().toISOString(); });
+}
+
+async function stripeFormRequest(pathname, fields) {
+  const secretKey = String(process.env.STRIPE_SECRET_KEY || '').trim();
+  if (!secretKey) throw new Error('Stripe sandbox secret key is not configured.');
+  if (secretKey.startsWith('sk_live_') && process.env.STRIPE_CUSTOMER_ORDER_LIVE_ENABLED !== 'true') throw new Error('Live Stripe payments are locked. Set STRIPE_CUSTOMER_ORDER_LIVE_ENABLED=true only after final approval.');
+  const form = new URLSearchParams();
+  Object.entries(fields).forEach(([key,value]) => { if (value !== undefined && value !== null && value !== '') form.append(key, String(value)); });
+  const response = await fetch(`https://api.stripe.com/v1/${pathname}`, { method:'POST', headers:{ Authorization:`Bearer ${secretKey}`, 'Content-Type':'application/x-www-form-urlencoded' }, body:form });
+  const body = await response.json().catch(()=>({}));
+  if (!response.ok) throw new Error(body?.error?.message || `Stripe request failed (${response.status}).`);
+  return body;
+}
+
+function customerCheckoutBaseUrl(req) {
+  return String(process.env.PUBLIC_BASE_URL || requestPublicBaseUrl(req)).replace(/\/$/,'');
+}
+
+function confirmCustomerCheckout(db, session, eventId) {
+  const orderId = String(session.client_reference_id || session.metadata?.orderId || '').trim();
+  const order = (db.salesOrders || []).find(row => row.id === orderId && row.portalSource);
+  if (!order) return { ok:false, error:'order_not_found' };
+  if (order.paymentStatus === 'paid') return { ok:true, duplicate:true, order };
+  const expectedCents = Math.round(Number(order.checkoutTotal || 0) * 100);
+  if (session.payment_status !== 'paid' || String(session.currency || '').toLowerCase() !== 'usd' || Number(session.amount_total || 0) !== expectedCents) return { ok:false, error:'payment_not_settled_or_amount_mismatch', order };
+  const paid = expectedCents / 100;
+  const now = new Date().toISOString();
+  order.paid = paid;
+  order.paymentStatus = 'paid';
+  order.paymentMethod = 'Stripe';
+  order.status = '已付款待出库';
+  order.stripeCheckoutSessionId = String(session.id || '');
+  order.stripePaymentIntentId = String(session.payment_intent || '');
+  order.paymentTransactions = [...(order.paymentTransactions || []), { id:id(), date:dateInTimezone(db.settings?.timezone || 'America/Los_Angeles',0), amount:paid, type:'payment', method:'Stripe', providerEventId:eventId, createdAt:now, createdBy:'Stripe webhook', createdByUserId:'stripe' }];
+  order.updatedAt = now;
+  (db.inventoryReservations || []).filter(row => row.orderId === order.id && row.status === 'pending_payment').forEach(row => { row.status='paid'; row.updatedAt=now; });
+  return { ok:true, duplicate:false, order };
+}
+
 async function api(req, res) {
   const db = readDb();
   const url = new URL(req.url, `http://${req.headers.host}`);
@@ -6122,6 +6211,45 @@ async function api(req, res) {
     return send(res, 200, { received: true });
   }
 
+  if (req.method === 'POST' && url.pathname === '/api/stripe/customer-order/webhook') {
+    const webhookSecret = String(process.env.STRIPE_CUSTOMER_ORDER_WEBHOOK_SECRET || '').trim();
+    if (!webhookSecret) return send(res, 503, { error:'Stripe customer-order webhook is not configured.' });
+    const rawBody = await readRawBody(req);
+    if (!verifyStripeWebhook(rawBody, req.headers['stripe-signature'], webhookSecret)) return send(res, 400, { error:'Invalid Stripe signature.' });
+    let event;
+    try { event = JSON.parse(rawBody); } catch { return send(res, 400, { error:'Invalid Stripe event.' }); }
+    if ((db.customerCheckoutEvents || []).some(row => row.id === event.id)) return send(res, 200, { received:true, duplicate:true });
+    const eventRecord = { id:String(event.id || id()), type:String(event.type || ''), livemode:Boolean(event.livemode), createdAt:new Date().toISOString(), processed:false };
+    db.customerCheckoutEvents.push(eventRecord);
+    db.customerCheckoutEvents = db.customerCheckoutEvents.slice(-2000);
+    const session = event.data?.object || {};
+    if (event.type === 'checkout.session.completed' || event.type === 'checkout.session.async_payment_succeeded') {
+      const result = confirmCustomerCheckout(db, session, eventRecord.id);
+      eventRecord.processed = result.ok;
+      eventRecord.result = result.error || (result.duplicate ? 'duplicate' : 'paid');
+      eventRecord.orderId = result.order?.id || '';
+    } else if (event.type === 'charge.refunded') {
+      const paymentIntentId = String(session.payment_intent || '').trim();
+      const order = (db.salesOrders || []).find(row => row.portalSource && row.stripePaymentIntentId === paymentIntentId);
+      if (order) {
+        const refunded = Math.max(0,Number(session.amount_refunded || 0)/100);
+        const previousRefunded = Math.max(0,Number(order.refunded || 0));
+        const refundDelta = Math.max(0,Math.round((refunded-previousRefunded)*100)/100);
+        order.refunded=refunded; order.paid=Math.max(0,Math.round((Number(order.checkoutTotal||0)-refunded)*100)/100); order.paymentStatus=order.paid<=0?'refunded':'partially_refunded'; order.status=order.paid<=0?'已退款':'部分退款'; order.updatedAt=new Date().toISOString();
+        if (refundDelta) order.paymentTransactions=[...(order.paymentTransactions||[]),{ id:id(),date:dateInTimezone(db.settings?.timezone||'America/Los_Angeles',0),amount:-refundDelta,type:'refund',method:'Stripe',providerEventId:eventRecord.id,createdAt:order.updatedAt,createdBy:'Stripe webhook',createdByUserId:'stripe' }];
+        if (order.paid<=0) releaseOrderInventoryReservations(db,order.id,'refunded');
+      }
+      eventRecord.processed=Boolean(order); eventRecord.result=order?(order.paid<=0?'refunded':'partially_refunded'):'order_not_found'; eventRecord.orderId=order?.id||'';
+    } else if (event.type === 'checkout.session.expired' || event.type === 'checkout.session.async_payment_failed') {
+      const orderId = String(session.client_reference_id || session.metadata?.orderId || '').trim();
+      const order = (db.salesOrders || []).find(row => row.id === orderId && row.portalSource);
+      if (order && order.paymentStatus !== 'paid') { order.paymentStatus='expired'; order.status='付款已过期'; order.updatedAt=new Date().toISOString(); releaseOrderInventoryReservations(db,order.id,'expired'); }
+      eventRecord.processed = Boolean(order); eventRecord.result = order ? 'expired' : 'order_not_found'; eventRecord.orderId = order?.id || '';
+    } else eventRecord.result = 'ignored';
+    writeDb(db); notifyDataChanged('stripe-customer-order',eventRecord.orderId || eventRecord.id);
+    return send(res, 200, { received:true });
+  }
+
   if (req.method === 'POST' && url.pathname === '/api/login') {
     const body = await readBody(req);
     const user = db.users.find(u => u.email.toLowerCase() === String(body.email || '').toLowerCase() && u.active);
@@ -6133,6 +6261,18 @@ async function api(req, res) {
       ? { data: sanitizeDbForUser(db, user, { fastLogin: body.includeBootstrap === 'fast' }), revision: databaseRevision() }
       : {};
     return send(res, 200, { token, user: safeUser(user), ...desktopBootstrap }, undefined, req);
+  }
+
+  if (req.method === 'GET' && url.pathname === '/api/mobile/app-version') {
+    const ios = readVersion().nativeApps?.ios || {};
+    return send(res, 200, {
+      platform:'ios',
+      latestVersion:String(ios.latestVersion || '2.1.0'),
+      minimumVersion:String(ios.minimumVersion || '2.1.0'),
+      storeUrl:String(ios.storeUrl || ''),
+      releaseNotesZh:String(ios.releaseNotesZh || ''),
+      releaseNotesEn:String(ios.releaseNotesEn || '')
+    });
   }
 
   if (url.pathname.startsWith('/api/agent/customer-tasks')) {
@@ -6366,6 +6506,46 @@ async function api(req, res) {
     if (!customer) return send(res, 401, { error: 'Please log in to your customer account.' });
     if (req.method === 'GET' && url.pathname === '/api/customer/bootstrap') return send(res, 200, portalCustomerSnapshot(db, customer), undefined, req);
     if (req.method === 'POST' && url.pathname === '/api/customer/logout') return send(res, 200, { ok: true });
+    if (req.method === 'POST' && url.pathname === '/api/customer/checkout-session') {
+      const body = await readBody(req);
+      const fulfillment = String(body.fulfillment || '');
+      const branchId = checkoutBranchId(fulfillment);
+      if (!branchId) return send(res, 400, { error:'Online payment currently supports Las Vegas or Los Angeles warehouse pickup only.' });
+      const requested = (Array.isArray(body.items) ? body.items : []).slice(0,50);
+      const items = [];
+      for (const line of requested) {
+        const sku = String(line.sku || '').trim();
+        const qty = Math.max(0,Math.floor(Number(line.qty || 0)));
+        const product = (db.products || []).find(row => row.sku === sku && row.portalVisible !== false);
+        const priced = product ? portalProductForCustomer(db,product,customer) : null;
+        if (!product || !qty || priced?.price === null || !Number.isFinite(Number(priced?.price)) || Number(priced.price) <= 0) return send(res,400,{ error:`${sku || 'A selected product'} is unavailable or does not have an approved price.` });
+        const available = branchStockQty(db,sku,branchId) - activeInventoryReservationQty(db,sku,branchId);
+        if (available < qty) return send(res,409,{ error:`Insufficient ${branchId === 'las-vegas' ? 'Las Vegas' : 'Los Angeles'} inventory for ${sku}. Available: ${Math.max(0,available)}.` });
+        items.push({ item:sku, name:String(product.name || sku), qty, unitPrice:Number(priced.price), unitCostSnapshot:Number(product.cost || 0) });
+      }
+      if (!items.length) return send(res,400,{ error:'Select at least one product.' });
+      const subtotal = Math.round(items.reduce((sum,line)=>sum+line.qty*line.unitPrice,0)*100)/100;
+      const orderId = id();
+      const now = new Date();
+      const expiresAt = new Date(now.getTime()+CUSTOMER_CHECKOUT_HOLD_MINUTES*60_000).toISOString();
+      const order = { id:orderId, date:dateInTimezone(db.settings?.timezone || 'America/Los_Angeles',0), branchId, warehouse:branchId, type:'wholesale-us', customer:customer.businessName || customer.contactName, customerAddress:String(body.address || customer.address || '').trim().slice(0,500), customerContact:[customer.contactName,customer.phone,customer.email].filter(Boolean).join(' · '), salesRep:customer.salesRep || '', preparedBy:'客户客户端', items, item:items[0].item, qty:items[0].qty, unitPrice:items[0].unitPrice, subtotal, shippingFee:0, salesTax:0, checkoutTotal:subtotal, fulfillment, status:'待付款', paymentStatus:'pending', shipping:fulfillment === 'pickup-las-vegas' ? 'Las Vegas warehouse pickup' : 'Los Angeles warehouse pickup', trackingNo:'', paid:0, paymentMethod:'Stripe', note:String(body.notes || '').trim().slice(0,2000), customerDemand:String(body.notes || '').trim().slice(0,2000), portalCustomerId:customer.id, portalRequestId:String(body.requestId || `checkout-${orderId}`).slice(0,120), portalSource:true, portalNew:true, paymentTransactions:[], createdAt:now.toISOString(), checkoutExpiresAt:expiresAt };
+      db.salesOrders.push(order);
+      items.forEach(line=>db.inventoryReservations.push({ id:id(), orderId, portalCustomerId:customer.id, sku:line.item, qty:line.qty, branchId, status:'pending_payment', createdAt:now.toISOString(), expiresAt }));
+      writeDb(db);
+      try {
+        const baseUrl = customerCheckoutBaseUrl(req);
+        const fields = { mode:'payment', client_reference_id:orderId, 'metadata[orderId]':orderId, 'metadata[portalCustomerId]':customer.id, customer_email:customer.email || undefined, success_url:`${baseUrl}/customer.html?checkout=success&session_id={CHECKOUT_SESSION_ID}`, cancel_url:`${baseUrl}/customer.html?checkout=canceled`, expires_at:Math.floor(new Date(expiresAt).getTime()/1000), 'payment_method_types[0]':'card' };
+        items.forEach((line,index)=>{ fields[`line_items[${index}][price_data][currency]`]='usd'; fields[`line_items[${index}][price_data][unit_amount]`]=Math.round(line.unitPrice*100); fields[`line_items[${index}][price_data][product_data][name]`]=line.name; fields[`line_items[${index}][price_data][product_data][metadata][sku]`]=line.item; fields[`line_items[${index}][quantity]`]=line.qty; });
+        const session = await stripeFormRequest('checkout/sessions',fields);
+        order.stripeCheckoutSessionId=String(session.id || ''); order.checkoutUrl=String(session.url || ''); order.updatedAt=new Date().toISOString();
+        audit(db,{ id:`customer-${customer.id}`,name:customer.businessName || customer.contactName },'create-customer-checkout',{ collection:'salesOrders',recordId:order.id,recordLabel:order.customer,detail:`Stripe checkout ${order.customer} $${subtotal.toFixed(2)}` });
+        writeDb(db); notifyDataChanged('customer-checkout-created',order.id);
+        return send(res,201,{ orderId:order.id, checkoutUrl:order.checkoutUrl, expiresAt, total:subtotal, currency:'usd' });
+      } catch (error) {
+        order.status='付款建立失败'; order.paymentStatus='checkout_failed'; order.paymentError=String(error.message || error).slice(0,500); order.updatedAt=new Date().toISOString(); releaseOrderInventoryReservations(db,order.id,'released'); writeDb(db);
+        return send(res,502,{ error:order.paymentError });
+      }
+    }
     if (req.method === 'POST' && url.pathname === '/api/customer/media') {
       const body = await readBody(req);
       const name = String(body.name || 'Customer attachment').trim().slice(0, 160);
@@ -6766,6 +6946,25 @@ async function api(req, res) {
     return send(res, 200, { added: added.length, skipped: skipped.length, skippedRecords: skipped.slice(0, 50), data: sanitizeDbForUser(db, user) });
   }
 
+  const portalPriceTierMatch = url.pathname.match(/^\/api\/portal-price-tiers\/([^/]+)$/);
+  if (portalPriceTierMatch && req.method === 'PUT') {
+    if (!canAccess(user, 'ordersEdit')) return send(res, 403, { error: '没有客户价格管理权限' });
+    const tierId = decodeURIComponent(portalPriceTierMatch[1]);
+    const tier = (db.portalPriceTiers || []).find(item => item.id === tierId);
+    if (!tier) return send(res, 404, { error: '找不到价格等级' });
+    const body = await readBody(req);
+    const prices = {};
+    Object.entries(body.prices && typeof body.prices === 'object' ? body.prices : {}).forEach(([sku, value]) => {
+      const price = Number(value);
+      if (Number.isFinite(price) && price >= 0) prices[String(sku)] = price;
+    });
+    tier.prices = prices;
+    tier.updatedAt = new Date().toISOString();
+    audit(db, user, 'update-portal-price-tier', { collection: 'portalPriceTiers', recordId: tier.id, recordLabel: tier.name, detail: `更新价格等级 ${tier.name}，${Object.keys(prices).length} 个 SKU` });
+    writeDb(db); notifyDataChanged('portal-price-tier', tier.id);
+    return send(res, 200, { item: tier, data: sanitizeDbForUser(db, user) });
+  }
+
   const portalCustomerMatch = url.pathname.match(/^\/api\/portal-customers(?:\/([^/]+))?$/);
   if (portalCustomerMatch) {
     if (!canAccess(user, req.method === 'GET' ? 'ordersView' : 'ordersEdit')) return send(res, 403, { error: '没有客户管理权限' });
@@ -6784,7 +6983,9 @@ async function api(req, res) {
     if (existingIndex < 0 && String(body.password || '').length < 8) return send(res, 400, { error: '新客户必须设置至少 8 位密码' });
     const prices = {};
     Object.entries(body.prices && typeof body.prices === 'object' ? body.prices : before.prices || {}).forEach(([sku, value]) => { const price = Number(value); if (Number.isFinite(price) && price >= 0) prices[String(sku)] = price; });
-    const item = { ...before, id: customerId || id(), businessName: String(body.businessName ?? before.businessName ?? '').trim().slice(0, 160), contactName: String(body.contactName ?? before.contactName ?? '').trim().slice(0, 120), account: account.toLowerCase(), email, phone, address: String(body.address ?? before.address ?? '').trim().slice(0, 500), salesRep: String(body.salesRep ?? before.salesRep ?? '').trim().slice(0, 120), status: String(body.status ?? before.status ?? '正常').trim().slice(0, 50), note: String(body.note ?? before.note ?? '').trim().slice(0, 2000), active: body.active !== false, prices, createdAt: before.createdAt || new Date().toISOString(), updatedAt: new Date().toISOString() };
+    const allowedPriceTiers = new Set((db.portalPriceTiers || []).map(tier => tier.id));
+    const requestedPriceTier = String(body.priceTier ?? before.priceTier ?? 'standard');
+    const item = { ...before, id: customerId || id(), businessName: String(body.businessName ?? before.businessName ?? '').trim().slice(0, 160), contactName: String(body.contactName ?? before.contactName ?? '').trim().slice(0, 120), account: account.toLowerCase(), email, phone, address: String(body.address ?? before.address ?? '').trim().slice(0, 500), salesRep: String(body.salesRep ?? before.salesRep ?? '').trim().slice(0, 120), status: String(body.status ?? before.status ?? '正常').trim().slice(0, 50), note: String(body.note ?? before.note ?? '').trim().slice(0, 2000), active: body.active !== false, priceTier: allowedPriceTiers.has(requestedPriceTier) ? requestedPriceTier : 'standard', prices, createdAt: before.createdAt || new Date().toISOString(), updatedAt: new Date().toISOString() };
     item.passwordHash = body.password ? hashPassword(body.password) : before.passwordHash;
     if (existingIndex >= 0) db.portalCustomers[existingIndex] = item; else db.portalCustomers.push(item);
     audit(db, user, existingIndex >= 0 ? 'update-portal-customer' : 'create-portal-customer', { collection: 'portalCustomers', recordId: item.id, recordLabel: item.businessName, detail: `${existingIndex >= 0 ? '修改' : '新增'}客户账号 ${item.businessName}` });
@@ -6839,6 +7040,69 @@ async function api(req, res) {
 
   if (req.method === 'GET' && url.pathname === '/api/mobile/bootstrap') {
     return send(res, 200, mobileSnapshot(db, user), undefined, req);
+  }
+
+  if (req.method === 'POST' && url.pathname === '/api/field-sales/location-points') {
+    if (!canUseFieldSales(user)) return send(res, 403, { error: '当前账号没有业务员管理权限' });
+    const body = await readBody(req);
+    const clientPointId = String(body.clientPointId || '').trim().slice(0, 100);
+    const latitude = Number(body.latitude);
+    const longitude = Number(body.longitude);
+    const accuracyM = Number(body.accuracyM ?? body.accuracy);
+    if (!clientPointId || !hasValidCoordinates(latitude, longitude)) return send(res, 400, { error: '定位点缺少有效编号或坐标' });
+    const existing = (db.salesLocationPoints || []).find(item => item.userId === user.id && item.clientPointId === clientPointId);
+    if (existing) return send(res, 200, existing);
+    const point = {
+      locationId: id(), clientPointId,
+      userId: user.id, userName: user.name || user.email,
+      branchId: String(user.defaultBranchId || '').trim(),
+      shiftId: String(body.shiftId || '').trim().slice(0, 100),
+      collectedAt: String(body.collectedAt || new Date().toISOString()),
+      latitude, longitude,
+      accuracyM: Number.isFinite(accuracyM) ? Math.max(0, accuracyM) : 0,
+      source: String(body.source || 'IOS_NATIVE').trim().slice(0, 40),
+      createdAt: new Date().toISOString()
+    };
+    db.salesLocationPoints.push(point);
+    if (db.salesLocationPoints.length > 20000) db.salesLocationPoints = db.salesLocationPoints.slice(-20000);
+    audit(db, user, 'append-field-sales-location', { collection:'salesLocationPoints', recordId:point.locationId, detail:`${point.userName} 上传外勤定位点` });
+    writeDb(db);
+    return send(res, 201, point);
+  }
+
+  if (url.pathname === '/api/field-sales/attachments') {
+    if (!canUseFieldSales(user)) return send(res, 403, { error: '当前账号没有业务员管理权限' });
+    const objectId = String(url.searchParams.get('objectId') || '').trim();
+    if (req.method === 'GET') {
+      const items = (db.salesAttachments || [])
+        .filter(item => item.objectId === objectId && (canManageFieldSales(user) || item.userId === user.id))
+        .map(item => ({ attachmentId:item.id, fileName:item.fileName, sizeBytes:item.sizeBytes, contentType:item.contentType, url:item.url, createdAt:item.createdAt }));
+      return send(res, 200, { items });
+    }
+    if (req.method === 'POST') {
+      const body = await readBody(req);
+      const targetId = String(body.objectId || '').trim().slice(0, 120);
+      const fileName = String(body.fileName || '附件').trim().slice(0, 160) || '附件';
+      const contentType = String(body.contentType || 'application/octet-stream').trim().slice(0, 120);
+      const raw = String(body.contentBase64 || '');
+      if (!targetId || !raw || !/^[A-Za-z0-9+/=\r\n]+$/.test(raw)) return send(res, 400, { error: '附件对象或内容不完整' });
+      const data = Buffer.from(raw, 'base64');
+      if (!data.length || data.length > MAX_CLOUD_FILE_BYTES) return send(res, 413, { error: '附件为空或超过 20MB' });
+      fs.mkdirSync(CUSTOMER_MEDIA_DIR, { recursive: true });
+      const storedName = `${crypto.randomBytes(6).toString('hex')}${safeCustomerMediaExtension(fileName, contentType)}`;
+      fs.writeFileSync(path.join(CUSTOMER_MEDIA_DIR, storedName), data);
+      const item = {
+        id:id(), objectId:targetId, userId:user.id, userName:user.name || user.email,
+        branchId:String(user.defaultBranchId || '').trim(), fileName, contentType,
+        sizeBytes:data.length, url:`${requestPublicBaseUrl(req)}/customer-media/${storedName}`,
+        createdAt:new Date().toISOString()
+      };
+      db.salesAttachments.unshift(item);
+      audit(db, user, 'upload-field-sales-attachment', { collection:'salesAttachments', recordId:item.id, recordLabel:fileName, detail:`上传外勤附件 ${fileName}` });
+      writeDb(db);
+      return send(res, 201, { attachmentId:item.id, sizeBytes:item.sizeBytes, url:item.url });
+    }
+    return send(res, 405, { error: 'Method not allowed' });
   }
 
   if (req.method === 'POST' && url.pathname === '/api/field-sales/accounts/extract-screenshot') {

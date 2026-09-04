@@ -30,6 +30,7 @@ let token = localStorage.getItem('filmShopCloud.token') || '';
 let state = null;
 let user = null;
 let current = 'modules';
+let portalCustomerTab = 'customers';
 // Monotonically tracks user-visible navigation. A bootstrap response may arrive
 // after the operator has moved to another module, conversation, or workspace;
 // that older response may update data, but must never repaint the old screen.
@@ -227,8 +228,8 @@ const dict = {
     leadsSub: '互联网客资、到店率、成交率和客服提成',
     orders: '零售批发',
     ordersSub: '客户订单、出货、收款和物流',
-    portalCustomers: '客户管理中心',
-    portalCustomersSub: '客户账号、联系方式和每个型号的专属价格',
+    portalCustomers: 'B端客户与协议价',
+    portalCustomersSub: '客户资料、价格等级、订单应收、质保与往来',
     shipments: '在途货物',
     shipmentsSub: '中国海运、空运到拉斯维加斯的货物跟踪',
     schedules: '员工调休',
@@ -492,8 +493,8 @@ const dict = {
     leadsSub: 'Internet leads, arrival rate, close rate, and staff commissions',
     orders: 'Retail / Wholesale',
     ordersSub: 'Customer orders, shipping, payment, and balance',
-    portalCustomers: 'Customer Accounts',
-    portalCustomersSub: 'Customer logins, contacts, and customer-specific SKU pricing',
+    portalCustomers: 'B2B Customers & Contract Pricing',
+    portalCustomersSub: 'Customer profiles, price tiers, receivables, warranties, and communication',
     shipments: 'Inbound Shipments',
     shipmentsSub: 'China ocean and air freight tracking to Las Vegas',
     schedules: 'Staff Schedule',
@@ -4811,7 +4812,10 @@ const views = {
   portalCustomers() {
     const actions = hasPerm('ordersEdit') ? `<div class="mini-actions"><button class="btn" onclick="document.getElementById('portalReferenceImportFile')?.click()">${lang === 'zh' ? '导入UPS客户资料' : 'Import UPS customers'}</button><button class="btn primary" onclick="openPortalCustomer()">${lang === 'zh' ? '新增客户账号' : 'New customer'}</button></div>` : '';
     const importInput = hasPerm('ordersEdit') ? `<input id="portalReferenceImportFile" class="hidden" type="file" accept="application/json,.json" onchange="importPortalReferenceCustomers(this.files?.[0]); this.value=''" />` : '';
-    return panel(t('portalCustomers'), actions, importInput + portalCustomerTable() + `<p class="note">${lang === 'zh' ? '资料客户仅用于保存历史联系方式，不能登录客户端。客户登录地址：' : 'Reference customers store historical contact data and cannot sign in. Customer login: '}<a href="/customer.html" target="_blank">${location.origin}/customer.html</a></p>`);
+    const tabs = [['customers','客户资料','Customer profiles'],['pricing','价格方案','Pricing plans'],['orders','订单与应收','Orders & receivables'],['warranty','质保与往来','Warranty & history']];
+    const tabBar = `<div class="portal-customer-tabs">${tabs.map(([id,zh,en])=>`<button class="btn ${portalCustomerTab===id?'primary':''}" onclick="setPortalCustomerTab('${id}')">${lang==='zh'?zh:en}</button>`).join('')}</div>`;
+    const content = portalCustomerTab === 'pricing' ? portalPriceTierView() : portalCustomerTab === 'orders' ? portalCustomerOrdersView() : portalCustomerTab === 'warranty' ? portalCustomerWarrantyView() : portalCustomerTable() + `<p class="note">${lang === 'zh' ? '资料客户仅用于保存历史联系方式，不能登录客户端。客户登录地址：' : 'Reference customers store historical contact data and cannot sign in. Customer login: '}<a href="/customer.html" target="_blank">${location.origin}/customer.html</a></p>`;
+    return panel(t('portalCustomers'), actions, importInput + tabBar + content);
   },
   shipments() {
     const actions = hasPerm('shipmentsEdit') ? `<div class="mini-actions">
@@ -5797,7 +5801,31 @@ function retailWholesaleSalesTable(orders = []) {
 
 function portalCustomerTable() {
   const rows = state.portalCustomers || [];
-  return `<div class="table-wrap"><table><thead><tr><th>${lang === 'zh' ? '客户/公司' : 'Customer'}</th><th>${lang === 'zh' ? '联系人' : 'Contact'}</th><th>${lang === 'zh' ? '登录账号' : 'Login'}</th><th>${lang === 'zh' ? '地址' : 'Address'}</th><th>${lang === 'zh' ? '业务员' : 'Sales rep'}</th><th>${lang === 'zh' ? '协议价数量' : 'SKU prices'}</th><th>${t('status')}</th><th></th></tr></thead><tbody>${rows.map(c => `<tr><td><strong>${escapeHtml(c.businessName || '')}</strong><br><span class="note">${escapeHtml(c.note || '')}</span></td><td>${escapeHtml(c.contactName || '')}<br><span class="note">${escapeHtml(c.phone || '')}<br>${escapeHtml(c.email || '')}</span></td><td>${escapeHtml(c.account || '')}</td><td><span style="white-space:pre-line">${escapeHtml(c.address || '')}</span></td><td>${escapeHtml(c.salesRep || '')}</td><td>${Object.keys(c.prices || {}).length}</td><td>${statusPill(c.referenceOnly ? '资料客户' : (c.active === false ? '停用' : (c.status || '正常')))}</td><td><button class="btn" onclick="openPortalCustomer('${c.id}')">${t('edit')}</button></td></tr>`).join('')}${rows.length ? '' : `<tr><td colspan="8" class="note">${lang === 'zh' ? '还没有客户账号。' : 'No customer accounts.'}</td></tr>`}</tbody></table></div>`;
+  const tierName = id => (state.portalPriceTiers || []).find(tier => tier.id === (id || 'standard'))?.name || '标准批发价';
+  return `<div class="table-wrap"><table><thead><tr><th>${lang === 'zh' ? '客户/公司' : 'Customer'}</th><th>${lang === 'zh' ? '联系人' : 'Contact'}</th><th>${lang === 'zh' ? '登录账号' : 'Login'}</th><th>${lang === 'zh' ? '价格等级' : 'Price tier'}</th><th>${lang === 'zh' ? '业务员' : 'Sales rep'}</th><th>${lang === 'zh' ? '特殊协议价' : 'Overrides'}</th><th>${t('status')}</th><th></th></tr></thead><tbody>${rows.map(c => `<tr><td><strong>${escapeHtml(c.businessName || '')}</strong><br><span class="note">${escapeHtml(c.address || '')}</span></td><td>${escapeHtml(c.contactName || '')}<br><span class="note">${escapeHtml(c.phone || '')}<br>${escapeHtml(c.email || '')}</span></td><td>${escapeHtml(c.account || '')}</td><td><span class="pill info">${escapeHtml(tierName(c.priceTier))}</span></td><td>${escapeHtml(c.salesRep || '')}</td><td>${Object.keys(c.prices || {}).length}</td><td>${statusPill(c.referenceOnly ? '资料客户' : (c.active === false ? '停用' : (c.status || '正常')))}</td><td><button class="btn" onclick="openPortalCustomer('${c.id}')">${t('edit')}</button></td></tr>`).join('')}${rows.length ? '' : `<tr><td colspan="8" class="note">${lang === 'zh' ? '还没有客户账号。' : 'No customer accounts.'}</td></tr>`}</tbody></table></div>`;
+}
+
+function setPortalCustomerTab(tab) { portalCustomerTab = tab; render(); }
+
+function portalPriceTierView() {
+  const tiers = state.portalPriceTiers || [];
+  return `<div class="portal-tier-grid">${tiers.map(tier=>`<article><span>${lang==='zh'?'价格等级':'Price tier'}</span><h3>${escapeHtml(tier.name)}</h3><p>${Object.keys(tier.prices||{}).length} ${lang==='zh'?'个 SKU 已定价':'SKU prices set'}</p><button class="btn primary" onclick="openPortalPriceTier('${escapeJs(tier.id)}')">${lang==='zh'?'编辑价格表':'Edit price list'}</button></article>`).join('')}</div><p class="note">${lang==='zh'?'价格优先顺序：客户特殊协议价 → 客户所属价格等级 → 标准批发价 → 联系业务员。订单生成时会锁定当时成交价。':'Priority: customer override, assigned tier, standard wholesale price, then contact sales. Order prices are locked at order creation.'}</p>`;
+}
+
+function portalCustomerOrdersView() {
+  const rows=(state.salesOrders||[]).filter(order=>order.portalSource||order.portalCustomerId);
+  return `<div class="table-wrap"><table><thead><tr><th>${t('date')}</th><th>${lang==='zh'?'B端客户':'B2B customer'}</th><th>${t('item')}</th><th>${lang==='zh'?'订单金额':'Total'}</th><th>${t('paid')}</th><th>${t('balance')}</th><th>${t('status')}</th></tr></thead><tbody>${rows.map(order=>{const calc=orderCalc(order);return `<tr><td>${escapeHtml(order.date||'')}</td><td><strong>${escapeHtml(order.customer||'')}</strong></td><td>${escapeHtml(salesOrderItemsSummary(order))}</td><td>${currency.format(calc.total)}</td><td>${currency.format(Number(order.paid||0))}</td><td>${currency.format(calc.balance)}</td><td>${statusPill(order.status)}</td></tr>`}).join('')}${rows.length?'':`<tr><td colspan="7" class="note">${lang==='zh'?'目前没有客户手机端订单。':'No portal orders yet.'}</td></tr>`}</tbody></table></div>`;
+}
+
+function portalCustomerWarrantyView() {
+  const customers=state.portalCustomers||[], warranties=state.warranties||[];
+  return `<div class="table-wrap"><table><thead><tr><th>${lang==='zh'?'客户':'Customer'}</th><th>${lang==='zh'?'历史订单':'Orders'}</th><th>${lang==='zh'?'质保登记':'Warranties'}</th><th>${lang==='zh'?'负责业务员':'Sales rep'}</th><th>${lang==='zh'?'最近联系':'Last contact'}</th></tr></thead><tbody>${customers.map(customer=>{const orders=(state.salesOrders||[]).filter(order=>order.portalCustomerId===customer.id);const warrantyCount=warranties.filter(item=>String(item.customer||'').trim().toLowerCase()===String(customer.businessName||'').trim().toLowerCase()).length;return `<tr><td><strong>${escapeHtml(customer.businessName||'')}</strong><br><span class="note">${escapeHtml(customer.contactName||'')}</span></td><td>${orders.length}</td><td>${warrantyCount}</td><td>${escapeHtml(customer.salesRep||'')}</td><td>${escapeHtml(customer.updatedAt?formatAppDateTime(customer.updatedAt):'')}</td></tr>`}).join('')}</tbody></table></div>`;
+}
+
+function openPortalPriceTier(id) {
+  const tier=(state.portalPriceTiers||[]).find(item=>item.id===id); if(!tier)return;
+  const rows=(state.products||[]).map(product=>`<tr><td>${escapeHtml(product.sku)}</td><td>${escapeHtml(product.name||'')}</td><td>${currency.format(Number(product.wholesale||0))}</td><td><input class="portal-tier-price-input" data-sku="${escapeHtml(product.sku)}" type="number" min="0" step="0.01" value="${tier.prices?.[product.sku]??''}" placeholder="${lang==='zh'?'继承标准批发价':'Use standard wholesale'}"></td></tr>`).join('');
+  openModal(`${lang==='zh'?'编辑价格表':'Edit price list'} · ${tier.name}`,`<div class="wide portal-price-editor"><p class="note">${lang==='zh'?'只填写需要在该等级覆盖的 SKU；留空时使用标准批发价。':'Only enter SKU overrides for this tier.'}</p><div class="table-wrap"><table><thead><tr><th>SKU</th><th>${t('productName')}</th><th>${t('wholesalePrice')}</th><th>${tier.name}</th></tr></thead><tbody>${rows}</tbody></table></div></div>`,async()=>{const prices={};document.querySelectorAll('.portal-tier-price-input').forEach(input=>{if(input.value!=='')prices[input.dataset.sku]=Number(input.value)});try{const result=await api(`/api/portal-price-tiers/${encodeURIComponent(id)}`,{method:'PUT',body:JSON.stringify({prices})});state=result.data;closeModal();render();broadcastDataChange()}catch(err){alert(err.message)}});
 }
 
 async function importPortalReferenceCustomers(file) {
@@ -5819,16 +5847,17 @@ function portalPriceRows(customer) {
 }
 
 function openPortalCustomer(id = '') {
-  const customer = (state.portalCustomers || []).find(item => item.id === id) || { businessName: '', contactName: '', account: '', email: '', phone: '', address: '', salesRep: '', status: '正常', note: '', active: true, prices: {} };
+  const customer = (state.portalCustomers || []).find(item => item.id === id) || { businessName: '', contactName: '', account: '', email: '', phone: '', address: '', salesRep: '', status: '正常', note: '', active: true, priceTier: 'standard', prices: {} };
+  const priceTierOptions=(state.portalPriceTiers||[]).map(tier=>[tier.id,tier.name]);
   const body = formHtml([
     ['portalBusinessName', lang === 'zh' ? '客户/公司名称' : 'Business name', 'text', customer.businessName], ['portalContactName', lang === 'zh' ? '联系人' : 'Contact', 'text', customer.contactName], ['portalAccount', lang === 'zh' ? '登录账号' : 'Login account', 'text', customer.account],
     ['portalEmail', t('email'), 'text', customer.email], ['portalPhone', lang === 'zh' ? '电话' : 'Phone', 'text', customer.phone], ['portalSalesRep', lang === 'zh' ? '负责业务员' : 'Sales rep', 'text', customer.salesRep],
     ['portalAddress', lang === 'zh' ? '地址' : 'Address', 'text', customer.address], ['portalStatus', t('status'), 'select', customer.status || '正常', ['正常','暂停合作','重点客户']], ['portalPassword', id ? (lang === 'zh' ? '重设密码（不改请留空）' : 'Reset password (optional)') : (lang === 'zh' ? '初始密码（至少8位）' : 'Initial password (8+ chars)'), 'password', ''],
     ['portalNote', t('note'), 'textarea', customer.note]
-  ]) + `<div class="wide portal-price-editor"><h4>${lang === 'zh' ? '客户专属型号价格' : 'Customer-specific SKU prices'}</h4><p class="note">${lang === 'zh' ? '客户只能看到这里填写的价格；没有设置价格的型号会显示“请联系业务员”。' : 'Only prices entered here are visible to this customer.'}</p><div class="table-wrap"><table><thead><tr><th>SKU</th><th>${t('productName')}</th><th>${t('retailPrice')}</th><th>${t('wholesalePrice')}</th><th>${lang === 'zh' ? '该客户价格' : 'Customer price'}</th></tr></thead><tbody>${portalPriceRows(customer)}</tbody></table></div></div>`;
+  ]) + `<label class="wide">${lang==='zh'?'价格等级':'Price tier'}<select id="portalPriceTier">${priceTierOptions.map(([value,label])=>`<option value="${escapeHtml(value)}" ${value===(customer.priceTier||'standard')?'selected':''}>${escapeHtml(label)}</option>`).join('')}</select></label><div class="wide portal-price-editor"><h4>${lang === 'zh' ? '客户特殊协议价' : 'Customer-specific SKU prices'}</h4><p class="note">${lang === 'zh' ? '这里只填写例外价格；其他型号自动继承客户所属价格等级。' : 'Only enter exceptions; other SKUs inherit the assigned price tier.'}</p><div class="table-wrap"><table><thead><tr><th>SKU</th><th>${t('productName')}</th><th>${t('retailPrice')}</th><th>${t('wholesalePrice')}</th><th>${lang === 'zh' ? '特殊协议价' : 'Customer override'}</th></tr></thead><tbody>${portalPriceRows(customer)}</tbody></table></div></div>`;
   openModal(id ? (lang === 'zh' ? '编辑客户账号' : 'Edit customer') : (lang === 'zh' ? '新增客户账号' : 'New customer'), body, async () => {
     const prices = {}; document.querySelectorAll('.portal-price-input').forEach(input => { if (input.value !== '') prices[input.dataset.sku] = Number(input.value); });
-    const payload = { businessName: document.getElementById('portalBusinessName').value, contactName: document.getElementById('portalContactName').value, account: document.getElementById('portalAccount').value, email: document.getElementById('portalEmail').value, phone: document.getElementById('portalPhone').value, salesRep: document.getElementById('portalSalesRep').value, address: document.getElementById('portalAddress').value, status: document.getElementById('portalStatus').value, password: document.getElementById('portalPassword').value, note: document.getElementById('portalNote').value, prices, active: customer.active !== false };
+    const payload = { businessName: document.getElementById('portalBusinessName').value, contactName: document.getElementById('portalContactName').value, account: document.getElementById('portalAccount').value, email: document.getElementById('portalEmail').value, phone: document.getElementById('portalPhone').value, salesRep: document.getElementById('portalSalesRep').value, address: document.getElementById('portalAddress').value, status: document.getElementById('portalStatus').value, password: document.getElementById('portalPassword').value, note: document.getElementById('portalNote').value, priceTier: document.getElementById('portalPriceTier').value, prices, active: customer.active !== false };
     try { const result = await api(`/api/portal-customers${id ? `/${id}` : ''}`, { method: id ? 'PUT' : 'POST', body: JSON.stringify(payload) }); state = result.data; closeModal(); render(); broadcastDataChange(); } catch (err) { alert(err.message); }
   });
 }

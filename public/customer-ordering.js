@@ -98,7 +98,7 @@ document.body.insertAdjacentHTML('beforeend', `
         <article><div class="ppf-product-media"><img src="/assets/quad-f1-installation-process.jpg" alt="汽车重点部位 PPF"></div><div class="ppf-product-copy"><span>专项保护系列</span><h2>重点部位保护膜</h2><p>适用于前保险杠、引擎盖、后视镜、门边及其他高风险区域。</p>${ppfOrderControls('重点部位保护膜')}</div></article>
         <article><div class="ppf-product-media"><img src="/assets/yacht-protection-film-ppf.jpg" alt="游艇 PPF"></div><div class="ppf-product-copy"><span>船艇应用系列</span><h2>游艇表面保护膜</h2><p>针对游艇高光漆面、胶衣及高频接触区域的专业保护方案。</p>${ppfOrderControls('游艇表面保护膜')}</div></article>
       </section>
-      <div id="ppfPreviewNotice" class="ppf-preview-notice hidden"><b id="ppfPreviewProduct"></b><p>当前只确认页面设计，尚未加入真实购物车，也不会产生正式订单。</p><button onclick="document.getElementById('ppfPreviewNotice').classList.add('hidden')">继续检查产品</button></div>
+      <section id="ppfSelectedList" class="window-film-selected-list hidden"><header><div><span>当前订单</span><h2>PPF 订购清单</h2></div><b id="ppfSelectedCount">0 项</b></header><div id="ppfSelectedRows"></div><button onclick="showDealerCheckout()">查看购物车并去结账 →</button><p>当前为页面设计预览，不查询实时库存、不扣减库存，也不会生成正式订单。</p></section>
     </main>
   </section>
 `);
@@ -369,7 +369,35 @@ window.previewCustomWrapRequest = function () {
 };
 
 function ppfOrderControls(name) {
-  return `<div class="ppf-variant-list"><div class="ppf-variant-row"><label class="ppf-model-field">具体型号 <small>未来与库存同步</small><select><option>请选择具体型号</option><option disabled>型号由 QUaD 库存系统提供</option></select></label><label>规格<select><option>请选择规格</option><option>60 英寸 × 50 英尺</option><option>72 英寸 × 50 英尺</option></select></label><label>数量<input type="number" min="1" value="1"></label><button class="ppf-remove-variant hidden" type="button" aria-label="删除这一项" onclick="removePpfVariantRow(this)">×</button></div></div><button class="ppf-add-variant" type="button" onclick="addPpfVariantRow(this)">＋ 添加另一个型号</button><button class="ppf-preview-button" onclick="previewPpfProduct('${name}')">选择此产品</button>`;
+  const isGlossClear = name === '高亮透明 PPF';
+  const isDeepMatte = name === '深哑光 PPF';
+  const isSatin = name === '缎面 PPF';
+  const isPartialProtection = name === '重点部位保护膜';
+  const isYachtProtection = name === '游艇表面保护膜';
+  const modelHint = isGlossClear
+    ? 'G20PLUS / DS13S / G18'
+    : isDeepMatte ? 'GM-PRO'
+      : isSatin ? 'G18-Matte-D'
+        : isPartialProtection ? 'G30 A+-XM'
+          : isYachtProtection ? 'G30 A+' : '未来与库存同步';
+  const modelOptions = isGlossClear
+    ? '<option>请选择具体型号</option><option>G20PLUS</option><option>DS13S</option><option>G18</option>'
+    : isDeepMatte
+      ? '<option>请选择具体型号</option><option>GM-PRO</option>'
+    : isSatin
+      ? '<option>请选择具体型号</option><option>G18-Matte-D</option>'
+    : isPartialProtection
+      ? '<option>请选择具体型号</option><option>G30 A+-XM</option>'
+    : isYachtProtection
+      ? '<option>请选择具体型号</option><option>G30 A+</option>'
+    : '<option>请选择具体型号</option><option disabled>型号由 QUaD 库存系统提供</option>';
+  const sizeOptions = isPartialProtection
+    ? '<option>请选择规格</option><option>1.2 米 × 30 米</option>'
+    : isGlossClear || isDeepMatte || isSatin || isYachtProtection
+    ? '<option>请选择规格</option><option>1.52 米 × 15 米</option>'
+    : '<option>请选择规格</option><option>60 英寸 × 50 英尺</option><option>72 英寸 × 50 英尺</option>';
+
+  return `<div class="ppf-variant-list"><div class="ppf-variant-row"><label class="ppf-model-field">具体型号 <small>${modelHint}</small><select>${modelOptions}</select></label><label>规格<select>${sizeOptions}</select></label><label>数量<input type="number" min="1" value="1"></label><button class="ppf-remove-variant hidden" type="button" aria-label="删除这一项" onclick="removePpfVariantRow(this)">×</button></div></div><button class="ppf-add-variant" type="button" onclick="addPpfVariantRow(this)">＋ 添加另一个型号</button><button class="ppf-preview-button" onclick="addPpfProductToCart(this,'${name}')">＋ 加入购物车</button>`;
 }
 
 window.addPpfVariantRow = function (button) {
@@ -397,23 +425,54 @@ window.showPpfCatalog = function () {
   window.scrollTo({ top: 0, behavior: 'auto' });
 };
 
-window.previewPpfProduct = function (name) {
-  document.getElementById('ppfPreviewProduct').textContent = name;
-  document.getElementById('ppfPreviewNotice').classList.remove('hidden');
-  document.getElementById('ppfPreviewNotice').scrollIntoView({ behavior: 'smooth', block: 'center' });
+window.addPpfProductToCart = function (button, name) {
+  const product = button.closest('.ppf-product-copy');
+  const variants = [...product.querySelectorAll('.ppf-variant-row')];
+  const selected = variants.map(row => {
+    const selects = row.querySelectorAll('select');
+    return {
+      model: selects[0]?.value || '',
+      size: selects[1]?.value || '',
+      qty: Math.max(1, Number(row.querySelector('input')?.value || 1))
+    };
+  });
+  if (selected.some(item => !item.model || item.model === '请选择具体型号')) {
+    alert('请选择具体型号。');
+    return;
+  }
+  if (selected.some(item => !item.size || item.size === '请选择规格')) {
+    alert('请选择规格。');
+    return;
+  }
+  const rows = document.getElementById('ppfSelectedRows');
+  selected.forEach(item => {
+    const row = document.createElement('div');
+    row.innerHTML = `<div><b>${item.model}</b><small>${name} · ${item.size}</small></div><strong>× ${item.qty}</strong><button aria-label="删除这一项" onclick="this.parentElement.remove();updatePpfCartCount()">×</button>`;
+    rows.appendChild(row);
+  });
+  document.getElementById('ppfSelectedList').classList.remove('hidden');
+  updatePpfCartCount();
+  document.getElementById('ppfSelectedList').scrollIntoView({ behavior: 'smooth', block: 'center' });
+};
+
+window.updatePpfCartCount = function () {
+  const rows = document.getElementById('ppfSelectedRows');
+  document.getElementById('ppfSelectedCount').textContent = `${rows.children.length} 项`;
+  if (!rows.children.length) document.getElementById('ppfSelectedList').classList.add('hidden');
 };
 
 const windowFilmSeries = [
   {tier:'01 · 顶级系列',name:'Premium 磁控溅射系列',technology:'双银反射隔热技术',note:'双层银磁控溅射结构，以反射方式阻隔热量。主打高透、高清、低雾度与强隔热。',models:[['SP70','70%','98%','60%'],['SP50','50%','97%','70%'],['SP20','18%','96%','87%'],['SP10','10%','98%','93%']]},
   {tier:'02 · 高性能系列',name:'磁控溅射混合系列',technology:'单银反射＋Nano 吸热',note:'单银磁控溅射与 Nano 陶瓷结合，兼顾清晰视野、隔热表现和施工收缩性能。',models:[['SPV70','70%','93%','53%'],['SP20N','24%','93%','82%'],['SP10N','10%','95%','91%'],['SP05N','7%','95%','93%']]},
   {tier:'03 · 经典系列',name:'Nano 陶瓷系列',technology:'Nano 陶瓷吸热技术',note:'采用吸热型 Nano 陶瓷技术，无信号干扰；提供从高透前挡到深色隐私的多种透光率。',models:[['NA70','72%','95%','55%'],['NA28','30%','96%','80%'],['NA15','15%','95%','89%'],['NA10','10%','95%','92%']]},
-  {tier:'04 · 经济型系列',name:'P 基础隔热系列',technology:'高性价比入门窗膜',note:'面向价格敏感型项目的基础窗膜系列，提供常用的深色与中深色透光选择，紫外线阻隔率 99%。',models:[['P10','10%','','30%','99%'],['P20','20%','','28%','99%']]}
+  {tier:'04 · 经济型系列',name:'P 基础隔热系列',technology:'高性价比入门窗膜',note:'面向价格敏感型项目的基础窗膜系列，提供常用的深色与中深色透光选择，紫外线阻隔率 99%。',models:[['P10','10%','','30%','99%'],['P20','20%','','28%','99%']]},
+  {tier:'05 · 车顶专用系列',name:'TAI 天窗专用膜',technology:'全景天窗高效隔热',note:'专为汽车天窗与全景车顶设计，在保留合适透光率的同时提供高隔热表现，紫外线阻隔率 99%。',models:[['TAI-20','20%','80%','','99%','隔热'],['TAI-10','10%','90%','','99%','隔热']]}
 ];
 
 function windowFilmSizeOptions(){return '<option value="">选择卷材规格</option><option>20 英寸 × 100 英尺（约 0.51 × 30.5 米）</option><option>36 英寸 × 100 英尺（约 0.91 × 30.5 米）</option><option>40 英寸 × 100 英尺（约 1.02 × 30.5 米）</option><option>60 英寸 × 100 英尺（约 1.52 × 30.5 米）</option>'}
-function renderWindowFilmSeries(s){return `<article class="window-film-series"><header><div><span>${s.tier}</span><h2>${s.name}</h2><b>${s.technology}</b></div><p>${s.note}</p></header><div class="window-film-models">${s.models.map(m=>`<button type="button" onclick="selectWindowFilmModel(this,'${s.name}','${m[0]}')"><strong>${m[0]}</strong><small>透光率 ${m[1]}</small><i><span>UV ${m[4]||'99.9%'}</span>${m[2]?`<span>IR ${m[2]}</span>`:''}</i></button>`).join('')}</div></article>`}
+function renderWindowFilmSeries(s){return `<article class="window-film-series"><header><div><span>${s.tier}</span><h2>${s.name}</h2><b>${s.technology}</b></div><p>${s.note}</p></header><div class="window-film-models">${s.models.map(m=>`<button type="button" onclick="selectWindowFilmModel(this,'${s.name}','${m[0]}')"><strong>${m[0]}</strong><small>透光率 ${m[1]}</small><i><span>UV ${m[4]||'99.9%'}</span>${m[2]?`<span>${m[5]||'IR'} ${m[2]}</span>`:''}</i></button>`).join('')}</div></article>`}
 
-document.body.insertAdjacentHTML('beforeend',`<section id="windowFilmCatalog" class="window-film-catalog hidden"><header class="order-center-header"><button class="order-center-brand" onclick="showOrderCenter()"><img src="/quad-film-icon.png" alt="QUAD FILM"><span><b>QUAD FILM</b><small>汽车窗膜产品订购页</small></span></button><div><button class="order-home-button" onclick="showOrderCenter()">← 返回产品分类</button><button class="order-login-button" onclick="showLogin()">经销商登录</button></div></header><main class="window-film-main"><section class="window-film-intro"><span>03 · 汽车隔热膜</span><h1>选择窗膜型号</h1><p>按性能等级、透光率和应用位置选择产品。QUaD 窗膜重点突出高清、高透、低雾度、强隔热和良好的热收缩施工表现。</p><div><b>高清低雾度</b><b>高效隔热</b><b>收缩施工友好</b><b>多种透光率</b></div></section><nav class="window-film-tier-nav"><button onclick="document.getElementById('windowFilmTier1').scrollIntoView({behavior:'smooth'})">顶级双银</button><button onclick="document.getElementById('windowFilmTier2').scrollIntoView({behavior:'smooth'})">SP 混合系列</button><button onclick="document.getElementById('windowFilmTier3').scrollIntoView({behavior:'smooth'})">Nano 陶瓷</button><button onclick="document.getElementById('windowFilmTier4').scrollIntoView({behavior:'smooth'})">P 经济系列</button></nav><section class="window-film-series-list">${windowFilmSeries.map((s,i)=>`<div id="windowFilmTier${i+1}">${renderWindowFilmSeries(s)}</div>`).join('')}</section><section id="windowFilmQuickOrder" class="window-film-quick-order"><div><span>快速选货与下单</span><h2 id="windowFilmSelectedModel">请先选择上方型号</h2><p id="windowFilmSelectedSeries">型号参数将自动带入这里</p></div><label>卷材规格<select id="windowFilmSize">${windowFilmSizeOptions()}</select></label><label>数量<input id="windowFilmQty" type="number" min="1" value="1"></label><button onclick="addWindowFilmOrder()">＋ 加入订单</button></section><section id="windowFilmSelectedList" class="window-film-selected-list hidden"><header><div><span>当前订单</span><h2>窗膜订购清单</h2></div><b id="windowFilmSelectedCount">0 项</b></header><div id="windowFilmSelectedRows"></div><button onclick="previewWindowFilmCheckout()">下一步：去结账 →</button><p>当前为页面设计预览，不查询实时库存、不扣减库存，也不会生成正式订单。</p></section><div id="windowFilmCheckoutPreview" class="wrap-checkout-preview hidden"><b>下一步：统一结账</b><p>正式版本会把窗膜、PPF、改色膜等产品合并到同一个购物车，再统一核对库存、地址、运费、税费和付款信息。</p><button onclick="this.parentElement.classList.add('hidden')">继续检查本页</button></div></main></section>`);
+document.body.insertAdjacentHTML('beforeend',`<section id="windowFilmCatalog" class="window-film-catalog hidden"><header class="order-center-header"><button class="order-center-brand" onclick="showOrderCenter()"><img src="/quad-film-icon.png" alt="QUAD FILM"><span><b>QUAD FILM</b><small>汽车窗膜产品订购页</small></span></button><div><button class="order-home-button" onclick="showOrderCenter()">← 返回产品分类</button><button class="order-login-button" onclick="showLogin()">经销商登录</button></div></header><main class="window-film-main"><section class="window-film-intro"><span>03 · 汽车隔热膜</span><h1>选择窗膜型号</h1><p>按性能等级、透光率和应用位置选择产品。QUaD 窗膜重点突出高清、高透、低雾度、强隔热和良好的热收缩施工表现。</p><div><b>高清低雾度</b><b>高效隔热</b><b>收缩施工友好</b><b>多种透光率</b></div></section><nav class="window-film-tier-nav"><button onclick="document.getElementById('windowFilmTier1').scrollIntoView({behavior:'smooth'})">顶级双银</button><button onclick="document.getElementById('windowFilmTier2').scrollIntoView({behavior:'smooth'})">SP 混合系列</button><button onclick="document.getElementById('windowFilmTier3').scrollIntoView({behavior:'smooth'})">Nano 陶瓷</button><button onclick="document.getElementById('windowFilmTier4').scrollIntoView({behavior:'smooth'})">P 经济系列</button><button onclick="document.getElementById('windowFilmTier5').scrollIntoView({behavior:'smooth'})">TAI 天窗专用</button></nav><section class="window-film-series-list">${windowFilmSeries.map((s,i)=>`<div id="windowFilmTier${i+1}">${renderWindowFilmSeries(s)}</div>`).join('')}</section><section id="windowFilmQuickOrder" class="window-film-quick-order"><div><span>快速选货与下单</span><h2 id="windowFilmSelectedModel">请先选择上方型号</h2><p id="windowFilmSelectedSeries">型号参数将自动带入这里</p></div><label>卷材规格<select id="windowFilmSize">${windowFilmSizeOptions()}</select></label><label>数量<input id="windowFilmQty" type="number" min="1" value="1"></label><button onclick="addWindowFilmOrder()">＋ 加入订单</button></section><section id="windowFilmSelectedList" class="window-film-selected-list hidden"><header><div><span>当前订单</span><h2>窗膜订购清单</h2></div><b id="windowFilmSelectedCount">0 项</b></header><div id="windowFilmSelectedRows"></div><button onclick="previewWindowFilmCheckout()">下一步：去结账 →</button><p>当前为页面设计预览，不查询实时库存、不扣减库存，也不会生成正式订单。</p></section><div id="windowFilmCheckoutPreview" class="wrap-checkout-preview hidden"><b>下一步：统一结账</b><p>正式版本会把窗膜、PPF、改色膜等产品合并到同一个购物车，再统一核对库存、地址、运费、税费和付款信息。</p><button onclick="this.parentElement.classList.add('hidden')">继续检查本页</button></div></main></section>`);
 
 window.showWindowFilmCatalog=function(){['landing','login','app','orderCenter','ppfCatalog','colorWrapCatalog'].forEach(id=>document.getElementById(id)?.classList.add('hidden'));document.getElementById('windowFilmCatalog')?.classList.remove('hidden');window.scrollTo({top:0,behavior:'auto'})};
 window.selectWindowFilmModel=function(button,series,model){document.querySelectorAll('.window-film-models button').forEach(item=>item.classList.toggle('selected',item===button));const quick=document.getElementById('windowFilmQuickOrder');quick.dataset.series=series;quick.dataset.model=model;document.getElementById('windowFilmSelectedModel').textContent=model;document.getElementById('windowFilmSelectedSeries').textContent=series;quick.scrollIntoView({behavior:'smooth',block:'center'})};
@@ -427,6 +486,7 @@ document.body.insertAdjacentHTML('beforeend',`<section id="dealerCheckout" class
 
 function checkoutPreviewItems(){
   const items=[];
+  document.querySelectorAll('#ppfSelectedRows>div').forEach(row=>items.push({category:'PPF 漆面保护膜',name:row.querySelector('b')?.textContent||'PPF',detail:row.querySelector('small')?.textContent||'所选规格',qty:(row.querySelector('strong')?.textContent||'× 1').replace(/[^0-9]/g,'')||'1'}));
   document.querySelectorAll('#wrapSelectedRows .wrap-selected-row').forEach(row=>items.push({category:'汽车改色膜',name:row.querySelector('b')?.textContent||'改色膜',detail:row.querySelector('small')?.textContent||'所选规格',qty:(row.querySelector('strong')?.textContent||'× 1').replace(/[^0-9]/g,'')||'1'}));
   document.querySelectorAll('#windowFilmSelectedRows>div').forEach(row=>items.push({category:'汽车窗膜',name:row.querySelector('b')?.textContent||'窗膜',detail:row.querySelector('small')?.textContent||'所选规格',qty:(row.querySelector('strong')?.textContent||'× 1').replace(/[^0-9]/g,'')||'1'}));
   if(!items.length) items.push({category:'汽车窗膜',name:'SP70',detail:'Premium 磁控溅射系列 · 60 英寸 × 100 英尺',qty:'1'},{category:'汽车改色膜',name:'TPUQD76 · Pure White',detail:'60 英寸 × 50 英尺',qty:'1'});
