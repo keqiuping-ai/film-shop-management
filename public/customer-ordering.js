@@ -180,6 +180,7 @@ window.selectCustomPattern = function (button,name) {
 window.showColorWrapCatalog = function () {
   ['landing','login','app','orderCenter','ppfCatalog','windowFilmCatalog'].forEach(id=>document.getElementById(id)?.classList.add('hidden'));
   document.getElementById('colorWrapCatalog').classList.remove('hidden');
+  activateWrapColorImages();
   window.scrollTo({top:0,behavior:'auto'});
 };
 
@@ -231,6 +232,30 @@ window.searchWrapColors = function (query) {
 };
 
 let realWrapColors=[];
+let wrapColorImageObserver;
+
+function loadWrapColorImage(image) {
+  if (!image?.dataset.src || image.src) return;
+  image.src=image.dataset.src;
+  image.removeAttribute('data-src');
+}
+
+function activateWrapColorImages() {
+  const images=[...document.querySelectorAll('.wrap-swatch.real-photo img[data-src]')];
+  images.slice(0,12).forEach(loadWrapColorImage);
+  if (!('IntersectionObserver' in window)) {
+    images.slice(12).forEach(loadWrapColorImage);
+    return;
+  }
+  wrapColorImageObserver ||= new IntersectionObserver(entries=>{
+    entries.forEach(entry=>{
+      if (!entry.isIntersecting) return;
+      loadWrapColorImage(entry.target);
+      wrapColorImageObserver.unobserve(entry.target);
+    });
+  },{rootMargin:'500px 0px'});
+  images.slice(12).forEach(image=>wrapColorImageObserver.observe(image));
+}
 
 function updateManualWrapSuggestions(query) {
   const menu=document.getElementById('manualWrapSuggestions');
@@ -264,7 +289,7 @@ async function loadRealWrapColors() {
       const button=document.createElement('button');
       button.className='wrap-swatch real-photo';
       button.dataset.finish=color.finish;
-      button.innerHTML=`<img src="${color.image}" alt="${color.code} ${color.name}" loading="lazy"><b>${color.name}</b><small>${color.code}</small>`;
+      button.innerHTML=`<img data-src="${color.image}" alt="${color.code} ${color.name}" loading="lazy" decoding="async"><b>${color.name}</b><small>${color.code}</small>`;
       button.addEventListener('click',()=>selectRealWrapSwatch(button,color));
       grid.appendChild(button);
     });
