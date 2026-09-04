@@ -448,6 +448,7 @@ window.previewWindowFilmCheckout=window.showDealerCheckout;
 
 const showOrderCenterWithoutCheckout=window.showOrderCenter;
 window.showOrderCenter=function(){document.getElementById('dealerCheckout')?.classList.add('hidden');showOrderCenterWithoutCheckout()};
+if(new URLSearchParams(location.search).get('preview')==='checkout-cn-v1') setTimeout(()=>showDealerCheckout(),0);
 
 const colorWrapVideo = document.querySelector('#orderCenter video source[src*="quad-color-wrap-loop-web.mp4"]')?.parentElement;
 if (colorWrapVideo) {
