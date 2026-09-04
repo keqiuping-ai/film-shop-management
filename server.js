@@ -293,7 +293,13 @@ function portalProductForCustomer(db, product, customer) {
   const hasTierPrice = Object.prototype.hasOwnProperty.call(tier?.prices || {}, product.sku);
   const hasStandardWholesale = Number.isFinite(Number(product.wholesale)) && Number(product.wholesale) > 0;
   const agreed = Number(hasAgreedPrice ? customer.prices[product.sku] : hasTierPrice ? tier.prices[product.sku] : hasStandardWholesale ? product.wholesale : NaN);
-  return { sku: product.sku, name: product.name, category: product.category, unit: product.unit, availability: Number(product.qty || 0) <= 0 ? '需预订' : Number(product.reorder || 0) > 0 && Number(product.qty || 0) <= Number(product.reorder || 0) ? '库存紧张' : '有货', price: Number.isFinite(agreed) ? agreed : null, description: String(product.portalDescription || ''), imageUrl: String(product.portalImageUrl || ''), videoUrl: String(product.portalVideoUrl || ''), isNew: Boolean(product.portalNewProduct) };
+  const stockByWarehouse = {
+    'las-vegas': Math.max(0, branchStockQty(db, product.sku, 'las-vegas') - activeInventoryReservationQty(db, product.sku, 'las-vegas')),
+    'los-angeles': Math.max(0, branchStockQty(db, product.sku, 'los-angeles') - activeInventoryReservationQty(db, product.sku, 'los-angeles'))
+  };
+  const availableQty = stockByWarehouse['las-vegas'] + stockByWarehouse['los-angeles'];
+  const purchasable = product.portalPurchasable !== false;
+  return { sku: product.sku, name: product.name, model: String(product.model || product.sku || ''), specification: String(product.specification || ''), category: product.category, unit: product.unit, purchasable, stockByWarehouse, availability: !purchasable ? '暂不可购买' : availableQty <= 0 ? '需预订' : Number(product.reorder || 0) > 0 && availableQty <= Number(product.reorder || 0) ? '库存紧张' : '有货', price: Number.isFinite(agreed) ? agreed : null, description: String(product.portalDescription || ''), imageUrl: String(product.portalImageUrl || ''), videoUrl: String(product.portalVideoUrl || ''), isNew: Boolean(product.portalNewProduct) };
 }
 
 function portalCustomerSnapshot(db, customer) {
@@ -493,6 +499,12 @@ function readDb() {
   if (!Array.isArray(db.stripeWebhookEvents)) db.stripeWebhookEvents = [];
   if (!Array.isArray(db.customerCheckoutEvents)) db.customerCheckoutEvents = [];
   if (!Array.isArray(db.inventoryReservations)) db.inventoryReservations = [];
+  (db.products || []).forEach(product => {
+    product.model = String(product.model || product.sku || '').trim().slice(0, 160);
+    product.specification = String(product.specification || product.spec || '').trim().slice(0, 240);
+    if (typeof product.portalVisible !== 'boolean') product.portalVisible = true;
+    if (typeof product.portalPurchasable !== 'boolean') product.portalPurchasable = true;
+  });
   if (!Array.isArray(db.messages)) db.messages = [];
   if (!Array.isArray(db.clockRecords)) db.clockRecords = [];
   if (!Array.isArray(db.leaveRequests)) db.leaveRequests = [];
@@ -6516,7 +6528,7 @@ async function api(req, res) {
       for (const line of requested) {
         const sku = String(line.sku || '').trim();
         const qty = Math.max(0,Math.floor(Number(line.qty || 0)));
-        const product = (db.products || []).find(row => row.sku === sku && row.portalVisible !== false);
+        const product = (db.products || []).find(row => row.sku === sku && row.portalVisible !== false && row.portalPurchasable !== false);
         const priced = product ? portalProductForCustomer(db,product,customer) : null;
         if (!product || !qty || priced?.price === null || !Number.isFinite(Number(priced?.price)) || Number(priced.price) <= 0) return send(res,400,{ error:`${sku || 'A selected product'} is unavailable or does not have an approved price.` });
         const available = branchStockQty(db,sku,branchId) - activeInventoryReservationQty(db,sku,branchId);
@@ -9569,6 +9581,12 @@ async function api(req, res) {
     if (collection === 'products') {
       item.sku = String(item.sku || '').trim().slice(0, 160);
       if (!item.sku) return send(res, 400, { error: '商品 SKU 不能为空' });
+      item.name = String(item.name || '').trim().slice(0, 240);
+      if (!item.name) return send(res, 400, { error: '商品名称不能为空' });
+      item.model = String(item.model || item.sku).trim().slice(0, 160);
+      item.specification = String(item.specification || '').trim().slice(0, 240);
+      item.portalVisible = item.portalVisible !== false;
+      item.portalPurchasable = item.portalPurchasable !== false;
       if ((db.products || []).some(row => String(row.sku || '').toLowerCase() === item.sku.toLowerCase())) {
         return send(res, 400, { error: `商品 SKU ${item.sku} 已存在，不能重复建立` });
       }
@@ -9787,6 +9805,12 @@ async function api(req, res) {
     if (collection === 'products') {
       next.sku = String(next.sku || '').trim().slice(0, 160);
       if (!next.sku) return send(res, 400, { error: '商品 SKU 不能为空' });
+      next.name = String(next.name || '').trim().slice(0, 240);
+      if (!next.name) return send(res, 400, { error: '商品名称不能为空' });
+      next.model = String(next.model || next.sku).trim().slice(0, 160);
+      next.specification = String(next.specification || '').trim().slice(0, 240);
+      next.portalVisible = next.portalVisible !== false;
+      next.portalPurchasable = next.portalPurchasable !== false;
       if ((db.products || []).some(row => row.id !== recordId && String(row.sku || '').toLowerCase() === next.sku.toLowerCase())) {
         return send(res, 400, { error: `商品 SKU ${next.sku} 已存在，不能重复使用` });
       }
