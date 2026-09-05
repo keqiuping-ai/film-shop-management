@@ -497,10 +497,20 @@ function checkoutPreviewItems(){
   return items;
 }
 
+function dealerPriceForSku(sku){return state?.products?.find(product=>String(product.sku).toLowerCase()===String(sku).toLowerCase())||null}
+function dealerPriceHtml(item){
+  if(!token||!state)return '<span class="checkout-price pending">登录后显示客户价</span>';
+  const product=dealerPriceForSku(item.sku);
+  if(!product||product.price===null)return '<span class="checkout-price pending">由服务器核价</span>';
+  const list=Number(product.listPrice),price=Number(product.price),hasList=Number.isFinite(list)&&list>0;
+  const discount=hasList&&price<list?Math.round(price/list*100):100;
+  return `<span class="checkout-price">${hasList?`<del>原价 $${list.toFixed(2)}</del>`:''}${hasList&&price<list?`<small>客户价 ${discount/10} 折</small>`:'<small>客户协议价</small>'}<b>$${price.toFixed(2)}</b></span>`;
+}
+
 window.showDealerCheckout=function(){
   ['landing','login','app','orderCenter','ppfCatalog','colorWrapCatalog','windowFilmCatalog'].forEach(id=>document.getElementById(id)?.classList.add('hidden'));
   const items=checkoutPreviewItems(),container=document.getElementById('checkoutItems');
-  container.innerHTML=items.length?items.map((item,index)=>`<article class="checkout-item" data-sku="${esc(item.sku)}"><span>${String(index+1).padStart(2,'0')}</span><div><small>${esc(item.category)}</small><b>${esc(item.name)}</b><em>${esc(item.detail)}</em></div><label>数量<input type="number" min="1" value="${item.qty}" onchange="updateCheckoutTotals()"></label><strong>服务器核价</strong><button aria-label="删除商品" onclick="this.closest('article').remove();updateCheckoutTotals()">×</button></article>`).join(''):'<p>购物车为空，请返回产品分类选择商品。</p>';
+  container.innerHTML=items.length?items.map((item,index)=>`<article class="checkout-item" data-sku="${esc(item.sku)}"><span>${String(index+1).padStart(2,'0')}</span><div><small>${esc(item.category)}</small><b>${esc(item.name)}</b><em>${esc(item.detail)}</em></div><label>数量<input type="number" min="1" value="${item.qty}" onchange="updateCheckoutTotals()"></label>${dealerPriceHtml(item)}<button aria-label="删除商品" onclick="this.closest('article').remove();updateCheckoutTotals()">×</button></article>`).join(''):'<p>购物车为空，请返回产品分类选择商品。</p>';
   document.getElementById('dealerCheckout').classList.remove('hidden');
   updateCheckoutTotals();window.scrollTo({top:0,behavior:'auto'});
 };

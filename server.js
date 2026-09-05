@@ -299,7 +299,8 @@ function portalProductForCustomer(db, product, customer) {
   };
   const availableQty = stockByWarehouse['las-vegas'] + stockByWarehouse['los-angeles'];
   const purchasable = product.portalPurchasable !== false;
-  return { sku: product.sku, name: product.name, model: String(product.model || product.sku || ''), specification: String(product.specification || ''), category: product.category, unit: product.unit, purchasable, stockByWarehouse, availability: !purchasable ? '暂不可购买' : availableQty <= 0 ? '需预订' : Number(product.reorder || 0) > 0 && availableQty <= Number(product.reorder || 0) ? '库存紧张' : '有货', price: Number.isFinite(agreed) ? agreed : null, description: String(product.portalDescription || ''), imageUrl: String(product.portalImageUrl || ''), videoUrl: String(product.portalVideoUrl || ''), isNew: Boolean(product.portalNewProduct) };
+  const listPrice = hasStandardWholesale ? Number(product.wholesale) : Number.isFinite(Number(product.retail)) && Number(product.retail) > 0 ? Number(product.retail) : null;
+  return { sku: product.sku, name: product.name, model: String(product.model || product.sku || ''), specification: String(product.specification || ''), category: product.category, unit: product.unit, purchasable, stockByWarehouse, availability: !purchasable ? '暂不可购买' : availableQty <= 0 ? '需预订' : Number(product.reorder || 0) > 0 && availableQty <= Number(product.reorder || 0) ? '库存紧张' : '有货', listPrice, price: Number.isFinite(agreed) ? agreed : null, description: String(product.portalDescription || ''), imageUrl: String(product.portalImageUrl || ''), videoUrl: String(product.portalVideoUrl || ''), isNew: Boolean(product.portalNewProduct) };
 }
 
 function portalCustomerSnapshot(db, customer) {
