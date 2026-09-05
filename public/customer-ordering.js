@@ -484,8 +484,12 @@ const dealerCheckout=document.getElementById('dealerCheckout');
 dealerCheckout.querySelector('.checkout-title p').textContent='登录后由服务器核定客户协议价并检查仓库库存，随后进入 Stripe 沙盒安全付款页面。';
 dealerCheckout.querySelector('.checkout-card-fields')?.remove();
 dealerCheckout.querySelector('.checkout-security').textContent='银行卡号、有效期和安全码只在 Stripe 托管的安全页面填写；QUaD 不接收或保存完整银行卡信息。';
-dealerCheckout.querySelector('input[name="shipping"][value="delivery"]')?.closest('.checkout-choice')?.remove();
-dealerCheckout.querySelector('input[name="shipping"][value="pickup-las-vegas"]').checked=true;
+const deliveryChoice=dealerCheckout.querySelector('input[name="shipping"][value="delivery"]')?.closest('.checkout-choice');
+if(deliveryChoice){
+  deliveryChoice.querySelector('b').textContent='发货（快递 / 物流运输）';
+  deliveryChoice.querySelector('small').textContent='运费由客服根据地址、重量和运输方式确认';
+  deliveryChoice.querySelector('strong').textContent='待确认';
+}
 dealerCheckout.querySelector('.checkout-summary button').textContent='前往 Stripe 沙盒安全付款';
 dealerCheckout.querySelector('.checkout-summary>small').textContent='当前连接 Stripe 测试环境，不会产生真实扣款。';
 
@@ -515,7 +519,7 @@ window.showDealerCheckout=function(){
   updateCheckoutTotals();window.scrollTo({top:0,behavior:'auto'});
 };
 window.closeDealerCheckout=function(){document.getElementById('dealerCheckout')?.classList.add('hidden');showOrderCenter()};
-window.updateCheckoutTotals=function(){const count=[...document.querySelectorAll('#checkoutItems input')].reduce((sum,input)=>sum+Math.max(1,Number(input.value||1)),0),pickup=String(document.querySelector('input[name="shipping"]:checked')?.value||'').startsWith('pickup-');document.getElementById('checkoutItemCount').textContent=`${count} 卷`;document.getElementById('checkoutShippingFee').textContent=pickup?'$0':'待确认';document.querySelectorAll('input[name="shipping"]').forEach(input=>input.closest('.checkout-choice')?.classList.toggle('selected',input.checked))};
+window.updateCheckoutTotals=function(){const count=[...document.querySelectorAll('#checkoutItems input')].reduce((sum,input)=>sum+Math.max(1,Number(input.value||1)),0),fulfillment=String(document.querySelector('input[name="shipping"]:checked')?.value||''),pickup=fulfillment.startsWith('pickup-'),button=document.querySelector('#dealerCheckout .checkout-summary button');document.getElementById('checkoutItemCount').textContent=`${count} 卷`;document.getElementById('checkoutShippingFee').textContent=pickup?'$0':'待确认';if(button)button.textContent=pickup?'前往 Stripe 沙盒安全付款':'提交发货订单（运费待确认）';document.querySelectorAll('input[name="shipping"]').forEach(input=>input.closest('.checkout-choice')?.classList.toggle('selected',input.checked))};
 window.previewCheckoutSubmit=async function(){
   const button=document.querySelector('#dealerCheckout .checkout-summary button');
   try{
@@ -526,7 +530,8 @@ window.previewCheckoutSubmit=async function(){
     rows.forEach(row=>{const sku=row.dataset.sku?.trim(),qty=Math.max(1,Math.floor(Number(row.querySelector('input')?.value||1)));if(sku)grouped.set(sku,(grouped.get(sku)||0)+qty)});
     if(!grouped.size)throw new Error('没有可识别的正式 SKU，请返回产品页重新选择型号。');
     const fulfillment=document.querySelector('input[name="shipping"]:checked')?.value;
-    if(!['pickup-las-vegas','pickup-los-angeles'].includes(fulfillment))throw new Error('请选择拉斯维加斯或洛杉矶仓库自提。');
+    if(fulfillment==='delivery')throw new Error('发货订单需要客服先确认快递或物流运费；确认后再发送 Stripe 付款链接。');
+    if(!['pickup-las-vegas','pickup-los-angeles'].includes(fulfillment))throw new Error('请选择发货或仓库自提。');
     button.disabled=true;button.textContent='正在核价并检查库存…';
     const result=await api('/api/customer/checkout-session',{method:'POST',body:JSON.stringify({requestId:`visual-checkout-${Date.now()}`,items:[...grouped].map(([sku,qty])=>({sku,qty})),fulfillment,notes:document.querySelector('.checkout-notes textarea')?.value||''})});
     if(!result.checkoutUrl)throw new Error('Stripe Checkout 未返回安全付款地址。');
