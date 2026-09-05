@@ -477,31 +477,60 @@ window.addWindowFilmOrder=function(){const quick=document.getElementById('window
 window.updateWindowFilmCount=function(){const rows=document.getElementById('windowFilmSelectedRows');document.getElementById('windowFilmSelectedCount').textContent=`${rows.children.length} 项`;if(!rows.children.length)document.getElementById('windowFilmSelectedList').classList.add('hidden')};
 window.previewWindowFilmCheckout=function(){const preview=document.getElementById('windowFilmCheckoutPreview');preview.classList.remove('hidden');preview.scrollIntoView({behavior:'smooth',block:'center'})};
 
-// Unified dealer checkout preview. This is intentionally presentation-only:
-// it does not create an order, reserve inventory, or process a payment.
+// Unified dealer checkout. Card details are collected only by Stripe Checkout.
 document.body.insertAdjacentHTML('beforeend',`<section id="dealerCheckout" class="dealer-checkout hidden"><header class="order-center-header"><button class="order-center-brand" onclick="closeDealerCheckout()"><img src="/quad-film-icon.png" alt="QUAD FILM"><span><b>QUAD FILM</b><small>统一结账</small></span></button><div><button class="order-home-button" onclick="closeDealerCheckout()">← 返回继续选货</button><button class="order-login-button" onclick="showLogin()">经销商登录</button></div></header><main class="checkout-main"><section class="checkout-title"><span>QUAD FILM · 经销商采购</span><h1>核对订单并付款</h1><p>不同产品分类的商品集中在这里统一确认。当前为付款页面设计预览，不会产生真实订单或扣款。</p></section><div class="checkout-layout"><div class="checkout-left"><section class="checkout-card"><header><div><span>01</span><h2>订单商品</h2></div><b id="checkoutItemCount">0 项</b></header><div id="checkoutItems"></div><button class="checkout-add-more" onclick="showOrderCenter()">＋ 继续添加产品</button></section><section class="checkout-card"><header><div><span>02</span><h2>收货信息</h2></div></header><div class="checkout-fields"><label class="wide">公司 / 门店名称<input value="Eric · QUaD Dealer" autocomplete="organization"></label><label>收货人<input value="Eric" autocomplete="name"></label><label>联系电话<input type="tel" placeholder="美国手机号码" autocomplete="tel"></label><label class="wide">街道地址<input placeholder="Street address" autocomplete="street-address"></label><label>城市<input placeholder="City" autocomplete="address-level2"></label><label>州<select autocomplete="address-level1"><option>NV · Nevada</option><option>CA · California</option><option>AZ · Arizona</option><option>TX · Texas</option></select></label><label>邮编<input inputmode="numeric" placeholder="ZIP Code" autocomplete="postal-code"></label></div></section><section class="checkout-card"><header><div><span>03</span><h2>配送方式</h2></div></header><label class="checkout-choice selected"><input type="radio" name="shipping" value="delivery" checked onchange="updateCheckoutTotals()"><i></i><span><b>标准商业配送</b><small>预计 3–5 个工作日 · 运费确认后计入</small></span><strong>待确认</strong></label><label class="checkout-choice"><input type="radio" name="shipping" value="pickup-las-vegas" onchange="updateCheckoutTotals()"><i></i><span><b>拉斯维加斯仓库自提</b><small>备货完成后通知取货 · 以拉斯维加斯仓库存为准</small></span><strong>$0</strong></label><label class="checkout-choice"><input type="radio" name="shipping" value="pickup-los-angeles" onchange="updateCheckoutTotals()"><i></i><span><b>洛杉矶仓库自提</b><small>备货完成后通知取货 · 以洛杉矶仓库存为准</small></span><strong>$0</strong></label></section><section class="checkout-card"><header><div><span>04</span><h2>付款方式</h2></div><em>安全支付</em></header><label class="checkout-choice selected"><input type="radio" name="payment" checked><i></i><span><b>信用卡 / 借记卡</b><small>Visa · Mastercard · American Express</small></span></label><div class="checkout-card-fields"><label class="wide">持卡人姓名<input placeholder="Name on card" autocomplete="cc-name"></label><label class="wide">卡号<div class="checkout-fake-input">••••&nbsp; ••••&nbsp; ••••&nbsp; •••• <span>VISA</span></div></label><label>有效期<input placeholder="MM / YY" autocomplete="cc-exp"></label><label>安全码<input placeholder="CVC" autocomplete="cc-csc"></label></div><p class="checkout-security">正式接入 Stripe 后，完整卡号将由支付平台安全处理，QUaD 系统不保存完整信用卡资料。</p></section><label class="checkout-notes">订单备注<textarea placeholder="填写送货要求、PO 编号或其他说明（选填）"></textarea></label></div><aside class="checkout-summary"><span>订单汇总</span><h2>付款明细</h2><dl><div><dt>商品小计</dt><dd id="checkoutSubtotal">登录后显示</dd></div><div><dt>配送费</dt><dd id="checkoutShippingFee">待确认</dd></div><div><dt>销售税</dt><dd>按收货或自提地址计算</dd></div></dl><div class="checkout-total"><span>应付总额</span><b>确认后显示</b></div><button type="button" onclick="previewCheckoutSubmit()">确认订单并付款</button><small>点击后仅查看设计提示，不会扣款。</small><div class="checkout-assurance"><b>✓ 库存确认后付款</b><b>✓ 美国信用卡安全支付</b><b>✓ 订单与物流统一跟踪</b></div></aside></div></main></section>`);
+
+const dealerCheckout=document.getElementById('dealerCheckout');
+dealerCheckout.querySelector('.checkout-title p').textContent='登录后由服务器核定客户协议价并检查仓库库存，随后进入 Stripe 沙盒安全付款页面。';
+dealerCheckout.querySelector('.checkout-card-fields')?.remove();
+dealerCheckout.querySelector('.checkout-security').textContent='银行卡号、有效期和安全码只在 Stripe 托管的安全页面填写；QUaD 不接收或保存完整银行卡信息。';
+dealerCheckout.querySelector('input[name="shipping"][value="delivery"]')?.closest('.checkout-choice')?.remove();
+dealerCheckout.querySelector('input[name="shipping"][value="pickup-las-vegas"]').checked=true;
+dealerCheckout.querySelector('.checkout-summary button').textContent='前往 Stripe 沙盒安全付款';
+dealerCheckout.querySelector('.checkout-summary>small').textContent='当前连接 Stripe 测试环境，不会产生真实扣款。';
 
 function checkoutPreviewItems(){
   const items=[];
-  document.querySelectorAll('#ppfSelectedRows>div').forEach(row=>items.push({category:'PPF 漆面保护膜',name:row.querySelector('b')?.textContent||'PPF',detail:row.querySelector('small')?.textContent||'所选规格',qty:(row.querySelector('strong')?.textContent||'× 1').replace(/[^0-9]/g,'')||'1'}));
-  document.querySelectorAll('#wrapSelectedRows .wrap-selected-row').forEach(row=>items.push({category:'汽车改色膜',name:row.querySelector('b')?.textContent||'改色膜',detail:row.querySelector('small')?.textContent||'所选规格',qty:(row.querySelector('strong')?.textContent||'× 1').replace(/[^0-9]/g,'')||'1'}));
-  document.querySelectorAll('#windowFilmSelectedRows>div').forEach(row=>items.push({category:'汽车窗膜',name:row.querySelector('b')?.textContent||'窗膜',detail:row.querySelector('small')?.textContent||'所选规格',qty:(row.querySelector('strong')?.textContent||'× 1').replace(/[^0-9]/g,'')||'1'}));
-  if(!items.length) items.push({category:'汽车窗膜',name:'SP70',detail:'Premium 磁控溅射系列 · 60 英寸 × 100 英尺',qty:'1'},{category:'汽车改色膜',name:'TPUQD76 · Pure White',detail:'60 英寸 × 50 英尺',qty:'1'});
+  document.querySelectorAll('#ppfSelectedRows>div').forEach(row=>items.push({category:'PPF 漆面保护膜',sku:row.querySelector('b')?.textContent?.trim()||'',name:row.querySelector('b')?.textContent||'PPF',detail:row.querySelector('small')?.textContent||'所选规格',qty:(row.querySelector('strong')?.textContent||'× 1').replace(/[^0-9]/g,'')||'1'}));
+  document.querySelectorAll('#wrapSelectedRows .wrap-selected-row').forEach(row=>{const detail=row.querySelector('small')?.textContent||'';items.push({category:'汽车改色膜',sku:detail.split('·')[0].trim(),name:row.querySelector('b')?.textContent||'改色膜',detail:detail||'所选规格',qty:(row.querySelector('strong')?.textContent||'× 1').replace(/[^0-9]/g,'')||'1'})});
+  document.querySelectorAll('#windowFilmSelectedRows>div').forEach(row=>items.push({category:'汽车窗膜',sku:row.querySelector('b')?.textContent?.trim()||'',name:row.querySelector('b')?.textContent||'窗膜',detail:row.querySelector('small')?.textContent||'所选规格',qty:(row.querySelector('strong')?.textContent||'× 1').replace(/[^0-9]/g,'')||'1'}));
   return items;
 }
 
 window.showDealerCheckout=function(){
   ['landing','login','app','orderCenter','ppfCatalog','colorWrapCatalog','windowFilmCatalog'].forEach(id=>document.getElementById(id)?.classList.add('hidden'));
   const items=checkoutPreviewItems(),container=document.getElementById('checkoutItems');
-  container.innerHTML=items.map((item,index)=>`<article class="checkout-item"><span>${String(index+1).padStart(2,'0')}</span><div><small>${item.category}</small><b>${item.name}</b><em>${item.detail}</em></div><label>数量<input type="number" min="1" value="${item.qty}" onchange="updateCheckoutTotals()"></label><strong>价格待登录</strong><button aria-label="删除商品" onclick="this.closest('article').remove();updateCheckoutTotals()">×</button></article>`).join('');
+  container.innerHTML=items.length?items.map((item,index)=>`<article class="checkout-item" data-sku="${esc(item.sku)}"><span>${String(index+1).padStart(2,'0')}</span><div><small>${esc(item.category)}</small><b>${esc(item.name)}</b><em>${esc(item.detail)}</em></div><label>数量<input type="number" min="1" value="${item.qty}" onchange="updateCheckoutTotals()"></label><strong>服务器核价</strong><button aria-label="删除商品" onclick="this.closest('article').remove();updateCheckoutTotals()">×</button></article>`).join(''):'<p>购物车为空，请返回产品分类选择商品。</p>';
   document.getElementById('dealerCheckout').classList.remove('hidden');
   updateCheckoutTotals();window.scrollTo({top:0,behavior:'auto'});
 };
 window.closeDealerCheckout=function(){document.getElementById('dealerCheckout')?.classList.add('hidden');showOrderCenter()};
 window.updateCheckoutTotals=function(){const count=[...document.querySelectorAll('#checkoutItems input')].reduce((sum,input)=>sum+Math.max(1,Number(input.value||1)),0),pickup=String(document.querySelector('input[name="shipping"]:checked')?.value||'').startsWith('pickup-');document.getElementById('checkoutItemCount').textContent=`${count} 卷`;document.getElementById('checkoutShippingFee').textContent=pickup?'$0':'待确认';document.querySelectorAll('input[name="shipping"]').forEach(input=>input.closest('.checkout-choice')?.classList.toggle('selected',input.checked))};
-window.previewCheckoutSubmit=function(){alert('付款页面设计预览\n\n当前不会创建正式订单、扣减库存或收取信用卡费用。页面确认后，再连接 QUaD 库存、运费、销售税和 Stripe 安全支付。')};
+window.previewCheckoutSubmit=async function(){
+  const button=document.querySelector('#dealerCheckout .checkout-summary button');
+  try{
+    if(!token){window.quadResumeDealerCheckout=true;showLogin();throw new Error('请先使用经销商账号登录，登录后会返回结账页面。')}
+    const rows=[...document.querySelectorAll('#checkoutItems .checkout-item')];
+    if(!rows.length)throw new Error('购物车为空，请先选择产品。');
+    const grouped=new Map();
+    rows.forEach(row=>{const sku=row.dataset.sku?.trim(),qty=Math.max(1,Math.floor(Number(row.querySelector('input')?.value||1)));if(sku)grouped.set(sku,(grouped.get(sku)||0)+qty)});
+    if(!grouped.size)throw new Error('没有可识别的正式 SKU，请返回产品页重新选择型号。');
+    const fulfillment=document.querySelector('input[name="shipping"]:checked')?.value;
+    if(!['pickup-las-vegas','pickup-los-angeles'].includes(fulfillment))throw new Error('请选择拉斯维加斯或洛杉矶仓库自提。');
+    button.disabled=true;button.textContent='正在核价并检查库存…';
+    const result=await api('/api/customer/checkout-session',{method:'POST',body:JSON.stringify({requestId:`visual-checkout-${Date.now()}`,items:[...grouped].map(([sku,qty])=>({sku,qty})),fulfillment,notes:document.querySelector('.checkout-notes textarea')?.value||''})});
+    if(!result.checkoutUrl)throw new Error('Stripe Checkout 未返回安全付款地址。');
+    location.href=result.checkoutUrl;
+  }catch(error){alert(error.message);if(button){button.disabled=false;button.textContent='前往 Stripe 沙盒安全付款'}}
+};
 window.previewWrapCheckout=window.showDealerCheckout;
 window.previewWindowFilmCheckout=window.showDealerCheckout;
+
+const customerLoginWithoutResume=login;
+login=async function(){
+  await customerLoginWithoutResume();
+  if(token&&state&&window.quadResumeDealerCheckout){window.quadResumeDealerCheckout=false;window.showDealerCheckout()}
+};
 
 const showOrderCenterWithoutCheckout=window.showOrderCenter;
 window.showOrderCenter=function(){document.getElementById('dealerCheckout')?.classList.add('hidden');showOrderCenterWithoutCheckout()};
