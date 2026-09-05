@@ -6562,6 +6562,38 @@ async function api(req, res) {
         return send(res,502,{ error:order.paymentError });
       }
     }
+    const resumeCheckoutMatch = req.method === 'POST' && url.pathname.match(/^\/api\/customer\/orders\/([^/]+)\/checkout-session$/);
+    if (resumeCheckoutMatch) {
+      const orderId = decodeURIComponent(resumeCheckoutMatch[1]);
+      const order = (db.salesOrders || []).find(row => row.id === orderId && row.portalCustomerId === customer.id && row.portalSource);
+      if (!order) return send(res,404,{ error:'找不到这张客户订单。' });
+      if (String(order.paymentStatus || '').toLowerCase() === 'paid') return send(res,409,{ error:'这张订单已经付款。' });
+      const branchId = checkoutBranchId(order.fulfillment);
+      if (!branchId) return send(res,400,{ error:'目前只有拉斯维加斯或洛杉矶仓库自提订单可以直接在线付款。' });
+      const items = salesOrderItems(order).map(line=>({ item:String(line.item || ''), name:String((db.products || []).find(product=>product.sku===line.item)?.name || line.item), qty:Math.max(0,Math.floor(Number(line.qty || 0))), unitPrice:Number(line.unitPrice || 0) }));
+      if (!items.length || items.some(line=>!line.item || !line.qty || !Number.isFinite(line.unitPrice) || line.unitPrice<=0)) return send(res,400,{ error:'订单商品或锁定价格不完整，请联系客服。' });
+      releaseOrderInventoryReservations(db,order.id,'released');
+      for (const line of items) {
+        const product = (db.products || []).find(row=>row.sku===line.item && row.portalVisible!==false && row.portalPurchasable!==false);
+        const available = product ? branchStockQty(db,line.item,branchId)-activeInventoryReservationQty(db,line.item,branchId,order.id) : 0;
+        if (!product || available<line.qty) { writeDb(db); return send(res,409,{ error:`${line.item} 当前库存不足，可用数量：${Math.max(0,available)}。` }); }
+      }
+      const total = Math.round(items.reduce((sum,line)=>sum+line.qty*line.unitPrice,0)*100)/100;
+      const expiresAt = new Date(Date.now()+CUSTOMER_CHECKOUT_HOLD_MINUTES*60_000).toISOString();
+      items.forEach(line=>db.inventoryReservations.push({ id:id(),orderId:order.id,portalCustomerId:customer.id,sku:line.item,qty:line.qty,branchId,status:'pending_payment',createdAt:new Date().toISOString(),expiresAt }));
+      try {
+        const baseUrl=customerCheckoutBaseUrl(req);
+        const fields={ mode:'payment',client_reference_id:order.id,'metadata[orderId]':order.id,'metadata[portalCustomerId]':customer.id,customer_email:customer.email||undefined,success_url:`${baseUrl}/customer.html?checkout=success&session_id={CHECKOUT_SESSION_ID}`,cancel_url:`${baseUrl}/customer.html?checkout=canceled`,expires_at:Math.floor(new Date(expiresAt).getTime()/1000),'payment_method_types[0]':'card' };
+        items.forEach((line,index)=>{ fields[`line_items[${index}][price_data][currency]`]='usd';fields[`line_items[${index}][price_data][unit_amount]`]=Math.round(line.unitPrice*100);fields[`line_items[${index}][price_data][product_data][name]`]=line.name;fields[`line_items[${index}][price_data][product_data][metadata][sku]`]=line.item;fields[`line_items[${index}][quantity]`]=line.qty; });
+        const session=await stripeFormRequest('checkout/sessions',fields);
+        order.checkoutTotal=total;order.stripeCheckoutSessionId=String(session.id||'');order.checkoutUrl=String(session.url||'');order.checkoutExpiresAt=expiresAt;order.paymentStatus='pending';order.status='待付款';order.paymentMethod='Stripe';order.updatedAt=new Date().toISOString();
+        writeDb(db);notifyDataChanged('customer-checkout-renewed',order.id);
+        return send(res,201,{ orderId:order.id,checkoutUrl:order.checkoutUrl,expiresAt,total,currency:'usd' });
+      } catch(error) {
+        releaseOrderInventoryReservations(db,order.id,'released');order.paymentStatus='checkout_failed';order.paymentError=String(error.message||error).slice(0,500);order.updatedAt=new Date().toISOString();writeDb(db);
+        return send(res,502,{ error:order.paymentError });
+      }
+    }
     if (req.method === 'POST' && url.pathname === '/api/customer/media') {
       const body = await readBody(req);
       const name = String(body.name || 'Customer attachment').trim().slice(0, 160);
