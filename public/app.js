@@ -762,7 +762,7 @@ const pagePermissions = {
   prospects: 'prospectsView',
   leads: 'leadsView',
   orders: 'ordersView',
-  portalCustomers: 'ordersView',
+  portalCustomers: ['portalCustomersView', 'portalCustomersEdit', 'portalPricingEdit'],
   shipments: 'shipmentsView',
   schedules: 'schedulesView',
   workTime: ['reportsView', 'usersManage'],
@@ -791,7 +791,7 @@ const writePermissions = {
   prospects: 'prospectsEdit',
   leads: 'leadsEdit',
   orders: 'ordersEdit',
-  portalCustomers: 'ordersEdit',
+  portalCustomers: ['portalCustomersEdit', 'portalPricingEdit'],
   shipments: 'shipmentsEdit',
   schedules: 'schedulesEdit',
   expenses: 'expensesEdit',
@@ -813,6 +813,9 @@ const permissionLabels = [
   ['inventoryEdit', '编辑库存/出入库', 'Edit inventory / movements'],
   ['ordersView', '查看零售批发订单', 'View retail / wholesale orders'],
   ['ordersEdit', '编辑零售批发订单', 'Edit retail / wholesale orders'],
+  ['portalCustomersView', '查看B端客户与协议价', 'View B2B customers and pricing'],
+  ['portalCustomersEdit', '新增/修改B端客户账号和密码', 'Create / edit B2B customer accounts and passwords'],
+  ['portalPricingEdit', '管理B端价格等级和协议价', 'Manage B2B price tiers and contract pricing'],
   ['shipmentsView', '查看在途货物', 'View inbound shipments'],
   ['shipmentsEdit', '录入/编辑在途货物', 'Create / edit inbound shipments'],
   ['schedulesView', '查看员工调休表', 'View staff schedule'],
@@ -1704,7 +1707,7 @@ function render(options = {}) {
     ? moduleGrid(availablePages.filter(([id]) => id !== 'personalNotes'))
     : views[current]();
   const quickAdd = document.querySelector('.toolbar .btn.primary');
-  if (quickAdd) quickAdd.style.display = current !== 'modules' && writePermissions[current] && hasPerm(writePermissions[current]) ? '' : 'none';
+  if (quickAdd) quickAdd.style.display = current !== 'modules' && writePermissions[current] && hasAnyPerm(writePermissions[current]) ? '' : 'none';
   applyStaticTranslations();
   updateMessageBadge();
   enhanceExpandablePanels();
@@ -4810,8 +4813,8 @@ const views = {
     return panel(t('orders'), hasPerm('ordersEdit') ? `<button class="btn primary" onclick="openSalesOrder()">${t('addNew')}</button>` : '', `${search}<div id="salesOrderTableContainer">${salesOrderTable()}</div>`);
   },
   portalCustomers() {
-    const actions = hasPerm('ordersEdit') ? `<div class="mini-actions"><button class="btn" onclick="document.getElementById('portalReferenceImportFile')?.click()">${lang === 'zh' ? '导入UPS客户资料' : 'Import UPS customers'}</button><button class="btn primary" onclick="openPortalCustomer()">${lang === 'zh' ? '新增客户账号' : 'New customer'}</button></div>` : '';
-    const importInput = hasPerm('ordersEdit') ? `<input id="portalReferenceImportFile" class="hidden" type="file" accept="application/json,.json" onchange="importPortalReferenceCustomers(this.files?.[0]); this.value=''" />` : '';
+    const actions = hasPerm('portalCustomersEdit') ? `<div class="mini-actions"><button class="btn" onclick="document.getElementById('portalReferenceImportFile')?.click()">${lang === 'zh' ? '导入UPS客户资料' : 'Import UPS customers'}</button><button class="btn primary" onclick="openPortalCustomer()">${lang === 'zh' ? '新增客户账号' : 'New customer'}</button></div>` : '';
+    const importInput = hasPerm('portalCustomersEdit') ? `<input id="portalReferenceImportFile" class="hidden" type="file" accept="application/json,.json" onchange="importPortalReferenceCustomers(this.files?.[0]); this.value=''" />` : '';
     const tabs = [['customers','客户资料','Customer profiles'],['pricing','价格方案','Pricing plans'],['orders','订单与应收','Orders & receivables'],['warranty','质保与往来','Warranty & history']];
     const tabBar = `<div class="portal-customer-tabs">${tabs.map(([id,zh,en])=>`<button class="btn ${portalCustomerTab===id?'primary':''}" onclick="setPortalCustomerTab('${id}')">${lang==='zh'?zh:en}</button>`).join('')}</div>`;
     const content = portalCustomerTab === 'pricing' ? portalPriceTierView() : portalCustomerTab === 'orders' ? portalCustomerOrdersView() : portalCustomerTab === 'warranty' ? portalCustomerWarrantyView() : portalCustomerTable() + `<p class="note">${lang === 'zh' ? '资料客户仅用于保存历史联系方式，不能登录客户端。客户登录地址：' : 'Reference customers store historical contact data and cannot sign in. Customer login: '}<a href="/customer.html" target="_blank">${location.origin}/customer.html</a></p>`;
@@ -5803,14 +5806,14 @@ function retailWholesaleSalesTable(orders = []) {
 function portalCustomerTable() {
   const rows = state.portalCustomers || [];
   const tierName = id => (state.portalPriceTiers || []).find(tier => tier.id === (id || 'standard'))?.name || '标准批发价';
-  return `<div class="table-wrap"><table><thead><tr><th>${lang === 'zh' ? '客户/公司' : 'Customer'}</th><th>${lang === 'zh' ? '联系人' : 'Contact'}</th><th>${lang === 'zh' ? '登录账号' : 'Login'}</th><th>${lang === 'zh' ? '价格等级' : 'Price tier'}</th><th>${lang === 'zh' ? '业务员' : 'Sales rep'}</th><th>${lang === 'zh' ? '特殊协议价' : 'Overrides'}</th><th>${t('status')}</th><th></th></tr></thead><tbody>${rows.map(c => `<tr><td><strong>${escapeHtml(c.businessName || '')}</strong><br><span class="note">${escapeHtml(c.address || '')}</span></td><td>${escapeHtml(c.contactName || '')}<br><span class="note">${escapeHtml(c.phone || '')}<br>${escapeHtml(c.email || '')}</span></td><td>${escapeHtml(c.account || '')}</td><td><span class="pill info">${escapeHtml(tierName(c.priceTier))}</span></td><td>${escapeHtml(c.salesRep || '')}</td><td>${Object.keys(c.prices || {}).length}</td><td>${statusPill(c.referenceOnly ? '资料客户' : (c.active === false ? '停用' : (c.status || '正常')))}</td><td><button class="btn" onclick="openPortalCustomer('${c.id}')">${t('edit')}</button></td></tr>`).join('')}${rows.length ? '' : `<tr><td colspan="8" class="note">${lang === 'zh' ? '还没有客户账号。' : 'No customer accounts.'}</td></tr>`}</tbody></table></div>`;
+  return `<div class="table-wrap"><table><thead><tr><th>${lang === 'zh' ? '客户/公司' : 'Customer'}</th><th>${lang === 'zh' ? '联系人' : 'Contact'}</th><th>${lang === 'zh' ? '登录账号' : 'Login'}</th><th>${lang === 'zh' ? '价格等级' : 'Price tier'}</th><th>${lang === 'zh' ? '业务员' : 'Sales rep'}</th><th>${lang === 'zh' ? '特殊协议价' : 'Overrides'}</th><th>${t('status')}</th><th></th></tr></thead><tbody>${rows.map(c => `<tr><td><strong>${escapeHtml(c.businessName || '')}</strong><br><span class="note">${escapeHtml(c.address || '')}</span></td><td>${escapeHtml(c.contactName || '')}<br><span class="note">${escapeHtml(c.phone || '')}<br>${escapeHtml(c.email || '')}</span></td><td>${escapeHtml(c.account || '')}</td><td><span class="pill info">${escapeHtml(tierName(c.priceTier))}</span></td><td>${escapeHtml(c.salesRep || '')}</td><td>${Object.keys(c.prices || {}).length}</td><td>${statusPill(c.referenceOnly ? '资料客户' : (c.active === false ? '停用' : (c.status || '正常')))}</td><td>${hasPerm('portalCustomersEdit') ? `<button class="btn" onclick="openPortalCustomer('${c.id}')">${t('edit')}</button>` : ''}</td></tr>`).join('')}${rows.length ? '' : `<tr><td colspan="8" class="note">${lang === 'zh' ? '还没有客户账号。' : 'No customer accounts.'}</td></tr>`}</tbody></table></div>`;
 }
 
 function setPortalCustomerTab(tab) { portalCustomerTab = tab; render(); }
 
 function portalPriceTierView() {
   const tiers = state.portalPriceTiers || [];
-  return `<div class="portal-tier-grid">${tiers.map(tier=>`<article><span>${lang==='zh'?'价格等级':'Price tier'}</span><h3>${escapeHtml(tier.name)}</h3><p>${Object.keys(tier.prices||{}).length} ${lang==='zh'?'个 SKU 已定价':'SKU prices set'}</p><button class="btn primary" onclick="openPortalPriceTier('${escapeJs(tier.id)}')">${lang==='zh'?'编辑价格表':'Edit price list'}</button></article>`).join('')}</div><p class="note">${lang==='zh'?'价格优先顺序：客户特殊协议价 → 客户所属价格等级 → 标准批发价 → 联系业务员。订单生成时会锁定当时成交价。':'Priority: customer override, assigned tier, standard wholesale price, then contact sales. Order prices are locked at order creation.'}</p>`;
+  return `<div class="portal-tier-grid">${tiers.map(tier=>`<article><span>${lang==='zh'?'价格等级':'Price tier'}</span><h3>${escapeHtml(tier.name)}</h3><p>${Object.keys(tier.prices||{}).length} ${lang==='zh'?'个 SKU 已定价':'SKU prices set'}</p>${hasPerm('portalPricingEdit') ? `<button class="btn primary" onclick="openPortalPriceTier('${escapeJs(tier.id)}')">${lang==='zh'?'编辑价格表':'Edit price list'}</button>` : ''}</article>`).join('')}</div><p class="note">${lang==='zh'?'价格优先顺序：客户特殊协议价 → 客户所属价格等级 → 标准批发价 → 联系业务员。订单生成时会锁定当时成交价。':'Priority: customer override, assigned tier, standard wholesale price, then contact sales. Order prices are locked at order creation.'}</p>`;
 }
 
 function portalCustomerOrdersView() {
@@ -5850,15 +5853,17 @@ function portalPriceRows(customer) {
 function openPortalCustomer(id = '') {
   const customer = (state.portalCustomers || []).find(item => item.id === id) || { businessName: '', contactName: '', account: '', email: '', phone: '', address: '', salesRep: '', status: '正常', note: '', active: true, priceTier: 'standard', prices: {} };
   const priceTierOptions=(state.portalPriceTiers||[]).map(tier=>[tier.id,tier.name]);
+  const canEditPortalPricing = hasPerm('portalPricingEdit');
+  const pricingFields = canEditPortalPricing ? `<label class="wide">${lang==='zh'?'价格等级':'Price tier'}<select id="portalPriceTier">${priceTierOptions.map(([value,label])=>`<option value="${escapeHtml(value)}" ${value===(customer.priceTier||'standard')?'selected':''}>${escapeHtml(label)}</option>`).join('')}</select></label><div class="wide portal-price-editor"><h4>${lang === 'zh' ? '客户特殊协议价' : 'Customer-specific SKU prices'}</h4><p class="note">${lang === 'zh' ? '这里只填写例外价格；其他型号自动继承客户所属价格等级。' : 'Only enter exceptions; other SKUs inherit the assigned price tier.'}</p><div class="table-wrap"><table><thead><tr><th>SKU</th><th>${t('productName')}</th><th>${t('retailPrice')}</th><th>${t('wholesalePrice')}</th><th>${lang === 'zh' ? '特殊协议价' : 'Customer override'}</th></tr></thead><tbody>${portalPriceRows(customer)}</tbody></table></div></div>` : `<div class="wide portal-credential-tools"><span class="note">${lang === 'zh' ? '您可以管理客户账号和密码，但没有修改价格等级及协议价的权限。' : 'You may manage customer credentials, but cannot change price tiers or contract pricing.'}</span></div>`;
   const body = formHtml([
     ['portalBusinessName', lang === 'zh' ? '客户/公司名称' : 'Business name', 'text', customer.businessName], ['portalContactName', lang === 'zh' ? '联系人' : 'Contact', 'text', customer.contactName], ['portalAccount', lang === 'zh' ? '登录账号' : 'Login account', 'text', customer.account],
     ['portalEmail', t('email'), 'text', customer.email], ['portalPhone', lang === 'zh' ? '电话' : 'Phone', 'text', customer.phone], ['portalSalesRep', lang === 'zh' ? '负责业务员' : 'Sales rep', 'text', customer.salesRep],
     ['portalAddress', lang === 'zh' ? '地址' : 'Address', 'text', customer.address], ['portalStatus', t('status'), 'select', customer.status || '正常', ['正常','暂停合作','重点客户']], ['portalPassword', id ? (lang === 'zh' ? '重设密码（不改请留空）' : 'Reset password (optional)') : (lang === 'zh' ? '初始密码（至少8位）' : 'Initial password (8+ chars)'), 'password', ''],
     ['portalNote', t('note'), 'textarea', customer.note]
-  ]) + `<div class="wide portal-credential-tools"><button class="btn" type="button" onclick="generatePortalTemporaryPassword()">${lang === 'zh' ? '生成临时密码' : 'Generate temporary password'}</button><button class="btn" type="button" onclick="copyPortalTrialLogin()">${lang === 'zh' ? '复制客户登录信息' : 'Copy customer login details'}</button><span class="note">${lang === 'zh' ? '密码保存后无法查看，只能重新设置。请在本窗口关闭前复制给客户。' : 'Passwords cannot be viewed after saving; they can only be reset. Copy it before closing this window.'}</span></div><label class="wide">${lang==='zh'?'价格等级':'Price tier'}<select id="portalPriceTier">${priceTierOptions.map(([value,label])=>`<option value="${escapeHtml(value)}" ${value===(customer.priceTier||'standard')?'selected':''}>${escapeHtml(label)}</option>`).join('')}</select></label><div class="wide portal-price-editor"><h4>${lang === 'zh' ? '客户特殊协议价' : 'Customer-specific SKU prices'}</h4><p class="note">${lang === 'zh' ? '这里只填写例外价格；其他型号自动继承客户所属价格等级。' : 'Only enter exceptions; other SKUs inherit the assigned price tier.'}</p><div class="table-wrap"><table><thead><tr><th>SKU</th><th>${t('productName')}</th><th>${t('retailPrice')}</th><th>${t('wholesalePrice')}</th><th>${lang === 'zh' ? '特殊协议价' : 'Customer override'}</th></tr></thead><tbody>${portalPriceRows(customer)}</tbody></table></div></div>`;
+  ]) + `<div class="wide portal-credential-tools"><button class="btn" type="button" onclick="generatePortalTemporaryPassword()">${lang === 'zh' ? '生成临时密码' : 'Generate temporary password'}</button><button class="btn" type="button" onclick="copyPortalTrialLogin()">${lang === 'zh' ? '复制客户登录信息' : 'Copy customer login details'}</button><span class="note">${lang === 'zh' ? '密码保存后无法查看，只能重新设置。请在本窗口关闭前复制给客户。' : 'Passwords cannot be viewed after saving; they can only be reset. Copy it before closing this window.'}</span></div>${pricingFields}`;
   openModal(id ? (lang === 'zh' ? '编辑客户账号' : 'Edit customer') : (lang === 'zh' ? '新增客户账号' : 'New customer'), body, async () => {
     const prices = {}; document.querySelectorAll('.portal-price-input').forEach(input => { if (input.value !== '') prices[input.dataset.sku] = Number(input.value); });
-    const payload = { businessName: document.getElementById('portalBusinessName').value, contactName: document.getElementById('portalContactName').value, account: document.getElementById('portalAccount').value, email: document.getElementById('portalEmail').value, phone: document.getElementById('portalPhone').value, salesRep: document.getElementById('portalSalesRep').value, address: document.getElementById('portalAddress').value, status: document.getElementById('portalStatus').value, password: document.getElementById('portalPassword').value, note: document.getElementById('portalNote').value, priceTier: document.getElementById('portalPriceTier').value, prices, active: customer.active !== false };
+    const payload = { businessName: document.getElementById('portalBusinessName').value, contactName: document.getElementById('portalContactName').value, account: document.getElementById('portalAccount').value, email: document.getElementById('portalEmail').value, phone: document.getElementById('portalPhone').value, salesRep: document.getElementById('portalSalesRep').value, address: document.getElementById('portalAddress').value, status: document.getElementById('portalStatus').value, password: document.getElementById('portalPassword').value, note: document.getElementById('portalNote').value, priceTier: document.getElementById('portalPriceTier')?.value || customer.priceTier || 'standard', prices, active: customer.active !== false };
     try { const result = await api(`/api/portal-customers${id ? `/${id}` : ''}`, { method: id ? 'PUT' : 'POST', body: JSON.stringify(payload) }); state = result.data; closeModal(); render(); broadcastDataChange(); } catch (err) { alert(err.message); }
   });
 }

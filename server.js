@@ -1233,6 +1233,9 @@ function defaultPermissions(role) {
     inventoryEdit: false,
     ordersView: false,
     ordersEdit: false,
+    portalCustomersView: false,
+    portalCustomersEdit: false,
+    portalPricingEdit: false,
     shipmentsView: false,
     shipmentsEdit: false,
     schedulesView: false,
@@ -1367,12 +1370,12 @@ function sanitizeDbForUser(db, user, options = {}) {
             selfUpdatedAt: profile.selfUpdatedAt, updatedAt: profile.updatedAt
           }),
     installers: p.installerView || p.jobsView ? branchVisibleRecords(db, user, db.installers).map(installer => sanitizeInstaller(installer, p)) : [],
-    products: p.inventoryView || p.ordersEdit ? productsForUser(db, user, canSeeCosts) : [],
+    products: p.inventoryView || p.ordersEdit || p.portalCustomersView || p.portalCustomersEdit || p.portalPricingEdit ? productsForUser(db, user, canSeeCosts) : [],
     priceRules: p.pricingView ? db.priceRules.map(rule => canSeeCosts ? rule : { ...rule, materialCost: 0 }) : [],
     jobs: p.jobsView || p.jobsEdit || p.jobsDelete ? branchVisibleRecords(db, user, db.jobs).map(job => sanitizeJob(job, p, canSeeCosts)) : [],
     salesOrders: p.ordersView ? branchVisibleRecords(db, user, db.salesOrders).map(order => sanitizeSalesOrder(order, p)) : [],
-    portalCustomers: p.ordersView ? (db.portalCustomers || []).map(safePortalCustomer) : [],
-    portalPriceTiers: p.ordersView ? (db.portalPriceTiers || defaultPortalPriceTiers()) : [],
+    portalCustomers: p.portalCustomersView || p.portalCustomersEdit || p.portalPricingEdit ? (db.portalCustomers || []).map(safePortalCustomer) : [],
+    portalPriceTiers: p.portalCustomersView || p.portalCustomersEdit || p.portalPricingEdit ? (db.portalPriceTiers || defaultPortalPriceTiers()) : [],
     warranties: p.jobsView || p.jobsCreate || p.jobsEdit || p.jobsDelete ? (db.warranties || []) : [],
     shipments: p.shipmentsView ? (db.shipments || []) : [],
     shipmentReceipts: p.shipmentsView ? (db.shipmentReceipts || []) : [],
@@ -6904,7 +6907,7 @@ async function api(req, res) {
   }
 
   if (req.method === 'POST' && url.pathname === '/api/portal-customers/import-reference') {
-    if (!canAccess(user, 'ordersEdit')) return send(res, 403, { error: '没有客户管理权限' });
+    if (!canAccess(user, 'portalCustomersEdit')) return send(res, 403, { error: '没有B端客户账号管理权限' });
     const body = await readBody(req);
     const records = Array.isArray(body.records) ? body.records : [];
     if (!records.length || records.length > 250) return send(res, 400, { error: '导入资料必须包含 1 至 250 位客户' });
@@ -6960,7 +6963,7 @@ async function api(req, res) {
 
   const portalPriceTierMatch = url.pathname.match(/^\/api\/portal-price-tiers\/([^/]+)$/);
   if (portalPriceTierMatch && req.method === 'PUT') {
-    if (!canAccess(user, 'ordersEdit')) return send(res, 403, { error: '没有客户价格管理权限' });
+    if (!canAccess(user, 'portalPricingEdit')) return send(res, 403, { error: '没有客户协议价格管理权限' });
     const tierId = decodeURIComponent(portalPriceTierMatch[1]);
     const tier = (db.portalPriceTiers || []).find(item => item.id === tierId);
     if (!tier) return send(res, 404, { error: '找不到价格等级' });
@@ -6979,7 +6982,7 @@ async function api(req, res) {
 
   const portalCustomerMatch = url.pathname.match(/^\/api\/portal-customers(?:\/([^/]+))?$/);
   if (portalCustomerMatch) {
-    if (!canAccess(user, req.method === 'GET' ? 'ordersView' : 'ordersEdit')) return send(res, 403, { error: '没有客户管理权限' });
+    if (req.method === 'GET' ? !['portalCustomersView','portalCustomersEdit','portalPricingEdit'].some(permission => canAccess(user, permission)) : !canAccess(user, 'portalCustomersEdit')) return send(res, 403, { error: '没有B端客户管理权限' });
     const customerId = portalCustomerMatch[1] || '';
     if (req.method === 'GET') return send(res, 200, (db.portalCustomers || []).map(safePortalCustomer));
     const body = await readBody(req);
@@ -6993,10 +6996,11 @@ async function api(req, res) {
     if (!email && !phone && !account) return send(res, 400, { error: '请填写登录账号、邮箱或电话' });
     if (db.portalCustomers.some(item => item.id !== customerId && [item.email, item.phone, item.account].some(value => [email, phone, account].filter(Boolean).includes(String(value || '').trim().toLowerCase())))) return send(res, 400, { error: '客户登录账号、邮箱或电话已存在' });
     if (existingIndex < 0 && String(body.password || '').length < 8) return send(res, 400, { error: '新客户必须设置至少 8 位密码' });
+    const canEditPortalPricing = canAccess(user, 'portalPricingEdit');
     const prices = {};
-    Object.entries(body.prices && typeof body.prices === 'object' ? body.prices : before.prices || {}).forEach(([sku, value]) => { const price = Number(value); if (Number.isFinite(price) && price >= 0) prices[String(sku)] = price; });
+    Object.entries(canEditPortalPricing && body.prices && typeof body.prices === 'object' ? body.prices : before.prices || {}).forEach(([sku, value]) => { const price = Number(value); if (Number.isFinite(price) && price >= 0) prices[String(sku)] = price; });
     const allowedPriceTiers = new Set((db.portalPriceTiers || []).map(tier => tier.id));
-    const requestedPriceTier = String(body.priceTier ?? before.priceTier ?? 'standard');
+    const requestedPriceTier = String(canEditPortalPricing ? (body.priceTier ?? before.priceTier ?? 'standard') : (before.priceTier ?? 'standard'));
     const item = { ...before, id: customerId || id(), businessName: String(body.businessName ?? before.businessName ?? '').trim().slice(0, 160), contactName: String(body.contactName ?? before.contactName ?? '').trim().slice(0, 120), account: account.toLowerCase(), email, phone, address: String(body.address ?? before.address ?? '').trim().slice(0, 500), salesRep: String(body.salesRep ?? before.salesRep ?? '').trim().slice(0, 120), status: String(body.status ?? before.status ?? '正常').trim().slice(0, 50), note: String(body.note ?? before.note ?? '').trim().slice(0, 2000), active: body.active !== false, priceTier: allowedPriceTiers.has(requestedPriceTier) ? requestedPriceTier : 'standard', prices, createdAt: before.createdAt || new Date().toISOString(), updatedAt: new Date().toISOString() };
     item.passwordHash = body.password ? hashPassword(body.password) : before.passwordHash;
     if (existingIndex >= 0) db.portalCustomers[existingIndex] = item; else db.portalCustomers.push(item);
