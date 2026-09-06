@@ -2192,7 +2192,7 @@ function clockRecordHtml(item) {
   const address = item.address || `${Number(item.lat || 0).toFixed(6)}, ${Number(item.lng || 0).toFixed(6)}`;
   const hasDistance = Number.isFinite(Number(item.officeDistanceMeters));
   const matchText = hasDistance
-    ? `${item.officeMatched ? t('insideOffice') : t('outsideOffice')} · ${t('distanceOffice')} ${Number(item.officeDistanceMeters).toLocaleString()} ${t('meter')}`
+    ? `${item.officeMatched ? t('insideOffice') : t('outsideOffice')}${item.officeLocationName ? ` · ${item.officeLocationName}` : ''} · ${t('distanceOffice')} ${Number(item.officeDistanceMeters).toLocaleString()} ${t('meter')}`
     : t('distanceUnknown');
   const matchClass = item.officeMatched ? 'approved' : 'rejected';
   return `<div class="row"><div>

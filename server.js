@@ -326,6 +326,10 @@ function seedDb() {
       officeLat: 36.0824712,
       officeLng: -115.1850945,
       clockRadiusMeters: 150,
+      clockLocations: [
+        { id:'las-vegas', name:'拉斯维加斯分店', address:'3359 W Oquendo Rd, Las Vegas, NV 89118', lat:36.0824712, lng:-115.1850945, radiusMeters:150, active:true },
+        { id:'los-angeles', name:'洛杉矶分店', address:'3212 Santa Monica Blvd, Santa Monica, CA 90404', lat:34.0379829, lng:-118.4683777, radiusMeters:150, active:true }
+      ],
       callForwardEnabled: false,
       callForwardNumber: ''
     },
@@ -463,6 +467,12 @@ function readDb() {
   if (!Number.isFinite(Number(db.settings.officeLat))) db.settings.officeLat = 36.0824712;
   if (!Number.isFinite(Number(db.settings.officeLng))) db.settings.officeLng = -115.1850945;
   if (!Number.isFinite(Number(db.settings.clockRadiusMeters))) db.settings.clockRadiusMeters = 150;
+  if (!Array.isArray(db.settings.clockLocations) || !db.settings.clockLocations.length) {
+    db.settings.clockLocations = [
+      { id:'las-vegas', name:'拉斯维加斯分店', address:String(db.settings.officeAddress || '3359 W Oquendo Rd, Las Vegas, NV 89118'), lat:Number(db.settings.officeLat), lng:Number(db.settings.officeLng), radiusMeters:Number(db.settings.clockRadiusMeters || 150), active:true },
+      { id:'los-angeles', name:'洛杉矶分店', address:'3212 Santa Monica Blvd, Santa Monica, CA 90404', lat:34.0379829, lng:-118.4683777, radiusMeters:150, active:true }
+    ];
+  }
   if (typeof db.settings.callForwardEnabled !== 'boolean') db.settings.callForwardEnabled = false;
   if (typeof db.settings.callForwardNumber !== 'string') db.settings.callForwardNumber = '';
   if (!Array.isArray(db.expenses)) db.expenses = [];
@@ -1402,7 +1412,8 @@ function sanitizeDbForUser(db, user, options = {}) {
     clockRecords: (db.clockRecords || [])
       .filter(item => canApproveLeave(user) || item.userId === user.id)
       .sort((a, b) => String(b.at || '').localeCompare(String(a.at || '')))
-      .slice(0, 200),
+      .slice(0, 200)
+      .map(item => clockRecordWithCurrentOfficeMatch(db, item)),
     leaveRequests: (db.leaveRequests || [])
       .filter(item => canApproveLeave(user) || item.userId === user.id)
       .sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')))
@@ -1512,6 +1523,54 @@ function distanceMeters(lat1, lng1, lat2, lng2) {
   return Math.round(earthRadius * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
 }
 
+function clockLocations(db) {
+  const configured = Array.isArray(db?.settings?.clockLocations) ? db.settings.clockLocations : [];
+  const valid = configured.filter(location => location?.active !== false && hasValidCoordinates(location?.lat, location?.lng)).map((location, index) => ({
+    id: String(location.id || `office-${index + 1}`).trim(),
+    name: String(location.name || location.address || `公司地点 ${index + 1}`).trim(),
+    address: String(location.address || '').trim(),
+    lat: Number(location.lat),
+    lng: Number(location.lng),
+    radiusMeters: Number.isFinite(Number(location.radiusMeters)) && Number(location.radiusMeters) > 0
+      ? Number(location.radiusMeters)
+      : Number(db?.settings?.clockRadiusMeters || 150)
+  }));
+  if (valid.length) return valid;
+  if (!hasValidCoordinates(db?.settings?.officeLat, db?.settings?.officeLng)) return [];
+  return [{
+    id: 'office',
+    name: String(db?.settings?.officeAddress || '公司地点').trim(),
+    address: String(db?.settings?.officeAddress || '').trim(),
+    lat: Number(db.settings.officeLat),
+    lng: Number(db.settings.officeLng),
+    radiusMeters: Number(db?.settings?.clockRadiusMeters || 150)
+  }];
+}
+
+function nearestClockLocation(db, lat, lng) {
+  return clockLocations(db).map(location => ({
+    ...location,
+    distanceMeters: distanceMeters(lat, lng, location.lat, location.lng)
+  })).sort((a, b) => a.distanceMeters - b.distanceMeters)[0] || null;
+}
+
+function clockRecordWithCurrentOfficeMatch(db, record) {
+  if (!hasValidCoordinates(record?.lat, record?.lng)) return record;
+  const matchedOffice = nearestClockLocation(db, Number(record.lat), Number(record.lng));
+  if (!matchedOffice) return record;
+  return {
+    ...record,
+    officeLocationId: matchedOffice.id,
+    officeLocationName: matchedOffice.name,
+    officeAddress: matchedOffice.address,
+    officeLat: matchedOffice.lat,
+    officeLng: matchedOffice.lng,
+    officeDistanceMeters: matchedOffice.distanceMeters,
+    clockRadiusMeters: matchedOffice.radiusMeters,
+    officeMatched: matchedOffice.distanceMeters <= matchedOffice.radiusMeters
+  };
+}
+
 function hasValidCoordinates(lat, lng) {
   if (lat === null || lat === undefined || lng === null || lng === undefined) return false;
   if (String(lat).trim() === '' || String(lng).trim() === '') return false;
@@ -1586,7 +1645,7 @@ function attendanceDateRange(startDate, endDate) {
 
 function attendanceMonthlyReport(db, user, month) {
   const approver = canApproveLeave(user);
-  const visibleClock = branchVisibleRecords(db, user, db.clockRecords || []).filter(row => String(row.date || '').startsWith(month));
+  const visibleClock = branchVisibleRecords(db, user, db.clockRecords || []).filter(row => String(row.date || '').startsWith(month)).map(row => clockRecordWithCurrentOfficeMatch(db, row));
   const visibleSchedules = branchVisibleRecords(db, user, db.schedules || []).filter(row => String(row.date || '').startsWith(month));
   const visibleLeave = branchVisibleRecords(db, user, db.leaveRequests || []).filter(row => String(row.endDate || '') >= `${month}-01` && String(row.startDate || '') <= `${month}-31`);
   const permitted = rows => approver ? rows : rows.filter(row => row.userId === user.id || row.employeeId === user.id);
@@ -1645,7 +1704,7 @@ function attendanceMonthlyReport(db, user, month) {
         date: day.date,
         clockInCount: records.filter(row => row.type === 'in').length,
         clockOutCount: records.filter(row => row.type === 'out').length,
-        clockRecords: records.map(row => ({ id:row.id, type:row.type, at:row.at, address:row.address, mapUrl:row.mapUrl, officeMatched:row.officeMatched, officeDistanceMeters:row.officeDistanceMeters, accuracy:row.accuracy })),
+        clockRecords: records.map(row => ({ id:row.id, type:row.type, at:row.at, address:row.address, mapUrl:row.mapUrl, officeMatched:row.officeMatched, officeDistanceMeters:row.officeDistanceMeters, officeLocationName:row.officeLocationName, accuracy:row.accuracy })),
         pairs,
         workedHours,
         schedules: day.schedules,
@@ -1904,7 +1963,8 @@ function mobileSnapshot(db, user) {
     clockRecords: (db.clockRecords || [])
       .filter(item => approver || item.userId === userId)
       .sort((a, b) => String(b.at || '').localeCompare(String(a.at || '')))
-      .slice(0, 200),
+      .slice(0, 200)
+      .map(item => clockRecordWithCurrentOfficeMatch(db, item)),
     leaveRequests: (db.leaveRequests || [])
       .filter(item => approver || item.userId === userId)
       .sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')))
@@ -7926,13 +7986,12 @@ async function api(req, res) {
     const accuracy = Number(body.accuracy || 0);
     if (!Number.isFinite(lat) || !Number.isFinite(lng)) return send(res, 400, { error: '没有获取到手机定位，不能打卡' });
     const address = await reverseGeocode(lat, lng);
-    const officeLat = Number(db.settings?.officeLat);
-    const officeLng = Number(db.settings?.officeLng);
-    const clockRadiusMeters = Number(db.settings?.clockRadiusMeters || 150);
-    const officeDistanceMeters = Number.isFinite(officeLat) && Number.isFinite(officeLng)
-      ? distanceMeters(lat, lng, officeLat, officeLng)
-      : null;
-    const officeMatched = Number.isFinite(officeDistanceMeters) && officeDistanceMeters <= clockRadiusMeters;
+    const matchedOffice = nearestClockLocation(db, lat, lng);
+    const officeLat = matchedOffice?.lat ?? null;
+    const officeLng = matchedOffice?.lng ?? null;
+    const clockRadiusMeters = matchedOffice?.radiusMeters ?? Number(db.settings?.clockRadiusMeters || 150);
+    const officeDistanceMeters = matchedOffice?.distanceMeters ?? null;
+    const officeMatched = Boolean(matchedOffice) && officeDistanceMeters <= clockRadiusMeters;
     const record = {
       id: id(),
       userId: user.id,
@@ -7947,7 +8006,9 @@ async function api(req, res) {
       accuracy: Number.isFinite(accuracy) ? Math.round(accuracy) : 0,
       address,
       mapUrl: mapUrlForLatLng(lat, lng),
-      officeAddress: db.settings?.officeAddress || '',
+      officeLocationId: matchedOffice?.id || '',
+      officeLocationName: matchedOffice?.name || '',
+      officeAddress: matchedOffice?.address || db.settings?.officeAddress || '',
       officeLat: Number.isFinite(officeLat) ? officeLat : null,
       officeLng: Number.isFinite(officeLng) ? officeLng : null,
       officeDistanceMeters,
