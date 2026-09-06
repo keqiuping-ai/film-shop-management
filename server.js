@@ -6100,6 +6100,24 @@ function checkoutBranchId(fulfillment) {
   return fulfillment === 'pickup-las-vegas' ? 'las-vegas' : fulfillment === 'pickup-los-angeles' ? 'los-angeles' : '';
 }
 
+function deliveryCheckoutBranchId(db, requested) {
+  return ['las-vegas','los-angeles'].find(branchId => requested.every(line => {
+    const sku = String(line.sku || '').trim();
+    const qty = Math.max(0,Math.floor(Number(line.qty || 0)));
+    return sku && qty && branchStockQty(db,sku,branchId)-activeInventoryReservationQty(db,sku,branchId) >= qty;
+  })) || '';
+}
+
+function applyCustomerStripeFields(fields, customer) {
+  if (customer.stripeCustomerId) fields.customer = customer.stripeCustomerId;
+  else {
+    fields.customer_email = customer.email || undefined;
+    fields.customer_creation = 'always';
+  }
+  fields.billing_address_collection = 'required';
+  fields['saved_payment_method_options[payment_method_save]'] = 'enabled';
+}
+
 function activeInventoryReservationQty(db, sku, branchId, ignoreOrderId = '') {
   const now = Date.now();
   const finished = new Set(['已出库','shipped','delivered','completed','已完成','已取消','canceled','cancelled','已退款','refunded']);
@@ -6146,6 +6164,15 @@ function confirmCustomerCheckout(db, session, eventId) {
   order.status = '已付款待出库';
   order.stripeCheckoutSessionId = String(session.id || '');
   order.stripePaymentIntentId = String(session.payment_intent || '');
+  const customer = (db.portalCustomers || []).find(row => row.id === order.portalCustomerId);
+  if (customer) {
+    if (session.customer) customer.stripeCustomerId = String(session.customer);
+    const details = session.customer_details || {};
+    const address = details.address || {};
+    if (details.phone) customer.phone = String(details.phone).slice(0,80);
+    if (address.line1) customer.billingAddress = [address.line1,address.line2,address.city,address.state,address.postal_code,address.country].filter(Boolean).join(', ').slice(0,500);
+    customer.updatedAt = now;
+  }
   order.paymentTransactions = [...(order.paymentTransactions || []), { id:id(), date:dateInTimezone(db.settings?.timezone || 'America/Los_Angeles',0), amount:paid, type:'payment', method:'Stripe', providerEventId:eventId, createdAt:now, createdBy:'Stripe webhook', createdByUserId:'stripe' }];
   order.updatedAt = now;
   (db.inventoryReservations || []).filter(row => row.orderId === order.id && row.status === 'pending_payment').forEach(row => { row.status='paid'; row.updatedAt=now; });
@@ -6525,9 +6552,12 @@ async function api(req, res) {
     if (req.method === 'POST' && url.pathname === '/api/customer/checkout-session') {
       const body = await readBody(req);
       const fulfillment = String(body.fulfillment || '');
-      const branchId = checkoutBranchId(fulfillment);
-      if (!branchId) return send(res, 400, { error:'Online payment currently supports Las Vegas or Los Angeles warehouse pickup only.' });
       const requested = (Array.isArray(body.items) ? body.items : []).slice(0,50);
+      const branchId = checkoutBranchId(fulfillment) || (fulfillment === 'delivery' ? deliveryCheckoutBranchId(db,requested) : '');
+      if (!branchId) return send(res, 400, { error:fulfillment === 'delivery' ? 'No single warehouse currently has enough inventory for every selected item.' : 'Select delivery, Las Vegas pickup, or Los Angeles pickup.' });
+      const shippingAddress = body.shippingAddress && typeof body.shippingAddress === 'object' ? body.shippingAddress : {};
+      const formattedAddress = [shippingAddress.street,shippingAddress.city,shippingAddress.state,shippingAddress.postalCode,'US'].map(value=>String(value||'').trim()).filter(Boolean).join(', ').slice(0,500);
+      if (fulfillment === 'delivery' && (!shippingAddress.street || !shippingAddress.city || !shippingAddress.state || !shippingAddress.postalCode)) return send(res,400,{ error:'Enter the complete U.S. shipping address before payment.' });
       const items = [];
       for (const line of requested) {
         const sku = String(line.sku || '').trim();
@@ -6544,13 +6574,14 @@ async function api(req, res) {
       const orderId = id();
       const now = new Date();
       const expiresAt = new Date(now.getTime()+CUSTOMER_CHECKOUT_HOLD_MINUTES*60_000).toISOString();
-      const order = { id:orderId, date:dateInTimezone(db.settings?.timezone || 'America/Los_Angeles',0), branchId, warehouse:branchId, type:'wholesale-us', customer:customer.businessName || customer.contactName, customerAddress:String(body.address || customer.address || '').trim().slice(0,500), customerContact:[customer.contactName,customer.phone,customer.email].filter(Boolean).join(' · '), salesRep:customer.salesRep || '', preparedBy:'客户客户端', items, item:items[0].item, qty:items[0].qty, unitPrice:items[0].unitPrice, subtotal, shippingFee:0, salesTax:0, checkoutTotal:subtotal, fulfillment, status:'待付款', paymentStatus:'pending', shipping:fulfillment === 'pickup-las-vegas' ? 'Las Vegas warehouse pickup' : 'Los Angeles warehouse pickup', trackingNo:'', paid:0, paymentMethod:'Stripe', note:String(body.notes || '').trim().slice(0,2000), customerDemand:String(body.notes || '').trim().slice(0,2000), portalCustomerId:customer.id, portalRequestId:String(body.requestId || `checkout-${orderId}`).slice(0,120), portalSource:true, portalNew:true, paymentTransactions:[], createdAt:now.toISOString(), checkoutExpiresAt:expiresAt };
+      const order = { id:orderId, date:dateInTimezone(db.settings?.timezone || 'America/Los_Angeles',0), branchId, warehouse:branchId, type:'wholesale-us', customer:customer.businessName || customer.contactName, customerAddress:fulfillment === 'delivery' ? formattedAddress : String(body.address || customer.address || '').trim().slice(0,500), shippingAddress:fulfillment === 'delivery' ? shippingAddress : null, customerContact:[customer.contactName,customer.phone,customer.email].filter(Boolean).join(' · '), salesRep:customer.salesRep || '', preparedBy:'客户客户端', items, item:items[0].item, qty:items[0].qty, unitPrice:items[0].unitPrice, subtotal, shippingFee:0, shippingFeeStatus:fulfillment === 'delivery' ? 'pending_confirmation' : 'not_applicable', salesTax:0, checkoutTotal:subtotal, fulfillment, status:'待付款', paymentStatus:'pending', shipping:fulfillment === 'delivery' ? `Delivery from ${branchId === 'las-vegas' ? 'Las Vegas' : 'Los Angeles'} warehouse · shipping fee pending` : fulfillment === 'pickup-las-vegas' ? 'Las Vegas warehouse pickup' : 'Los Angeles warehouse pickup', trackingNo:'', paid:0, paymentMethod:'Stripe', note:String(body.notes || '').trim().slice(0,2000), customerDemand:String(body.notes || '').trim().slice(0,2000), portalCustomerId:customer.id, portalRequestId:String(body.requestId || `checkout-${orderId}`).slice(0,120), portalSource:true, portalNew:true, paymentTransactions:[], createdAt:now.toISOString(), checkoutExpiresAt:expiresAt };
       db.salesOrders.push(order);
       items.forEach(line=>db.inventoryReservations.push({ id:id(), orderId, portalCustomerId:customer.id, sku:line.item, qty:line.qty, branchId, status:'pending_payment', createdAt:now.toISOString(), expiresAt }));
       writeDb(db);
       try {
         const baseUrl = customerCheckoutBaseUrl(req);
-        const fields = { mode:'payment', client_reference_id:orderId, 'metadata[orderId]':orderId, 'metadata[portalCustomerId]':customer.id, customer_email:customer.email || undefined, success_url:`${baseUrl}/customer.html?checkout=success&session_id={CHECKOUT_SESSION_ID}`, cancel_url:`${baseUrl}/customer.html?checkout=canceled`, expires_at:Math.floor(new Date(expiresAt).getTime()/1000), 'payment_method_types[0]':'card' };
+        const fields = { mode:'payment', client_reference_id:orderId, 'metadata[orderId]':orderId, 'metadata[portalCustomerId]':customer.id, success_url:`${baseUrl}/customer.html?checkout=success&session_id={CHECKOUT_SESSION_ID}`, cancel_url:`${baseUrl}/customer.html?checkout=canceled`, expires_at:Math.floor(new Date(expiresAt).getTime()/1000), 'payment_method_types[0]':'card' };
+        applyCustomerStripeFields(fields,customer);
         items.forEach((line,index)=>{ fields[`line_items[${index}][price_data][currency]`]='usd'; fields[`line_items[${index}][price_data][unit_amount]`]=Math.round(line.unitPrice*100); fields[`line_items[${index}][price_data][product_data][name]`]=line.name; fields[`line_items[${index}][price_data][product_data][metadata][sku]`]=line.item; fields[`line_items[${index}][quantity]`]=line.qty; });
         const session = await stripeFormRequest('checkout/sessions',fields);
         order.stripeCheckoutSessionId=String(session.id || ''); order.checkoutUrl=String(session.url || ''); order.updatedAt=new Date().toISOString();
@@ -6568,9 +6599,10 @@ async function api(req, res) {
       const order = (db.salesOrders || []).find(row => row.id === orderId && row.portalCustomerId === customer.id && row.portalSource);
       if (!order) return send(res,404,{ error:'找不到这张客户订单。' });
       if (String(order.paymentStatus || '').toLowerCase() === 'paid') return send(res,409,{ error:'这张订单已经付款。' });
-      const branchId = checkoutBranchId(order.fulfillment);
-      if (!branchId) return send(res,400,{ error:'目前只有拉斯维加斯或洛杉矶仓库自提订单可以直接在线付款。' });
       const items = salesOrderItems(order).map(line=>({ item:String(line.item || ''), name:String((db.products || []).find(product=>product.sku===line.item)?.name || line.item), qty:Math.max(0,Math.floor(Number(line.qty || 0))), unitPrice:Number(line.unitPrice || 0) }));
+      const branchId = checkoutBranchId(order.fulfillment) || (order.fulfillment === 'delivery' ? deliveryCheckoutBranchId(db,items.map(line=>({sku:line.item,qty:line.qty}))) : '');
+      if (!branchId) return send(res,400,{ error:'当前没有一个仓库能够完整供应这张订单，请联系客服调整库存或拆单。' });
+      order.branchId=branchId; order.warehouse=branchId;
       if (!items.length || items.some(line=>!line.item || !line.qty || !Number.isFinite(line.unitPrice) || line.unitPrice<=0)) return send(res,400,{ error:'订单商品或锁定价格不完整，请联系客服。' });
       releaseOrderInventoryReservations(db,order.id,'released');
       for (const line of items) {
@@ -6583,7 +6615,8 @@ async function api(req, res) {
       items.forEach(line=>db.inventoryReservations.push({ id:id(),orderId:order.id,portalCustomerId:customer.id,sku:line.item,qty:line.qty,branchId,status:'pending_payment',createdAt:new Date().toISOString(),expiresAt }));
       try {
         const baseUrl=customerCheckoutBaseUrl(req);
-        const fields={ mode:'payment',client_reference_id:order.id,'metadata[orderId]':order.id,'metadata[portalCustomerId]':customer.id,customer_email:customer.email||undefined,success_url:`${baseUrl}/customer.html?checkout=success&session_id={CHECKOUT_SESSION_ID}`,cancel_url:`${baseUrl}/customer.html?checkout=canceled`,expires_at:Math.floor(new Date(expiresAt).getTime()/1000),'payment_method_types[0]':'card' };
+        const fields={ mode:'payment',client_reference_id:order.id,'metadata[orderId]':order.id,'metadata[portalCustomerId]':customer.id,success_url:`${baseUrl}/customer.html?checkout=success&session_id={CHECKOUT_SESSION_ID}`,cancel_url:`${baseUrl}/customer.html?checkout=canceled`,expires_at:Math.floor(new Date(expiresAt).getTime()/1000),'payment_method_types[0]':'card' };
+        applyCustomerStripeFields(fields,customer);
         items.forEach((line,index)=>{ fields[`line_items[${index}][price_data][currency]`]='usd';fields[`line_items[${index}][price_data][unit_amount]`]=Math.round(line.unitPrice*100);fields[`line_items[${index}][price_data][product_data][name]`]=line.name;fields[`line_items[${index}][price_data][product_data][metadata][sku]`]=line.item;fields[`line_items[${index}][quantity]`]=line.qty; });
         const session=await stripeFormRequest('checkout/sessions',fields);
         order.checkoutTotal=total;order.stripeCheckoutSessionId=String(session.id||'');order.checkoutUrl=String(session.url||'');order.checkoutExpiresAt=expiresAt;order.paymentStatus='pending';order.status='待付款';order.paymentMethod='Stripe';order.updatedAt=new Date().toISOString();

@@ -483,7 +483,9 @@ document.body.insertAdjacentHTML('beforeend',`<section id="dealerCheckout" class
 const dealerCheckout=document.getElementById('dealerCheckout');
 dealerCheckout.querySelector('.checkout-title p').textContent='登录后由服务器核定客户协议价并检查仓库库存，随后进入 Stripe 沙盒安全付款页面。';
 dealerCheckout.querySelector('.checkout-card-fields')?.remove();
-dealerCheckout.querySelector('.checkout-security').textContent='银行卡号、有效期和安全码只在 Stripe 托管的安全页面填写；QUaD 不接收或保存完整银行卡信息。';
+dealerCheckout.querySelector('.checkout-security').textContent='点击付款后进入 Stripe 安全页面填写银行卡号、有效期、CVC 和账单地址；也可选择安全保存卡片，方便下次付款。Apple Pay 会在符合条件的 Apple 设备上自动显示。';
+const checkoutAddressFields=dealerCheckout.querySelectorAll('.checkout-fields input,.checkout-fields select');
+['checkoutCompany','checkoutRecipient','checkoutPhone','checkoutStreet','checkoutCity','checkoutState','checkoutPostalCode'].forEach((id,index)=>{if(checkoutAddressFields[index])checkoutAddressFields[index].id=id});
 const deliveryChoice=dealerCheckout.querySelector('input[name="shipping"][value="delivery"]')?.closest('.checkout-choice');
 if(deliveryChoice){
   deliveryChoice.querySelector('b').textContent='发货（快递 / 物流运输）';
@@ -492,6 +494,10 @@ if(deliveryChoice){
 }
 dealerCheckout.querySelector('.checkout-summary button').textContent='前往 Stripe 沙盒安全付款';
 dealerCheckout.querySelector('.checkout-summary>small').textContent='当前连接 Stripe 测试环境，不会产生真实扣款。';
+const checkoutSummaryRows=dealerCheckout.querySelector('.checkout-summary dl');
+if(checkoutSummaryRows){
+  checkoutSummaryRows.innerHTML=`<div><dt>标准批发价</dt><dd id="checkoutListSubtotal">登录后显示</dd></div><div class="checkout-tier-row"><dt>客户价格等级</dt><dd id="checkoutCustomerTier">登录后识别</dd></div><div class="checkout-saving-row"><dt>本单专属优惠</dt><dd id="checkoutDiscount">登录后计算</dd></div><div><dt>折后商品小计</dt><dd id="checkoutSubtotal">登录后显示</dd></div><div><dt>配送费</dt><dd id="checkoutShippingFee">待确认</dd></div><div><dt>销售税</dt><dd>按收货或自提地址计算</dd></div>`;
+}
 
 function checkoutPreviewItems(){
   const items=[];
@@ -502,13 +508,14 @@ function checkoutPreviewItems(){
 }
 
 function dealerPriceForSku(sku){return state?.products?.find(product=>String(product.sku).toLowerCase()===String(sku).toLowerCase())||null}
+function dealerTierLabel(){const labels={standard:'标准批发价',bronze:'铜牌经销商价',silver:'银牌经销商价',gold:'金牌客户价',strategic:'战略客户价'};return labels[state?.customer?.priceTier]||state?.customer?.priceTierName||'客户协议价'}
 function dealerPriceHtml(item){
   if(!token||!state)return '<span class="checkout-price pending">登录后显示客户价</span>';
   const product=dealerPriceForSku(item.sku);
   if(!product||product.price===null)return '<span class="checkout-price pending">由服务器核价</span>';
   const list=Number(product.listPrice),price=Number(product.price),hasList=Number.isFinite(list)&&list>0;
   const discount=hasList&&price<list?Math.round(price/list*100):100;
-  return `<span class="checkout-price">${hasList?`<del>原价 $${list.toFixed(2)}</del>`:''}${hasList&&price<list?`<small>客户价 ${discount/10} 折</small>`:'<small>客户协议价</small>'}<b>$${price.toFixed(2)}</b></span>`;
+  return `<span class="checkout-price">${hasList?`<del>标准价 $${list.toFixed(2)}</del>`:''}<small>${esc(dealerTierLabel())}${hasList&&price<list?` · ${discount/10} 折`:''}</small><b>折后价 $${price.toFixed(2)}</b></span>`;
 }
 
 window.showDealerCheckout=function(){
@@ -516,10 +523,30 @@ window.showDealerCheckout=function(){
   const items=checkoutPreviewItems(),container=document.getElementById('checkoutItems');
   container.innerHTML=items.length?items.map((item,index)=>`<article class="checkout-item" data-sku="${esc(item.sku)}"><span>${String(index+1).padStart(2,'0')}</span><div><small>${esc(item.category)}</small><b>${esc(item.name)}</b><em>${esc(item.detail)}</em></div><label>数量<input type="number" min="1" value="${item.qty}" onchange="updateCheckoutTotals()"></label>${dealerPriceHtml(item)}<button aria-label="删除商品" onclick="this.closest('article').remove();updateCheckoutTotals()">×</button></article>`).join(''):'<p>购物车为空，请返回产品分类选择商品。</p>';
   document.getElementById('dealerCheckout').classList.remove('hidden');
+  if(state?.customer){
+    document.getElementById('checkoutCompany').value=state.customer.businessName||'';
+    document.getElementById('checkoutRecipient').value=state.customer.contactName||'';
+    document.getElementById('checkoutPhone').value=state.customer.phone||'';
+  }
+  updateDealerIdentity();
   updateCheckoutTotals();window.scrollTo({top:0,behavior:'auto'});
 };
 window.closeDealerCheckout=function(){document.getElementById('dealerCheckout')?.classList.add('hidden');showOrderCenter()};
-window.updateCheckoutTotals=function(){const count=[...document.querySelectorAll('#checkoutItems input')].reduce((sum,input)=>sum+Math.max(1,Number(input.value||1)),0),fulfillment=String(document.querySelector('input[name="shipping"]:checked')?.value||''),pickup=fulfillment.startsWith('pickup-'),button=document.querySelector('#dealerCheckout .checkout-summary button');document.getElementById('checkoutItemCount').textContent=`${count} 卷`;document.getElementById('checkoutShippingFee').textContent=pickup?'$0':'待确认';if(button)button.textContent=pickup?'前往 Stripe 沙盒安全付款':'提交发货订单（运费待确认）';document.querySelectorAll('input[name="shipping"]').forEach(input=>input.closest('.checkout-choice')?.classList.toggle('selected',input.checked))};
+window.updateCheckoutTotals=function(){
+  const rows=[...document.querySelectorAll('#checkoutItems .checkout-item')],count=rows.reduce((sum,row)=>sum+Math.max(1,Number(row.querySelector('input')?.value||1)),0),fulfillment=String(document.querySelector('input[name="shipping"]:checked')?.value||''),pickup=fulfillment.startsWith('pickup-'),button=document.querySelector('#dealerCheckout .checkout-summary button');
+  let listSubtotal=0,agreementSubtotal=0,priced=Boolean(token&&state)&&rows.length>0;
+  rows.forEach(row=>{const product=dealerPriceForSku(row.dataset.sku),qty=Math.max(1,Number(row.querySelector('input')?.value||1)),list=Number(product?.listPrice),price=Number(product?.price);if(!product||product.price===null||!Number.isFinite(price)){priced=false;return}agreementSubtotal+=price*qty;listSubtotal+=(Number.isFinite(list)&&list>0?list:price)*qty});
+  const savings=Math.max(0,listSubtotal-agreementSubtotal),discount=listSubtotal>0?Math.round(agreementSubtotal/listSubtotal*100):100;
+  document.getElementById('checkoutItemCount').textContent=`${count} 卷`;
+  document.getElementById('checkoutListSubtotal').textContent=priced?`$${listSubtotal.toFixed(2)}`:'服务器核价';
+  document.getElementById('checkoutCustomerTier').textContent=token&&state?dealerTierLabel():'请先登录';
+  document.getElementById('checkoutDiscount').textContent=priced&&savings>0?`${discount/10} 折 · 节省 $${savings.toFixed(2)}`:priced?'按标准批发价':'服务器计算';
+  document.getElementById('checkoutSubtotal').textContent=priced?`$${agreementSubtotal.toFixed(2)}`:'服务器核价';
+  document.querySelector('#dealerCheckout .checkout-total b').textContent=priced?`$${agreementSubtotal.toFixed(2)} + 税费`:'Stripe 确认';
+  document.getElementById('checkoutShippingFee').textContent=pickup?'$0':'待确认';
+  if(button)button.textContent=pickup?'前往 Stripe 沙盒安全付款':'支付商品金额（运费后确认）';
+  document.querySelectorAll('input[name="shipping"]').forEach(input=>input.closest('.checkout-choice')?.classList.toggle('selected',input.checked));
+};
 window.previewCheckoutSubmit=async function(){
   const button=document.querySelector('#dealerCheckout .checkout-summary button');
   try{
@@ -530,13 +557,14 @@ window.previewCheckoutSubmit=async function(){
     rows.forEach(row=>{const sku=row.dataset.sku?.trim(),qty=Math.max(1,Math.floor(Number(row.querySelector('input')?.value||1)));if(sku)grouped.set(sku,(grouped.get(sku)||0)+qty)});
     if(!grouped.size)throw new Error('没有可识别的正式 SKU，请返回产品页重新选择型号。');
     const fulfillment=document.querySelector('input[name="shipping"]:checked')?.value;
-    if(fulfillment==='delivery')throw new Error('发货订单需要客服先确认快递或物流运费；确认后再发送 Stripe 付款链接。');
-    if(!['pickup-las-vegas','pickup-los-angeles'].includes(fulfillment))throw new Error('请选择发货或仓库自提。');
+    if(!['delivery','pickup-las-vegas','pickup-los-angeles'].includes(fulfillment))throw new Error('请选择发货或仓库自提。');
+    const shippingAddress=fulfillment==='delivery'?{company:document.getElementById('checkoutCompany')?.value.trim()||'',recipient:document.getElementById('checkoutRecipient')?.value.trim()||'',phone:document.getElementById('checkoutPhone')?.value.trim()||'',street:document.getElementById('checkoutStreet')?.value.trim()||'',city:document.getElementById('checkoutCity')?.value.trim()||'',state:document.getElementById('checkoutState')?.value.split(' · ')[0].trim()||'',postalCode:document.getElementById('checkoutPostalCode')?.value.trim()||'',country:'US'}:null;
+    if(shippingAddress&&(!shippingAddress.recipient||!shippingAddress.phone||!shippingAddress.street||!shippingAddress.city||!shippingAddress.state||!shippingAddress.postalCode))throw new Error('发货订单请先完整填写收货人、电话、街道、城市、州和邮编。');
     button.disabled=true;button.textContent='正在核价并检查库存…';
-    const result=await api('/api/customer/checkout-session',{method:'POST',body:JSON.stringify({requestId:`visual-checkout-${Date.now()}`,items:[...grouped].map(([sku,qty])=>({sku,qty})),fulfillment,notes:document.querySelector('.checkout-notes textarea')?.value||''})});
+    const result=await api('/api/customer/checkout-session',{method:'POST',body:JSON.stringify({requestId:`customer-checkout-${Date.now()}`,items:[...grouped].map(([sku,qty])=>({sku,qty})),fulfillment,shippingAddress,notes:document.querySelector('.checkout-notes textarea')?.value||''})});
     if(!result.checkoutUrl)throw new Error('Stripe Checkout 未返回安全付款地址。');
     location.href=result.checkoutUrl;
-  }catch(error){alert(error.message);if(button){button.disabled=false;button.textContent='前往 Stripe 沙盒安全付款'}}
+  }catch(error){alert(error.message);if(button){button.disabled=false;updateCheckoutTotals()}}
 };
 window.previewWrapCheckout=window.showDealerCheckout;
 window.previewWindowFilmCheckout=window.showDealerCheckout;
