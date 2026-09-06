@@ -305,6 +305,82 @@ function portalProductForCustomer(db, product, customer) {
   return { sku: product.sku, name: product.name, model: String(product.model || product.sku || ''), specification: String(product.specification || ''), category: product.category, unit: product.unit, purchasable, stockByWarehouse, availability: !purchasable ? '暂不可购买' : availableQty <= 0 ? '需预订' : Number(product.reorder || 0) > 0 && availableQty <= Number(product.reorder || 0) ? '库存紧张' : '有货', listPrice, price: Number.isFinite(agreed) ? agreed : null, description: String(product.portalDescription || ''), imageUrl: String(product.portalImageUrl || ''), videoUrl: String(product.portalVideoUrl || ''), isNew: Boolean(product.portalNewProduct) };
 }
 
+const PORTAL_TIER_RULES = {
+  standard: { name: '批发客户', monthlyTarget: 10000, nextTier: 'silver' },
+  silver: { name: '银牌客户', monthlyTarget: 20000, maintainTarget: 10000, nextTier: 'gold', previousTier: 'standard' },
+  gold: { name: '金牌客户', monthlyTarget: 20000, maintainTarget: 20000, previousTier: 'silver' }
+};
+
+function monthKeyInTimezone(value, timezone = 'America/Los_Angeles') {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  const parts = new Intl.DateTimeFormat('en-CA', { timeZone: timezone, year: 'numeric', month: '2-digit' }).formatToParts(date);
+  const year = parts.find(part => part.type === 'year')?.value;
+  const month = parts.find(part => part.type === 'month')?.value;
+  return year && month ? `${year}-${month}` : '';
+}
+
+function shiftMonthKey(monthKey, offset) {
+  const [year, month] = String(monthKey || '').split('-').map(Number);
+  if (!year || !month) return '';
+  const date = new Date(Date.UTC(year, month - 1 + offset, 1));
+  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}`;
+}
+
+function portalCustomerPaidSalesByMonth(db, customer) {
+  const totals = {};
+  (db.salesOrders || []).filter(order => order.portalCustomerId === customer.id && order.portalSource).forEach(order => {
+    const transactions = (order.paymentTransactions || []).filter(row => Number(row.amount || 0) !== 0 && ['payment', 'refund'].includes(String(row.type || '').toLowerCase()));
+    if (transactions.length) {
+      transactions.forEach(row => {
+        const key = monthKeyInTimezone(row.createdAt || row.date, db.settings?.timezone);
+        if (key) totals[key] = Math.max(0, Math.round(((totals[key] || 0) + Number(row.amount || 0)) * 100) / 100);
+      });
+    } else if (Number(order.paid || 0) > 0) {
+      const key = monthKeyInTimezone(order.updatedAt || order.createdAt || order.date, db.settings?.timezone);
+      if (key) totals[key] = Math.round(((totals[key] || 0) + Number(order.paid || 0)) * 100) / 100;
+    }
+  });
+  return totals;
+}
+
+function portalCustomerTierProgress(db, customer, now = new Date()) {
+  const tier = ['standard', 'silver', 'gold'].includes(customer.priceTier) ? customer.priceTier : 'standard';
+  const currentMonth = monthKeyInTimezone(now, db.settings?.timezone);
+  const previousMonths = [shiftMonthKey(currentMonth, -1), shiftMonthKey(currentMonth, -2)];
+  const salesByMonth = portalCustomerPaidSalesByMonth(db, customer);
+  const currentSales = Number(salesByMonth[currentMonth] || 0);
+  const rule = PORTAL_TIER_RULES[tier];
+  let recommendedTier = tier;
+  let reason = '';
+  if (currentSales >= PORTAL_TIER_RULES.gold.monthlyTarget && tier !== 'gold') {
+    recommendedTier = 'gold'; reason = '本月已达到金牌客户门槛';
+  } else if (currentSales >= PORTAL_TIER_RULES.standard.monthlyTarget && tier === 'standard') {
+    recommendedTier = 'silver'; reason = '本月已达到银牌客户门槛';
+  } else if (rule.previousTier && previousMonths.every(month => Number(salesByMonth[month] || 0) < Number(rule.maintainTarget || 0))) {
+    recommendedTier = rule.previousTier; reason = '连续两个完整月份未达到当前等级门槛，仅降一级';
+  }
+  const target = tier === 'gold' ? PORTAL_TIER_RULES.gold.monthlyTarget : rule.monthlyTarget;
+  return {
+    tier, tierName: rule.name, currentMonth, currentSales, target,
+    progressPercent: target > 0 ? Math.min(100, Math.round(currentSales / target * 100)) : 100,
+    remaining: Math.max(0, Math.round((target - currentSales) * 100) / 100),
+    previousMonths: previousMonths.map(month => ({ month, sales: Number(salesByMonth[month] || 0) })),
+    recommendedTier, recommendedTierName: PORTAL_TIER_RULES[recommendedTier]?.name || recommendedTier,
+    reason
+  };
+}
+
+function applyPortalCustomerTier(db, customer, actor = 'system') {
+  const progress = portalCustomerTierProgress(db, customer);
+  if (progress.recommendedTier === progress.tier) return false;
+  const oldTier = customer.priceTier || 'standard';
+  customer.priceTier = progress.recommendedTier;
+  customer.tierHistory = [...(customer.tierHistory || []), { from: oldTier, to: customer.priceTier, reason: progress.reason, salesMonth: progress.currentMonth, createdAt: new Date().toISOString(), actor }].slice(-100);
+  customer.updatedAt = new Date().toISOString();
+  return true;
+}
+
 function portalCustomerSnapshot(db, customer) {
   const tier = (db.portalPriceTiers || []).find(item => item.id === (customer.priceTier || 'standard'));
   const phone = normalizedWarrantyPhone(customer.phone);
@@ -312,7 +388,7 @@ function portalCustomerSnapshot(db, customer) {
   const warranties = (db.warranties || []).filter(item => (phone && normalizedWarrantyPhone(item.phone) === phone) || names.has(normalizedWarrantyName(item.customerName))).sort((a,b)=>String(b.installDate||'').localeCompare(String(a.installDate||''))).map(publicWarrantyRecord);
   const stripeKey = String(process.env.STRIPE_SECRET_KEY || '').trim();
   const paymentEnvironment = stripeKey.startsWith('sk_live_') && process.env.STRIPE_CUSTOMER_ORDER_LIVE_ENABLED === 'true' ? 'live' : 'test';
-  return { customer: { ...safePortalCustomer(customer), priceTierName: tier?.name || '批发价' }, paymentEnvironment, products: (db.products || []).filter(product => product.portalVisible !== false).map(product => portalProductForCustomer(db, product, customer)), orders: (db.salesOrders || []).filter(order => order.portalCustomerId === customer.id).sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || ''))).map(order => ({ id: order.id, date: order.date, status: order.status, paymentStatus: order.paymentStatus || '', items: salesOrderItems(order), subtotal: Number(order.subtotal || 0), shippingFee: Number(order.shippingFee || 0), salesTax: Number(order.salesTax || 0), checkoutTotal: Number(order.checkoutTotal || 0), fulfillment: order.fulfillment || '', customerDemand: order.customerDemand || '', shipping: order.shipping || '', trackingNo: order.trackingNo || '', paid: Number(order.paid || 0), paymentMethod: order.paymentMethod || '', createdAt: order.createdAt, portalMessages: order.portalMessages || [], attachments: order.portalAttachments || [] })), warranties };
+  return { customer: { ...safePortalCustomer(customer), priceTierName: tier?.name || '批发价' }, tierProgress: portalCustomerTierProgress(db, customer), paymentEnvironment, products: (db.products || []).filter(product => product.portalVisible !== false).map(product => portalProductForCustomer(db, product, customer)), orders: (db.salesOrders || []).filter(order => order.portalCustomerId === customer.id).sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || ''))).map(order => ({ id: order.id, date: order.date, status: order.status, paymentStatus: order.paymentStatus || '', items: salesOrderItems(order), subtotal: Number(order.subtotal || 0), shippingFee: Number(order.shippingFee || 0), salesTax: Number(order.salesTax || 0), checkoutTotal: Number(order.checkoutTotal || 0), fulfillment: order.fulfillment || '', customerDemand: order.customerDemand || '', shipping: order.shipping || '', trackingNo: order.trackingNo || '', paid: Number(order.paid || 0), paymentMethod: order.paymentMethod || '', createdAt: order.createdAt, portalMessages: order.portalMessages || [], attachments: order.portalAttachments || [] })), warranties };
 }
 
 function seedDb() {
@@ -1391,7 +1467,7 @@ function sanitizeDbForUser(db, user, options = {}) {
     priceRules: p.pricingView ? db.priceRules.map(rule => canSeeCosts ? rule : { ...rule, materialCost: 0 }) : [],
     jobs: p.jobsView || p.jobsEdit || p.jobsDelete ? branchVisibleRecords(db, user, db.jobs).map(job => sanitizeJob(job, p, canSeeCosts)) : [],
     salesOrders: p.ordersView ? branchVisibleRecords(db, user, db.salesOrders).map(order => sanitizeSalesOrder(order, p)) : [],
-    portalCustomers: p.portalCustomersView || p.portalCustomersEdit || p.portalPricingEdit ? (db.portalCustomers || []).map(safePortalCustomer) : [],
+    portalCustomers: p.portalCustomersView || p.portalCustomersEdit || p.portalPricingEdit ? (db.portalCustomers || []).map(customer => ({ ...safePortalCustomer(customer), tierProgress: portalCustomerTierProgress(db, customer) })) : [],
     portalPriceTiers: p.portalCustomersView || p.portalCustomersEdit || p.portalPricingEdit ? (db.portalPriceTiers || defaultPortalPriceTiers()) : [],
     warranties: p.jobsView || p.jobsCreate || p.jobsEdit || p.jobsDelete ? (db.warranties || []) : [],
     shipments: p.shipmentsView ? (db.shipments || []) : [],
@@ -6296,6 +6372,7 @@ function confirmCustomerCheckout(db, session, eventId) {
   order.paymentTransactions = [...(order.paymentTransactions || []), { id:id(), date:dateInTimezone(db.settings?.timezone || 'America/Los_Angeles',0), amount:paid, type:'payment', method:'Stripe', providerEventId:eventId, createdAt:now, createdBy:'Stripe webhook', createdByUserId:'stripe' }];
   order.updatedAt = now;
   (db.inventoryReservations || []).filter(row => row.orderId === order.id && row.status === 'pending_payment').forEach(row => { row.status='paid'; row.updatedAt=now; });
+  if (customer) applyPortalCustomerTier(db, customer, 'Stripe webhook');
   return { ok:true, duplicate:false, order };
 }
 
@@ -7189,6 +7266,39 @@ async function api(req, res) {
       notifyDataChanged('portal-customer-reference-import', { added: added.length, skipped: skipped.length });
     }
     return send(res, 200, { added: added.length, skipped: skipped.length, skippedRecords: skipped.slice(0, 50), data: sanitizeDbForUser(db, user) });
+  }
+
+  if (req.method === 'POST' && url.pathname === '/api/portal-customers/recalculate-tiers') {
+    if (!canAccess(user, 'portalPricingEdit')) return send(res, 403, { error: '没有客户等级管理权限' });
+    const changes = [];
+    (db.portalCustomers || []).filter(customer => customer.active !== false && !customer.referenceOnly).forEach(customer => {
+      const before = customer.priceTier || 'standard';
+      if (applyPortalCustomerTier(db, customer, user.name || user.email)) changes.push({ customerId: customer.id, businessName: customer.businessName, from: before, to: customer.priceTier });
+    });
+    audit(db, user, 'recalculate-portal-customer-tiers', { collection: 'portalCustomers', detail: `重新计算客户等级，${changes.length} 个客户发生变化` });
+    writeDb(db); notifyDataChanged('portal-customer-tiers', changes.length);
+    return send(res, 200, { changes, data: sanitizeDbForUser(db, user) });
+  }
+
+  if (req.method === 'PUT' && url.pathname === '/api/portal-price-tiers') {
+    if (!canAccess(user, 'portalPricingEdit')) return send(res, 403, { error: '没有客户协议价格管理权限' });
+    const body = await readBody(req);
+    for (const tierId of ['silver', 'gold']) {
+      const tier = (db.portalPriceTiers || []).find(item => item.id === tierId);
+      if (!tier) continue;
+      const prices = {};
+      Object.entries(body[tierId] && typeof body[tierId] === 'object' ? body[tierId] : {}).forEach(([sku, value]) => {
+        if (value === '' || value === null || value === undefined) return;
+        const price = Number(value);
+        if (!Number.isFinite(price) || price < 0) throw new Error(`${sku} 的价格无效`);
+        prices[String(sku)] = Math.round(price * 100) / 100;
+      });
+      tier.prices = prices;
+      tier.updatedAt = new Date().toISOString();
+    }
+    audit(db, user, 'update-portal-price-table', { collection: 'portalPriceTiers', detail: '更新银牌价与金牌价价格表' });
+    writeDb(db); notifyDataChanged('portal-price-table', 'silver-gold');
+    return send(res, 200, { data: sanitizeDbForUser(db, user) });
   }
 
   const portalPriceTierMatch = url.pathname.match(/^\/api\/portal-price-tiers\/([^/]+)$/);
