@@ -2181,7 +2181,10 @@ function canAccessBranch(db, user, branchId) {
 function branchVisibleRecords(db, user, rows = []) {
   const scope = userBranchIds(db, user);
   if (!scope) return rows;
-  return (rows || []).filter(row => scope.includes(String(row?.branchId || '').trim()));
+  return (rows || []).filter(row => {
+    const branchIds = Array.isArray(row?.fulfillmentBranchIds) ? row.fulfillmentBranchIds : [];
+    return scope.includes(String(row?.branchId || '').trim()) || branchIds.some(branchId => scope.includes(String(branchId || '').trim()));
+  });
 }
 
 function branchTransferVisibleRecords(db, user, rows = []) {
@@ -6100,12 +6103,28 @@ function checkoutBranchId(fulfillment) {
   return fulfillment === 'pickup-las-vegas' ? 'las-vegas' : fulfillment === 'pickup-los-angeles' ? 'los-angeles' : '';
 }
 
-function deliveryCheckoutBranchId(db, requested) {
-  return ['las-vegas','los-angeles'].find(branchId => requested.every(line => {
+function deliveryCheckoutAllocations(db, requested, ignoreOrderId = '') {
+  const allocations = [];
+  const alreadyAllocated = new Map();
+  for (const line of requested) {
     const sku = String(line.sku || '').trim();
-    const qty = Math.max(0,Math.floor(Number(line.qty || 0)));
-    return sku && qty && branchStockQty(db,sku,branchId)-activeInventoryReservationQty(db,sku,branchId) >= qty;
-  })) || '';
+    let remaining = Math.max(0,Math.floor(Number(line.qty || 0)));
+    if (!sku || !remaining) return [];
+    for (const branchId of ['las-vegas','los-angeles']) {
+      const allocationKey = `${branchId}:${sku}`;
+      const used = Number(alreadyAllocated.get(allocationKey) || 0);
+      const available = Math.floor(Math.max(0,branchStockQty(db,sku,branchId)-activeInventoryReservationQty(db,sku,branchId,ignoreOrderId)-used));
+      const qty = Math.min(remaining,available);
+      if (qty > 0) {
+        allocations.push({ sku,qty,branchId });
+        alreadyAllocated.set(allocationKey,used+qty);
+        remaining -= qty;
+      }
+      if (!remaining) break;
+    }
+    if (remaining) return [];
+  }
+  return allocations;
 }
 
 function applyCustomerStripeFields(fields, customer) {
@@ -6553,8 +6572,10 @@ async function api(req, res) {
       const body = await readBody(req);
       const fulfillment = String(body.fulfillment || '');
       const requested = (Array.isArray(body.items) ? body.items : []).slice(0,50);
-      const branchId = checkoutBranchId(fulfillment) || (fulfillment === 'delivery' ? deliveryCheckoutBranchId(db,requested) : '');
-      if (!branchId) return send(res, 400, { error:fulfillment === 'delivery' ? 'No single warehouse currently has enough inventory for every selected item.' : 'Select delivery, Las Vegas pickup, or Los Angeles pickup.' });
+      const deliveryAllocations = fulfillment === 'delivery' ? deliveryCheckoutAllocations(db,requested) : [];
+      const deliveryBranchIds = [...new Set(deliveryAllocations.map(row=>row.branchId))];
+      const branchId = checkoutBranchId(fulfillment) || deliveryBranchIds[0] || '';
+      if (!branchId) return send(res, 400, { error:fulfillment === 'delivery' ? 'The combined available inventory in Las Vegas and Los Angeles is not enough for every selected item.' : 'Select delivery, Las Vegas pickup, or Los Angeles pickup.' });
       const shippingAddress = body.shippingAddress && typeof body.shippingAddress === 'object' ? body.shippingAddress : {};
       const formattedAddress = [shippingAddress.street,shippingAddress.city,shippingAddress.state,shippingAddress.postalCode,'US'].map(value=>String(value||'').trim()).filter(Boolean).join(', ').slice(0,500);
       if (fulfillment === 'delivery' && (!shippingAddress.street || !shippingAddress.city || !shippingAddress.state || !shippingAddress.postalCode)) return send(res,400,{ error:'Enter the complete U.S. shipping address before payment.' });
@@ -6565,8 +6586,10 @@ async function api(req, res) {
         const product = (db.products || []).find(row => row.sku === sku && row.portalVisible !== false && row.portalPurchasable !== false);
         const priced = product ? portalProductForCustomer(db,product,customer) : null;
         if (!product || !qty || priced?.price === null || !Number.isFinite(Number(priced?.price)) || Number(priced.price) <= 0) return send(res,400,{ error:`${sku || 'A selected product'} is unavailable or does not have an approved price.` });
-        const available = branchStockQty(db,sku,branchId) - activeInventoryReservationQty(db,sku,branchId);
-        if (available < qty) return send(res,409,{ error:`Insufficient ${branchId === 'las-vegas' ? 'Las Vegas' : 'Los Angeles'} inventory for ${sku}. Available: ${Math.max(0,available)}.` });
+        if (fulfillment !== 'delivery') {
+          const available = branchStockQty(db,sku,branchId) - activeInventoryReservationQty(db,sku,branchId);
+          if (available < qty) return send(res,409,{ error:`Insufficient ${branchId === 'las-vegas' ? 'Las Vegas' : 'Los Angeles'} inventory for ${sku}. Available: ${Math.max(0,available)}.` });
+        }
         items.push({ item:sku, name:String(product.name || sku), qty, unitPrice:Number(priced.price), unitCostSnapshot:Number(product.cost || 0) });
       }
       if (!items.length) return send(res,400,{ error:'Select at least one product.' });
@@ -6574,9 +6597,12 @@ async function api(req, res) {
       const orderId = id();
       const now = new Date();
       const expiresAt = new Date(now.getTime()+CUSTOMER_CHECKOUT_HOLD_MINUTES*60_000).toISOString();
-      const order = { id:orderId, date:dateInTimezone(db.settings?.timezone || 'America/Los_Angeles',0), branchId, warehouse:branchId, type:'wholesale-us', customer:customer.businessName || customer.contactName, customerAddress:fulfillment === 'delivery' ? formattedAddress : String(body.address || customer.address || '').trim().slice(0,500), shippingAddress:fulfillment === 'delivery' ? shippingAddress : null, customerContact:[customer.contactName,customer.phone,customer.email].filter(Boolean).join(' · '), salesRep:customer.salesRep || '', preparedBy:'客户客户端', items, item:items[0].item, qty:items[0].qty, unitPrice:items[0].unitPrice, subtotal, shippingFee:0, shippingFeeStatus:fulfillment === 'delivery' ? 'pending_confirmation' : 'not_applicable', salesTax:0, checkoutTotal:subtotal, fulfillment, status:'待付款', paymentStatus:'pending', shipping:fulfillment === 'delivery' ? `Delivery from ${branchId === 'las-vegas' ? 'Las Vegas' : 'Los Angeles'} warehouse · shipping fee pending` : fulfillment === 'pickup-las-vegas' ? 'Las Vegas warehouse pickup' : 'Los Angeles warehouse pickup', trackingNo:'', paid:0, paymentMethod:'Stripe', note:String(body.notes || '').trim().slice(0,2000), customerDemand:String(body.notes || '').trim().slice(0,2000), portalCustomerId:customer.id, portalRequestId:String(body.requestId || `checkout-${orderId}`).slice(0,120), portalSource:true, portalNew:true, paymentTransactions:[], createdAt:now.toISOString(), checkoutExpiresAt:expiresAt };
+      const fulfillmentBranchIds = fulfillment === 'delivery' ? deliveryBranchIds : [branchId];
+      const deliveryWarehouseLabel = fulfillmentBranchIds.length > 1 ? 'Las Vegas and Los Angeles warehouses' : branchId === 'las-vegas' ? 'Las Vegas warehouse' : 'Los Angeles warehouse';
+      const order = { id:orderId, date:dateInTimezone(db.settings?.timezone || 'America/Los_Angeles',0), branchId, fulfillmentBranchIds, warehouse:branchId, type:'wholesale-us', customer:customer.businessName || customer.contactName, customerAddress:fulfillment === 'delivery' ? formattedAddress : String(body.address || customer.address || '').trim().slice(0,500), shippingAddress:fulfillment === 'delivery' ? shippingAddress : null, customerContact:[customer.contactName,customer.phone,customer.email].filter(Boolean).join(' · '), salesRep:customer.salesRep || '', preparedBy:'客户客户端', items, item:items[0].item, qty:items[0].qty, unitPrice:items[0].unitPrice, subtotal, shippingFee:0, shippingFeeStatus:fulfillment === 'delivery' ? 'pending_confirmation' : 'not_applicable', salesTax:0, checkoutTotal:subtotal, fulfillment, status:'待付款', paymentStatus:'pending', shipping:fulfillment === 'delivery' ? `Delivery from ${deliveryWarehouseLabel} · shipping fee pending` : fulfillment === 'pickup-las-vegas' ? 'Las Vegas warehouse pickup' : 'Los Angeles warehouse pickup', trackingNo:'', paid:0, paymentMethod:'Stripe', note:String(body.notes || '').trim().slice(0,2000), customerDemand:String(body.notes || '').trim().slice(0,2000), portalCustomerId:customer.id, portalRequestId:String(body.requestId || `checkout-${orderId}`).slice(0,120), portalSource:true, portalNew:true, paymentTransactions:[], createdAt:now.toISOString(), checkoutExpiresAt:expiresAt };
       db.salesOrders.push(order);
-      items.forEach(line=>db.inventoryReservations.push({ id:id(), orderId, portalCustomerId:customer.id, sku:line.item, qty:line.qty, branchId, status:'pending_payment', createdAt:now.toISOString(), expiresAt }));
+      const checkoutAllocations = fulfillment === 'delivery' ? deliveryAllocations : items.map(line=>({ sku:line.item,qty:line.qty,branchId }));
+      checkoutAllocations.forEach(line=>db.inventoryReservations.push({ id:id(), orderId, portalCustomerId:customer.id, sku:line.sku, qty:line.qty, branchId:line.branchId, status:'pending_payment', createdAt:now.toISOString(), expiresAt }));
       writeDb(db);
       try {
         const baseUrl = customerCheckoutBaseUrl(req);
@@ -6600,19 +6626,22 @@ async function api(req, res) {
       if (!order) return send(res,404,{ error:'找不到这张客户订单。' });
       if (String(order.paymentStatus || '').toLowerCase() === 'paid') return send(res,409,{ error:'这张订单已经付款。' });
       const items = salesOrderItems(order).map(line=>({ item:String(line.item || ''), name:String((db.products || []).find(product=>product.sku===line.item)?.name || line.item), qty:Math.max(0,Math.floor(Number(line.qty || 0))), unitPrice:Number(line.unitPrice || 0) }));
-      const branchId = checkoutBranchId(order.fulfillment) || (order.fulfillment === 'delivery' ? deliveryCheckoutBranchId(db,items.map(line=>({sku:line.item,qty:line.qty}))) : '');
-      if (!branchId) return send(res,400,{ error:'当前没有一个仓库能够完整供应这张订单，请联系客服调整库存或拆单。' });
-      order.branchId=branchId; order.warehouse=branchId;
+      const deliveryAllocations = order.fulfillment === 'delivery' ? deliveryCheckoutAllocations(db,items.map(line=>({sku:line.item,qty:line.qty})),order.id) : [];
+      const deliveryBranchIds = [...new Set(deliveryAllocations.map(row=>row.branchId))];
+      const branchId = checkoutBranchId(order.fulfillment) || deliveryBranchIds[0] || '';
+      if (!branchId) return send(res,400,{ error:'拉斯维加斯和洛杉矶两个仓库的可用库存合计不足，请调整数量或联系客服。' });
+      order.branchId=branchId; order.warehouse=branchId; order.fulfillmentBranchIds=order.fulfillment === 'delivery' ? deliveryBranchIds : [branchId];
       if (!items.length || items.some(line=>!line.item || !line.qty || !Number.isFinite(line.unitPrice) || line.unitPrice<=0)) return send(res,400,{ error:'订单商品或锁定价格不完整，请联系客服。' });
       releaseOrderInventoryReservations(db,order.id,'released');
       for (const line of items) {
         const product = (db.products || []).find(row=>row.sku===line.item && row.portalVisible!==false && row.portalPurchasable!==false);
-        const available = product ? branchStockQty(db,line.item,branchId)-activeInventoryReservationQty(db,line.item,branchId,order.id) : 0;
+        const available = order.fulfillment === 'delivery' ? line.qty : product ? branchStockQty(db,line.item,branchId)-activeInventoryReservationQty(db,line.item,branchId,order.id) : 0;
         if (!product || available<line.qty) { writeDb(db); return send(res,409,{ error:`${line.item} 当前库存不足，可用数量：${Math.max(0,available)}。` }); }
       }
       const total = Math.round(items.reduce((sum,line)=>sum+line.qty*line.unitPrice,0)*100)/100;
       const expiresAt = new Date(Date.now()+CUSTOMER_CHECKOUT_HOLD_MINUTES*60_000).toISOString();
-      items.forEach(line=>db.inventoryReservations.push({ id:id(),orderId:order.id,portalCustomerId:customer.id,sku:line.item,qty:line.qty,branchId,status:'pending_payment',createdAt:new Date().toISOString(),expiresAt }));
+      const checkoutAllocations = order.fulfillment === 'delivery' ? deliveryAllocations : items.map(line=>({ sku:line.item,qty:line.qty,branchId }));
+      checkoutAllocations.forEach(line=>db.inventoryReservations.push({ id:id(),orderId:order.id,portalCustomerId:customer.id,sku:line.sku,qty:line.qty,branchId:line.branchId,status:'pending_payment',createdAt:new Date().toISOString(),expiresAt }));
       try {
         const baseUrl=customerCheckoutBaseUrl(req);
         const fields={ mode:'payment',client_reference_id:order.id,'metadata[orderId]':order.id,'metadata[portalCustomerId]':customer.id,success_url:`${baseUrl}/customer.html?checkout=success&session_id={CHECKOUT_SESSION_ID}`,cancel_url:`${baseUrl}/customer.html?checkout=canceled`,expires_at:Math.floor(new Date(expiresAt).getTime()/1000),'payment_method_types[0]':'card' };
@@ -10156,13 +10185,14 @@ function validateMovement(db, movement) {
     if (movement.type !== 'out') return '只有出库流水可以关联零售批发订单';
     const order = db.salesOrders.find(o => o.id === movement.salesOrderId);
     if (!order) return '找不到关联的零售批发订单';
-    if (order.branchId && movement.branchId && order.branchId !== movement.branchId) return '出库分店必须与订单所属分店一致';
+    const fulfillmentBranchIds = Array.isArray(order.fulfillmentBranchIds) && order.fulfillmentBranchIds.length ? order.fulfillmentBranchIds : [order.branchId].filter(Boolean);
+    if (fulfillmentBranchIds.length && movement.branchId && !fulfillmentBranchIds.includes(movement.branchId)) return '出库分店必须属于订单的备货仓库';
     if (order.status !== '待出库') return '只有待出库订单可以通过库存出库自动改为已出库';
     const orderLine = salesOrderItems(order).find(line => String(line.item) === String(movement.sku || ''));
     if (!orderLine) return '出库SKU必须和关联订单的某一行商品一致';
-    if (Number(orderLine.qty || 0) !== qty) return `出库数量必须和订单该商品数量一致。订单数量 ${Number(orderLine.qty || 0)}，本次出库 ${qty}`;
-    const alreadyShipped = (db.movements || []).some(row => row.type === 'out' && row.salesOrderId === order.id && String(row.sku) === String(movement.sku));
-    if (alreadyShipped) return '这个订单中的该 SKU 已经出库，不能重复出库';
+    const shippedQty = (db.movements || []).filter(row => row.type === 'out' && row.salesOrderId === order.id && String(row.sku) === String(movement.sku)).reduce((sum,row)=>sum+Number(row.qty||0),0);
+    const remainingQty = Math.max(0,Number(orderLine.qty || 0)-shippedQty);
+    if (qty > remainingQty) return `出库数量不能超过订单剩余数量。剩余 ${remainingQty}，本次出库 ${qty}`;
   }
   const currentQty = Number(product.qty || 0);
   if (movement.type === 'out' && qty > currentQty) {
@@ -10184,10 +10214,9 @@ function applyMovement(db, movement) {
     const order = db.salesOrders.find(o => o.id === movement.salesOrderId);
     if (order && order.status === '待出库') {
       const physicalLines = salesOrderItems(order).filter(line => !isCustomPrintedFilmSku(line.item));
-      const shippedSkus = new Set((db.movements || [])
-        .filter(row => row.type === 'out' && row.salesOrderId === order.id)
-        .map(row => String(row.sku || '')));
-      if (physicalLines.every(line => shippedSkus.has(String(line.item)))) {
+      const shippedQtyBySku = new Map();
+      (db.movements || []).filter(row => row.type === 'out' && row.salesOrderId === order.id).forEach(row => shippedQtyBySku.set(String(row.sku || ''),Number(shippedQtyBySku.get(String(row.sku || ''))||0)+Number(row.qty||0)));
+      if (physicalLines.every(line => Number(shippedQtyBySku.get(String(line.item))||0) >= Number(line.qty||0))) {
         order.status = '已出库';
         order.shippedAt = movement.date || new Date().toISOString().slice(0, 10);
         order.shippedMovementId = movement.id;
