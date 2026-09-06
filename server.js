@@ -243,10 +243,11 @@ function safePortalCustomer(customer) {
 function defaultPortalPriceTiers() {
   return [
     { id: 'standard', name: '批发价', prices: {} },
+    { id: 'first-order', name: '首次进货价', prices: {} },
     { id: 'bronze', name: '铜牌经销商价', prices: {} },
     { id: 'silver', name: '银牌经销商价', prices: {} },
     { id: 'gold', name: '金牌经销商价', prices: {} },
-    { id: 'strategic', name: '战略客户价', prices: {} }
+    { id: 'strategic', name: '超级战略合作伙伴价', prices: {} }
   ];
 }
 
@@ -293,15 +294,18 @@ function portalProductForCustomer(db, product, customer) {
   const tier = (db.portalPriceTiers || []).find(item => item.id === (customer?.priceTier || 'standard'));
   const tierPrice = Number(tier?.prices?.[product.sku]);
   const hasTierPrice = Number.isFinite(tierPrice) && tierPrice > 0;
+  const standardTier = (db.portalPriceTiers || []).find(item => item.id === 'standard');
+  const standardTierPrice = Number(standardTier?.prices?.[product.sku]);
+  const hasStandardTierPrice = Number.isFinite(standardTierPrice) && standardTierPrice > 0;
   const hasStandardWholesale = Number.isFinite(Number(product.wholesale)) && Number(product.wholesale) > 0;
-  const agreed = Number(hasAgreedPrice ? agreedPrice : hasTierPrice ? tierPrice : hasStandardWholesale ? product.wholesale : NaN);
+  const agreed = Number(hasAgreedPrice ? agreedPrice : hasTierPrice ? tierPrice : hasStandardTierPrice ? standardTierPrice : hasStandardWholesale ? product.wholesale : NaN);
   const stockByWarehouse = {
     'las-vegas': Math.max(0, branchStockQty(db, product.sku, 'las-vegas') - activeInventoryReservationQty(db, product.sku, 'las-vegas')),
     'los-angeles': Math.max(0, branchStockQty(db, product.sku, 'los-angeles') - activeInventoryReservationQty(db, product.sku, 'los-angeles'))
   };
   const availableQty = stockByWarehouse['las-vegas'] + stockByWarehouse['los-angeles'];
   const purchasable = product.portalPurchasable !== false;
-  const listPrice = hasStandardWholesale ? Number(product.wholesale) : Number.isFinite(Number(product.retail)) && Number(product.retail) > 0 ? Number(product.retail) : null;
+  const listPrice = hasStandardTierPrice ? standardTierPrice : hasStandardWholesale ? Number(product.wholesale) : Number.isFinite(Number(product.retail)) && Number(product.retail) > 0 ? Number(product.retail) : null;
   return { sku: product.sku, name: product.name, model: String(product.model || product.sku || ''), specification: String(product.specification || ''), category: product.category, unit: product.unit, purchasable, stockByWarehouse, availability: !purchasable ? '暂不可购买' : availableQty <= 0 ? '需预订' : Number(product.reorder || 0) > 0 && availableQty <= Number(product.reorder || 0) ? '库存紧张' : '有货', listPrice, price: Number.isFinite(agreed) ? agreed : null, description: String(product.portalDescription || ''), imageUrl: String(product.portalImageUrl || ''), videoUrl: String(product.portalVideoUrl || ''), isNew: Boolean(product.portalNewProduct) };
 }
 
@@ -585,6 +589,16 @@ function readDb() {
   if (!Array.isArray(db.salesFieldOrders)) db.salesFieldOrders = [];
   if (!Array.isArray(db.portalCustomers)) db.portalCustomers = [];
   if (!Array.isArray(db.portalPriceTiers) || !db.portalPriceTiers.length) db.portalPriceTiers = defaultPortalPriceTiers();
+  const portalTierDefaults = defaultPortalPriceTiers();
+  portalTierDefaults.forEach(defaultTier => {
+    const existingTier = db.portalPriceTiers.find(tier => tier.id === defaultTier.id);
+    if (!existingTier) db.portalPriceTiers.push(defaultTier);
+    else {
+      if (!existingTier.prices || typeof existingTier.prices !== 'object' || Array.isArray(existingTier.prices)) existingTier.prices = {};
+      if (defaultTier.id === 'standard' && existingTier.name === '标准批发价') existingTier.name = '批发价';
+      if (defaultTier.id === 'strategic' && existingTier.name === '战略客户价') existingTier.name = '超级战略合作伙伴价';
+    }
+  });
   const standardPortalTier = db.portalPriceTiers.find(tier => tier.id === 'standard');
   if (standardPortalTier?.name === '标准批发价') standardPortalTier.name = '批发价';
   if (!Array.isArray(db.warranties)) db.warranties = [];
@@ -7283,7 +7297,7 @@ async function api(req, res) {
   if (req.method === 'PUT' && url.pathname === '/api/portal-price-tiers') {
     if (!canAccess(user, 'portalPricingEdit')) return send(res, 403, { error: '没有客户协议价格管理权限' });
     const body = await readBody(req);
-    for (const tierId of ['silver', 'gold']) {
+    for (const tierId of ['standard', 'first-order', 'bronze', 'silver', 'gold', 'strategic']) {
       const tier = (db.portalPriceTiers || []).find(item => item.id === tierId);
       if (!tier) continue;
       const prices = {};
@@ -7296,8 +7310,8 @@ async function api(req, res) {
       tier.prices = prices;
       tier.updatedAt = new Date().toISOString();
     }
-    audit(db, user, 'update-portal-price-table', { collection: 'portalPriceTiers', detail: '更新银牌价与金牌价价格表' });
-    writeDb(db); notifyDataChanged('portal-price-table', 'silver-gold');
+    audit(db, user, 'update-portal-price-table', { collection: 'portalPriceTiers', detail: '更新批发、首次进货、铜牌、银牌、金牌与超级战略合作伙伴价格表' });
+    writeDb(db); notifyDataChanged('portal-price-table', 'all-tiers');
     return send(res, 200, { data: sanitizeDbForUser(db, user) });
   }
 
