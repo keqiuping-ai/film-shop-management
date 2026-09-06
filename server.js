@@ -6103,6 +6103,41 @@ function checkoutBranchId(fulfillment) {
   return fulfillment === 'pickup-las-vegas' ? 'las-vegas' : fulfillment === 'pickup-los-angeles' ? 'los-angeles' : '';
 }
 
+function checkoutInventoryDetails(db, requested, ignoreOrderId = '') {
+  const requestedBySku = new Map();
+  for (const line of requested) {
+    const sku = String(line.sku || '').trim();
+    const qty = Math.max(0, Math.floor(Number(line.qty || 0)));
+    if (!sku || !qty) continue;
+    requestedBySku.set(sku, Number(requestedBySku.get(sku) || 0) + qty);
+  }
+  return [...requestedBySku].map(([sku, requestedQty]) => {
+    const warehouses = ['las-vegas', 'los-angeles'].map(branchId => {
+      const stock = Math.floor(Math.max(0, branchStockQty(db, sku, branchId)));
+      const reserved = Math.floor(Math.max(0, activeInventoryReservationQty(db, sku, branchId, ignoreOrderId)));
+      return { branchId, stock, reserved, available: Math.max(0, stock - reserved) };
+    });
+    return { sku, requestedQty, warehouses, totalAvailable: warehouses.reduce((sum, row) => sum + row.available, 0) };
+  });
+}
+
+function checkoutInventoryError(details, branchId = '') {
+  const shortages = details.filter(item => branchId
+    ? Number(item.warehouses.find(row => row.branchId === branchId)?.available || 0) < item.requestedQty
+    : item.totalAvailable < item.requestedQty);
+  if (!shortages.length) return '';
+  return shortages.map(item => {
+    const lv = item.warehouses.find(row => row.branchId === 'las-vegas') || { stock:0, reserved:0, available:0 };
+    const la = item.warehouses.find(row => row.branchId === 'los-angeles') || { stock:0, reserved:0, available:0 };
+    if (branchId) {
+      const row = branchId === 'las-vegas' ? lv : la;
+      const label = branchId === 'las-vegas' ? '拉斯维加斯' : '洛杉矶';
+      return `${item.sku} 需要 ${item.requestedQty} 卷；${label}实物库存 ${row.stock}，已锁定 ${row.reserved}，当前可用 ${row.available}`;
+    }
+    return `${item.sku} 需要 ${item.requestedQty} 卷；拉斯维加斯实物 ${lv.stock}/锁定 ${lv.reserved}/可用 ${lv.available}，洛杉矶实物 ${la.stock}/锁定 ${la.reserved}/可用 ${la.available}`;
+  }).join('；');
+}
+
 function deliveryCheckoutAllocations(db, requested, ignoreOrderId = '') {
   const allocations = [];
   const alreadyAllocated = new Map();
@@ -6571,11 +6606,22 @@ async function api(req, res) {
     if (req.method === 'POST' && url.pathname === '/api/customer/checkout-session') {
       const body = await readBody(req);
       const fulfillment = String(body.fulfillment || '');
-      const requested = (Array.isArray(body.items) ? body.items : []).slice(0,50);
+      if (!['delivery','pickup-las-vegas','pickup-los-angeles'].includes(fulfillment)) return send(res,400,{ error:'请选择发货、拉斯维加斯自提或洛杉矶自提。' });
+      const rawRequested = (Array.isArray(body.items) ? body.items : []).slice(0,50);
+      const requested = rawRequested.map(line => {
+        const enteredSku = String(line.sku || '').trim();
+        const product = (db.products || []).find(row => String(row.sku || '').trim().toLowerCase() === enteredSku.toLowerCase());
+        return { sku:String(product?.sku || enteredSku).trim(), qty:Math.max(0,Math.floor(Number(line.qty || 0))) };
+      });
+      const invalidLine = requested.find(line => !line.sku || !line.qty || !(db.products || []).some(product => product.sku === line.sku && product.portalVisible !== false && product.portalPurchasable !== false));
+      if (invalidLine) return send(res,400,{ error:`${invalidLine.sku || '所选商品'} 不是当前可购买的正式 SKU，请返回产品页重新选择。` });
+      const inventoryDetails = checkoutInventoryDetails(db,requested);
+      const inventoryError = checkoutInventoryError(inventoryDetails,checkoutBranchId(fulfillment));
+      if (inventoryError) return send(res,409,{ error:`库存不足：${inventoryError}。如实物数量正确，请检查是否有未付款订单正在锁定库存。`,code:'INSUFFICIENT_INVENTORY',shortages:inventoryDetails });
       const deliveryAllocations = fulfillment === 'delivery' ? deliveryCheckoutAllocations(db,requested) : [];
       const deliveryBranchIds = [...new Set(deliveryAllocations.map(row=>row.branchId))];
       const branchId = checkoutBranchId(fulfillment) || deliveryBranchIds[0] || '';
-      if (!branchId) return send(res, 400, { error:fulfillment === 'delivery' ? 'The combined available inventory in Las Vegas and Los Angeles is not enough for every selected item.' : 'Select delivery, Las Vegas pickup, or Los Angeles pickup.' });
+      if (!branchId) return send(res, 400, { error:fulfillment === 'delivery' ? '库存分配失败，请检查所选型号和数量。' : '请选择发货、拉斯维加斯自提或洛杉矶自提。' });
       const shippingAddress = body.shippingAddress && typeof body.shippingAddress === 'object' ? body.shippingAddress : {};
       const formattedAddress = [shippingAddress.street,shippingAddress.city,shippingAddress.state,shippingAddress.postalCode,'US'].map(value=>String(value||'').trim()).filter(Boolean).join(', ').slice(0,500);
       if (fulfillment === 'delivery' && (!shippingAddress.street || !shippingAddress.city || !shippingAddress.state || !shippingAddress.postalCode)) return send(res,400,{ error:'Enter the complete U.S. shipping address before payment.' });
@@ -6626,7 +6672,11 @@ async function api(req, res) {
       if (!order) return send(res,404,{ error:'找不到这张客户订单。' });
       if (String(order.paymentStatus || '').toLowerCase() === 'paid') return send(res,409,{ error:'这张订单已经付款。' });
       const items = salesOrderItems(order).map(line=>({ item:String(line.item || ''), name:String((db.products || []).find(product=>product.sku===line.item)?.name || line.item), qty:Math.max(0,Math.floor(Number(line.qty || 0))), unitPrice:Number(line.unitPrice || 0) }));
-      const deliveryAllocations = order.fulfillment === 'delivery' ? deliveryCheckoutAllocations(db,items.map(line=>({sku:line.item,qty:line.qty})),order.id) : [];
+      const resumeRequested = items.map(line=>({sku:line.item,qty:line.qty}));
+      const resumeInventoryDetails = checkoutInventoryDetails(db,resumeRequested,order.id);
+      const resumeInventoryError = checkoutInventoryError(resumeInventoryDetails,checkoutBranchId(order.fulfillment));
+      if (resumeInventoryError) return send(res,409,{ error:`库存不足：${resumeInventoryError}。如实物数量正确，请检查其他未付款订单的库存锁定。`,code:'INSUFFICIENT_INVENTORY',shortages:resumeInventoryDetails });
+      const deliveryAllocations = order.fulfillment === 'delivery' ? deliveryCheckoutAllocations(db,resumeRequested,order.id) : [];
       const deliveryBranchIds = [...new Set(deliveryAllocations.map(row=>row.branchId))];
       const branchId = checkoutBranchId(order.fulfillment) || deliveryBranchIds[0] || '';
       if (!branchId) return send(res,400,{ error:'拉斯维加斯和洛杉矶两个仓库的可用库存合计不足，请调整数量或联系客服。' });
