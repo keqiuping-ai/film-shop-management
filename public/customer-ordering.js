@@ -498,7 +498,7 @@ dealerCheckout.querySelector('.checkout-summary button').textContent='前往 Str
 dealerCheckout.querySelector('.checkout-summary>small').textContent='登录后自动确认支付环境。';
 const checkoutSummaryRows=dealerCheckout.querySelector('.checkout-summary dl');
 if(checkoutSummaryRows){
-  checkoutSummaryRows.innerHTML=`<div><dt>标准批发价</dt><dd id="checkoutListSubtotal">登录后显示</dd></div><div class="checkout-tier-row"><dt>客户价格等级</dt><dd id="checkoutCustomerTier">登录后识别</dd></div><div class="checkout-saving-row"><dt>本单专属优惠</dt><dd id="checkoutDiscount">登录后计算</dd></div><div><dt>折后商品小计</dt><dd id="checkoutSubtotal">登录后显示</dd></div><div><dt>配送费</dt><dd id="checkoutShippingFee">待确认</dd></div><div><dt>销售税</dt><dd>按收货或自提地址计算</dd></div>`;
+  checkoutSummaryRows.innerHTML=`<div><dt>批发价</dt><dd id="checkoutListSubtotal">登录后显示</dd></div><div class="checkout-tier-row"><dt>客户价格等级</dt><dd id="checkoutCustomerTier">登录后识别</dd></div><div class="checkout-saving-row"><dt>本单专属优惠</dt><dd id="checkoutDiscount">登录后计算</dd></div><div><dt>折后商品小计</dt><dd id="checkoutSubtotal">登录后显示</dd></div><div><dt>配送费</dt><dd id="checkoutShippingFee">待确认</dd></div><div><dt>销售税</dt><dd>按收货或自提地址计算</dd></div>`;
 }
 
 function checkoutPreviewItems(){
@@ -509,7 +509,7 @@ function checkoutPreviewItems(){
   return items;
 }
 
-function dealerPriceForSku(sku){return state?.products?.find(product=>String(product.sku).toLowerCase()===String(sku).toLowerCase())||null}
+function dealerPriceForSku(sku){const key=String(sku||'').trim().toLowerCase();return state?.products?.find(product=>[product.sku,product.model].some(value=>String(value||'').trim().toLowerCase()===key))||null}
 function checkoutDeliveryProfile(){return {company:document.getElementById('checkoutCompany')?.value.trim()||'',recipient:document.getElementById('checkoutRecipient')?.value.trim()||'',phone:document.getElementById('checkoutPhone')?.value.trim()||'',street:document.getElementById('checkoutStreet')?.value.trim()||'',city:document.getElementById('checkoutCity')?.value.trim()||'',state:document.getElementById('checkoutState')?.value.split(' · ')[0].trim()||'',postalCode:document.getElementById('checkoutPostalCode')?.value.trim()||'',country:'US'}}
 let checkoutAddressSaveTimer=null;
 async function saveCheckoutDeliveryProfile(showStatus=true){
@@ -523,7 +523,7 @@ async function saveCheckoutDeliveryProfile(showStatus=true){
   }catch(error){if(status)status.textContent=`收货信息暂未保存：${error.message}`;throw error}
 }
 checkoutAddressFields.forEach(field=>field.addEventListener('change',()=>{clearTimeout(checkoutAddressSaveTimer);checkoutAddressSaveTimer=setTimeout(()=>saveCheckoutDeliveryProfile().catch(()=>{}),250)}));
-function dealerTierLabel(){const labels={standard:'标准批发价',bronze:'铜牌经销商价',silver:'银牌经销商价',gold:'金牌客户价',strategic:'战略客户价'};return labels[state?.customer?.priceTier]||state?.customer?.priceTierName||'客户协议价'}
+function dealerTierLabel(){const labels={standard:'批发价',bronze:'铜牌经销商价',silver:'银牌经销商价',gold:'金牌客户价',strategic:'战略客户价'};return labels[state?.customer?.priceTier]||state?.customer?.priceTierName||'客户协议价'}
 function updateStripeEnvironmentLabel(){
   const live=state?.paymentEnvironment==='live';
   const note=dealerCheckout.querySelector('.checkout-summary>small');
@@ -568,7 +568,7 @@ window.updateCheckoutTotals=function(){
   document.getElementById('checkoutItemCount').textContent=`${count} 卷`;
   document.getElementById('checkoutListSubtotal').textContent=priced?`$${listSubtotal.toFixed(2)}`:'服务器核价';
   document.getElementById('checkoutCustomerTier').textContent=token&&state?dealerTierLabel():'请先登录';
-  document.getElementById('checkoutDiscount').textContent=priced&&savings>0?`${discount/10} 折 · 节省 $${savings.toFixed(2)}`:priced?'按标准批发价':'服务器计算';
+  document.getElementById('checkoutDiscount').textContent=priced&&savings>0?`${discount/10} 折 · 节省 $${savings.toFixed(2)}`:priced?'按批发价':'服务器计算';
   document.getElementById('checkoutSubtotal').textContent=priced?`$${agreementSubtotal.toFixed(2)}`:'服务器核价';
   document.querySelector('#dealerCheckout .checkout-total b').textContent=priced?`$${agreementSubtotal.toFixed(2)} + 税费`:'Stripe 确认';
   document.getElementById('checkoutShippingFee').textContent=pickup?'$0':'待确认';

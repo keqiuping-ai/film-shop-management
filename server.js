@@ -242,7 +242,7 @@ function safePortalCustomer(customer) {
 
 function defaultPortalPriceTiers() {
   return [
-    { id: 'standard', name: '标准批发价', prices: {} },
+    { id: 'standard', name: '批发价', prices: {} },
     { id: 'bronze', name: '铜牌经销商价', prices: {} },
     { id: 'silver', name: '银牌经销商价', prices: {} },
     { id: 'gold', name: '金牌经销商价', prices: {} },
@@ -288,11 +288,13 @@ function syncSalesOrderCustomer(db, order) {
 }
 
 function portalProductForCustomer(db, product, customer) {
-  const hasAgreedPrice = Object.prototype.hasOwnProperty.call(customer?.prices || {}, product.sku);
+  const agreedPrice = Number(customer?.prices?.[product.sku]);
+  const hasAgreedPrice = Number.isFinite(agreedPrice) && agreedPrice > 0;
   const tier = (db.portalPriceTiers || []).find(item => item.id === (customer?.priceTier || 'standard'));
-  const hasTierPrice = Object.prototype.hasOwnProperty.call(tier?.prices || {}, product.sku);
+  const tierPrice = Number(tier?.prices?.[product.sku]);
+  const hasTierPrice = Number.isFinite(tierPrice) && tierPrice > 0;
   const hasStandardWholesale = Number.isFinite(Number(product.wholesale)) && Number(product.wholesale) > 0;
-  const agreed = Number(hasAgreedPrice ? customer.prices[product.sku] : hasTierPrice ? tier.prices[product.sku] : hasStandardWholesale ? product.wholesale : NaN);
+  const agreed = Number(hasAgreedPrice ? agreedPrice : hasTierPrice ? tierPrice : hasStandardWholesale ? product.wholesale : NaN);
   const stockByWarehouse = {
     'las-vegas': Math.max(0, branchStockQty(db, product.sku, 'las-vegas') - activeInventoryReservationQty(db, product.sku, 'las-vegas')),
     'los-angeles': Math.max(0, branchStockQty(db, product.sku, 'los-angeles') - activeInventoryReservationQty(db, product.sku, 'los-angeles'))
@@ -310,7 +312,7 @@ function portalCustomerSnapshot(db, customer) {
   const warranties = (db.warranties || []).filter(item => (phone && normalizedWarrantyPhone(item.phone) === phone) || names.has(normalizedWarrantyName(item.customerName))).sort((a,b)=>String(b.installDate||'').localeCompare(String(a.installDate||''))).map(publicWarrantyRecord);
   const stripeKey = String(process.env.STRIPE_SECRET_KEY || '').trim();
   const paymentEnvironment = stripeKey.startsWith('sk_live_') && process.env.STRIPE_CUSTOMER_ORDER_LIVE_ENABLED === 'true' ? 'live' : 'test';
-  return { customer: { ...safePortalCustomer(customer), priceTierName: tier?.name || '标准批发价' }, paymentEnvironment, products: (db.products || []).filter(product => product.portalVisible !== false).map(product => portalProductForCustomer(db, product, customer)), orders: (db.salesOrders || []).filter(order => order.portalCustomerId === customer.id).sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || ''))).map(order => ({ id: order.id, date: order.date, status: order.status, paymentStatus: order.paymentStatus || '', items: salesOrderItems(order), subtotal: Number(order.subtotal || 0), shippingFee: Number(order.shippingFee || 0), salesTax: Number(order.salesTax || 0), checkoutTotal: Number(order.checkoutTotal || 0), fulfillment: order.fulfillment || '', customerDemand: order.customerDemand || '', shipping: order.shipping || '', trackingNo: order.trackingNo || '', paid: Number(order.paid || 0), paymentMethod: order.paymentMethod || '', createdAt: order.createdAt, portalMessages: order.portalMessages || [], attachments: order.portalAttachments || [] })), warranties };
+  return { customer: { ...safePortalCustomer(customer), priceTierName: tier?.name || '批发价' }, paymentEnvironment, products: (db.products || []).filter(product => product.portalVisible !== false).map(product => portalProductForCustomer(db, product, customer)), orders: (db.salesOrders || []).filter(order => order.portalCustomerId === customer.id).sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || ''))).map(order => ({ id: order.id, date: order.date, status: order.status, paymentStatus: order.paymentStatus || '', items: salesOrderItems(order), subtotal: Number(order.subtotal || 0), shippingFee: Number(order.shippingFee || 0), salesTax: Number(order.salesTax || 0), checkoutTotal: Number(order.checkoutTotal || 0), fulfillment: order.fulfillment || '', customerDemand: order.customerDemand || '', shipping: order.shipping || '', trackingNo: order.trackingNo || '', paid: Number(order.paid || 0), paymentMethod: order.paymentMethod || '', createdAt: order.createdAt, portalMessages: order.portalMessages || [], attachments: order.portalAttachments || [] })), warranties };
 }
 
 function seedDb() {
@@ -497,6 +499,8 @@ function readDb() {
   if (!Array.isArray(db.salesFieldOrders)) db.salesFieldOrders = [];
   if (!Array.isArray(db.portalCustomers)) db.portalCustomers = [];
   if (!Array.isArray(db.portalPriceTiers) || !db.portalPriceTiers.length) db.portalPriceTiers = defaultPortalPriceTiers();
+  const standardPortalTier = db.portalPriceTiers.find(tier => tier.id === 'standard');
+  if (standardPortalTier?.name === '标准批发价') standardPortalTier.name = '批发价';
   if (!Array.isArray(db.warranties)) db.warranties = [];
   if (!Array.isArray(db.appointmentReservations)) db.appointmentReservations = [];
   if (!Array.isArray(db.stripeWebhookEvents)) db.stripeWebhookEvents = [];
@@ -6630,7 +6634,8 @@ async function api(req, res) {
       const rawRequested = (Array.isArray(body.items) ? body.items : []).slice(0,50);
       const requested = rawRequested.map(line => {
         const enteredSku = String(line.sku || '').trim();
-        const product = (db.products || []).find(row => String(row.sku || '').trim().toLowerCase() === enteredSku.toLowerCase());
+        const enteredKey = enteredSku.toLowerCase();
+        const product = (db.products || []).find(row => [row.sku,row.model].some(value => String(value || '').trim().toLowerCase() === enteredKey));
         return { sku:String(product?.sku || enteredSku).trim(), qty:Math.max(0,Math.floor(Number(line.qty || 0))) };
       });
       const invalidLine = requested.find(line => !line.sku || !line.qty || !(db.products || []).some(product => product.sku === line.sku && product.portalVisible !== false && product.portalPurchasable !== false));
