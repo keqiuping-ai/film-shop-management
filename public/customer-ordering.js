@@ -486,6 +486,8 @@ dealerCheckout.querySelector('.checkout-card-fields')?.remove();
 dealerCheckout.querySelector('.checkout-security').textContent='点击付款后进入 Stripe 安全页面填写银行卡号、有效期、CVC 和账单地址；也可选择安全保存卡片，方便下次付款。Apple Pay 会在符合条件的 Apple 设备上自动显示。';
 const checkoutAddressFields=dealerCheckout.querySelectorAll('.checkout-fields input,.checkout-fields select');
 ['checkoutCompany','checkoutRecipient','checkoutPhone','checkoutStreet','checkoutCity','checkoutState','checkoutPostalCode'].forEach((id,index)=>{if(checkoutAddressFields[index])checkoutAddressFields[index].id=id});
+const checkoutAddressBox=dealerCheckout.querySelector('.checkout-fields');
+checkoutAddressBox?.insertAdjacentHTML('afterend','<p id="checkoutAddressSaveStatus" class="checkout-security">登录后，收货信息会自动保存到客户账户，下次结账自动填写。</p>');
 const deliveryChoice=dealerCheckout.querySelector('input[name="shipping"][value="delivery"]')?.closest('.checkout-choice');
 if(deliveryChoice){
   deliveryChoice.querySelector('b').textContent='发货（快递 / 物流运输）';
@@ -508,6 +510,19 @@ function checkoutPreviewItems(){
 }
 
 function dealerPriceForSku(sku){return state?.products?.find(product=>String(product.sku).toLowerCase()===String(sku).toLowerCase())||null}
+function checkoutDeliveryProfile(){return {company:document.getElementById('checkoutCompany')?.value.trim()||'',recipient:document.getElementById('checkoutRecipient')?.value.trim()||'',phone:document.getElementById('checkoutPhone')?.value.trim()||'',street:document.getElementById('checkoutStreet')?.value.trim()||'',city:document.getElementById('checkoutCity')?.value.trim()||'',state:document.getElementById('checkoutState')?.value.split(' · ')[0].trim()||'',postalCode:document.getElementById('checkoutPostalCode')?.value.trim()||'',country:'US'}}
+let checkoutAddressSaveTimer=null;
+async function saveCheckoutDeliveryProfile(showStatus=true){
+  if(!token||!state)return;
+  const status=document.getElementById('checkoutAddressSaveStatus');
+  try{
+    if(showStatus&&status)status.textContent='正在保存收货信息…';
+    const result=await api('/api/customer/delivery-profile',{method:'POST',body:JSON.stringify(checkoutDeliveryProfile())});
+    state.customer.deliveryProfile=result.deliveryProfile;
+    if(status)status.textContent='✓ 收货信息已保存，下次结账将自动填写。';
+  }catch(error){if(status)status.textContent=`收货信息暂未保存：${error.message}`;throw error}
+}
+checkoutAddressFields.forEach(field=>field.addEventListener('change',()=>{clearTimeout(checkoutAddressSaveTimer);checkoutAddressSaveTimer=setTimeout(()=>saveCheckoutDeliveryProfile().catch(()=>{}),250)}));
 function dealerTierLabel(){const labels={standard:'标准批发价',bronze:'铜牌经销商价',silver:'银牌经销商价',gold:'金牌客户价',strategic:'战略客户价'};return labels[state?.customer?.priceTier]||state?.customer?.priceTierName||'客户协议价'}
 function dealerPriceHtml(item){
   if(!token||!state)return '<span class="checkout-price pending">登录后显示客户价</span>';
@@ -524,9 +539,14 @@ window.showDealerCheckout=function(){
   container.innerHTML=items.length?items.map((item,index)=>`<article class="checkout-item" data-sku="${esc(item.sku)}"><span>${String(index+1).padStart(2,'0')}</span><div><small>${esc(item.category)}</small><b>${esc(item.name)}</b><em>${esc(item.detail)}</em></div><label>数量<input type="number" min="1" value="${item.qty}" onchange="updateCheckoutTotals()"></label>${dealerPriceHtml(item)}<button aria-label="删除商品" onclick="this.closest('article').remove();updateCheckoutTotals()">×</button></article>`).join(''):'<p>购物车为空，请返回产品分类选择商品。</p>';
   document.getElementById('dealerCheckout').classList.remove('hidden');
   if(state?.customer){
-    document.getElementById('checkoutCompany').value=state.customer.businessName||'';
-    document.getElementById('checkoutRecipient').value=state.customer.contactName||'';
-    document.getElementById('checkoutPhone').value=state.customer.phone||'';
+    const saved=state.customer.deliveryProfile||{};
+    document.getElementById('checkoutCompany').value=saved.company||state.customer.businessName||'';
+    document.getElementById('checkoutRecipient').value=saved.recipient||state.customer.contactName||'';
+    document.getElementById('checkoutPhone').value=saved.phone||state.customer.phone||'';
+    document.getElementById('checkoutStreet').value=saved.street||'';
+    document.getElementById('checkoutCity').value=saved.city||'';
+    if(saved.state)document.getElementById('checkoutState').value=[...document.getElementById('checkoutState').options].find(option=>option.value.startsWith(saved.state))?.value||document.getElementById('checkoutState').value;
+    document.getElementById('checkoutPostalCode').value=saved.postalCode||'';
   }
   updateDealerIdentity();
   updateCheckoutTotals();window.scrollTo({top:0,behavior:'auto'});
@@ -558,8 +578,9 @@ window.previewCheckoutSubmit=async function(){
     if(!grouped.size)throw new Error('没有可识别的正式 SKU，请返回产品页重新选择型号。');
     const fulfillment=document.querySelector('input[name="shipping"]:checked')?.value;
     if(!['delivery','pickup-las-vegas','pickup-los-angeles'].includes(fulfillment))throw new Error('请选择发货或仓库自提。');
-    const shippingAddress=fulfillment==='delivery'?{company:document.getElementById('checkoutCompany')?.value.trim()||'',recipient:document.getElementById('checkoutRecipient')?.value.trim()||'',phone:document.getElementById('checkoutPhone')?.value.trim()||'',street:document.getElementById('checkoutStreet')?.value.trim()||'',city:document.getElementById('checkoutCity')?.value.trim()||'',state:document.getElementById('checkoutState')?.value.split(' · ')[0].trim()||'',postalCode:document.getElementById('checkoutPostalCode')?.value.trim()||'',country:'US'}:null;
+    const shippingAddress=fulfillment==='delivery'?checkoutDeliveryProfile():null;
     if(shippingAddress&&(!shippingAddress.recipient||!shippingAddress.phone||!shippingAddress.street||!shippingAddress.city||!shippingAddress.state||!shippingAddress.postalCode))throw new Error('发货订单请先完整填写收货人、电话、街道、城市、州和邮编。');
+    await saveCheckoutDeliveryProfile(false);
     button.disabled=true;button.textContent='正在核价并检查库存…';
     const result=await api('/api/customer/checkout-session',{method:'POST',body:JSON.stringify({requestId:`customer-checkout-${Date.now()}`,items:[...grouped].map(([sku,qty])=>({sku,qty})),fulfillment,shippingAddress,notes:document.querySelector('.checkout-notes textarea')?.value||''})});
     if(!result.checkoutUrl)throw new Error('Stripe Checkout 未返回安全付款地址。');

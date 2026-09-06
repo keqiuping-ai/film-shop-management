@@ -6603,6 +6603,24 @@ async function api(req, res) {
     if (!customer) return send(res, 401, { error: 'Please log in to your customer account.' });
     if (req.method === 'GET' && url.pathname === '/api/customer/bootstrap') return send(res, 200, portalCustomerSnapshot(db, customer), undefined, req);
     if (req.method === 'POST' && url.pathname === '/api/customer/logout') return send(res, 200, { ok: true });
+    if (req.method === 'POST' && url.pathname === '/api/customer/delivery-profile') {
+      const body = await readBody(req);
+      const profile = {
+        company:String(body.company || '').trim().slice(0,160),
+        recipient:String(body.recipient || '').trim().slice(0,120),
+        phone:String(body.phone || '').trim().slice(0,80),
+        street:String(body.street || '').trim().slice(0,200),
+        city:String(body.city || '').trim().slice(0,100),
+        state:String(body.state || '').trim().toUpperCase().slice(0,2),
+        postalCode:String(body.postalCode || '').trim().slice(0,20),
+        country:'US',
+        updatedAt:new Date().toISOString()
+      };
+      customer.deliveryProfile = profile;
+      customer.updatedAt = profile.updatedAt;
+      writeDb(db);
+      return send(res,200,{ ok:true,deliveryProfile:profile });
+    }
     if (req.method === 'POST' && url.pathname === '/api/customer/checkout-session') {
       const body = await readBody(req);
       const fulfillment = String(body.fulfillment || '');
