@@ -252,7 +252,8 @@ function defaultPortalPriceTiers() {
 }
 
 function syncSalesOrderCustomer(db, order) {
-  const businessName = String(order.customer || '').trim().slice(0, 160);
+  let customer = (db.portalCustomers || []).find(item => item.id === order.portalCustomerId);
+  const businessName = String(order.customer || customer?.businessName || customer?.contactName || '').trim().slice(0, 160);
   if (!businessName) return null;
   const contact = String(order.customerContact || '').trim().slice(0, 500);
   const email = String(order.customerEmail || contact.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i)?.[0] || '').trim().toLowerCase().slice(0,160);
@@ -261,7 +262,6 @@ function syncSalesOrderCustomer(db, order) {
   const phone = explicitPhone || (normalizePhone(phoneText).length >= 7 ? phoneText.slice(0, 80) : '');
   const phoneKey = normalizedPhone(phone);
   const nameKey = businessName.toLowerCase();
-  let customer = (db.portalCustomers || []).find(item => item.id === order.portalCustomerId);
   if (!customer && email) customer = db.portalCustomers.find(item => String(item.email || '').trim().toLowerCase() === email);
   if (!customer && phoneKey) customer = db.portalCustomers.find(item => normalizedPhone(item.phone) === phoneKey);
   if (!customer) customer = db.portalCustomers.find(item => String(item.businessName || '').trim().toLowerCase() === nameKey);
@@ -278,6 +278,7 @@ function syncSalesOrderCustomer(db, order) {
     };
     db.portalCustomers.push(customer);
   } else {
+    order.customer = businessName;
     customer.businessName = businessName;
     if (email) customer.email = email;
     if (phone) customer.phone = phone;
@@ -334,7 +335,7 @@ function shiftMonthKey(monthKey, offset) {
 
 function portalCustomerPaidSalesByMonth(db, customer) {
   const totals = {};
-  (db.salesOrders || []).filter(order => order.portalCustomerId === customer.id && order.portalSource).forEach(order => {
+  (db.salesOrders || []).filter(order => order.portalCustomerId === customer.id).forEach(order => {
     const transactions = (order.paymentTransactions || []).filter(row => Number(row.amount || 0) !== 0 && ['payment', 'refund'].includes(String(row.type || '').toLowerCase()));
     if (transactions.length) {
       transactions.forEach(row => {
@@ -393,7 +394,7 @@ function portalCustomerSnapshot(db, customer) {
   const warranties = (db.warranties || []).filter(item => (phone && normalizedWarrantyPhone(item.phone) === phone) || names.has(normalizedWarrantyName(item.customerName))).sort((a,b)=>String(b.installDate||'').localeCompare(String(a.installDate||''))).map(publicWarrantyRecord);
   const stripeKey = String(process.env.STRIPE_SECRET_KEY || '').trim();
   const paymentEnvironment = stripeKey.startsWith('sk_live_') && process.env.STRIPE_CUSTOMER_ORDER_LIVE_ENABLED === 'true' ? 'live' : 'test';
-  return { customer: { ...safePortalCustomer(customer), priceTierName: tier?.name || '批发价' }, tierProgress: portalCustomerTierProgress(db, customer), paymentEnvironment, products: (db.products || []).filter(product => product.portalVisible !== false).map(product => portalProductForCustomer(db, product, customer)), orders: (db.salesOrders || []).filter(order => order.portalCustomerId === customer.id).sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || ''))).map(order => ({ id: order.id, date: order.date, status: order.status, paymentStatus: order.paymentStatus || '', items: salesOrderItems(order), subtotal: Number(order.subtotal || 0), shippingFee: Number(order.shippingFee || 0), salesTax: Number(order.salesTax || 0), checkoutTotal: Number(order.checkoutTotal || 0), fulfillment: order.fulfillment || '', customerDemand: order.customerDemand || '', shipping: order.shipping || '', trackingNo: order.trackingNo || '', paid: Number(order.paid || 0), paymentMethod: order.paymentMethod || '', createdAt: order.createdAt, portalMessages: order.portalMessages || [], attachments: order.portalAttachments || [] })), warranties };
+  return { customer: { ...safePortalCustomer(customer), priceTierName: tier?.name || '批发价' }, tierProgress: portalCustomerTierProgress(db, customer), paymentEnvironment, products: (db.products || []).filter(product => product.portalVisible !== false).map(product => portalProductForCustomer(db, product, customer)), orders: (db.salesOrders || []).filter(order => order.portalCustomerId === customer.id).sort((a, b) => String(b.updatedAt || b.createdAt || '').localeCompare(String(a.updatedAt || a.createdAt || ''))).map(order => ({ id: order.id, date: order.date, status: order.status, paymentStatus: order.paymentStatus || '', items: salesOrderItems(order), subtotal: Number(order.subtotal || 0), shippingFee: Number(order.shippingFee || 0), salesTax: Number(order.salesTax || 0), checkoutTotal: Number(order.checkoutTotal || 0), fulfillment: order.fulfillment || '', customerDemand: order.customerDemand || '', shipping: order.shipping || '', shippingCarrier: order.shippingCarrier || '', trackingNo: order.trackingNo || '', paid: Number(order.paid || 0), paymentMethod: order.paymentMethod || '', createdAt: order.createdAt, updatedAt: order.updatedAt || '', portalMessages: order.portalMessages || [], attachments: order.portalAttachments || [] })), warranties };
 }
 
 function seedDb() {
@@ -6848,7 +6849,7 @@ async function api(req, res) {
     const resumeCheckoutMatch = req.method === 'POST' && url.pathname.match(/^\/api\/customer\/orders\/([^/]+)\/checkout-session$/);
     if (resumeCheckoutMatch) {
       const orderId = decodeURIComponent(resumeCheckoutMatch[1]);
-      const order = (db.salesOrders || []).find(row => row.id === orderId && row.portalCustomerId === customer.id && row.portalSource);
+      const order = (db.salesOrders || []).find(row => row.id === orderId && row.portalCustomerId === customer.id);
       if (!order) return send(res,404,{ error:'找不到这张客户订单。' });
       if (String(order.paymentStatus || '').toLowerCase() === 'paid') return send(res,409,{ error:'这张订单已经付款。' });
       const items = salesOrderItems(order).map(line=>({ item:String(line.item || ''), name:String((db.products || []).find(product=>product.sku===line.item)?.name || line.item), qty:Math.max(0,Math.floor(Number(line.qty || 0))), unitPrice:Number(line.unitPrice || 0) }));
@@ -9982,12 +9983,16 @@ async function api(req, res) {
       item.updatedAt = now;
     }
     if (collection === 'salesOrders') {
+      item.portalCustomerId = String(item.portalCustomerId || '').trim().slice(0, 160);
       item.salesRep = String(item.salesRep || '').trim();
       item.recipientName = String(item.recipientName || '').trim().slice(0, 160);
       item.customerPhone = String(item.customerPhone || '').trim().slice(0, 80);
       item.customerEmail = String(item.customerEmail || '').trim().toLowerCase().slice(0, 160);
       item.customerAddress = String(item.customerAddress || '').trim().slice(0, 500);
       item.customerContact = String(item.customerContact || '').trim().slice(0, 500);
+      item.shipping = String(item.shipping || '').trim().slice(0, 500);
+      item.shippingCarrier = String(item.shippingCarrier || '').trim().slice(0, 160);
+      item.trackingNo = String(item.trackingNo || '').trim().slice(0, 240);
       item.notes = String(item.notes || '').trim().slice(0, 3000);
       const error = validateSalesOrder(db, item);
       if (error) return send(res, 400, { error });
@@ -9999,6 +10004,7 @@ async function api(req, res) {
       item.preparedBy = String(item.preparedBy || user.name || '').trim();
       item.preparedByUserId = user.id;
       item.createdAt = new Date().toISOString();
+      item.updatedAt = item.createdAt;
       if (String(item.status || '').trim() === '已出库') item.shippedAt = item.shippedAt || item.createdAt;
     }
     if (collection === 'prospects' || collection === 'customerConversations') {
@@ -10239,12 +10245,16 @@ async function api(req, res) {
     if (collection === 'salesOrders') {
       const previousStatus = String(db[collection][idx].status || '').trim();
       const previousOrder = db[collection][idx];
+      next.portalCustomerId = String(next.portalCustomerId || '').trim().slice(0, 160);
       next.salesRep = String(next.salesRep || '').trim();
       next.recipientName = String(next.recipientName || '').trim().slice(0, 160);
       next.customerPhone = String(next.customerPhone || '').trim().slice(0, 80);
       next.customerEmail = String(next.customerEmail || '').trim().toLowerCase().slice(0, 160);
       next.customerAddress = String(next.customerAddress || '').trim().slice(0, 500);
       next.customerContact = String(next.customerContact || '').trim().slice(0, 500);
+      next.shipping = String(next.shipping || '').trim().slice(0, 500);
+      next.shippingCarrier = String(next.shippingCarrier || '').trim().slice(0, 160);
+      next.trackingNo = String(next.trackingNo || '').trim().slice(0, 240);
       next.notes = String(next.notes || '').trim().slice(0, 3000);
       const error = validateSalesOrder(db, next);
       if (error) return send(res, 400, { error });

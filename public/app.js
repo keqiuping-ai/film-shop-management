@@ -9389,11 +9389,17 @@ function salesOrderPartyDetails(item = {}) {
   };
 }
 
+function portalCustomerOrderOptions(selectedId = '') {
+  return [['', lang === 'zh' ? '自动识别客户账号' : 'Match dealer account automatically'], ...(state.portalCustomers || [])
+    .filter(customer => customer.active !== false)
+    .sort((a, b) => String(a.businessName || '').localeCompare(String(b.businessName || '')))
+    .map(customer => [customer.id, `${customer.businessName || customer.contactName || customer.account}${customer.contactName && customer.contactName !== customer.businessName ? ` · ${customer.contactName}` : ''}${customer.account ? ` · ${customer.account}` : ''}`])];
+}
+
 function openSalesOrder(id) {
   const item = state.salesOrders.find(x => x.id === id) || { date: today(), branchId: defaultBranchId(), type: 'retail-us', customer: '', customerAddress: '', customerContact: '', recipientName: '', customerPhone: '', customerEmail: '', salesRep: '', preparedBy: user?.name || '', notes: '', item: '', qty: 1, unitPrice: 0, status: '待收款', shipping: '', trackingNo: '', paid: 0, paymentMethod: '' };
   if (id && item.portalSource && (item.portalNew || item.portalCustomerUnread)) markPortalOrderRead(id);
   const lines = salesOrderLineItems(item);
-  const shippingTracking = [...new Set([item.shipping, item.trackingNo].map(value => String(value || '').trim()).filter(Boolean))].join(' · ');
   const editableSalesStatuses = salesStatusOptions().filter(option => {
     const value = Array.isArray(option) ? option[0] : option;
     return value !== '已出库' || item.status === '已出库';
@@ -9401,8 +9407,12 @@ function openSalesOrder(id) {
   const party = salesOrderPartyDetails(item);
   const fields = [
     ['date',t('date'),'date',item.date], ['branchId',lang === 'zh' ? '所属分店' : 'Branch','select',item.branchId || '',branchOptions()], ['type',t('type'),'select',item.type, salesOrderTypeOptions()],
+    ['portalCustomerId',lang === 'zh' ? '关联B端客户账号' : 'Linked dealer account','select',item.portalCustomerId || '',portalCustomerOrderOptions(item.portalCustomerId)],
     ['salesRep',t('orderSalesRep'),'text',item.salesRep || ''], ['status',t('status'),'select',item.status, editableSalesStatuses], ['paid',`${t('paid')} $`,'number',item.paid],
-    ['paymentMethod',t('paymentMethod'),'select',item.paymentMethod || '', paymentMethodOptions()], ['shippingTracking',lang === 'zh' ? '物流/单号' : 'Shipping / Tracking','text',shippingTracking],
+    ['paymentMethod',t('paymentMethod'),'select',item.paymentMethod || '', paymentMethodOptions()],
+    ['shipping',lang === 'zh' ? '配送方式' : 'Delivery method','text',item.shipping || ''],
+    ['shippingCarrier',lang === 'zh' ? '物流公司' : 'Carrier','text',item.shippingCarrier || ''],
+    ['trackingNo',lang === 'zh' ? '物流追踪单号' : 'Tracking number','text',item.trackingNo && item.trackingNo !== item.shipping ? item.trackingNo : ''],
     ['preparedBy',t('preparedBy'),'text',item.preparedBy || user?.name || ''],
     ['notes',lang === 'zh' ? '备注' : 'Notes','textarea',item.notes || '',null,'wide']
   ];
@@ -9422,11 +9432,8 @@ function openSalesOrder(id) {
     id ? (lang === 'zh' ? '编辑零售/批发订单' : 'Edit Sales Order') : (lang === 'zh' ? '新增零售/批发订单' : 'New Sales Order'),
     formHtml(fields.slice(0, 3)) + partyFields + formHtml(fields.slice(3)) + lineTable + portalOrderConversationHtml(item),
     () => {
-      const data = numeric(readForm(['date','branchId','type','customer','recipientName','customerPhone','customerEmail','customerAddress','salesRep','status','paid','paymentMethod','shippingTracking','preparedBy','notes']), ['paid']);
+      const data = numeric(readForm(['date','branchId','type','portalCustomerId','customer','recipientName','customerPhone','customerEmail','customerAddress','salesRep','status','paid','paymentMethod','shipping','shippingCarrier','trackingNo','preparedBy','notes']), ['paid']);
       data.customerContact = [data.recipientName, data.customerPhone, data.customerEmail].filter(Boolean).join(' · ');
-      data.shipping = String(data.shippingTracking || '').trim();
-      data.trackingNo = data.shipping;
-      delete data.shippingTracking;
       data.items = readSalesOrderLines();
       const first = data.items[0] || {};
       data.item = first.item || '';
@@ -9471,7 +9478,7 @@ function openSalesOrder(id) {
 const portalOrderPendingReplies = new Map();
 
 function portalOrderConversationHtml(order) {
-  if (!order.portalSource) return '';
+  if (!order.portalCustomerId) return '';
   const pending = portalOrderPendingReplies.get(order.id) || [];
   const messages = [...(order.portalMessages || []), ...pending].map(message => `<div class="portal-order-message ${message.sender === 'staff' ? 'staff' : 'customer'} ${message.pending ? 'pending' : ''} ${message.failed ? 'failed' : ''}"><strong>${escapeHtml(message.senderName || (message.sender === 'staff' ? '客服' : '客户'))}</strong><div>${escapeHtml(message.text || '')}</div>${message.attachment ? `<a href="${escapeHtml(message.attachment.url || '')}" target="_blank">📎 ${escapeHtml(message.attachment.name || '附件')}</a>` : ''}<small>${message.pending ? (lang === 'zh' ? '正在发送…' : 'Sending…') : message.failed ? `${lang === 'zh' ? '发送失败' : 'Not sent'} · <button class="portal-message-retry" type="button" onclick="sendPortalOrderReply('${order.id}','${escapeHtml(message.clientMessageId)}')">${lang === 'zh' ? '重试' : 'Retry'}</button>` : formatAppDateTime(message.createdAt)}</small></div>`).join('');
   const receipts = (order.portalAttachments || []).map(file => `<a href="${escapeHtml(file.url || '')}" target="_blank">📎 ${escapeHtml(file.name || '客户附件')}</a>`).join(' ');
