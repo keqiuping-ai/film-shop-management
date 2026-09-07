@@ -5859,15 +5859,41 @@ async function importPortalReferenceCustomers(file) {
   } catch (err) { alert(err.message || String(err)); }
 }
 
+function portalTierProductPrice(tierId, product) {
+  const tiers = state.portalPriceTiers || [];
+  const selectedTier = tiers.find(tier => tier.id === (tierId || 'standard'));
+  const standardTier = tiers.find(tier => tier.id === 'standard');
+  const selectedPrice = Number(selectedTier?.prices?.[product.sku]);
+  if (Number.isFinite(selectedPrice) && selectedPrice > 0) return selectedPrice;
+  const wholesalePrice = Number(standardTier?.prices?.[product.sku]);
+  if (Number.isFinite(wholesalePrice) && wholesalePrice > 0) return wholesalePrice;
+  const productWholesale = Number(product.wholesale);
+  return Number.isFinite(productWholesale) && productWholesale > 0 ? productWholesale : null;
+}
+
+function portalTierPriceLabel(tierId, product) {
+  const price = portalTierProductPrice(tierId, product);
+  return price === null ? (lang === 'zh' ? '尚未定价' : 'Not priced') : currency.format(price);
+}
+
 function portalPriceRows(customer) {
-  return (state.products || []).map(product => `<tr><td>${escapeHtml(product.sku)}</td><td>${escapeHtml(product.name || '')}</td><td>${currency.format(Number(product.price || 0))}</td><td>${currency.format(Number(product.wholesale || 0))}</td><td><input class="portal-price-input" data-sku="${escapeHtml(product.sku)}" type="number" min="0" step="0.01" value="${customer.prices?.[product.sku] ?? ''}" placeholder="${lang === 'zh' ? '未设置' : 'Not set'}"></td></tr>`).join('');
+  const tierId = customer.priceTier || 'standard';
+  return (state.products || []).map(product => `<tr><td>${escapeHtml(product.sku)}</td><td>${escapeHtml(product.name || '')}</td><td class="portal-inherited-price" data-sku="${escapeHtml(product.sku)}">${portalTierPriceLabel(tierId, product)}</td><td><input class="portal-price-input" data-sku="${escapeHtml(product.sku)}" type="number" min="0" step="0.01" value="${customer.prices?.[product.sku] ?? ''}" placeholder="${lang === 'zh' ? '留空则使用等级价' : 'Blank uses tier price'}"></td></tr>`).join('');
+}
+
+function updatePortalCustomerTierPreview(tierId) {
+  const productsBySku = new Map((state.products || []).map(product => [String(product.sku), product]));
+  document.querySelectorAll('.portal-inherited-price').forEach(cell => {
+    const product = productsBySku.get(String(cell.dataset.sku || ''));
+    if (product) cell.textContent = portalTierPriceLabel(tierId, product);
+  });
 }
 
 function openPortalCustomer(id = '') {
   const customer = (state.portalCustomers || []).find(item => item.id === id) || { businessName: '', contactName: '', account: '', email: '', phone: '', address: '', salesRep: '', status: '正常', note: '', active: true, priceTier: 'standard', prices: {} };
   const priceTierOptions=(state.portalPriceTiers||[]).map(tier=>[tier.id,tier.name]);
   const canEditPortalPricing = hasPerm('portalPricingEdit');
-  const pricingFields = canEditPortalPricing ? `<label class="wide">${lang==='zh'?'价格等级':'Price tier'}<select id="portalPriceTier">${priceTierOptions.map(([value,label])=>`<option value="${escapeHtml(value)}" ${value===(customer.priceTier||'standard')?'selected':''}>${escapeHtml(label)}</option>`).join('')}</select></label><div class="wide portal-price-editor"><h4>${lang === 'zh' ? '客户特殊协议价' : 'Customer-specific SKU prices'}</h4><p class="note">${lang === 'zh' ? '这里只填写例外价格；其他型号自动继承客户所属价格等级。' : 'Only enter exceptions; other SKUs inherit the assigned price tier.'}</p><div class="table-wrap"><table><thead><tr><th>SKU</th><th>${t('productName')}</th><th>${t('retailPrice')}</th><th>${t('wholesalePrice')}</th><th>${lang === 'zh' ? '特殊协议价' : 'Customer override'}</th></tr></thead><tbody>${portalPriceRows(customer)}</tbody></table></div></div>` : `<div class="wide portal-credential-tools"><span class="note">${lang === 'zh' ? '您可以管理客户账号和密码，但没有修改价格等级及协议价的权限。' : 'You may manage customer credentials, but cannot change price tiers or contract pricing.'}</span></div>`;
+  const pricingFields = canEditPortalPricing ? `<label class="wide">${lang==='zh'?'价格等级（决定该客户的整套价格）':'Price tier (sets this customer’s full price list)'}<select id="portalPriceTier" onchange="updatePortalCustomerTierPreview(this.value)">${priceTierOptions.map(([value,label])=>`<option value="${escapeHtml(value)}" ${value===(customer.priceTier||'standard')?'selected':''}>${escapeHtml(label)}</option>`).join('')}</select><span class="note">${lang === 'zh' ? '选择批发、首次进货、铜牌、银牌、金牌或超级战略合作伙伴等级后，所有 SKU 自动使用该等级价格。' : 'Choose a tier and every SKU automatically uses that tier’s price list.'}</span></label><div class="wide portal-price-editor"><h4>${lang === 'zh' ? '客户特殊协议价' : 'Customer-specific SKU prices'}</h4><p class="note">${lang === 'zh' ? '这里只填写少数例外价格；留空的型号自动使用上面所选等级价。' : 'Only enter exceptional SKU prices; blank entries automatically use the selected tier price.'}</p><div class="table-wrap"><table><thead><tr><th>SKU</th><th>${t('productName')}</th><th>${lang === 'zh' ? '所选等级价' : 'Selected tier price'}</th><th>${lang === 'zh' ? '特殊协议价（选填）' : 'Customer override (optional)'}</th></tr></thead><tbody>${portalPriceRows(customer)}</tbody></table></div></div>` : `<div class="wide portal-credential-tools"><span class="note">${lang === 'zh' ? '您可以管理客户账号和密码，但没有修改价格等级及协议价的权限。' : 'You may manage customer credentials, but cannot change price tiers or contract pricing.'}</span></div>`;
   const body = formHtml([
     ['portalBusinessName', lang === 'zh' ? '客户/公司名称' : 'Business name', 'text', customer.businessName], ['portalContactName', lang === 'zh' ? '联系人' : 'Contact', 'text', customer.contactName], ['portalAccount', lang === 'zh' ? '登录账号' : 'Login account', 'text', customer.account],
     ['portalEmail', t('email'), 'text', customer.email], ['portalPhone', lang === 'zh' ? '电话' : 'Phone', 'text', customer.phone], ['portalSalesRep', lang === 'zh' ? '负责业务员' : 'Sales rep', 'text', customer.salesRep],
