@@ -68,6 +68,9 @@
     ['SIGN OUT','ログアウト','로그아웃','CERRAR SESIÓN','退出登录'],
     ['MY ORDERS','注文履歴','내 주문','MIS PEDIDOS','我的订单'],
     ['MY ACCOUNT','アカウント','내 계정','MI CUENTA','我的账户'],
+    ['CHOOSE FILE','ファイルを選択','파일 선택','SELECCIONAR ARCHIVO','选择文件'],
+    ['NO FILE SELECTED','ファイル未選択','선택된 파일 없음','NINGÚN ARCHIVO SELECCIONADO','未选择文件'],
+    ['FILES SELECTED','個のファイルを選択','개 파일 선택됨','ARCHIVOS SELECCIONADOS','个文件已选择'],
     ['← 返回产品分类','← 製品カテゴリーへ','← 제품 카테고리','← VOLVER A CATEGORÍAS','← 返回产品分类'],
     ['经销商登录','販売店ログイン','딜러 로그인','INICIAR SESIÓN','经销商登录'],
     ['PPF 产品订购页','PPF製品発注','PPF 제품 주문','Pedido de productos PPF','PPF 产品订购页'],
@@ -263,7 +266,7 @@
   function strictFallback(value) {
     const text = normalize(value);
     if (!text) return value;
-    if (locale !== 'zh-CN' && /[\u3400-\u9fff]/.test(text)) return dictionaries[locale].get(normalize('An error occurred. Please try again or contact your sales representative.'));
+    if (locale !== 'zh-CN' && /[\u3400-\u9fff]/.test(text)) return 'Translation unavailable';
     return value;
   }
   function translateValue(value) {
@@ -295,8 +298,8 @@
     if (!root || root.closest?.('.quad-language-picker')) return;
     const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
     const nodes=[]; while(walker.nextNode()) nodes.push(walker.currentNode);
-    nodes.forEach(node => { if (!node.parentElement?.closest('script,style,.quad-language-picker')) node.nodeValue=translateValue(node.nodeValue); });
-    root.querySelectorAll?.('[placeholder],[title],[aria-label]').forEach(el => ['placeholder','title','aria-label'].forEach(a => { if(el.hasAttribute(a)) el.setAttribute(a,translateValue(el.getAttribute(a))); }));
+    nodes.forEach(node => { if (!node.parentElement?.closest('script,style,.quad-language-picker,[data-i18n-user-content]')) node.nodeValue=translateValue(node.nodeValue); });
+    root.querySelectorAll?.('[placeholder],[title],[aria-label]').forEach(el => { if(el.closest('[data-i18n-user-content]'))return; ['placeholder','title','aria-label'].forEach(a => { if(el.hasAttribute(a)) el.setAttribute(a,translateValue(el.getAttribute(a))); }); });
   }
   function picker() {
     const label=document.createElement('label'); label.className='quad-language-picker';
