@@ -897,6 +897,59 @@ button {
     padding: 10px;
   }
 }
+
+.sales-workflow {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid #dbe5e8;
+  border-radius: 16px;
+  background: #fff;
+}
+.sales-workflow ol {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.sales-workflow li {
+  display: grid;
+  grid-template-columns: 25px minmax(0, 1fr);
+  gap: 7px;
+  align-items: center;
+  min-height: 58px;
+  padding: 8px;
+  border-radius: 11px;
+  background: #f3f8f9;
+}
+.sales-workflow li i {
+  display: grid;
+  place-items: center;
+  width: 25px;
+  height: 25px;
+  border-radius: 9px;
+  background: #087f90;
+  color: #fff;
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 800;
+}
+.sales-workflow li span {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+.sales-workflow li b {
+  font-size: 12px;
+  line-height: 1.25;
+}
+.sales-workflow li small {
+  color: #71808a;
+  font-size: 10px;
+  line-height: 1.3;
+}
 .sales-tool-customer{padding:20px;border-radius:20px;color:#fff;background:linear-gradient(145deg,#087789,#0796a6)}.sales-tool-customer h2{margin:0 0 5px;font-size:24px}.sales-tool-customer span{color:#d6f2f4}.sales-tool-card{display:grid;gap:12px;padding:18px;border:1px solid #dbe5e8;border-radius:20px;background:#fff}.sales-tool-card h3{display:flex;justify-content:space-between;align-items:center;margin:0;font-size:19px}.sales-tool-card h3 em{padding:5px 9px;border-radius:9px;color:#78858c;background:#f0f3f4;font-size:12px;font-style:normal}.sales-tool-card p{margin:0;color:#68777e}.sales-photo-slot{position:relative;display:grid;place-items:center;width:112px;height:112px;border:1.5px dashed #77bcc5;border-radius:15px;color:#07899a;background:#f0fbfc;font-size:30px}.sales-photo-slot b{font-size:13px}.sales-photo-slot input{position:absolute;inset:0;opacity:0}.sales-tool-ok{padding:11px;border-radius:12px;color:#23744e;background:#edf9f2}.sales-complete-summary{padding:18px;border:1px solid #31515a;border-radius:20px;background:#10272d;color:#eef8fa}.sales-complete-summary h3{display:flex;justify-content:space-between}.sales-complete-summary h3 b{color:#65d3a1;font-size:13px}.sales-complete-summary>div{display:grid;grid-template-columns:1fr 1fr;gap:8px}.sales-complete-summary p{display:flex;align-items:center;gap:8px;margin:0;padding:12px;border-radius:12px;background:#102f25}.sales-complete-summary i{display:grid;place-items:center;width:24px;height:24px;border-radius:7px;color:#fff;background:#35a16f;font-style:normal}
 .sales-page:has(.sales-complete-summary){min-height:100dvh;color:#edf7f8;background:#0d242a}.sales-page:has(.sales-complete-summary) .sales-page-head{border-color:#29464e;color:#edf7f8;background:#0d242a}.sales-page:has(.sales-complete-summary) .sales-page-head>button{color:#edf7f8}.sales-page:has(.sales-complete-summary) .sales-tool-customer{padding:22px;background:#32986e}.sales-page:has(.sales-complete-summary) .sales-tool-card{border-color:#31515a;color:#edf7f8;background:#102a31}.sales-page:has(.sales-complete-summary) .sales-tool-card textarea{border-color:#18373e;color:#edf7f8;background:#0d2227}.sales-page:has(.sales-complete-summary) .sales-page-primary{background:#32986e;border-color:#32986e}
 .sales-talk-recorder{display:grid;gap:13px;padding:16px;border:1px solid #d9c7f6;border-radius:20px;background:#f8f1ff}.sales-talk-recorder>div{display:flex;align-items:center;justify-content:space-between;gap:10px}.sales-talk-recorder>div:last-child{display:grid;grid-template-columns:1fr 1fr}.sales-talk-recorder b{color:#8551d0}.sales-talk-wave{position:relative;display:grid;place-items:center;min-height:68px;border-radius:15px;color:#8551d0;background:#fff;font-size:28px;letter-spacing:2px}.sales-talk-wave input{position:absolute;inset:0;opacity:0}.sales-ai-analysis{display:grid;gap:0}.sales-ai-analysis label{display:grid;grid-template-columns:76px 1fr;align-items:start;gap:8px;padding:8px 0;border-bottom:1px solid #e5ecef;color:#07899a;font-weight:800}.sales-ai-analysis label:last-child{border-bottom:0}.sales-ai-analysis textarea{min-height:54px;padding:8px;border:0;background:#f6f9fa;color:#27343a;font-weight:500}
