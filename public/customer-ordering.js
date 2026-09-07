@@ -34,49 +34,6 @@ window.closeOrderCategoryNotice = function () {
   document.getElementById('orderCategoryNotice')?.classList.add('hidden');
 };
 
-const orderCenterChinese = {
-  'DEALER ORDERING CENTER': '经销商订货中心',
-  '← BRAND HOME': '← 品牌首页',
-  'DEALER LOGIN': '经销商登录',
-  'QUAD FILM · PROFESSIONAL DEALER PORTAL': 'QUAD FILM · 专业经销商平台',
-  'Select a Product Category': '选择产品分类',
-  'Choose a category to view its product series, specifications, colors, sizes, and dealer ordering options.': '选择一个产品类别，查看相应的产品系列、规格、颜色、尺寸和订货选项。',
-  'ORDERING CENTER PREVIEW': '订货中心页面预览',
-  'Product pricing, payment, and live inventory are not connected yet.': '产品价格、付款功能和实时库存暂未连接。',
-  '01 · AUTOMOTIVE PROTECTION': '01 · 汽车漆面保护',
-  'Paint Protection Film': '漆面保护膜 PPF',
-  'Clear, matte, and specialty-effect PPF for premium automotive applications.': '适用于高端汽车的透明、哑光及特殊效果漆面保护膜。',
-  'ENTER PPF CATALOG': '进入 PPF 产品目录',
-  '02 · COLOR & FINISH': '02 · 色彩与质感',
-  'Color Change Wrap': '汽车改色膜',
-  'Browse colors, finishes, textures, and product codes for complete vehicle transformations.': '按颜色、表面效果、纹理和产品编号选购整车改色产品。',
-  'ENTER COLOR WRAP CATALOG': '进入改色膜产品目录',
-  '03 · SOLAR CONTROL': '03 · 隔热与太阳能控制',
-  'Window Film & Tesla Roof Film': '汽车窗膜与特斯拉车顶膜',
-  'Automotive heat rejection, UV protection, privacy, and panoramic roof solutions.': '提供汽车隔热、防紫外线、隐私保护及全景天幕解决方案。',
-  'ENTER WINDOW FILM CATALOG': '进入窗膜产品目录',
-  '04 · BUILDING PERFORMANCE': '04 · 建筑性能提升',
-  'Architectural Film': '建筑膜',
-  'Heat-control, privacy, decorative, safety, and security films for residential and commercial glass.': '适用于住宅和商业玻璃的隔热、隐私、装饰、安全及防爆膜。',
-  'ENTER ARCHITECTURAL CATALOG': '进入建筑膜产品目录',
-  '05 · INTERIOR RENOVATION': '05 · 室内空间翻新',
-  'Interior Surface Film': '家居膜',
-  'Decorative and protective finishes for countertops, cabinetry, furniture, and walls.': '适用于台面、橱柜、家具和墙面的装饰与保护贴膜。',
-  'ENTER INTERIOR FILM CATALOG': '进入家居膜产品目录',
-  '06 · MARINE PROTECTION': '06 · 船艇表面保护',
-  'Yacht Protection Film': '游艇膜',
-  'Marine-focused PPF for gelcoat, high-gloss paint, exterior surfaces, and yacht interiors.': '适用于胶衣、高光漆面、船体外部及游艇内饰的专业保护膜。',
-  'ENTER YACHT FILM CATALOG': '进入游艇膜产品目录',
-  'NEXT PAGE': '下一页',
-  'This product catalog will be designed after the ordering center homepage is approved.': '订货中心首页确认后，我们将开始设计这个类别的产品目录。',
-  'CONTINUE REVIEWING': '继续检查本页'
-};
-
-document.querySelectorAll('#orderCenter small, #orderCenter button, #orderCenter span, #orderCenter h1, #orderCenter h2, #orderCenter p, #orderCenter b').forEach(element => {
-  const translated = orderCenterChinese[element.textContent.trim()];
-  if (translated) element.textContent = translated;
-});
-
 document.body.insertAdjacentHTML('beforeend', `
   <section id="ppfCatalog" class="ppf-catalog hidden">
     <header class="order-center-header">
@@ -481,25 +438,42 @@ window.previewWindowFilmCheckout=function(){const preview=document.getElementByI
 document.body.insertAdjacentHTML('beforeend',`<section id="dealerCheckout" class="dealer-checkout hidden"><header class="order-center-header"><button class="order-center-brand" onclick="closeDealerCheckout()"><img src="/quad-film-icon.png" alt="QUAD FILM"><span><b>QUAD FILM</b><small>统一结账</small></span></button><div><button class="order-home-button" onclick="closeDealerCheckout()">← 返回继续选货</button><button class="order-login-button" onclick="showLogin()">经销商登录</button></div></header><main class="checkout-main"><section class="checkout-title"><span>QUAD FILM · 经销商采购</span><h1>核对订单并付款</h1><p>不同产品分类的商品集中在这里统一确认。当前为付款页面设计预览，不会产生真实订单或扣款。</p></section><div class="checkout-layout"><div class="checkout-left"><section class="checkout-card"><header><div><span>01</span><h2>订单商品</h2></div><b id="checkoutItemCount">0 项</b></header><div id="checkoutItems"></div><button class="checkout-add-more" onclick="showOrderCenter()">＋ 继续添加产品</button></section><section class="checkout-card"><header><div><span>02</span><h2>收货信息</h2></div></header><div class="checkout-fields"><label class="wide">公司 / 门店名称<input value="Eric · QUaD Dealer" autocomplete="organization"></label><label>收货人<input value="Eric" autocomplete="name"></label><label>联系电话<input type="tel" placeholder="美国手机号码" autocomplete="tel"></label><label class="wide">街道地址<input placeholder="Street address" autocomplete="street-address"></label><label>城市<input placeholder="City" autocomplete="address-level2"></label><label>州<select autocomplete="address-level1"><option>NV · Nevada</option><option>CA · California</option><option>AZ · Arizona</option><option>TX · Texas</option></select></label><label>邮编<input inputmode="numeric" placeholder="ZIP Code" autocomplete="postal-code"></label></div></section><section class="checkout-card"><header><div><span>03</span><h2>配送方式</h2></div></header><label class="checkout-choice selected"><input type="radio" name="shipping" value="delivery" checked onchange="updateCheckoutTotals()"><i></i><span><b>标准商业配送</b><small>预计 3–5 个工作日 · 运费确认后计入</small></span><strong>待确认</strong></label><label class="checkout-choice"><input type="radio" name="shipping" value="pickup-las-vegas" onchange="updateCheckoutTotals()"><i></i><span><b>拉斯维加斯仓库自提</b><small>备货完成后通知取货 · 以拉斯维加斯仓库存为准</small></span><strong>$0</strong></label><label class="checkout-choice"><input type="radio" name="shipping" value="pickup-los-angeles" onchange="updateCheckoutTotals()"><i></i><span><b>洛杉矶仓库自提</b><small>备货完成后通知取货 · 以洛杉矶仓库存为准</small></span><strong>$0</strong></label></section><section class="checkout-card"><header><div><span>04</span><h2>付款方式</h2></div><em>安全支付</em></header><label class="checkout-choice selected"><input type="radio" name="payment" checked><i></i><span><b>信用卡 / 借记卡</b><small>Visa · Mastercard · American Express</small></span></label><div class="checkout-card-fields"><label class="wide">持卡人姓名<input placeholder="Name on card" autocomplete="cc-name"></label><label class="wide">卡号<div class="checkout-fake-input">••••&nbsp; ••••&nbsp; ••••&nbsp; •••• <span>VISA</span></div></label><label>有效期<input placeholder="MM / YY" autocomplete="cc-exp"></label><label>安全码<input placeholder="CVC" autocomplete="cc-csc"></label></div><p class="checkout-security">正式接入 Stripe 后，完整卡号将由支付平台安全处理，QUaD 系统不保存完整信用卡资料。</p></section><label class="checkout-notes">订单备注<textarea placeholder="填写送货要求、PO 编号或其他说明（选填）"></textarea></label></div><aside class="checkout-summary"><span>订单汇总</span><h2>付款明细</h2><dl><div><dt>商品小计</dt><dd id="checkoutSubtotal">登录后显示</dd></div><div><dt>配送费</dt><dd id="checkoutShippingFee">待确认</dd></div><div><dt>销售税</dt><dd>按收货或自提地址计算</dd></div></dl><div class="checkout-total"><span>应付总额</span><b>确认后显示</b></div><button type="button" onclick="previewCheckoutSubmit()">确认订单并付款</button><small>点击后仅查看设计提示，不会扣款。</small><div class="checkout-assurance"><b>✓ 库存确认后付款</b><b>✓ 美国信用卡安全支付</b><b>✓ 订单与物流统一跟踪</b></div></aside></div></main></section>`);
 
 const dealerCheckout=document.getElementById('dealerCheckout');
-dealerCheckout.querySelector('.checkout-title p').textContent='登录后由服务器核定客户协议价并检查仓库库存，随后进入 Stripe 安全付款页面。';
+dealerCheckout.querySelector('.checkout-title p').textContent='After sign-in, the server verifies your dealer pricing and warehouse inventory before opening Stripe Secure Checkout.';
 dealerCheckout.querySelector('.checkout-card-fields')?.remove();
-dealerCheckout.querySelector('.checkout-security').textContent='点击付款后进入 Stripe 安全页面填写银行卡号、有效期、CVC 和账单地址；也可选择安全保存卡片，方便下次付款。Apple Pay 会在符合条件的 Apple 设备上自动显示。';
+dealerCheckout.querySelector('.checkout-security').textContent='Card number, expiration date, CVC, and billing address are entered only on Stripe Secure Checkout. Eligible Apple devices will automatically offer Apple Pay.';
 const checkoutAddressFields=dealerCheckout.querySelectorAll('.checkout-fields input,.checkout-fields select');
 ['checkoutCompany','checkoutRecipient','checkoutPhone','checkoutStreet','checkoutCity','checkoutState','checkoutPostalCode'].forEach((id,index)=>{if(checkoutAddressFields[index])checkoutAddressFields[index].id=id});
 const checkoutAddressBox=dealerCheckout.querySelector('.checkout-fields');
-checkoutAddressBox?.insertAdjacentHTML('afterend','<p id="checkoutAddressSaveStatus" class="checkout-security">登录后，收货信息会自动保存到客户账户，下次结账自动填写。</p>');
+checkoutAddressBox?.insertAdjacentHTML('afterend','<p id="checkoutAddressSaveStatus" class="checkout-security">After sign-in, delivery details are saved to your account and filled in automatically next time.</p>');
 const deliveryChoice=dealerCheckout.querySelector('input[name="shipping"][value="delivery"]')?.closest('.checkout-choice');
 if(deliveryChoice){
-  deliveryChoice.querySelector('b').textContent='发货（快递 / 物流运输）';
-  deliveryChoice.querySelector('small').textContent='运费由客服根据地址、重量和运输方式确认';
-  deliveryChoice.querySelector('strong').textContent='待确认';
+  deliveryChoice.querySelector('b').textContent='SHIPMENT (PARCEL / FREIGHT)';
+  deliveryChoice.querySelector('small').textContent='Customer service confirms shipping based on address, weight, and service level';
+  deliveryChoice.querySelector('strong').textContent='PENDING';
 }
-dealerCheckout.querySelector('.checkout-summary button').textContent='前往 Stripe 安全付款';
-dealerCheckout.querySelector('.checkout-summary>small').textContent='登录后自动确认支付环境。';
+dealerCheckout.querySelector('.checkout-summary button').textContent='CONTINUE TO STRIPE SECURE CHECKOUT';
+dealerCheckout.querySelector('.checkout-summary>small').textContent='Your payment environment is confirmed automatically after sign-in.';
 const checkoutSummaryRows=dealerCheckout.querySelector('.checkout-summary dl');
 if(checkoutSummaryRows){
-  checkoutSummaryRows.innerHTML=`<div><dt>批发价</dt><dd id="checkoutListSubtotal">登录后显示</dd></div><div class="checkout-tier-row"><dt>客户价格等级</dt><dd id="checkoutCustomerTier">登录后识别</dd></div><div class="checkout-saving-row"><dt>本单专属优惠</dt><dd id="checkoutDiscount">登录后计算</dd></div><div><dt>折后商品小计</dt><dd id="checkoutSubtotal">登录后显示</dd></div><div><dt>配送费</dt><dd id="checkoutShippingFee">待确认</dd></div><div><dt>销售税</dt><dd>按收货或自提地址计算</dd></div>`;
+  checkoutSummaryRows.innerHTML=`<div><dt>Wholesale Price</dt><dd id="checkoutListSubtotal">Shown after sign-in</dd></div><div class="checkout-tier-row"><dt>Dealer Level</dt><dd id="checkoutCustomerTier">Identified after sign-in</dd></div><div class="checkout-saving-row"><dt>Your Savings</dt><dd id="checkoutDiscount">Calculated after sign-in</dd></div><div><dt>Discounted Subtotal</dt><dd id="checkoutSubtotal">Shown after sign-in</dd></div><div><dt>Shipping</dt><dd id="checkoutShippingFee">Pending</dd></div><div><dt>Sales Tax</dt><dd>Calculated from the delivery or pickup location</dd></div>`;
 }
+
+const checkoutEnglishText=new Map([
+  ['统一结账','UNIFIED CHECKOUT'],['← 返回继续选货','← CONTINUE SHOPPING'],['经销商登录','DEALER LOGIN'],
+  ['QUAD FILM · 经销商采购','QUAD FILM · DEALER ORDERING'],['核对订单并付款','REVIEW ORDER & PAY'],
+  ['订单商品','ORDER ITEMS'],['0 项','0 ITEMS'],['＋ 继续添加产品','＋ ADD MORE PRODUCTS'],['收货信息','DELIVERY INFORMATION'],
+  ['公司 / 门店名称','COMPANY / STORE NAME'],['收货人','RECIPIENT'],['联系电话','PHONE'],['街道地址','STREET ADDRESS'],['城市','CITY'],['州','STATE'],['邮编','ZIP CODE'],
+  ['配送方式','DELIVERY METHOD'],['拉斯维加斯仓库自提','LAS VEGAS WAREHOUSE PICKUP'],['洛杉矶仓库自提','LOS ANGELES WAREHOUSE PICKUP'],
+  ['备货完成后通知取货 · 以拉斯维加斯仓库存为准','Pickup notification after preparation · Subject to Las Vegas inventory'],
+  ['备货完成后通知取货 · 以洛杉矶仓库存为准','Pickup notification after preparation · Subject to Los Angeles inventory'],
+  ['付款方式','PAYMENT METHOD'],['安全支付','SECURE PAYMENT'],['信用卡 / 借记卡','CREDIT / DEBIT CARD'],['订单备注','ORDER NOTES'],
+  ['订单汇总','ORDER SUMMARY'],['付款明细','PAYMENT DETAILS'],['应付总额','TOTAL DUE'],['确认后显示','CONFIRMED AT CHECKOUT'],
+  ['✓ 库存确认后付款','✓ PAY AFTER INVENTORY VERIFICATION'],['✓ 美国信用卡安全支付','✓ SECURE U.S. CARD PAYMENT'],['✓ 订单与物流统一跟踪','✓ UNIFIED ORDER & SHIPPING TRACKING']
+]);
+const checkoutWalker=document.createTreeWalker(dealerCheckout,NodeFilter.SHOW_TEXT);
+while(checkoutWalker.nextNode()){const node=checkoutWalker.currentNode,key=node.nodeValue.trim();if(checkoutEnglishText.has(key))node.nodeValue=node.nodeValue.replace(key,checkoutEnglishText.get(key))}
+dealerCheckout.querySelector('input[autocomplete="tel"]')?.setAttribute('placeholder','U.S. phone number');
+dealerCheckout.querySelector('.checkout-notes textarea')?.setAttribute('placeholder','Delivery instructions, PO number, or other notes (optional)');
 
 function checkoutPreviewItems(){
   const items=[];
@@ -516,34 +490,34 @@ async function saveCheckoutDeliveryProfile(showStatus=true){
   if(!token||!state)return;
   const status=document.getElementById('checkoutAddressSaveStatus');
   try{
-    if(showStatus&&status)status.textContent='正在保存收货信息…';
+    if(showStatus&&status)status.textContent='Saving delivery information…';
     const result=await api('/api/customer/delivery-profile',{method:'POST',body:JSON.stringify(checkoutDeliveryProfile())});
     state.customer.deliveryProfile=result.deliveryProfile;
-    if(status)status.textContent='✓ 收货信息已保存，下次结账将自动填写。';
-  }catch(error){if(status)status.textContent=`收货信息暂未保存：${error.message}`;throw error}
+    if(status)status.textContent='✓ Delivery information saved for your next checkout.';
+  }catch(error){if(status)status.textContent=`Delivery information could not be saved: ${error.message}`;throw error}
 }
 checkoutAddressFields.forEach(field=>field.addEventListener('change',()=>{clearTimeout(checkoutAddressSaveTimer);checkoutAddressSaveTimer=setTimeout(()=>saveCheckoutDeliveryProfile().catch(()=>{}),250)}));
-function dealerTierLabel(){const labels={standard:'批发价',bronze:'铜牌经销商价',silver:'银牌经销商价',gold:'金牌客户价',strategic:'战略客户价'};return labels[state?.customer?.priceTier]||state?.customer?.priceTierName||'客户协议价'}
+function dealerTierLabel(){const labels={standard:'Wholesale Price',bronze:'Bronze Dealer Price',silver:'Silver Dealer Price',gold:'Gold Dealer Price',strategic:'Strategic Partner Price'};return labels[state?.customer?.priceTier]||state?.customer?.priceTierName||'Dealer Price'}
 function updateStripeEnvironmentLabel(){
   const live=state?.paymentEnvironment==='live';
   const note=dealerCheckout.querySelector('.checkout-summary>small');
   const intro=dealerCheckout.querySelector('.checkout-title p');
-  if(note)note.textContent=live?'当前连接 Stripe 正式环境，确认付款将产生真实扣款。':'当前连接 Stripe 测试环境，不会产生真实扣款。';
-  if(intro)intro.textContent=`登录后由服务器核定客户协议价并检查仓库库存，随后进入 Stripe ${live?'正式':'测试'}安全付款页面。`;
+  if(note)note.textContent=live?'Stripe live mode is active. Confirming payment will create a real charge.':'Stripe test mode is active. No real charge will be made.';
+  if(intro)intro.textContent=`After sign-in, the server verifies your dealer pricing and warehouse inventory before opening Stripe ${live?'Live':'Test'} Secure Checkout.`;
 }
 function dealerPriceHtml(item){
-  if(!token||!state)return '<span class="checkout-price pending">登录后显示客户价</span>';
+  if(!token||!state)return '<span class="checkout-price pending">Sign in to view your price</span>';
   const product=dealerPriceForSku(item.sku);
-  if(!product||product.price===null)return '<span class="checkout-price pending">由服务器核价</span>';
+  if(!product||product.price===null)return '<span class="checkout-price pending">Server price verification</span>';
   const list=Number(product.listPrice),price=Number(product.price),hasList=Number.isFinite(list)&&list>0;
   const discount=hasList&&price<list?Math.round(price/list*100):100;
-  return `<span class="checkout-price">${hasList?`<del>标准价 $${list.toFixed(2)}</del>`:''}<small>${esc(dealerTierLabel())}${hasList&&price<list?` · ${discount/10} 折`:''}</small><b>折后价 $${price.toFixed(2)}</b></span>`;
+  return `<span class="checkout-price">${hasList?`<del>Wholesale $${list.toFixed(2)}</del>`:''}<small>${esc(dealerTierLabel())}${hasList&&price<list?` · ${discount}% of wholesale`:''}</small><b>Your Price $${price.toFixed(2)}</b></span>`;
 }
 
 window.showDealerCheckout=function(){
   ['landing','login','app','orderCenter','ppfCatalog','colorWrapCatalog','windowFilmCatalog'].forEach(id=>document.getElementById(id)?.classList.add('hidden'));
   const items=checkoutPreviewItems(),container=document.getElementById('checkoutItems');
-  container.innerHTML=items.length?items.map((item,index)=>`<article class="checkout-item" data-sku="${esc(item.sku)}"><span>${String(index+1).padStart(2,'0')}</span><div><small>${esc(item.category)}</small><b>${esc(item.name)}</b><em>${esc(item.detail)}</em></div><label>数量<input type="number" min="1" value="${item.qty}" onchange="updateCheckoutTotals()"></label>${dealerPriceHtml(item)}<button aria-label="删除商品" onclick="this.closest('article').remove();updateCheckoutTotals()">×</button></article>`).join(''):'<p>购物车为空，请返回产品分类选择商品。</p>';
+  container.innerHTML=items.length?items.map((item,index)=>`<article class="checkout-item" data-sku="${esc(item.sku)}"><span>${String(index+1).padStart(2,'0')}</span><div><small>${esc(item.category)}</small><b>${esc(item.name)}</b><em>${esc(item.detail)}</em></div><label>Quantity<input type="number" min="1" value="${item.qty}" onchange="updateCheckoutTotals()"></label>${dealerPriceHtml(item)}<button aria-label="Remove product" onclick="this.closest('article').remove();updateCheckoutTotals()">×</button></article>`).join(''):'<p>Your cart is empty. Return to the product categories to select products.</p>';
   document.getElementById('dealerCheckout').classList.remove('hidden');
   if(state?.customer){
     const saved=state.customer.deliveryProfile||{};
@@ -565,33 +539,33 @@ window.updateCheckoutTotals=function(){
   let listSubtotal=0,agreementSubtotal=0,priced=Boolean(token&&state)&&rows.length>0;
   rows.forEach(row=>{const product=dealerPriceForSku(row.dataset.sku),qty=Math.max(1,Number(row.querySelector('input')?.value||1)),list=Number(product?.listPrice),price=Number(product?.price);if(!product||product.price===null||!Number.isFinite(price)){priced=false;return}agreementSubtotal+=price*qty;listSubtotal+=(Number.isFinite(list)&&list>0?list:price)*qty});
   const savings=Math.max(0,listSubtotal-agreementSubtotal),discount=listSubtotal>0?Math.round(agreementSubtotal/listSubtotal*100):100;
-  document.getElementById('checkoutItemCount').textContent=`${count} 卷`;
-  document.getElementById('checkoutListSubtotal').textContent=priced?`$${listSubtotal.toFixed(2)}`:'服务器核价';
-  document.getElementById('checkoutCustomerTier').textContent=token&&state?dealerTierLabel():'请先登录';
-  document.getElementById('checkoutDiscount').textContent=priced&&savings>0?`${discount/10} 折 · 节省 $${savings.toFixed(2)}`:priced?'按批发价':'服务器计算';
-  document.getElementById('checkoutSubtotal').textContent=priced?`$${agreementSubtotal.toFixed(2)}`:'服务器核价';
-  document.querySelector('#dealerCheckout .checkout-total b').textContent=priced?`$${agreementSubtotal.toFixed(2)} + 税费`:'Stripe 确认';
-  document.getElementById('checkoutShippingFee').textContent=pickup?'$0':'待确认';
-  if(button)button.textContent=pickup?`前往 Stripe ${state?.paymentEnvironment==='live'?'正式':'测试'}安全付款`:'支付商品金额（运费后确认）';
+  document.getElementById('checkoutItemCount').textContent=`${count} ROLL${count===1?'':'S'}`;
+  document.getElementById('checkoutListSubtotal').textContent=priced?`$${listSubtotal.toFixed(2)}`:'Server verification';
+  document.getElementById('checkoutCustomerTier').textContent=token&&state?dealerTierLabel():'Please sign in';
+  document.getElementById('checkoutDiscount').textContent=priced&&savings>0?`${discount}% of wholesale · Save $${savings.toFixed(2)}`:priced?'Wholesale price':'Calculated by server';
+  document.getElementById('checkoutSubtotal').textContent=priced?`$${agreementSubtotal.toFixed(2)}`:'Server verification';
+  document.querySelector('#dealerCheckout .checkout-total b').textContent=priced?`$${agreementSubtotal.toFixed(2)} + tax`:'Confirmed by Stripe';
+  document.getElementById('checkoutShippingFee').textContent=pickup?'$0':'Pending';
+  if(button)button.textContent=pickup?`CONTINUE TO STRIPE ${state?.paymentEnvironment==='live'?'LIVE':'TEST'} CHECKOUT`:'PAY FOR PRODUCTS (SHIPPING CONFIRMED LATER)';
   document.querySelectorAll('input[name="shipping"]').forEach(input=>input.closest('.checkout-choice')?.classList.toggle('selected',input.checked));
 };
 window.previewCheckoutSubmit=async function(){
   const button=document.querySelector('#dealerCheckout .checkout-summary button');
   try{
-    if(!token){window.quadResumeDealerCheckout=true;showLogin();throw new Error('请先使用经销商账号登录，登录后会返回结账页面。')}
+    if(!token){window.quadResumeDealerCheckout=true;showLogin();throw new Error('Please sign in with your dealer account. You will return to checkout after sign-in.')}
     const rows=[...document.querySelectorAll('#checkoutItems .checkout-item')];
-    if(!rows.length)throw new Error('购物车为空，请先选择产品。');
+    if(!rows.length)throw new Error('Your cart is empty. Please select a product first.');
     const grouped=new Map();
     rows.forEach(row=>{const sku=row.dataset.sku?.trim(),qty=Math.max(1,Math.floor(Number(row.querySelector('input')?.value||1)));if(sku)grouped.set(sku,(grouped.get(sku)||0)+qty)});
-    if(!grouped.size)throw new Error('没有可识别的正式 SKU，请返回产品页重新选择型号。');
+    if(!grouped.size)throw new Error('No valid purchasable SKU was found. Return to the product page and select a model again.');
     const fulfillment=document.querySelector('input[name="shipping"]:checked')?.value;
-    if(!['delivery','pickup-las-vegas','pickup-los-angeles'].includes(fulfillment))throw new Error('请选择发货或仓库自提。');
+    if(!['delivery','pickup-las-vegas','pickup-los-angeles'].includes(fulfillment))throw new Error('Select shipment or warehouse pickup.');
     const shippingAddress=fulfillment==='delivery'?checkoutDeliveryProfile():null;
-    if(shippingAddress&&(!shippingAddress.recipient||!shippingAddress.phone||!shippingAddress.street||!shippingAddress.city||!shippingAddress.state||!shippingAddress.postalCode))throw new Error('发货订单请先完整填写收货人、电话、街道、城市、州和邮编。');
+    if(shippingAddress&&(!shippingAddress.recipient||!shippingAddress.phone||!shippingAddress.street||!shippingAddress.city||!shippingAddress.state||!shippingAddress.postalCode))throw new Error('For shipment, enter the recipient, phone, street, city, state, and ZIP code.');
     await saveCheckoutDeliveryProfile(false);
-    button.disabled=true;button.textContent='正在核价并检查库存…';
+    button.disabled=true;button.textContent='VERIFYING PRICE AND INVENTORY…';
     const result=await api('/api/customer/checkout-session',{method:'POST',body:JSON.stringify({requestId:`customer-checkout-${Date.now()}`,items:[...grouped].map(([sku,qty])=>({sku,qty})),fulfillment,shippingAddress,notes:document.querySelector('.checkout-notes textarea')?.value||''})});
-    if(!result.checkoutUrl)throw new Error('Stripe Checkout 未返回安全付款地址。');
+    if(!result.checkoutUrl)throw new Error('Stripe Checkout did not return a secure payment URL.');
     location.href=result.checkoutUrl;
   }catch(error){alert(error.message);if(button){button.disabled=false;updateCheckoutTotals()}}
 };
