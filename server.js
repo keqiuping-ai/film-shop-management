@@ -6928,9 +6928,10 @@ async function api(req, res) {
     if (req.method === 'POST' && messageMatch) {
       const order = (db.salesOrders || []).find(item => item.id === messageMatch[1] && item.portalCustomerId === customer.id);
       if (!order) return send(res, 404, { error: 'Order not found.' });
-      const body = await readBody(req); const text = String(body.text || '').trim().slice(0, 4000); const attachment = body.attachment && String(body.attachment.url || '').includes('/customer-media/') ? body.attachment : null;
+      const body = await readBody(req); const text = String(body.text || '').trim().slice(0, 4000); const attachment = body.attachment && String(body.attachment.url || '').includes('/customer-media/') ? body.attachment : null; const clientMessageId = String(body.clientMessageId || '').trim().slice(0, 120);
       if (!text && !attachment) return send(res, 400, { error: 'Enter a message or upload an attachment.' });
-      order.portalMessages = [...(order.portalMessages || []), { id: id(), sender: 'customer', senderName: customer.contactName || customer.businessName, text, attachment, createdAt: new Date().toISOString() }];
+      if (clientMessageId && (order.portalMessages || []).some(message => message.clientMessageId === clientMessageId)) return send(res, 200, portalCustomerSnapshot(db, customer));
+      order.portalMessages = [...(order.portalMessages || []), { id: id(), clientMessageId, sender: 'customer', senderName: customer.contactName || customer.businessName, text, attachment, createdAt: new Date().toISOString() }];
       order.portalCustomerUnread = true; order.updatedAt = new Date().toISOString(); writeDb(db); notifyDataChanged('customer-portal-message', order.id);
       return send(res, 200, portalCustomerSnapshot(db, customer));
     }
@@ -7379,8 +7380,9 @@ async function api(req, res) {
   if (req.method === 'POST' && portalStaffMessageMatch) {
     if (!canAccess(user, 'ordersEdit')) return send(res, 403, { error: '没有订单编辑权限' });
     const order = db.salesOrders.find(item => item.id === portalStaffMessageMatch[1]); if (!order?.portalCustomerId) return send(res, 404, { error: '找不到客户订单' });
-    const body = await readBody(req); const text = String(body.text || '').trim().slice(0, 4000); if (!text) return send(res, 400, { error: '请输入回复内容' });
-    order.portalMessages = [...(order.portalMessages || []), { id: id(), sender: 'staff', senderName: user.name || user.email, text, createdAt: new Date().toISOString() }]; order.updatedAt = new Date().toISOString(); writeDb(db); notifyDataChanged('portal-staff-message', order.id);
+    const body = await readBody(req); const text = String(body.text || '').trim().slice(0, 4000); const clientMessageId = String(body.clientMessageId || '').trim().slice(0, 120); if (!text) return send(res, 400, { error: '请输入回复内容' });
+    if (clientMessageId && (order.portalMessages || []).some(message => message.clientMessageId === clientMessageId)) return send(res, 200, sanitizeDbForUser(db, user));
+    order.portalMessages = [...(order.portalMessages || []), { id: id(), clientMessageId, sender: 'staff', senderName: user.name || user.email, text, createdAt: new Date().toISOString() }]; order.updatedAt = new Date().toISOString(); writeDb(db); notifyDataChanged('portal-staff-message', order.id);
     return send(res, 200, sanitizeDbForUser(db, user));
   }
 

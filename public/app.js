@@ -9468,20 +9468,41 @@ function openSalesOrder(id) {
   updateSalesOrderLinesTotal();
 }
 
+const portalOrderPendingReplies = new Map();
+
 function portalOrderConversationHtml(order) {
   if (!order.portalSource) return '';
-  const messages = (order.portalMessages || []).map(message => `<div class="portal-order-message ${message.sender === 'staff' ? 'staff' : 'customer'}"><strong>${escapeHtml(message.senderName || (message.sender === 'staff' ? '客服' : '客户'))}</strong><div>${escapeHtml(message.text || '')}</div>${message.attachment ? `<a href="${escapeHtml(message.attachment.url || '')}" target="_blank">📎 ${escapeHtml(message.attachment.name || '附件')}</a>` : ''}<small>${formatAppDateTime(message.createdAt)}</small></div>`).join('');
+  const pending = portalOrderPendingReplies.get(order.id) || [];
+  const messages = [...(order.portalMessages || []), ...pending].map(message => `<div class="portal-order-message ${message.sender === 'staff' ? 'staff' : 'customer'} ${message.pending ? 'pending' : ''} ${message.failed ? 'failed' : ''}"><strong>${escapeHtml(message.senderName || (message.sender === 'staff' ? '客服' : '客户'))}</strong><div>${escapeHtml(message.text || '')}</div>${message.attachment ? `<a href="${escapeHtml(message.attachment.url || '')}" target="_blank">📎 ${escapeHtml(message.attachment.name || '附件')}</a>` : ''}<small>${message.pending ? (lang === 'zh' ? '正在发送…' : 'Sending…') : message.failed ? `${lang === 'zh' ? '发送失败' : 'Not sent'} · <button class="portal-message-retry" type="button" onclick="sendPortalOrderReply('${order.id}','${escapeHtml(message.clientMessageId)}')">${lang === 'zh' ? '重试' : 'Retry'}</button>` : formatAppDateTime(message.createdAt)}</small></div>`).join('');
   const receipts = (order.portalAttachments || []).map(file => `<a href="${escapeHtml(file.url || '')}" target="_blank">📎 ${escapeHtml(file.name || '客户附件')}</a>`).join(' ');
-  return `<div class="wide portal-order-conversation"><h4>${lang === 'zh' ? '客户客户端沟通' : 'Customer portal conversation'}</h4>${order.customerDemand ? `<p><strong>${lang === 'zh' ? '客户需求：' : 'Request: '}</strong>${escapeHtml(order.customerDemand)}</p>` : ''}${receipts ? `<p>${receipts}</p>` : ''}<div class="portal-order-messages">${messages || `<p class="note">${lang === 'zh' ? '暂无留言' : 'No messages'}</p>`}</div><div class="portal-order-reply"><input id="portalOrderReply" placeholder="${lang === 'zh' ? '回复客户…' : 'Reply to customer…'}"><button class="btn" type="button" onclick="sendPortalOrderReply('${order.id}')">${lang === 'zh' ? '发送回复' : 'Send'}</button></div></div>`;
+  return `<div class="wide portal-order-conversation"><h4>${lang === 'zh' ? '客户客户端沟通' : 'Customer portal conversation'}</h4>${order.customerDemand ? `<p><strong>${lang === 'zh' ? '客户需求：' : 'Request: '}</strong>${escapeHtml(order.customerDemand)}</p>` : ''}${receipts ? `<p>${receipts}</p>` : ''}<div class="portal-order-messages">${messages || `<p class="note">${lang === 'zh' ? '暂无留言' : 'No messages'}</p>`}</div><div class="portal-order-reply"><input id="portalOrderReply" placeholder="${lang === 'zh' ? '回复客户…' : 'Reply to customer…'}"><button class="btn" id="portalOrderReplyButton" type="button" onclick="sendPortalOrderReply('${order.id}')">${lang === 'zh' ? '发送回复' : 'Send'}</button></div></div>`;
 }
 
 async function markPortalOrderRead(id) {
   try { state = await api(`/api/portal-orders/${id}/read`, { method: 'POST', body: '{}' }); } catch {}
 }
 
-async function sendPortalOrderReply(id) {
-  const input = document.getElementById('portalOrderReply'); const text = input?.value.trim(); if (!text) return;
-  try { state = await api(`/api/portal-orders/${id}/messages`, { method: 'POST', body: JSON.stringify({ text }) }); closeModal(); render(); openSalesOrder(id); } catch (err) { alert(err.message); }
+async function sendPortalOrderReply(id, retryId = '') {
+  const input = document.getElementById('portalOrderReply');
+  const pending = portalOrderPendingReplies.get(id) || [];
+  const retry = retryId ? pending.find(message => message.clientMessageId === retryId) : null;
+  const text = String(retry?.text || input?.value || '').trim(); if (!text) return;
+  const clientMessageId = retryId || `staff-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+  const message = retry || { clientMessageId, sender: 'staff', senderName: user?.name || user?.email || (lang === 'zh' ? '客服' : 'Customer service'), text };
+  message.pending = true; message.failed = false;
+  if (!retry) pending.push(message);
+  portalOrderPendingReplies.set(id, pending);
+  if (input && !retry) input.value = '';
+  openSalesOrder(id);
+  const button = document.getElementById('portalOrderReplyButton'); if (button) button.disabled = true;
+  try {
+    state = await api(`/api/portal-orders/${id}/messages`, { method: 'POST', body: JSON.stringify({ text, clientMessageId }) });
+    portalOrderPendingReplies.set(id, pending.filter(item => item.clientMessageId !== clientMessageId));
+    closeModal(); render(); openSalesOrder(id);
+  } catch (err) {
+    message.pending = false; message.failed = true;
+    openSalesOrder(id);
+  }
 }
 
 function openShipment(id) {
