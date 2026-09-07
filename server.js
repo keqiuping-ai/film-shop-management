@@ -255,9 +255,10 @@ function syncSalesOrderCustomer(db, order) {
   const businessName = String(order.customer || '').trim().slice(0, 160);
   if (!businessName) return null;
   const contact = String(order.customerContact || '').trim().slice(0, 500);
-  const email = String(contact.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i)?.[0] || '').toLowerCase();
+  const email = String(order.customerEmail || contact.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i)?.[0] || '').trim().toLowerCase().slice(0,160);
   const phoneText = contact.replace(email, '').replace(/^[\s,;|/·-]+|[\s,;|/·-]+$/g, '');
-  const phone = normalizePhone(phoneText).length >= 7 ? phoneText.slice(0, 80) : '';
+  const explicitPhone = String(order.customerPhone || '').trim();
+  const phone = explicitPhone || (normalizePhone(phoneText).length >= 7 ? phoneText.slice(0, 80) : '');
   const phoneKey = normalizedPhone(phone);
   const nameKey = businessName.toLowerCase();
   let customer = (db.portalCustomers || []).find(item => item.id === order.portalCustomerId);
@@ -6821,7 +6822,10 @@ async function api(req, res) {
       const expiresAt = new Date(now.getTime()+CUSTOMER_CHECKOUT_HOLD_MINUTES*60_000).toISOString();
       const fulfillmentBranchIds = fulfillment === 'delivery' ? deliveryBranchIds : [branchId];
       const deliveryWarehouseLabel = fulfillmentBranchIds.length > 1 ? 'Las Vegas and Los Angeles warehouses' : branchId === 'las-vegas' ? 'Las Vegas warehouse' : 'Los Angeles warehouse';
-      const order = { id:orderId, date:dateInTimezone(db.settings?.timezone || 'America/Los_Angeles',0), branchId, fulfillmentBranchIds, warehouse:branchId, type:'wholesale-us', customer:customer.businessName || customer.contactName, customerAddress:fulfillment === 'delivery' ? formattedAddress : String(body.address || customer.address || '').trim().slice(0,500), shippingAddress:fulfillment === 'delivery' ? shippingAddress : null, customerContact:[customer.contactName,customer.phone,customer.email].filter(Boolean).join(' · '), salesRep:customer.salesRep || '', preparedBy:'客户客户端', items, item:items[0].item, qty:items[0].qty, unitPrice:items[0].unitPrice, subtotal, shippingFee:0, shippingFeeStatus:fulfillment === 'delivery' ? 'pending_confirmation' : 'not_applicable', salesTax:0, checkoutTotal:subtotal, fulfillment, status:'待付款', paymentStatus:'pending', shipping:fulfillment === 'delivery' ? `Delivery from ${deliveryWarehouseLabel} · shipping fee pending` : fulfillment === 'pickup-las-vegas' ? 'Las Vegas warehouse pickup' : 'Los Angeles warehouse pickup', trackingNo:'', paid:0, paymentMethod:'Stripe', note:String(body.notes || '').trim().slice(0,2000), customerDemand:String(body.notes || '').trim().slice(0,2000), portalCustomerId:customer.id, portalRequestId:String(body.requestId || `checkout-${orderId}`).slice(0,120), portalSource:true, portalNew:true, paymentTransactions:[], createdAt:now.toISOString(), checkoutExpiresAt:expiresAt };
+      const recipientName = String(fulfillment === 'delivery' ? (shippingAddress.recipient || customer.deliveryProfile?.recipient || customer.contactName || '') : (customer.contactName || '')).trim().slice(0,160);
+      const customerPhone = String(fulfillment === 'delivery' ? (shippingAddress.phone || customer.deliveryProfile?.phone || customer.phone || '') : (customer.phone || '')).trim().slice(0,80);
+      const customerEmail = String(customer.email || '').trim().toLowerCase().slice(0,160);
+      const order = { id:orderId, date:dateInTimezone(db.settings?.timezone || 'America/Los_Angeles',0), branchId, fulfillmentBranchIds, warehouse:branchId, type:'wholesale-us', customer:customer.businessName || customer.contactName, recipientName, customerPhone, customerEmail, customerAddress:fulfillment === 'delivery' ? formattedAddress : String(body.address || customer.address || '').trim().slice(0,500), shippingAddress:fulfillment === 'delivery' ? shippingAddress : null, customerContact:[recipientName,customerPhone,customerEmail].filter(Boolean).join(' · '), salesRep:customer.salesRep || '', preparedBy:'客户客户端', items, item:items[0].item, qty:items[0].qty, unitPrice:items[0].unitPrice, subtotal, shippingFee:0, shippingFeeStatus:fulfillment === 'delivery' ? 'pending_confirmation' : 'not_applicable', salesTax:0, checkoutTotal:subtotal, fulfillment, status:'待付款', paymentStatus:'pending', shipping:fulfillment === 'delivery' ? `Delivery from ${deliveryWarehouseLabel} · shipping fee pending` : fulfillment === 'pickup-las-vegas' ? 'Las Vegas warehouse pickup' : 'Los Angeles warehouse pickup', trackingNo:'', paid:0, paymentMethod:'Stripe', note:String(body.notes || '').trim().slice(0,2000), customerDemand:String(body.notes || '').trim().slice(0,2000), portalCustomerId:customer.id, portalRequestId:String(body.requestId || `checkout-${orderId}`).slice(0,120), portalSource:true, portalNew:true, paymentTransactions:[], createdAt:now.toISOString(), checkoutExpiresAt:expiresAt };
       db.salesOrders.push(order);
       const checkoutAllocations = fulfillment === 'delivery' ? deliveryAllocations : items.map(line=>({ sku:line.item,qty:line.qty,branchId }));
       checkoutAllocations.forEach(line=>db.inventoryReservations.push({ id:id(), orderId, portalCustomerId:customer.id, sku:line.sku, qty:line.qty, branchId:line.branchId, status:'pending_payment', createdAt:now.toISOString(), expiresAt }));
@@ -9977,6 +9981,9 @@ async function api(req, res) {
     }
     if (collection === 'salesOrders') {
       item.salesRep = String(item.salesRep || '').trim();
+      item.recipientName = String(item.recipientName || '').trim().slice(0, 160);
+      item.customerPhone = String(item.customerPhone || '').trim().slice(0, 80);
+      item.customerEmail = String(item.customerEmail || '').trim().toLowerCase().slice(0, 160);
       item.customerAddress = String(item.customerAddress || '').trim().slice(0, 500);
       item.customerContact = String(item.customerContact || '').trim().slice(0, 500);
       item.notes = String(item.notes || '').trim().slice(0, 3000);
@@ -10231,6 +10238,9 @@ async function api(req, res) {
       const previousStatus = String(db[collection][idx].status || '').trim();
       const previousOrder = db[collection][idx];
       next.salesRep = String(next.salesRep || '').trim();
+      next.recipientName = String(next.recipientName || '').trim().slice(0, 160);
+      next.customerPhone = String(next.customerPhone || '').trim().slice(0, 80);
+      next.customerEmail = String(next.customerEmail || '').trim().toLowerCase().slice(0, 160);
       next.customerAddress = String(next.customerAddress || '').trim().slice(0, 500);
       next.customerContact = String(next.customerContact || '').trim().slice(0, 500);
       next.notes = String(next.notes || '').trim().slice(0, 3000);

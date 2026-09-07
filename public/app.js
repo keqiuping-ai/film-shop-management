@@ -9377,8 +9377,20 @@ function updateSalesOrderLinesTotal() {
   if (output) output.textContent = currency.format(total);
 }
 
+function salesOrderPartyDetails(item = {}) {
+  const parts = String(item.customerContact || '').split(/\s*[·;|]\s*/).map(value => value.trim()).filter(Boolean);
+  const legacyEmail = parts.find(value => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) || '';
+  const legacyPhone = parts.find(value => value !== legacyEmail && String(value).replace(/\D/g, '').length >= 7) || '';
+  const legacyRecipient = parts.find(value => value !== legacyEmail && value !== legacyPhone) || '';
+  return {
+    recipientName: String(item.recipientName || item.shippingAddress?.recipient || legacyRecipient || '').trim(),
+    customerPhone: String(item.customerPhone || item.shippingAddress?.phone || legacyPhone || '').trim(),
+    customerEmail: String(item.customerEmail || legacyEmail || '').trim()
+  };
+}
+
 function openSalesOrder(id) {
-  const item = state.salesOrders.find(x => x.id === id) || { date: today(), branchId: defaultBranchId(), type: 'retail-us', customer: '', customerAddress: '', customerContact: '', salesRep: '', preparedBy: user?.name || '', notes: '', item: '', qty: 1, unitPrice: 0, status: '待收款', shipping: '', trackingNo: '', paid: 0, paymentMethod: '' };
+  const item = state.salesOrders.find(x => x.id === id) || { date: today(), branchId: defaultBranchId(), type: 'retail-us', customer: '', customerAddress: '', customerContact: '', recipientName: '', customerPhone: '', customerEmail: '', salesRep: '', preparedBy: user?.name || '', notes: '', item: '', qty: 1, unitPrice: 0, status: '待收款', shipping: '', trackingNo: '', paid: 0, paymentMethod: '' };
   if (id && item.portalSource && (item.portalNew || item.portalCustomerUnread)) markPortalOrderRead(id);
   const lines = salesOrderLineItems(item);
   const shippingTracking = [...new Set([item.shipping, item.trackingNo].map(value => String(value || '').trim()).filter(Boolean))].join(' · ');
@@ -9386,15 +9398,21 @@ function openSalesOrder(id) {
     const value = Array.isArray(option) ? option[0] : option;
     return value !== '已出库' || item.status === '已出库';
   });
+  const party = salesOrderPartyDetails(item);
   const fields = [
-    ['date',t('date'),'date',item.date], ['branchId',lang === 'zh' ? '所属分店' : 'Branch','select',item.branchId || '',branchOptions()], ['type',t('type'),'select',item.type, salesOrderTypeOptions()], ['customer',t('customer'),'text',item.customer],
-    ['customerAddress',lang === 'zh' ? '客户地址' : 'Customer address','text',item.customerAddress || ''],
-    ['customerContact',lang === 'zh' ? '客户联系方式（电话 / Email）' : 'Customer contact (phone / email)','text',item.customerContact || ''],
+    ['date',t('date'),'date',item.date], ['branchId',lang === 'zh' ? '所属分店' : 'Branch','select',item.branchId || '',branchOptions()], ['type',t('type'),'select',item.type, salesOrderTypeOptions()],
     ['salesRep',t('orderSalesRep'),'text',item.salesRep || ''], ['status',t('status'),'select',item.status, editableSalesStatuses], ['paid',`${t('paid')} $`,'number',item.paid],
     ['paymentMethod',t('paymentMethod'),'select',item.paymentMethod || '', paymentMethodOptions()], ['shippingTracking',lang === 'zh' ? '物流/单号' : 'Shipping / Tracking','text',shippingTracking],
     ['preparedBy',t('preparedBy'),'text',item.preparedBy || user?.name || ''],
     ['notes',lang === 'zh' ? '备注' : 'Notes','textarea',item.notes || '',null,'wide']
   ];
+  const partyFields = `<section class="sales-order-party wide"><h4>${lang === 'zh' ? '客户与收货信息' : 'Customer & Recipient'}</h4><div class="sales-order-party-grid">
+    <label><span>${lang === 'zh' ? '客户 / 公司名称' : 'Customer / Company'}</span><input id="customer" value="${escapeHtml(item.customer || '')}"></label>
+    <label><span>${lang === 'zh' ? '收货人姓名' : 'Recipient name'}</span><input id="recipientName" value="${escapeHtml(party.recipientName)}"></label>
+    <label><span>${lang === 'zh' ? '联系电话' : 'Phone'}</span><input id="customerPhone" type="tel" value="${escapeHtml(party.customerPhone)}"></label>
+    <label><span>${lang === 'zh' ? '电子邮箱' : 'Email'}</span><input id="customerEmail" type="email" value="${escapeHtml(party.customerEmail)}"></label>
+    <label class="sales-order-party-address"><span>${lang === 'zh' ? '收货地址' : 'Shipping address'}</span><input id="customerAddress" value="${escapeHtml(item.customerAddress || '')}"></label>
+  </div></section>`;
   const lineTable = `<div class="sales-order-lines wide">
     <div class="sales-order-lines-head"><strong>${lang === 'zh' ? '商品明细' : 'Order Items'}</strong><button class="btn" type="button" onclick="addSalesOrderLine()">+ ${lang === 'zh' ? '新增一行' : 'Add line'}</button></div>
     <div class="table-wrap"><table class="sales-lines-table"><thead><tr><th>${lang === 'zh' ? '型号 / SKU' : 'Model / SKU'}</th><th>${lang === 'zh' ? '单价' : 'Unit price'}</th><th>${t('qty')}</th><th>${lang === 'zh' ? '小计' : 'Subtotal'}</th><th></th></tr></thead><tbody id="salesOrderLines">${(lines.length ? lines : [{}]).map(salesOrderLineRowHtml).join('')}</tbody></table></div>
@@ -9402,9 +9420,10 @@ function openSalesOrder(id) {
   </div>`;
   openModal(
     id ? (lang === 'zh' ? '编辑零售/批发订单' : 'Edit Sales Order') : (lang === 'zh' ? '新增零售/批发订单' : 'New Sales Order'),
-    formHtml(fields) + lineTable + portalOrderConversationHtml(item),
+    formHtml(fields.slice(0, 3)) + partyFields + formHtml(fields.slice(3)) + lineTable + portalOrderConversationHtml(item),
     () => {
-      const data = numeric(readForm(['date','branchId','type','customer','customerAddress','customerContact','salesRep','status','paid','paymentMethod','shippingTracking','preparedBy','notes']), ['paid']);
+      const data = numeric(readForm(['date','branchId','type','customer','recipientName','customerPhone','customerEmail','customerAddress','salesRep','status','paid','paymentMethod','shippingTracking','preparedBy','notes']), ['paid']);
+      data.customerContact = [data.recipientName, data.customerPhone, data.customerEmail].filter(Boolean).join(' · ');
       data.shipping = String(data.shippingTracking || '').trim();
       data.trackingNo = data.shipping;
       delete data.shippingTracking;

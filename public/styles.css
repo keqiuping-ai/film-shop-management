@@ -482,6 +482,12 @@ button, input, select, textarea { font: inherit; }
   grid-template-columns: repeat(3, minmax(150px, 1fr));
   gap: 12px;
 }
+.sales-order-party { padding:14px; border:1px solid var(--line); border-radius:10px; background:#f7faf9; }
+.sales-order-party h4 { margin:0 0 11px; font-size:14px; }
+.sales-order-party-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:11px 14px; }
+.sales-order-party-grid label { display:grid; gap:5px; min-width:0; }
+.sales-order-party-grid label span { color:var(--muted); font-size:12px; font-weight:750; }
+.sales-order-party-address { grid-column:1/-1; }
 .sales-order-lines {
   margin-top: 2px;
 }
@@ -2209,6 +2215,8 @@ body.modal-lock .prospect-workspace { pointer-events: none; }
   .module-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .module-tile { min-height: 126px; }
   .stats, .split, .form-grid { grid-template-columns: 1fr; }
+  .sales-order-party-grid { grid-template-columns:1fr; }
+  .sales-order-party-address { grid-column:auto; }
   .check-list { grid-template-columns: 1fr; }
   .topbar { align-items: flex-start; flex-direction: column; }
   .toolbar { justify-content: flex-start; }
