@@ -335,21 +335,21 @@ function ppfOrderControls(name) {
         : isPartialProtection ? 'G30 A+-XM'
           : isYachtProtection ? 'G30 A+' : '未来与库存同步';
   const modelOptions = isGlossClear
-    ? '<option>请选择具体型号</option><option>G20PLUS</option><option>DS13S</option><option>G18</option>'
+    ? '<option value="" disabled selected>请选择具体型号</option><option value="G20PLUS">G20PLUS</option><option value="DS13S">DS13S</option><option value="G18">G18</option>'
     : isDeepMatte
-      ? '<option>请选择具体型号</option><option>GM-PRO</option>'
+      ? '<option value="" disabled selected>请选择具体型号</option><option value="GM-PRO">GM-PRO</option>'
     : isSatin
-      ? '<option>请选择具体型号</option><option>G18-Matte-D</option>'
+      ? '<option value="" disabled selected>请选择具体型号</option><option value="G18-Matte-D">G18-Matte-D</option>'
     : isPartialProtection
-      ? '<option>请选择具体型号</option><option>G30 A+-XM</option>'
+      ? '<option value="" disabled selected>请选择具体型号</option><option value="G30 A+-XM">G30 A+-XM</option>'
     : isYachtProtection
-      ? '<option>请选择具体型号</option><option>G30 A+</option>'
-    : '<option>请选择具体型号</option><option disabled>型号由 QUaD 库存系统提供</option>';
+      ? '<option value="" disabled selected>请选择具体型号</option><option value="G30 A+">G30 A+</option>'
+    : '<option value="" disabled selected>请选择具体型号</option><option value="" disabled>型号由 QUaD 库存系统提供</option>';
   const sizeOptions = isPartialProtection
-    ? '<option>请选择规格</option><option>1.2 米 × 30 米</option>'
+    ? '<option value="" disabled selected>请选择规格</option><option value="1.2 米 × 30 米">1.2 米 × 30 米</option>'
     : isGlossClear || isDeepMatte || isSatin || isYachtProtection
-    ? '<option>请选择规格</option><option>1.52 米 × 15 米</option>'
-    : '<option>请选择规格</option><option>60 英寸 × 50 英尺</option><option>72 英寸 × 50 英尺</option>';
+    ? '<option value="" disabled selected>请选择规格</option><option value="1.52 米 × 15 米">1.52 米 × 15 米</option>'
+    : '<option value="" disabled selected>请选择规格</option><option value="60 英寸 × 50 英尺">60 英寸 × 50 英尺</option><option value="72 英寸 × 50 英尺">72 英寸 × 50 英尺</option>';
 
   return `<div class="ppf-variant-list"><div class="ppf-variant-row"><label class="ppf-model-field">具体型号 <small>${modelHint}</small><select>${modelOptions}</select></label><label>规格<select>${sizeOptions}</select></label><label>数量<input type="number" min="1" value="1"></label><button class="ppf-remove-variant hidden" type="button" aria-label="删除这一项" onclick="removePpfVariantRow(this)">×</button></div></div><button class="ppf-add-variant" type="button" onclick="addPpfVariantRow(this)">＋ 添加另一个型号</button><button class="ppf-preview-button" onclick="addPpfProductToCart(this,'${name}')">＋ 加入购物车</button>`;
 }
@@ -390,11 +390,11 @@ window.addPpfProductToCart = function (button, name) {
       qty: Math.max(1, Number(row.querySelector('input')?.value || 1))
     };
   });
-  if (selected.some(item => !item.model || item.model === '请选择具体型号')) {
+  if (selected.some(item => !item.model)) {
     alert('请选择具体型号。');
     return;
   }
-  if (selected.some(item => !item.size || item.size === '请选择规格')) {
+  if (selected.some(item => !item.size)) {
     alert('请选择规格。');
     return;
   }
