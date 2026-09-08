@@ -50,6 +50,9 @@ let salesSelectedAccountIds = [];
 let salesPlanDate = '';
 let salesNearbyOrigin = null;
 let salesActiveAccountId = '';
+let salesInventoryPricingQuery = '';
+let salesInventoryPricingResults = [];
+let salesInventoryPricingLoading = false;
 
 const I18N = {
   zh: {
@@ -71,6 +74,38 @@ const I18N = {
     reimbursement: '报销',
     me: '我的',
     requestFailed: '请求失败',
+    inventoryPricing: '库存与报价',
+    inventoryPricingSub: '查询仓库可用库存与授权价格',
+    inventoryPricingSearch: '输入 SKU、型号、规格或产品名称',
+    search: '搜索',
+    searching: '正在搜索…',
+    inventoryPricingHint: '请输入产品信息开始查询。只显示您已获授权的数据。',
+    noInventoryPricingResults: '没有找到匹配的产品。',
+    availableInventory: '可用库存',
+    authorizedPrices: '授权报价',
+    lasVegasWarehouse: '拉斯维加斯仓库',
+    losAngelesWarehouse: '洛杉矶仓库',
+    wholesalePriceTier: '批发价',
+    firstOrderPriceTier: '首次进货价',
+    bronzePriceTier: '铜牌价',
+    silverPriceTier: '银牌价',
+    goldPriceTier: '金牌价',
+    strategicPriceTier: '超级战略合作伙伴价',
+    priceUnavailable: '暂无价格',
+    activeTrip: '未结束行程',
+    tripStartedAt: '开始时间',
+    tripStatus: '状态',
+    cancelOldTrip: '取消本次行程',
+    abandonOldTrip: '放弃旧行程',
+    activeTripConflict: '您还有一段未结束行程。请先到店打卡，或取消旧行程后再出发。',
+    cancelTripTitle: '取消或放弃行程',
+    cancelTripReason: '请填写取消原因',
+    cancelTripReasonRequired: '请填写取消或放弃这段行程的原因。',
+    cancellingTrip: '正在取消…',
+    confirmDeparture: '确认出发',
+    locatingDeparture: '正在记录出发位置…',
+    enRouteStatus: '前往中',
+    tripCancelFailed: '取消行程失败，请检查网络后重试。',
     noStaff: '还没有可留言的员工账号。',
     noMessages: '还没有留言。',
     image: '图片',
@@ -169,6 +204,38 @@ const I18N = {
     reimbursement: 'Expense',
     me: 'Me',
     requestFailed: 'Request failed',
+    inventoryPricing: 'Inventory & Pricing',
+    inventoryPricingSub: 'Check available warehouse stock and authorized prices',
+    inventoryPricingSearch: 'Enter SKU, model, specification, or product name',
+    search: 'Search',
+    searching: 'Searching…',
+    inventoryPricingHint: 'Enter product information to search. Only authorized data is shown.',
+    noInventoryPricingResults: 'No matching products found.',
+    availableInventory: 'Available Inventory',
+    authorizedPrices: 'Authorized Pricing',
+    lasVegasWarehouse: 'Las Vegas Warehouse',
+    losAngelesWarehouse: 'Los Angeles Warehouse',
+    wholesalePriceTier: 'Wholesale Price',
+    firstOrderPriceTier: 'First-order Price',
+    bronzePriceTier: 'Bronze Price',
+    silverPriceTier: 'Silver Price',
+    goldPriceTier: 'Gold Price',
+    strategicPriceTier: 'Strategic Partner Price',
+    priceUnavailable: 'Price unavailable',
+    activeTrip: 'Unfinished Trip',
+    tripStartedAt: 'Started',
+    tripStatus: 'Status',
+    cancelOldTrip: 'Cancel This Trip',
+    abandonOldTrip: 'Abandon Old Trip',
+    activeTripConflict: 'You already have an unfinished trip. Check in on arrival, or cancel the old trip before departing again.',
+    cancelTripTitle: 'Cancel or Abandon Trip',
+    cancelTripReason: 'Enter the cancellation reason',
+    cancelTripReasonRequired: 'Enter a reason for cancelling or abandoning this trip.',
+    cancellingTrip: 'Cancelling…',
+    confirmDeparture: 'Confirm Departure',
+    locatingDeparture: 'Recording departure location…',
+    enRouteStatus: 'En Route',
+    tripCancelFailed: 'Could not cancel the trip. Check the network and try again.',
     noStaff: 'No staff accounts are available for messaging.',
     noMessages: 'No messages yet.',
     image: 'Image',
@@ -353,7 +420,11 @@ async function api(path, options = {}) {
   const body = await res.json().catch(() => ({}));
   if (!res.ok) {
     if (res.status === 401) logout(false);
-    throw new Error(body.error || t('requestFailed'));
+    const requestError = new Error(body.error || t('requestFailed'));
+    requestError.code = String(body.code || '');
+    requestError.status = res.status;
+    requestError.details = body;
+    throw requestError;
   }
   const revision = String(res.headers.get('x-data-revision') || '');
   // sync-status must compare the server revision with the revision from the
@@ -1504,6 +1575,65 @@ function salesPage(title, body, action = '') {
   return salesLocalizedHtml(`<section class="sales-page"><header class="sales-page-head"><button type="button" aria-label="返回业务首页" onclick="openSalesScreen('home')">‹</button><strong>${escapeHtml(title)}</strong>${action || '<span></span>'}</header>${body}</section>`);
 }
 
+const SALES_PRICE_TIER_LABEL_KEYS = {
+  standard: 'wholesalePriceTier',
+  'first-order': 'firstOrderPriceTier',
+  bronze: 'bronzePriceTier',
+  silver: 'silverPriceTier',
+  gold: 'goldPriceTier',
+  strategic: 'strategicPriceTier'
+};
+
+function canViewSalesInventoryPricing() {
+  const permissions = user?.permissions || {};
+  return Boolean(permissions.fieldSalesInventoryView || Object.values({
+    standard: permissions.fieldSalesPriceWholesale,
+    firstOrder: permissions.fieldSalesPriceFirstOrder,
+    bronze: permissions.fieldSalesPriceBronze,
+    silver: permissions.fieldSalesPriceSilver,
+    gold: permissions.fieldSalesPriceGold,
+    strategic: permissions.fieldSalesPriceStrategic
+  }).some(Boolean));
+}
+
+function salesInventoryPricingCard(item) {
+  const inventory = item.inventory;
+  const prices = item.prices || {};
+  const inventoryHtml = inventory ? `<section><b>${t('availableInventory')}</b><div class="sales-inventory-warehouses"><p><span>${t('lasVegasWarehouse')}</span><strong>${Number(inventory['las-vegas'] || 0).toLocaleString()} ${escapeHtml(item.unit || '')}</strong></p><p><span>${t('losAngelesWarehouse')}</span><strong>${Number(inventory['los-angeles'] || 0).toLocaleString()} ${escapeHtml(item.unit || '')}</strong></p></div></section>` : '';
+  const priceRows = Object.entries(prices).map(([tierId, price]) => `<p><span>${t(SALES_PRICE_TIER_LABEL_KEYS[tierId] || tierId)}</span><strong>${Number.isFinite(Number(price)) && Number(price) > 0 ? Number(price).toLocaleString(undefined, { style:'currency', currency:'USD' }) : t('priceUnavailable')}</strong></p>`).join('');
+  const pricesHtml = priceRows ? `<section><b>${t('authorizedPrices')}</b><div class="sales-authorized-prices">${priceRows}</div></section>` : '';
+  return `<article class="sales-inventory-card"><header><div><small>SKU · ${escapeHtml(item.sku)}</small><h3>${escapeHtml(item.name || item.model || item.sku)}</h3></div></header><p>${[item.model, item.specification].filter(Boolean).map(escapeHtml).join(' · ')}</p>${inventoryHtml}${pricesHtml}</article>`;
+}
+
+function salesInventoryPricingHtml() {
+  const results = salesInventoryPricingResults || [];
+  const content = salesInventoryPricingLoading
+    ? `<p class="sales-inventory-message">${t('searching')}</p>`
+    : results.length
+      ? results.map(salesInventoryPricingCard).join('')
+      : `<p class="sales-inventory-message">${salesInventoryPricingQuery ? t('noInventoryPricingResults') : t('inventoryPricingHint')}</p>`;
+  return salesPage(t('inventoryPricing'), `<form class="sales-inventory-search" onsubmit="searchSalesInventoryPricing(event)"><input id="salesInventoryPricingQuery" value="${escapeHtml(salesInventoryPricingQuery)}" placeholder="${t('inventoryPricingSearch')}" maxlength="120"><button type="submit" ${salesInventoryPricingLoading ? 'disabled' : ''}>${salesInventoryPricingLoading ? t('searching') : t('search')}</button></form><div class="sales-inventory-results">${content}</div>`);
+}
+
+async function searchSalesInventoryPricing(event) {
+  event?.preventDefault();
+  const query = String(document.getElementById('salesInventoryPricingQuery')?.value || '').trim();
+  salesInventoryPricingQuery = query;
+  salesInventoryPricingResults = [];
+  if (!query) return render();
+  salesInventoryPricingLoading = true;
+  render();
+  try {
+    const result = await api(`/api/field-sales/inventory-pricing?q=${encodeURIComponent(query)}`);
+    salesInventoryPricingResults = result.products || [];
+  } catch (error) {
+    alert(error.message || t('requestFailed'));
+  } finally {
+    salesInventoryPricingLoading = false;
+    render();
+  }
+}
+
 function salesHomeHtml() {
   const sales = state.fieldSales || {};
   const today = salesLocalDate();
@@ -1515,6 +1645,7 @@ function salesHomeHtml() {
     ['today','⌖','今日拜访','今天计划与进行中','orange'], ['plan','✓','计划拜访','选择客户并安排时间','purple'],
     ['report','▤','工作日报','记录今天完成事项','green'], ['nearby','⌖','附近客户','洛杉矶 / 拉斯维加斯','rose']
   ];
+  if (canViewSalesInventoryPricing()) cards.push(['inventory-pricing','▦',t('inventoryPricing'),t('inventoryPricingSub'),'blue']);
   const workflow=[['建立客户资料','记录门店、联系人与业务机会'],['安排拜访计划','选择客户、日期、顺序和时间'],['到店并记录证据','保存现场照片、时间和 GPS'],['沟通与现场订单','记录需求、样品、价格与收款'],['创建下一次跟进','设置回访、收款或测试提醒'],['自动汇总工作日报','用正式业务记录形成当日总结']];
   return salesLocalizedHtml(`<div class="sales-design-home"><section class="sales-design-hero"><small>QUaD FIELD SALES</small><h2>业务员管理中心</h2><p>客户 · 计划 · 拜访 · 总结</p></section><section class="sales-workflow"><div class="sales-section-title"><b>标准业务流程</b><span>6 个连续步骤</span></div><ol>${workflow.map((item,index)=>`<li><i>${index+1}</i><span><b>${item[0]}</b><small>${item[1]}</small></span></li>`).join('')}</ol></section><div class="sales-section-title"><b>常用功能</b><span>点击进入独立页面</span></div><div class="sales-menu-grid">${cards.map(([screen,icon,title,sub,color]) => `<button class="${color}" onclick="openSalesScreen('${screen}')"><i>${icon}</i><b>${title}</b><span>${sub}</span></button>`).join('')}</div><section class="sales-overview"><div class="sales-section-title"><b>今日概览</b><span>只显示数量</span></div><div><p><b>${plans.length}</b><span>计划拜访</span></p><p><b>${completed}</b><span>已经完成</span></p><p><b>${pending}</b><span>待跟进</span></p></div></section></div>`);
 }
@@ -1567,7 +1698,18 @@ function salesScheduleHtml() {
 async function saveSalesVisitPlan(button){ if(!salesSelectedAccountIds.length)return alert(lang==='en'?'Select customers first':'请先选择客户'); const [h,m]=(document.getElementById('salesPlanStart').value||'09:30').split(':').map(Number); try{button.disabled=true;state=await api('/api/field-sales/visit-plans',{method:'POST',body:JSON.stringify({accountIds:salesSelectedAccountIds,date:document.getElementById('salesPlanDate').value,startMinutes:h*60+m,stayMinutes:Number(document.getElementById('salesPlanStay').value||45)})});user=state.user;salesSelectedAccountIds=[];salesScreen='today';render();}catch(e){alert(e.message);button.disabled=false;}}
 
 function salesPlanAction(plan){if(plan.status==='前往中')return `openSalesStartDialog('${plan.accountId}')`;if(plan.status==='拜访中')return `openSalesExecution('${plan.accountId}')`;return `openSalesDepartureDialog('${plan.accountId}')`;}
-function salesTodayHtml(){ const today=salesLocalDate(); const plans=(state.fieldSales?.visitPlans||[]).filter(item=>item.date===today&&item.userId===user?.id); const visits=state.fieldSales?.visits||[]; const completed=plans.filter(p=>p.status==='已完成').length; const next=plans.find(p=>p.status!=='已完成'); return salesPage('今日拜访', `<section class="sales-today-stats"><p><b>${plans.length}</b><span>计划拜访</span></p><p><b>${completed}</b><span>已经完成</span></p><p><b>${Math.max(0,plans.length-completed)}</b><span>等待拜访</span></p></section>${next?`<section class="sales-next-card"><small>下一位客户</small><h3>${escapeHtml(next.businessName)}</h3><p>${escapeHtml(next.address)}</p><div><button onclick="openSalesReviewDialog('${next.accountId}')">查看资料</button><button onclick="${salesPlanAction(next)}">${next.status==='前往中'?'已到店 · 拍照打卡':next.status==='拜访中'?'继续拜访':'准备出发'}</button></div></section>`:''}<div class="sales-timeline">${plans.map(p=>`<article onclick="${p.status==='拜访中'?`openSalesExecution('${p.accountId}')`:''}"><time>${new Date(p.plannedAt).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}</time><div><b>${escapeHtml(p.businessName)}</b><p>${escapeHtml(p.address)}</p></div><span>${escapeHtml(p.status||'待出发')}</span></article>`).join('')||'<p class="hint">今天还没有拜访计划，请先到“计划拜访”安排。</p>'}</div>`); }
+function salesActiveTripCard(trip, conflict = false) {
+  return `<section class="sales-trip-active ${conflict ? 'conflict' : ''}"><div><small>${t('activeTrip')}</small><strong>${escapeHtml(trip.businessName || '')}</strong><p>📍 ${escapeHtml(trip.destination?.address || '')}</p></div><div class="sales-trip-details"><span>${t('tripStartedAt')}<b>${escapeHtml(formatMobileDateTime(trip.departedAt) || '—')}</b></span><span>${t('tripStatus')}<b>${t('enRouteStatus')}</b></span></div><div class="sales-trip-actions"><button onclick="openSalesStartDialog('${trip.accountId}')">${lang === 'en' ? 'Arrived · Check In' : '已到店 · 拍照打卡'}</button><button class="danger-outline" onclick="openCancelSalesTripDialog('${trip.id}')">${conflict ? t('abandonOldTrip') : t('cancelOldTrip')}</button></div></section>`;
+}
+
+function salesTodayHtml(){
+  const today=salesLocalDate();
+  const plans=(state.fieldSales?.visitPlans||[]).filter(item=>item.date===today&&item.userId===user?.id);
+  const activeTrip=(state.fieldSales?.trips||[]).find(item=>item.status==='前往中'&&item.userId===user?.id);
+  const completed=plans.filter(p=>p.status==='已完成').length;
+  const next=plans.find(p=>p.status!=='已完成');
+  return salesPage('今日拜访', `<section class="sales-today-stats"><p><b>${plans.length}</b><span>计划拜访</span></p><p><b>${completed}</b><span>已经完成</span></p><p><b>${Math.max(0,plans.length-completed)}</b><span>等待拜访</span></p></section>${activeTrip?salesActiveTripCard(activeTrip):''}${next?`<section class="sales-next-card"><small>下一位客户</small><h3>${escapeHtml(next.businessName)}</h3><p>${escapeHtml(next.address)}</p><div><button onclick="openSalesReviewDialog('${next.accountId}')">查看资料</button><button onclick="${salesPlanAction(next)}">${next.status==='前往中'?'已到店 · 拍照打卡':next.status==='拜访中'?'继续拜访':'准备出发'}</button></div></section>`:''}<div class="sales-timeline">${plans.map(p=>`<article onclick="${p.status==='拜访中'?`openSalesExecution('${p.accountId}')`:''}"><time>${new Date(p.plannedAt).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}</time><div><b>${escapeHtml(p.businessName)}</b><p>${escapeHtml(p.address)}</p></div><span>${escapeHtml(p.status||'待出发')}</span></article>`).join('')||'<p class="hint">今天还没有拜访计划，请先到“计划拜访”安排。</p>'}</div>`);
+}
 
 function openSalesExecution(accountId){salesActiveAccountId=accountId;salesScreen='execution';render();}
 function openSalesVisitScreen(screen){salesScreen=screen;window.scrollTo({top:0});render();if(screen==='signature')requestAnimationFrame(setupSalesSignaturePad);}
@@ -1607,6 +1749,7 @@ function salesHtml() {
   if(salesScreen==='plan'){if(!salesPlanDate)salesPlanDate=salesLocalDate(1);return salesCustomersHtml(true);}
   if(salesScreen==='schedule')return salesScheduleHtml();
   if(salesScreen==='today')return salesTodayHtml();
+  if(salesScreen==='inventory-pricing' && canViewSalesInventoryPricing())return salesInventoryPricingHtml();
   if(salesScreen==='nearby')return salesNearbyHtml();
   if(salesScreen==='report')return salesReportHtml();
   if(salesScreen==='execution')return salesExecutionHtml();
@@ -1830,16 +1973,69 @@ function openSalesDepartureDialog(accountId) {
   document.body.appendChild(overlay);
 }
 
+function openCancelSalesTripDialog(tripId) {
+  const trip = (state.fieldSales?.trips || []).find(item => item.id === tripId && item.status === '前往中');
+  if (!trip) return;
+  document.querySelector('.sales-trip-active.conflict')?.closest('.mobile-modal')?.remove();
+  const overlay = document.createElement('div');
+  overlay.className = 'mobile-modal';
+  overlay.innerHTML = `<div class="mobile-dialog"><div class="dialog-head"><strong>${t('cancelTripTitle')}</strong><button onclick="this.closest('.mobile-modal').remove()">×</button></div><div class="sales-departure-target"><small>${t('activeTrip')}</small><strong>${escapeHtml(trip.businessName || '')}</strong><p>${t('tripStartedAt')} · ${escapeHtml(formatMobileDateTime(trip.departedAt) || '—')}</p></div><label>${t('cancelTripReason')}<textarea id="salesTripCancelReason" maxlength="500"></textarea></label><div class="dialog-actions"><button onclick="this.closest('.mobile-modal').remove()">${t('cancel')}</button><button class="danger-button" onclick="cancelSalesTrip(this,'${trip.id}')">${t('abandonOldTrip')}</button></div></div>`;
+  document.body.appendChild(overlay);
+}
+
+function showSalesTripConflict(trip) {
+  if (!trip?.id) return;
+  const existingTrip = (state.fieldSales?.trips || []).find(item => item.id === trip.id);
+  if (!existingTrip) state.fieldSales.trips.unshift(trip);
+  const overlay = document.createElement('div');
+  overlay.className = 'mobile-modal';
+  overlay.innerHTML = `<div class="mobile-dialog"><div class="dialog-head"><strong>${t('activeTrip')}</strong><button onclick="this.closest('.mobile-modal').remove()">×</button></div><p>${t('activeTripConflict')}</p>${salesActiveTripCard(existingTrip || trip, true)}</div>`;
+  document.body.appendChild(overlay);
+}
+
+async function cancelSalesTrip(button, tripId) {
+  const reason = String(document.getElementById('salesTripCancelReason')?.value || '').trim();
+  if (!reason) return alert(t('cancelTripReasonRequired'));
+  const originalLabel = button.textContent;
+  try {
+    button.disabled = true;
+    button.textContent = t('cancellingTrip');
+    state = await api(`/api/field-sales/trips/${encodeURIComponent(tripId)}/cancel`, { method:'PUT', body:JSON.stringify({ reason }) });
+    user = state.user;
+    salesScreen = 'today';
+    button.closest('.mobile-modal')?.remove();
+    render();
+  } catch (error) {
+    alert(error.code ? t('tripCancelFailed') : (error.message || t('tripCancelFailed')));
+  } finally {
+    if (button.isConnected) {
+      button.disabled = false;
+      button.textContent = originalLabel;
+    }
+  }
+}
+
 async function startSalesTrip(button, accountId) {
   if (!document.getElementById('salesTripLocationConsent')?.checked) return alert(lang === 'en' ? 'Please agree to location use for this trip.' : '请先同意本次行程使用定位。');
+  const originalLabel = button.textContent;
   try {
-    button.disabled = true; button.textContent = lang === 'en' ? 'Locating…' : '正在记录出发位置…';
+    button.disabled = true; button.textContent = t('locatingDeparture');
     const position = await getPosition();
     state = await api('/api/field-sales/trips/start', { method:'POST', body:JSON.stringify({
       accountId, locationConsent:true, lat:position.coords.latitude, lng:position.coords.longitude, accuracy:position.coords.accuracy
     }) });
     user = state.user; salesScreen = 'today'; button.closest('.mobile-modal').remove(); render();
-  } catch (error) { alert(error.message || t('locationFailed')); button.disabled = false; button.textContent = lang === 'en' ? 'Confirm departure' : '确认出发'; }
+  } catch (error) {
+    if (error.code === 'ACTIVE_TRIP_EXISTS' && error.details?.activeTrip) {
+      button.closest('.mobile-modal')?.remove();
+      showSalesTripConflict(error.details.activeTrip);
+    } else alert(error.message || t('locationFailed'));
+  } finally {
+    if (button.isConnected) {
+      button.disabled = false;
+      button.textContent = originalLabel || t('confirmDeparture');
+    }
+  }
 }
 
 function openSalesStartDialog(accountId) {

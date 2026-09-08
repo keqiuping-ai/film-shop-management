@@ -1363,6 +1363,13 @@ function defaultPermissions(role) {
     fieldSalesView: false,
     fieldSalesEdit: false,
     fieldSalesManage: false,
+    fieldSalesInventoryView: false,
+    fieldSalesPriceWholesale: false,
+    fieldSalesPriceFirstOrder: false,
+    fieldSalesPriceBronze: false,
+    fieldSalesPriceSilver: false,
+    fieldSalesPriceGold: false,
+    fieldSalesPriceStrategic: false,
     reportsView: false,
     fullFinanceView: false,
     usersManage: false,
@@ -1958,6 +1965,67 @@ function canUseFieldSales(user) {
   return canManageFieldSales(user) || Boolean(permissions.fieldSalesView || permissions.fieldSalesEdit);
 }
 
+const FIELD_SALES_PRICE_PERMISSIONS = Object.freeze({
+  standard: 'fieldSalesPriceWholesale',
+  'first-order': 'fieldSalesPriceFirstOrder',
+  bronze: 'fieldSalesPriceBronze',
+  silver: 'fieldSalesPriceSilver',
+  gold: 'fieldSalesPriceGold',
+  strategic: 'fieldSalesPriceStrategic'
+});
+
+function fieldSalesInventoryPricingAccess(user) {
+  const permissions = effectivePermissions(user);
+  const priceTierIds = Object.entries(FIELD_SALES_PRICE_PERMISSIONS)
+    .filter(([, permission]) => permissions[permission])
+    .map(([tierId]) => tierId);
+  return {
+    inventory: Boolean(permissions.fieldSalesInventoryView),
+    priceTierIds,
+    allowed: canUseFieldSales(user) && (Boolean(permissions.fieldSalesInventoryView) || priceTierIds.length > 0)
+  };
+}
+
+function fieldSalesTierPrice(db, product, tierId) {
+  const tiers = db.portalPriceTiers || defaultPortalPriceTiers();
+  const tierPrice = Number(tiers.find(item => item.id === tierId)?.prices?.[product.sku]);
+  if (Number.isFinite(tierPrice) && tierPrice > 0) return tierPrice;
+  const standardPrice = Number(tiers.find(item => item.id === 'standard')?.prices?.[product.sku]);
+  if (Number.isFinite(standardPrice) && standardPrice > 0) return standardPrice;
+  const wholesale = Number(product.wholesale);
+  return Number.isFinite(wholesale) && wholesale > 0 ? wholesale : null;
+}
+
+function fieldSalesInventoryPricingResults(db, user, query, limit = 40) {
+  const access = fieldSalesInventoryPricingAccess(user);
+  if (!access.allowed) return null;
+  const needle = String(query || '').trim().toLowerCase();
+  if (!needle) return [];
+  return (db.products || [])
+    .filter(product => [product.sku, product.name, product.model, product.specification, product.spec]
+      .some(value => String(value || '').toLowerCase().includes(needle)))
+    .slice(0, Math.min(50, Math.max(1, Number(limit) || 40)))
+    .map(product => {
+      const result = {
+        sku: String(product.sku || ''),
+        name: String(product.name || ''),
+        model: String(product.model || product.sku || ''),
+        specification: String(product.specification || product.spec || ''),
+        unit: String(product.unit || '')
+      };
+      if (access.inventory) {
+        result.inventory = {
+          'las-vegas': Math.max(0, branchStockQty(db, product.sku, 'las-vegas') - activeInventoryReservationQty(db, product.sku, 'las-vegas')),
+          'los-angeles': Math.max(0, branchStockQty(db, product.sku, 'los-angeles') - activeInventoryReservationQty(db, product.sku, 'los-angeles'))
+        };
+      }
+      if (access.priceTierIds.length) {
+        result.prices = Object.fromEntries(access.priceTierIds.map(tierId => [tierId, fieldSalesTierPrice(db, product, tierId)]));
+      }
+      return result;
+    });
+}
+
 function fieldSalesVisible(item, user) {
   if (canManageFieldSales(user)) return true;
   return [item?.assignedUserId, item?.userId, item?.createdByUserId].includes(user?.id);
@@ -2020,7 +2088,7 @@ function fieldSalesSnapshot(db, user) {
       .slice(0, 500),
     products: (db.products || []).map(item => ({
       id: item.id, sku: item.sku, name: item.name, unit: item.unit,
-      price: Number(item.price || 0), wholesale: Number(item.wholesale || 0), qty: Number(item.qty || 0)
+      model: String(item.model || item.sku || ''), specification: String(item.specification || item.spec || '')
     })),
     campaign: {
       trialQuantity: Number(db.settings?.fieldSalesTrialQuantity || 1),
@@ -7435,6 +7503,18 @@ async function api(req, res) {
     return send(res, 200, mobileSnapshot(db, user), undefined, req);
   }
 
+  if (req.method === 'GET' && url.pathname === '/api/field-sales/inventory-pricing') {
+    const access = fieldSalesInventoryPricingAccess(user);
+    if (!access.allowed) return send(res, 403, { error: '当前账号没有库存与报价查看权限', code: 'FIELD_SALES_INVENTORY_PRICING_FORBIDDEN' });
+    const query = String(url.searchParams.get('q') || '').trim().slice(0, 120);
+    const products = fieldSalesInventoryPricingResults(db, user, query, 40);
+    return send(res, 200, {
+      query,
+      access: { inventory: access.inventory, priceTierIds: access.priceTierIds },
+      products
+    }, undefined, req);
+  }
+
   if (req.method === 'POST' && url.pathname === '/api/field-sales/location-points') {
     if (!canUseFieldSales(user)) return send(res, 403, { error: '当前账号没有业务员管理权限' });
     const body = await readBody(req);
@@ -7654,7 +7734,17 @@ async function api(req, res) {
     const existing = (db.salesTrips || []).find(item => item.userId === user.id && item.status === '前往中');
     if (existing) {
       if (existing.accountId === account.id) return send(res, 200, mobileSnapshot(db, user));
-      return send(res, 409, { error:`您正在前往 ${existing.businessName}，请先完成上一段行程` });
+      return send(res, 409, {
+        error:`您正在前往 ${existing.businessName}，请先完成或取消上一段行程`,
+        code:'ACTIVE_TRIP_EXISTS',
+        activeTrip:{
+          id:existing.id, accountId:existing.accountId, businessName:existing.businessName,
+          status:existing.status, departedAt:existing.departedAt,
+          destination:{ address:String(existing.destination?.address || '') },
+          estimatedDistanceMeters:Number(existing.estimatedDistanceMeters || 0),
+          estimatedMinutes:Number(existing.estimatedMinutes || 0)
+        }
+      });
     }
     if (!hasValidCoordinates(account.lat, account.lng)) {
       const geocoded = await forwardGeocode(account.address);
@@ -7686,6 +7776,45 @@ async function api(req, res) {
     audit(db, user, 'start-field-sales-trip', { collection:'salesTrips', recordId:trip.id, recordLabel:account.businessName, after:trip, detail:`${trip.userName} 出发前往 ${account.businessName}` });
     writeDb(db); notifyDataChanged('field-sales-trip-started', trip.id);
     return send(res, 201, mobileSnapshot(db, user));
+  }
+
+  const fieldSalesTripCancelMatch = url.pathname.match(/^\/api\/field-sales\/trips\/([^/]+)\/cancel$/);
+  if (req.method === 'PUT' && fieldSalesTripCancelMatch) {
+    if (!canUseFieldSales(user)) return send(res, 403, { error:'当前账号没有业务员管理权限', code:'FIELD_SALES_FORBIDDEN' });
+    const tripId = decodeURIComponent(fieldSalesTripCancelMatch[1]);
+    const trip = (db.salesTrips || []).find(item => item.id === tripId);
+    if (!trip || (!canManageFieldSales(user) && trip.userId !== user.id)) return send(res, 404, { error:'找不到这段活动行程', code:'ACTIVE_TRIP_NOT_FOUND' });
+    const account = (db.salesAccounts || []).find(item => item.id === trip.accountId);
+    const tripBranchId = String(trip.branchId || account?.branchId || '').trim();
+    if (tripBranchId && !canAccessBranch(db, user, tripBranchId)) return send(res, 403, { error:'你没有这段行程所属分店的数据权限', code:'FIELD_SALES_BRANCH_FORBIDDEN' });
+    if (trip.status !== '前往中') return send(res, 409, { error:'这段行程已经结束，不能重复取消', code:'ACTIVE_TRIP_NOT_ACTIVE' });
+    const body = await readBody(req);
+    const reason = String(body.reason || '').trim().slice(0, 500);
+    if (!reason) return send(res, 400, { error:'请填写取消或放弃这段行程的原因', code:'ACTIVE_TRIP_CANCEL_REASON_REQUIRED' });
+    const now = new Date().toISOString();
+    const before = { ...trip };
+    trip.status = '已取消';
+    trip.routeStatus = '已取消';
+    trip.cancelReason = reason;
+    trip.cancelledAt = now;
+    trip.cancelledByUserId = user.id;
+    trip.cancelledByName = user.name || user.email;
+    trip.updatedAt = now;
+    (db.salesVisitPlans || [])
+      .filter(item => item.accountId === trip.accountId && item.userId === trip.userId && item.status === '前往中' && (!item.tripId || item.tripId === trip.id))
+      .forEach(item => {
+        item.status = '待出发';
+        item.tripId = '';
+        item.updatedAt = now;
+      });
+    if (account?.stage === '前往中') {
+      account.stage = '待拜访';
+      account.updatedAt = now;
+    }
+    audit(db, user, 'cancel-field-sales-trip', { collection:'salesTrips', recordId:trip.id, recordLabel:trip.businessName, before, after:trip, detail:`${trip.cancelledByName} 取消前往 ${trip.businessName} 的行程：${reason}` });
+    writeDb(db);
+    notifyDataChanged('field-sales-trip-cancelled', trip.id);
+    return send(res, 200, mobileSnapshot(db, user));
   }
 
   const fieldSalesAccountMatch = url.pathname.match(/^\/api\/field-sales\/accounts\/([^/]+)$/);

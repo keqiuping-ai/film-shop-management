@@ -587,6 +587,14 @@ button {
 .sales-trip-active strong { display:block; margin-top:3px; font-size:19px; }
 .sales-trip-active p { margin:5px 0 0; color:#59636e; }
 .sales-trip-active > button { color:white; background:#b77900; border-color:#b77900; font-weight:900; }
+.sales-trip-active.conflict { border-color:#e05252; background:#fff5f5; }
+.sales-trip-details { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+.sales-trip-details span { display:grid; gap:3px; padding:9px; border-radius:10px; background:white; color:var(--muted); font-size:11px; }
+.sales-trip-details b { color:#17212b; font-size:14px; }
+.sales-trip-actions { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+.sales-trip-actions button { min-height:42px; color:white; background:#b77900; border-color:#b77900; font-weight:900; }
+.sales-trip-actions .danger-outline { color:#b42318; background:white; border-color:#e5a09a; }
+.danger-button { color:white; background:#b42318; border-color:#b42318; }
 .sales-trip-stats { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
 .sales-trip-stats span { display:grid; gap:2px; padding:9px; border-radius:10px; background:white; color:var(--muted); font-size:11px; }
 .sales-trip-stats b { color:#17212b; font-size:17px; }
@@ -608,6 +616,20 @@ button {
 .sales-departure-target small { color:#946200; font-weight:900; }
 .sales-departure-target strong { font-size:20px; }
 .sales-departure-target p { margin:0; color:#59636e; }
+.sales-inventory-search { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:8px; margin-bottom:12px; }
+.sales-inventory-search input { min-width:0; }
+.sales-inventory-search button { color:white; background:var(--brand); border-color:var(--brand); font-weight:800; }
+.sales-inventory-results { display:grid; gap:10px; }
+.sales-inventory-message { padding:22px 14px; border:1px dashed #9fc7ce; border-radius:13px; color:var(--muted); background:#f7fbfc; text-align:center; }
+.sales-inventory-card { display:grid; gap:11px; padding:14px; border:1px solid #b9dfe8; border-radius:14px; background:white; box-shadow:0 7px 18px rgba(20,30,40,.06); }
+.sales-inventory-card header small { color:var(--brand); font-weight:900; }
+.sales-inventory-card h3 { margin:4px 0 0; }
+.sales-inventory-card > p { margin:0; color:var(--muted); }
+.sales-inventory-card section { display:grid; gap:7px; }
+.sales-inventory-warehouses,.sales-authorized-prices { display:grid; grid-template-columns:1fr 1fr; gap:7px; }
+.sales-inventory-warehouses p,.sales-authorized-prices p { display:grid; gap:3px; margin:0; padding:9px; border-radius:10px; background:#f4f7f9; }
+.sales-inventory-warehouses span,.sales-authorized-prices span { color:var(--muted); font-size:11px; }
+.sales-inventory-warehouses strong,.sales-authorized-prices strong { font-size:15px; }
 .sales-review-button { color:var(--brand); background:#eef9fa; border-color:#9dd7df; }
 .sales-review-dialog { display:grid; gap:12px; }
 .sales-review-dialog .dialog-head > div { display:grid; gap:2px; }
