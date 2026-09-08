@@ -1,0 +1,308 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		1568093E651979855B163D1B /* Localization.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4ABDCC96EA7C8168CBDAD4FE /* Localization.swift */; };
+		41F1A98CFD9AD4AEC27BA29C /* QUaDAPIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 211B72941A9420CB154F9B91 /* QUaDAPIClient.swift */; };
+		91A40D8003B335346B668805 /* SessionStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2623A2021901B75C2D4623CC /* SessionStore.swift */; };
+		A1F88DF94C5BC0FC3724D093 /* QUaDFieldSalesApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 656BBF63C738C2AA8B96B2A5 /* QUaDFieldSalesApp.swift */; };
+		A333006D0329DA2C913077DC /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1ED126D5F61C0FBECC39F6F9 /* RootView.swift */; };
+		C8814197C16080A236C9E5A1 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB2FB83FA6D8AE0EBE104417 /* Models.swift */; };
+		D6B273145B9C2F5F3269EE93 /* TokenStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 92D3AA94F5E98D8E4717305E /* TokenStore.swift */; };
+		F5D375433DF455CB779C47A5 /* InventoryPricingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BE2307074B567837E913F75D /* InventoryPricingView.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		1ED126D5F61C0FBECC39F6F9 /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
+		211B72941A9420CB154F9B91 /* QUaDAPIClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QUaDAPIClient.swift; sourceTree = "<group>"; };
+		2623A2021901B75C2D4623CC /* SessionStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionStore.swift; sourceTree = "<group>"; };
+		4ABDCC96EA7C8168CBDAD4FE /* Localization.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Localization.swift; sourceTree = "<group>"; };
+		656BBF63C738C2AA8B96B2A5 /* QUaDFieldSalesApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QUaDFieldSalesApp.swift; sourceTree = "<group>"; };
+		66C2057486FBF97E169614C1 /* QUaDFieldSales.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = QUaDFieldSales.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		92D3AA94F5E98D8E4717305E /* TokenStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TokenStore.swift; sourceTree = "<group>"; };
+		AB2FB83FA6D8AE0EBE104417 /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
+		BE2307074B567837E913F75D /* InventoryPricingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InventoryPricingView.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXGroup section */
+		79EC3A31AFE4287ED319C39B /* Sources */ = {
+			isa = PBXGroup;
+			children = (
+				BE2307074B567837E913F75D /* InventoryPricingView.swift */,
+				4ABDCC96EA7C8168CBDAD4FE /* Localization.swift */,
+				AB2FB83FA6D8AE0EBE104417 /* Models.swift */,
+				211B72941A9420CB154F9B91 /* QUaDAPIClient.swift */,
+				656BBF63C738C2AA8B96B2A5 /* QUaDFieldSalesApp.swift */,
+				1ED126D5F61C0FBECC39F6F9 /* RootView.swift */,
+				2623A2021901B75C2D4623CC /* SessionStore.swift */,
+				92D3AA94F5E98D8E4717305E /* TokenStore.swift */,
+			);
+			path = Sources;
+			sourceTree = "<group>";
+		};
+		7AEBE70B723A87CA21F0BC67 = {
+			isa = PBXGroup;
+			children = (
+				79EC3A31AFE4287ED319C39B /* Sources */,
+				FE289117E6305083E96A3646 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		FE289117E6305083E96A3646 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				66C2057486FBF97E169614C1 /* QUaDFieldSales.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		461252BDE4BA84A3848E2A5C /* QUaDFieldSales */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A49F89D4A8FDB6A64AAB8521 /* Build configuration list for PBXNativeTarget "QUaDFieldSales" */;
+			buildPhases = (
+				07A60A6DA436B9FEEB767AEA /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = QUaDFieldSales;
+			packageProductDependencies = (
+			);
+			productName = QUaDFieldSales;
+			productReference = 66C2057486FBF97E169614C1 /* QUaDFieldSales.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		DF1FB0E162BEA366CCE0FBD9 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 1430;
+				TargetAttributes = {
+				};
+			};
+			buildConfigurationList = 4A8E44CEF1BD586309F0EF33 /* Build configuration list for PBXProject "QUaDFieldSales" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				Base,
+				en,
+			);
+			mainGroup = 7AEBE70B723A87CA21F0BC67;
+			minimizedProjectReferenceProxies = 1;
+			preferredProjectObjectVersion = 77;
+			productRefGroup = FE289117E6305083E96A3646 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				461252BDE4BA84A3848E2A5C /* QUaDFieldSales */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXSourcesBuildPhase section */
+		07A60A6DA436B9FEEB767AEA /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				F5D375433DF455CB779C47A5 /* InventoryPricingView.swift in Sources */,
+				1568093E651979855B163D1B /* Localization.swift in Sources */,
+				C8814197C16080A236C9E5A1 /* Models.swift in Sources */,
+				41F1A98CFD9AD4AEC27BA29C /* QUaDAPIClient.swift in Sources */,
+				A1F88DF94C5BC0FC3724D093 /* QUaDFieldSalesApp.swift in Sources */,
+				A333006D0329DA2C913077DC /* RootView.swift in Sources */,
+				91A40D8003B335346B668805 /* SessionStore.swift in Sources */,
+				D6B273145B9C2F5F3269EE93 /* TokenStore.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		248B1F02B4474F4BB7CB4C99 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 6.0;
+			};
+			name = Release;
+		};
+		5815DFE7367539C4888E25A3 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				INFOPLIST_FILE = Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.quadfilm.QUaDFieldSales;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		8A8BC60661D77E769FEE24CA /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"DEBUG=1",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 6.0;
+			};
+			name = Debug;
+		};
+		A57B6CE3ACD35FD50EAE124A /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				INFOPLIST_FILE = Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.quadfilm.QUaDFieldSales;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		4A8E44CEF1BD586309F0EF33 /* Build configuration list for PBXProject "QUaDFieldSales" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				8A8BC60661D77E769FEE24CA /* Debug */,
+				248B1F02B4474F4BB7CB4C99 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		A49F89D4A8FDB6A64AAB8521 /* Build configuration list for PBXNativeTarget "QUaDFieldSales" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A57B6CE3ACD35FD50EAE124A /* Debug */,
+				5815DFE7367539C4888E25A3 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = DF1FB0E162BEA366CCE0FBD9 /* Project object */;
+}
