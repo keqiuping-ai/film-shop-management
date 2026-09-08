@@ -483,7 +483,13 @@ function checkoutPreviewItems(){
   return items;
 }
 
-function dealerPriceForSku(sku){const key=String(sku||'').trim().toLowerCase();return state?.products?.find(product=>[product.sku,product.model].some(value=>String(value||'').trim().toLowerCase()===key))||null}
+function dealerPriceForSku(sku){
+  const key=String(sku||'').trim().toLowerCase(),products=(state?.products||[]).filter(product=>product.purchasable!==false);
+  const exact=products.find(product=>[product.sku,product.model].some(value=>String(value||'').trim().toLowerCase()===key));
+  if(exact)return exact;
+  const suffixMatches=products.filter(product=>[product.sku,product.model].some(value=>String(value||'').trim().toLowerCase().endsWith(`-${key}`)));
+  return suffixMatches.length===1?suffixMatches[0]:null;
+}
 function checkoutDeliveryProfile(){return {company:document.getElementById('checkoutCompany')?.value.trim()||'',recipient:document.getElementById('checkoutRecipient')?.value.trim()||'',phone:document.getElementById('checkoutPhone')?.value.trim()||'',street:document.getElementById('checkoutStreet')?.value.trim()||'',city:document.getElementById('checkoutCity')?.value.trim()||'',state:document.getElementById('checkoutState')?.value.split(' · ')[0].trim()||'',postalCode:document.getElementById('checkoutPostalCode')?.value.trim()||'',country:'US'}}
 let checkoutAddressSaveTimer=null;
 async function saveCheckoutDeliveryProfile(showStatus=true){
@@ -517,7 +523,7 @@ function dealerPriceHtml(item){
 window.showDealerCheckout=function(){
   ['landing','login','app','orderCenter','ppfCatalog','colorWrapCatalog','windowFilmCatalog'].forEach(id=>document.getElementById(id)?.classList.add('hidden'));
   const items=checkoutPreviewItems(),container=document.getElementById('checkoutItems');
-  container.innerHTML=items.length?items.map((item,index)=>`<article class="checkout-item" data-sku="${esc(item.sku)}"><span>${String(index+1).padStart(2,'0')}</span><div><small>${esc(item.category)}</small><b>${esc(item.name)}</b><em>${esc(item.detail)}</em></div><label>Quantity<input type="number" min="1" value="${item.qty}" onchange="updateCheckoutTotals()"></label>${dealerPriceHtml(item)}<button aria-label="Remove product" onclick="this.closest('article').remove();updateCheckoutTotals()">×</button></article>`).join(''):'<p>Your cart is empty. Return to the product categories to select products.</p>';
+  container.innerHTML=items.length?items.map((item,index)=>{const product=dealerPriceForSku(item.sku),resolvedSku=product?.sku||item.sku;return `<article class="checkout-item" data-sku="${esc(resolvedSku)}"><span>${String(index+1).padStart(2,'0')}</span><div><small>${esc(item.category)}</small><b>${esc(item.name)}</b><em>${esc(item.detail)}</em></div><label>Quantity<input type="number" min="1" value="${item.qty}" onchange="updateCheckoutTotals()"></label>${dealerPriceHtml({...item,sku:resolvedSku})}<button aria-label="Remove product" onclick="this.closest('article').remove();updateCheckoutTotals()">×</button></article>`}).join(''):'<p>Your cart is empty. Return to the product categories to select products.</p>';
   document.getElementById('dealerCheckout').classList.remove('hidden');
   if(state?.customer){
     const saved=state.customer.deliveryProfile||{};

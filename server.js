@@ -6336,6 +6336,16 @@ function applyCustomerStripeFields(fields, customer, locale) {
   fields['saved_payment_method_options[payment_method_save]'] = 'enabled';
 }
 
+function portalCheckoutProductForSku(db, enteredSku) {
+  const key = String(enteredSku || '').trim().toLowerCase();
+  if (!key) return null;
+  const products = (db.products || []).filter(product => product.portalVisible !== false && product.portalPurchasable !== false);
+  const exact = products.find(product => [product.sku,product.model].some(value => String(value || '').trim().toLowerCase() === key));
+  if (exact) return exact;
+  const suffixMatches = products.filter(product => [product.sku,product.model].some(value => String(value || '').trim().toLowerCase().endsWith(`-${key}`)));
+  return suffixMatches.length === 1 ? suffixMatches[0] : null;
+}
+
 function activeInventoryReservationQty(db, sku, branchId, ignoreOrderId = '') {
   const now = Date.now();
   const finished = new Set(['已出库','shipped','delivered','completed','已完成','已取消','canceled','cancelled','已退款','refunded']);
@@ -6793,8 +6803,7 @@ async function api(req, res) {
       const rawRequested = (Array.isArray(body.items) ? body.items : []).slice(0,50);
       const requested = rawRequested.map(line => {
         const enteredSku = String(line.sku || '').trim();
-        const enteredKey = enteredSku.toLowerCase();
-        const product = (db.products || []).find(row => [row.sku,row.model].some(value => String(value || '').trim().toLowerCase() === enteredKey));
+        const product = portalCheckoutProductForSku(db,enteredSku);
         return { sku:String(product?.sku || enteredSku).trim(), qty:Math.max(0,Math.floor(Number(line.qty || 0))) };
       });
       const invalidLine = requested.find(line => !line.sku || !line.qty || !(db.products || []).some(product => product.sku === line.sku && product.portalVisible !== false && product.portalPurchasable !== false));
