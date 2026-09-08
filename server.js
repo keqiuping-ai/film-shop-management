@@ -318,6 +318,30 @@ const PORTAL_TIER_RULES = {
   silver: { name: '银牌客户', monthlyTarget: 20000, maintainTarget: 10000, nextTier: 'gold', previousTier: 'standard' },
   gold: { name: '金牌客户', monthlyTarget: 20000, maintainTarget: 20000, previousTier: 'silver' }
 };
+const PORTAL_CUSTOMER_STATUSES = new Set(['正常', '暂停合作', '重点客户']);
+
+function customerStripePaymentEnvironment() {
+  const stripeKey = String(process.env.STRIPE_SECRET_KEY || '').trim();
+  return stripeKey.startsWith('sk_live_') && process.env.STRIPE_CUSTOMER_ORDER_LIVE_ENABLED === 'true' ? 'live' : 'test';
+}
+
+function portalPaymentCountsTowardSales(db, order, transaction = null) {
+  const method = String(transaction?.method || order?.paymentMethod || '').trim().toLowerCase();
+  const providerEventId = String(transaction?.providerEventId || '').trim();
+  const stripePayment = method === 'stripe' || Boolean(providerEventId) || Boolean(order?.stripeCheckoutSessionId);
+  if (!stripePayment) return true;
+  if (transaction?.livemode === true) return true;
+  if (transaction?.livemode === false) return false;
+  const event = providerEventId ? (db.customerCheckoutEvents || []).find(row => row.id === providerEventId) : null;
+  if (event && typeof event.livemode === 'boolean') return event.livemode;
+  if (typeof order?.stripeLivemode === 'boolean') return order.stripeLivemode;
+  if (order?.paymentEnvironment === 'live') return true;
+  if (order?.paymentEnvironment === 'test') return false;
+  const checkoutSessionId = String(order?.stripeCheckoutSessionId || '');
+  if (checkoutSessionId.startsWith('cs_live_')) return true;
+  if (checkoutSessionId.startsWith('cs_test_')) return false;
+  return true;
+}
 
 function monthKeyInTimezone(value, timezone = 'America/Los_Angeles') {
   const date = new Date(value);
@@ -340,11 +364,11 @@ function portalCustomerPaidSalesByMonth(db, customer) {
   (db.salesOrders || []).filter(order => order.portalCustomerId === customer.id).forEach(order => {
     const transactions = (order.paymentTransactions || []).filter(row => Number(row.amount || 0) !== 0 && ['payment', 'refund'].includes(String(row.type || '').toLowerCase()));
     if (transactions.length) {
-      transactions.forEach(row => {
+      transactions.filter(row => portalPaymentCountsTowardSales(db, order, row)).forEach(row => {
         const key = monthKeyInTimezone(row.createdAt || row.date, db.settings?.timezone);
         if (key) totals[key] = Math.max(0, Math.round(((totals[key] || 0) + Number(row.amount || 0)) * 100) / 100);
       });
-    } else if (Number(order.paid || 0) > 0) {
+    } else if (Number(order.paid || 0) > 0 && portalPaymentCountsTowardSales(db, order)) {
       const key = monthKeyInTimezone(order.updatedAt || order.createdAt || order.date, db.settings?.timezone);
       if (key) totals[key] = Math.round(((totals[key] || 0) + Number(order.paid || 0)) * 100) / 100;
     }
@@ -394,8 +418,7 @@ function portalCustomerSnapshot(db, customer) {
   const phone = normalizedWarrantyPhone(customer.phone);
   const names = new Set([customer.businessName, customer.contactName].map(normalizedWarrantyName).filter(Boolean));
   const warranties = (db.warranties || []).filter(item => (phone && normalizedWarrantyPhone(item.phone) === phone) || names.has(normalizedWarrantyName(item.customerName))).sort((a,b)=>String(b.installDate||'').localeCompare(String(a.installDate||''))).map(publicWarrantyRecord);
-  const stripeKey = String(process.env.STRIPE_SECRET_KEY || '').trim();
-  const paymentEnvironment = stripeKey.startsWith('sk_live_') && process.env.STRIPE_CUSTOMER_ORDER_LIVE_ENABLED === 'true' ? 'live' : 'test';
+  const paymentEnvironment = customerStripePaymentEnvironment();
   return { customer: { ...safePortalCustomer(customer), priceTierName: tier?.name || '批发价' }, tierProgress: portalCustomerTierProgress(db, customer), paymentEnvironment, products: (db.products || []).filter(product => product.portalVisible !== false).map(product => portalProductForCustomer(db, product, customer)), orders: (db.salesOrders || []).filter(order => order.portalCustomerId === customer.id).sort((a, b) => String(b.updatedAt || b.createdAt || '').localeCompare(String(a.updatedAt || a.createdAt || ''))).map(order => ({ id: order.id, date: order.date, status: order.status, paymentStatus: order.paymentStatus || '', items: salesOrderItems(order), subtotal: Number(order.subtotal || 0), shippingFee: Number(order.shippingFee || 0), salesTax: Number(order.salesTax || 0), checkoutTotal: Number(order.checkoutTotal || 0), fulfillment: order.fulfillment || '', customerDemand: order.customerDemand || '', shipping: order.shipping || '', shippingCarrier: order.shippingCarrier || '', trackingNo: order.trackingNo || '', paid: Number(order.paid || 0), paymentMethod: order.paymentMethod || '', createdAt: order.createdAt, updatedAt: order.updatedAt || '', portalMessages: order.portalMessages || [], attachments: order.portalAttachments || [] })), warranties };
 }
 
@@ -6447,11 +6470,14 @@ function customerCheckoutBaseUrl(req) {
   return String(process.env.PUBLIC_BASE_URL || requestPublicBaseUrl(req)).replace(/\/$/,'');
 }
 
-function confirmCustomerCheckout(db, session, eventId) {
+function confirmCustomerCheckout(db, session, eventRecord) {
+  const eventId = String(eventRecord?.id || '');
   const orderId = String(session.client_reference_id || session.metadata?.orderId || '').trim();
   const order = (db.salesOrders || []).find(row => row.id === orderId && row.portalSource);
   if (!order) return { ok:false, error:'order_not_found' };
   if (order.paymentStatus === 'paid') return { ok:true, duplicate:true, order };
+  const eventEnvironment = eventRecord?.livemode === true ? 'live' : 'test';
+  if (order.paymentEnvironment && order.paymentEnvironment !== eventEnvironment) return { ok:false, error:'payment_environment_mismatch', order };
   const expectedCents = Math.round(Number(order.checkoutTotal || 0) * 100);
   if (session.payment_status !== 'paid' || String(session.currency || '').toLowerCase() !== 'usd' || Number(session.amount_total || 0) !== expectedCents) return { ok:false, error:'payment_not_settled_or_amount_mismatch', order };
   const paid = expectedCents / 100;
@@ -6462,6 +6488,8 @@ function confirmCustomerCheckout(db, session, eventId) {
   order.status = '已付款待出库';
   order.stripeCheckoutSessionId = String(session.id || '');
   order.stripePaymentIntentId = String(session.payment_intent || '');
+  order.paymentEnvironment = eventEnvironment;
+  order.stripeLivemode = eventRecord?.livemode === true;
   const customer = (db.portalCustomers || []).find(row => row.id === order.portalCustomerId);
   if (customer) {
     if (session.customer) customer.stripeCustomerId = String(session.customer);
@@ -6471,10 +6499,10 @@ function confirmCustomerCheckout(db, session, eventId) {
     if (address.line1) customer.billingAddress = [address.line1,address.line2,address.city,address.state,address.postal_code,address.country].filter(Boolean).join(', ').slice(0,500);
     customer.updatedAt = now;
   }
-  order.paymentTransactions = [...(order.paymentTransactions || []), { id:id(), date:dateInTimezone(db.settings?.timezone || 'America/Los_Angeles',0), amount:paid, type:'payment', method:'Stripe', providerEventId:eventId, createdAt:now, createdBy:'Stripe webhook', createdByUserId:'stripe' }];
+  order.paymentTransactions = [...(order.paymentTransactions || []), { id:id(), date:dateInTimezone(db.settings?.timezone || 'America/Los_Angeles',0), amount:paid, type:'payment', method:'Stripe', providerEventId:eventId, livemode:eventRecord?.livemode === true, createdAt:now, createdBy:'Stripe webhook', createdByUserId:'stripe' }];
   order.updatedAt = now;
   (db.inventoryReservations || []).filter(row => row.orderId === order.id && row.status === 'pending_payment').forEach(row => { row.status='paid'; row.updatedAt=now; });
-  if (customer) applyPortalCustomerTier(db, customer, 'Stripe webhook');
+  if (customer && eventRecord?.livemode === true) applyPortalCustomerTier(db, customer, 'Stripe webhook');
   return { ok:true, duplicate:false, order };
 }
 
@@ -6566,7 +6594,7 @@ async function api(req, res) {
     db.customerCheckoutEvents = db.customerCheckoutEvents.slice(-2000);
     const session = event.data?.object || {};
     if (event.type === 'checkout.session.completed' || event.type === 'checkout.session.async_payment_succeeded') {
-      const result = confirmCustomerCheckout(db, session, eventRecord.id);
+      const result = confirmCustomerCheckout(db, session, eventRecord);
       eventRecord.processed = result.ok;
       eventRecord.result = result.error || (result.duplicate ? 'duplicate' : 'paid');
       eventRecord.orderId = result.order?.id || '';
@@ -6578,7 +6606,7 @@ async function api(req, res) {
         const previousRefunded = Math.max(0,Number(order.refunded || 0));
         const refundDelta = Math.max(0,Math.round((refunded-previousRefunded)*100)/100);
         order.refunded=refunded; order.paid=Math.max(0,Math.round((Number(order.checkoutTotal||0)-refunded)*100)/100); order.paymentStatus=order.paid<=0?'refunded':'partially_refunded'; order.status=order.paid<=0?'已退款':'部分退款'; order.updatedAt=new Date().toISOString();
-        if (refundDelta) order.paymentTransactions=[...(order.paymentTransactions||[]),{ id:id(),date:dateInTimezone(db.settings?.timezone||'America/Los_Angeles',0),amount:-refundDelta,type:'refund',method:'Stripe',providerEventId:eventRecord.id,createdAt:order.updatedAt,createdBy:'Stripe webhook',createdByUserId:'stripe' }];
+        if (refundDelta) order.paymentTransactions=[...(order.paymentTransactions||[]),{ id:id(),date:dateInTimezone(db.settings?.timezone||'America/Los_Angeles',0),amount:-refundDelta,type:'refund',method:'Stripe',providerEventId:eventRecord.id,livemode:eventRecord.livemode,createdAt:order.updatedAt,createdBy:'Stripe webhook',createdByUserId:'stripe' }];
         if (order.paid<=0) releaseOrderInventoryReservations(db,order.id,'refunded');
       }
       eventRecord.processed=Boolean(order); eventRecord.result=order?(order.paid<=0?'refunded':'partially_refunded'):'order_not_found'; eventRecord.orderId=order?.id||'';
@@ -6911,18 +6939,19 @@ async function api(req, res) {
       const recipientName = String(fulfillment === 'delivery' ? (shippingAddress.recipient || customer.deliveryProfile?.recipient || customer.contactName || '') : (customer.contactName || '')).trim().slice(0,160);
       const customerPhone = String(fulfillment === 'delivery' ? (shippingAddress.phone || customer.deliveryProfile?.phone || customer.phone || '') : (customer.phone || '')).trim().slice(0,80);
       const customerEmail = String(customer.email || '').trim().toLowerCase().slice(0,160);
-      const order = { id:orderId, date:dateInTimezone(db.settings?.timezone || 'America/Los_Angeles',0), branchId, fulfillmentBranchIds, warehouse:branchId, type:'wholesale-us', customer:customer.businessName || customer.contactName, recipientName, customerPhone, customerEmail, customerAddress:fulfillment === 'delivery' ? formattedAddress : String(body.address || customer.address || '').trim().slice(0,500), shippingAddress:fulfillment === 'delivery' ? shippingAddress : null, customerContact:[recipientName,customerPhone,customerEmail].filter(Boolean).join(' · '), salesRep:customer.salesRep || '', preparedBy:'客户客户端', items, item:items[0].item, qty:items[0].qty, unitPrice:items[0].unitPrice, subtotal, shippingFee:0, shippingFeeStatus:fulfillment === 'delivery' ? 'pending_confirmation' : 'not_applicable', salesTax:0, checkoutTotal:subtotal, fulfillment, status:'待付款', paymentStatus:'pending', shipping:fulfillment === 'delivery' ? `Delivery from ${deliveryWarehouseLabel} · shipping fee pending` : fulfillment === 'pickup-las-vegas' ? 'Las Vegas warehouse pickup' : 'Los Angeles warehouse pickup', trackingNo:'', paid:0, paymentMethod:'Stripe', note:String(body.notes || '').trim().slice(0,2000), customerDemand:String(body.notes || '').trim().slice(0,2000), portalCustomerId:customer.id, portalRequestId:String(body.requestId || `checkout-${orderId}`).slice(0,120), portalSource:true, portalNew:true, paymentTransactions:[], createdAt:now.toISOString(), checkoutExpiresAt:expiresAt };
+      const paymentEnvironment = customerStripePaymentEnvironment();
+      const order = { id:orderId, date:dateInTimezone(db.settings?.timezone || 'America/Los_Angeles',0), branchId, fulfillmentBranchIds, warehouse:branchId, type:'wholesale-us', customer:customer.businessName || customer.contactName, recipientName, customerPhone, customerEmail, customerAddress:fulfillment === 'delivery' ? formattedAddress : String(body.address || customer.address || '').trim().slice(0,500), shippingAddress:fulfillment === 'delivery' ? shippingAddress : null, customerContact:[recipientName,customerPhone,customerEmail].filter(Boolean).join(' · '), salesRep:customer.salesRep || '', preparedBy:'客户客户端', items, item:items[0].item, qty:items[0].qty, unitPrice:items[0].unitPrice, subtotal, shippingFee:0, shippingFeeStatus:fulfillment === 'delivery' ? 'pending_confirmation' : 'not_applicable', salesTax:0, checkoutTotal:subtotal, fulfillment, status:'待付款', paymentStatus:'pending', paymentEnvironment, shipping:fulfillment === 'delivery' ? `Delivery from ${deliveryWarehouseLabel} · shipping fee pending` : fulfillment === 'pickup-las-vegas' ? 'Las Vegas warehouse pickup' : 'Los Angeles warehouse pickup', trackingNo:'', paid:0, paymentMethod:'Stripe', note:String(body.notes || '').trim().slice(0,2000), customerDemand:String(body.notes || '').trim().slice(0,2000), portalCustomerId:customer.id, portalRequestId:String(body.requestId || `checkout-${orderId}`).slice(0,120), portalSource:true, portalNew:true, paymentTransactions:[], createdAt:now.toISOString(), checkoutExpiresAt:expiresAt };
       db.salesOrders.push(order);
       const checkoutAllocations = fulfillment === 'delivery' ? deliveryAllocations : items.map(line=>({ sku:line.item,qty:line.qty,branchId }));
       checkoutAllocations.forEach(line=>db.inventoryReservations.push({ id:id(), orderId, portalCustomerId:customer.id, sku:line.sku, qty:line.qty, branchId:line.branchId, status:'pending_payment', createdAt:now.toISOString(), expiresAt }));
       writeDb(db);
       try {
         const baseUrl = customerCheckoutBaseUrl(req);
-        const fields = { mode:'payment', client_reference_id:orderId, 'metadata[orderId]':orderId, 'metadata[portalCustomerId]':customer.id, success_url:`${baseUrl}/customer.html?checkout=success&session_id={CHECKOUT_SESSION_ID}`, cancel_url:`${baseUrl}/customer.html?checkout=canceled`, expires_at:Math.floor(new Date(expiresAt).getTime()/1000), 'payment_method_types[0]':'card' };
+        const fields = { mode:'payment', client_reference_id:orderId, 'metadata[orderId]':orderId, 'metadata[portalCustomerId]':customer.id, 'metadata[paymentEnvironment]':paymentEnvironment, success_url:`${baseUrl}/customer.html?checkout=success&session_id={CHECKOUT_SESSION_ID}`, cancel_url:`${baseUrl}/customer.html?checkout=canceled`, expires_at:Math.floor(new Date(expiresAt).getTime()/1000), 'payment_method_types[0]':'card' };
         applyCustomerStripeFields(fields,customer,body.locale);
         items.forEach((line,index)=>{ fields[`line_items[${index}][price_data][currency]`]='usd'; fields[`line_items[${index}][price_data][unit_amount]`]=Math.round(line.unitPrice*100); fields[`line_items[${index}][price_data][product_data][name]`]=line.name; fields[`line_items[${index}][price_data][product_data][metadata][sku]`]=line.item; fields[`line_items[${index}][quantity]`]=line.qty; });
         const session = await stripeFormRequest('checkout/sessions',fields);
-        order.stripeCheckoutSessionId=String(session.id || ''); order.checkoutUrl=String(session.url || ''); order.updatedAt=new Date().toISOString();
+        order.stripeCheckoutSessionId=String(session.id || ''); order.checkoutUrl=String(session.url || ''); order.stripeLivemode=session.livemode === true; order.paymentEnvironment=session.livemode === true ? 'live' : session.livemode === false ? 'test' : paymentEnvironment; order.updatedAt=new Date().toISOString();
         audit(db,{ id:`customer-${customer.id}`,name:customer.businessName || customer.contactName },'create-customer-checkout',{ collection:'salesOrders',recordId:order.id,recordLabel:order.customer,detail:`Stripe checkout ${order.customer} $${subtotal.toFixed(2)}` });
         writeDb(db); notifyDataChanged('customer-checkout-created',order.id);
         return send(res,201,{ orderId:order.id, checkoutUrl:order.checkoutUrl, expiresAt, total:subtotal, currency:'usd' });
@@ -6961,11 +6990,12 @@ async function api(req, res) {
       checkoutAllocations.forEach(line=>db.inventoryReservations.push({ id:id(),orderId:order.id,portalCustomerId:customer.id,sku:line.sku,qty:line.qty,branchId:line.branchId,status:'pending_payment',createdAt:new Date().toISOString(),expiresAt }));
       try {
         const baseUrl=customerCheckoutBaseUrl(req);
-        const fields={ mode:'payment',client_reference_id:order.id,'metadata[orderId]':order.id,'metadata[portalCustomerId]':customer.id,success_url:`${baseUrl}/customer.html?checkout=success&session_id={CHECKOUT_SESSION_ID}`,cancel_url:`${baseUrl}/customer.html?checkout=canceled`,expires_at:Math.floor(new Date(expiresAt).getTime()/1000),'payment_method_types[0]':'card' };
+        const paymentEnvironment=customerStripePaymentEnvironment();
+        const fields={ mode:'payment',client_reference_id:order.id,'metadata[orderId]':order.id,'metadata[portalCustomerId]':customer.id,'metadata[paymentEnvironment]':paymentEnvironment,success_url:`${baseUrl}/customer.html?checkout=success&session_id={CHECKOUT_SESSION_ID}`,cancel_url:`${baseUrl}/customer.html?checkout=canceled`,expires_at:Math.floor(new Date(expiresAt).getTime()/1000),'payment_method_types[0]':'card' };
         applyCustomerStripeFields(fields,customer,body.locale);
         items.forEach((line,index)=>{ fields[`line_items[${index}][price_data][currency]`]='usd';fields[`line_items[${index}][price_data][unit_amount]`]=Math.round(line.unitPrice*100);fields[`line_items[${index}][price_data][product_data][name]`]=line.name;fields[`line_items[${index}][price_data][product_data][metadata][sku]`]=line.item;fields[`line_items[${index}][quantity]`]=line.qty; });
         const session=await stripeFormRequest('checkout/sessions',fields);
-        order.checkoutTotal=total;order.stripeCheckoutSessionId=String(session.id||'');order.checkoutUrl=String(session.url||'');order.checkoutExpiresAt=expiresAt;order.paymentStatus='pending';order.status='待付款';order.paymentMethod='Stripe';order.updatedAt=new Date().toISOString();
+        order.checkoutTotal=total;order.stripeCheckoutSessionId=String(session.id||'');order.checkoutUrl=String(session.url||'');order.checkoutExpiresAt=expiresAt;order.paymentStatus='pending';order.status='待付款';order.paymentMethod='Stripe';order.stripeLivemode=session.livemode === true;order.paymentEnvironment=session.livemode === true?'live':session.livemode === false?'test':paymentEnvironment;order.updatedAt=new Date().toISOString();
         writeDb(db);notifyDataChanged('customer-checkout-renewed',order.id);
         return send(res,201,{ orderId:order.id,checkoutUrl:order.checkoutUrl,expiresAt,total,currency:'usd' });
       } catch(error) {
@@ -7447,7 +7477,9 @@ async function api(req, res) {
     Object.entries(canEditPortalPricing && body.prices && typeof body.prices === 'object' ? body.prices : before.prices || {}).forEach(([sku, value]) => { const price = Number(value); if (Number.isFinite(price) && price >= 0) prices[String(sku)] = price; });
     const allowedPriceTiers = new Set((db.portalPriceTiers || []).map(tier => tier.id));
     const requestedPriceTier = String(canEditPortalPricing ? (body.priceTier ?? before.priceTier ?? 'standard') : (before.priceTier ?? 'standard'));
-    const item = { ...before, id: customerId || id(), businessName: String(body.businessName ?? before.businessName ?? '').trim().slice(0, 160), contactName: String(body.contactName ?? before.contactName ?? '').trim().slice(0, 120), account: account.toLowerCase(), email, phone, address: String(body.address ?? before.address ?? '').trim().slice(0, 500), salesRep: String(body.salesRep ?? before.salesRep ?? '').trim().slice(0, 120), status: String(body.status ?? before.status ?? '正常').trim().slice(0, 50), note: String(body.note ?? before.note ?? '').trim().slice(0, 2000), active: body.active !== false, priceTier: allowedPriceTiers.has(requestedPriceTier) ? requestedPriceTier : 'standard', prices, createdAt: before.createdAt || new Date().toISOString(), updatedAt: new Date().toISOString() };
+    const requestedStatus = String(body.status ?? before.status ?? '正常').trim();
+    if (!PORTAL_CUSTOMER_STATUSES.has(requestedStatus)) return send(res, 400, { error: '客户状态不正确，请选择正常、暂停合作或重点客户' });
+    const item = { ...before, id: customerId || id(), businessName: String(body.businessName ?? before.businessName ?? '').trim().slice(0, 160), contactName: String(body.contactName ?? before.contactName ?? '').trim().slice(0, 120), account: account.toLowerCase(), email, phone, address: String(body.address ?? before.address ?? '').trim().slice(0, 500), salesRep: String(body.salesRep ?? before.salesRep ?? '').trim().slice(0, 120), status: requestedStatus, note: String(body.note ?? before.note ?? '').trim().slice(0, 2000), active: body.active !== false, priceTier: allowedPriceTiers.has(requestedPriceTier) ? requestedPriceTier : 'standard', prices, createdAt: before.createdAt || new Date().toISOString(), updatedAt: new Date().toISOString() };
     item.passwordHash = body.password ? hashPassword(body.password) : before.passwordHash;
     if (existingIndex >= 0) db.portalCustomers[existingIndex] = item; else db.portalCustomers.push(item);
     audit(db, user, existingIndex >= 0 ? 'update-portal-customer' : 'create-portal-customer', { collection: 'portalCustomers', recordId: item.id, recordLabel: item.businessName, detail: `${existingIndex >= 0 ? '修改' : '新增'}客户账号 ${item.businessName}` });

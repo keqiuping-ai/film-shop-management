@@ -10,7 +10,8 @@
   },
   "scripts": {
     "start": "node server.js",
-    "audit:data": "node scripts/audit-data-integrity.js"
+    "audit:data": "node scripts/audit-data-integrity.js",
+    "test:portal-safety": "node scripts/test-portal-customer-safety.js"
   },
   "engines": {
     "node": ">=18"
