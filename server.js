@@ -215,8 +215,10 @@ function verifySessionToken(token, db) {
   return user;
 }
 
+const CUSTOMER_SESSION_DURATION_MS = 12 * 60 * 60 * 1000;
+
 function createCustomerSessionToken(customer) {
-  const payload = base64Url(JSON.stringify({ customerId: customer.id, issuedAt: Date.now(), expiresAt: Date.now() + 30 * 24 * 60 * 60 * 1000, passwordVersion: crypto.createHash('sha256').update(String(customer.passwordHash || '')).digest('hex').slice(0, 16) }));
+  const payload = base64Url(JSON.stringify({ customerId: customer.id, issuedAt: Date.now(), expiresAt: Date.now() + CUSTOMER_SESSION_DURATION_MS, passwordVersion: crypto.createHash('sha256').update(String(customer.passwordHash || '')).digest('hex').slice(0, 16) }));
   return `c1.${payload}.${signSessionPayload(payload)}`;
 }
 
@@ -228,7 +230,7 @@ function currentPortalCustomer(req, db) {
   if (parts[2].length !== expected.length || !crypto.timingSafeEqual(Buffer.from(parts[2]), Buffer.from(expected))) return null;
   let payload;
   try { payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8')); } catch { return null; }
-  if (!payload.expiresAt || Date.now() > payload.expiresAt) return null;
+  if (!payload.issuedAt || Date.now() - payload.issuedAt > CUSTOMER_SESSION_DURATION_MS || !payload.expiresAt || Date.now() > payload.expiresAt) return null;
   const customer = (db.portalCustomers || []).find(item => item.id === payload.customerId && item.active !== false);
   if (!customer) return null;
   const version = crypto.createHash('sha256').update(String(customer.passwordHash || '')).digest('hex').slice(0, 16);

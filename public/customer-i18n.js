@@ -14,6 +14,7 @@
   const rows = [
     ['Language','言語','언어','Idioma','语言'],
     ['DEALER LOGIN','販売店ログイン','딜러 로그인','INICIAR SESIÓN','经销商登录'],
+    ['CURRENT CUSTOMER','現在の顧客','현재 로그인 고객','CLIENTE ACTUAL','当前登录客户'],
     ['PROTECTION FOR EVERY JOURNEY','あらゆる旅を守る','모든 여정을 위한 보호','PROTECCIÓN PARA CADA VIAJE','守护每一次旅程'],
     ['Advanced film technology for automotive, architectural, and marine applications.','自動車・建築・船舶向けの先進フィルム技術。','자동차·건축·선박용 첨단 필름 기술.','Tecnología avanzada de películas para aplicaciones automotrices, arquitectónicas y marinas.','面向汽车、建筑和船舶应用的先进薄膜技术。'],
     ['Professional window film, paint protection film, color wrap, and architectural safety film solutions—supported by our U.S. team and global manufacturing capabilities.','米国チームとグローバルな製造力が支える、ウインドウフィルム、PPF、カーラッピング、建築用安全フィルム。','미국 팀과 글로벌 제조 역량이 지원하는 윈도 필름, PPF, 컬러 랩 및 건축 안전 필름 솔루션.','Soluciones profesionales de película para ventanas, PPF, rotulación de color y seguridad arquitectónica, respaldadas por nuestro equipo de EE. UU. y fabricación global.','由美国团队与全球制造能力支持的专业窗膜、漆面保护膜、改色膜及建筑安全膜解决方案。'],
