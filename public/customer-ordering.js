@@ -564,7 +564,8 @@ window.previewCheckoutSubmit=async function(){
     if(shippingAddress&&(!shippingAddress.recipient||!shippingAddress.phone||!shippingAddress.street||!shippingAddress.city||!shippingAddress.state||!shippingAddress.postalCode))throw new Error('For shipment, enter the recipient, phone, street, city, state, and ZIP code.');
     await saveCheckoutDeliveryProfile(false);
     button.disabled=true;button.textContent='VERIFYING PRICE AND INVENTORY…';
-    const result=await api('/api/customer/checkout-session',{method:'POST',body:JSON.stringify({requestId:`customer-checkout-${Date.now()}`,items:[...grouped].map(([sku,qty])=>({sku,qty})),fulfillment,shippingAddress,notes:document.querySelector('.checkout-notes textarea')?.value||''})});
+    const locale=window.QuadI18n?.locale||localStorage.getItem('quadCustomer.locale')||'en';
+    const result=await api('/api/customer/checkout-session',{method:'POST',body:JSON.stringify({requestId:`customer-checkout-${Date.now()}`,items:[...grouped].map(([sku,qty])=>({sku,qty})),fulfillment,shippingAddress,notes:document.querySelector('.checkout-notes textarea')?.value||'',locale})});
     if(!result.checkoutUrl)throw new Error('Stripe Checkout did not return a secure payment URL.');
     location.href=result.checkoutUrl;
   }catch(error){alert(error.message);if(button){button.disabled=false;updateCheckoutTotals()}}

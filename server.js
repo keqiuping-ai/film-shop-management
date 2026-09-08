@@ -6320,12 +6320,18 @@ function deliveryCheckoutAllocations(db, requested, ignoreOrderId = '') {
   return allocations;
 }
 
-function applyCustomerStripeFields(fields, customer) {
+function customerStripeLocale(locale) {
+  const locales = { en:'en', ja:'ja', ko:'ko', 'zh-CN':'zh', 'es-MX':'es-419' };
+  return locales[String(locale || '').trim()] || 'en';
+}
+
+function applyCustomerStripeFields(fields, customer, locale) {
   if (customer.stripeCustomerId) fields.customer = customer.stripeCustomerId;
   else {
     fields.customer_email = customer.email || undefined;
     fields.customer_creation = 'always';
   }
+  fields.locale = customerStripeLocale(locale);
   fields.billing_address_collection = 'required';
   fields['saved_payment_method_options[payment_method_save]'] = 'enabled';
 }
@@ -6834,7 +6840,7 @@ async function api(req, res) {
       try {
         const baseUrl = customerCheckoutBaseUrl(req);
         const fields = { mode:'payment', client_reference_id:orderId, 'metadata[orderId]':orderId, 'metadata[portalCustomerId]':customer.id, success_url:`${baseUrl}/customer.html?checkout=success&session_id={CHECKOUT_SESSION_ID}`, cancel_url:`${baseUrl}/customer.html?checkout=canceled`, expires_at:Math.floor(new Date(expiresAt).getTime()/1000), 'payment_method_types[0]':'card' };
-        applyCustomerStripeFields(fields,customer);
+        applyCustomerStripeFields(fields,customer,body.locale);
         items.forEach((line,index)=>{ fields[`line_items[${index}][price_data][currency]`]='usd'; fields[`line_items[${index}][price_data][unit_amount]`]=Math.round(line.unitPrice*100); fields[`line_items[${index}][price_data][product_data][name]`]=line.name; fields[`line_items[${index}][price_data][product_data][metadata][sku]`]=line.item; fields[`line_items[${index}][quantity]`]=line.qty; });
         const session = await stripeFormRequest('checkout/sessions',fields);
         order.stripeCheckoutSessionId=String(session.id || ''); order.checkoutUrl=String(session.url || ''); order.updatedAt=new Date().toISOString();
@@ -6848,6 +6854,7 @@ async function api(req, res) {
     }
     const resumeCheckoutMatch = req.method === 'POST' && url.pathname.match(/^\/api\/customer\/orders\/([^/]+)\/checkout-session$/);
     if (resumeCheckoutMatch) {
+      const body = await readBody(req);
       const orderId = decodeURIComponent(resumeCheckoutMatch[1]);
       const order = (db.salesOrders || []).find(row => row.id === orderId && row.portalCustomerId === customer.id);
       if (!order) return send(res,404,{ error:'找不到这张客户订单。' });
@@ -6876,7 +6883,7 @@ async function api(req, res) {
       try {
         const baseUrl=customerCheckoutBaseUrl(req);
         const fields={ mode:'payment',client_reference_id:order.id,'metadata[orderId]':order.id,'metadata[portalCustomerId]':customer.id,success_url:`${baseUrl}/customer.html?checkout=success&session_id={CHECKOUT_SESSION_ID}`,cancel_url:`${baseUrl}/customer.html?checkout=canceled`,expires_at:Math.floor(new Date(expiresAt).getTime()/1000),'payment_method_types[0]':'card' };
-        applyCustomerStripeFields(fields,customer);
+        applyCustomerStripeFields(fields,customer,body.locale);
         items.forEach((line,index)=>{ fields[`line_items[${index}][price_data][currency]`]='usd';fields[`line_items[${index}][price_data][unit_amount]`]=Math.round(line.unitPrice*100);fields[`line_items[${index}][price_data][product_data][name]`]=line.name;fields[`line_items[${index}][price_data][product_data][metadata][sku]`]=line.item;fields[`line_items[${index}][quantity]`]=line.qty; });
         const session=await stripeFormRequest('checkout/sessions',fields);
         order.checkoutTotal=total;order.stripeCheckoutSessionId=String(session.id||'');order.checkoutUrl=String(session.url||'');order.checkoutExpiresAt=expiresAt;order.paymentStatus='pending';order.status='待付款';order.paymentMethod='Stripe';order.updatedAt=new Date().toISOString();
