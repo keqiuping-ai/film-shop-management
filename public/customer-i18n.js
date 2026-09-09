@@ -209,7 +209,7 @@
     ['SEARCH, SELECT & ORDER','検索・選択・注文','검색·선택·주문','BUSCAR, ELEGIR Y PEDIR','搜索、选色与下单'],
     ['Enter a model to search or tap a swatch below; confirm the size and quantity, then add it directly to the order.','型番を入力して検索するか下の色見本を選び、サイズと数量を確認して注文に追加してください。','모델을 검색하거나 아래 색상 견본을 선택한 뒤 규격과 수량을 확인하여 주문에 추가하세요.','Busque un modelo o toque una muestra; confirme tamaño y cantidad y agréguelo al pedido.','输入型号搜索，或点击下方色卡；确认规格和数量后直接加入订单。'],
     ['Live QUaD inventory will be checked here before the order is reviewed.','注文確認前にQUaDのリアルタイム在庫をここで確認します。','주문 검토 전에 여기에서 QUaD 실시간 재고를 확인합니다.','Aquí se verificará el inventario de QUaD antes de revisar el pedido.','正式接入后将在这里查询 QUaD 实时库存并继续核对订单。'],
-    ['60 in × 50 ft','60インチ × 50フィート','60인치 × 50피트','60 pulg × 50 pies','60 英寸 × 50 英尺'],
+    ['1.52 m × 18 m','1.52 m × 18 m','1.52 m × 18 m','1.52 m × 18 m','1.52 米 × 18 米'],
     ['Example: TPUQD106','例：TPUQD106','예: TPUQD106','Ejemplo: TPUQD106','例如：TPUQD106'],
     ['Enter a color name','色名を入力','색상 이름 입력','Ingrese el nombre del color','请输入颜色名称'],
     ['Please enter an inventory model and color name.','在庫型番と色名を入力してください。','재고 모델과 색상 이름을 입력하세요.','Ingrese el modelo de inventario y el nombre del color.','请填写库存型号和颜色名称。'],
