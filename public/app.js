@@ -4875,7 +4875,7 @@ const views = {
         <button class="btn" onclick="openUser(null,'clerk')">${t('addClerk')}</button>
         <button class="btn" onclick="openUser()">${t('addNew')}</button>
       </div>` : '';
-    return panel(t('users'), actions, userTable() + `<p class="note">${lang === 'zh' ? '入口：老板登录后点左侧“账号权限”，新增前台或文员账号，输入姓名、邮箱、临时密码，再勾选权限。建议每个人用自己的账号登录，不要共用老板账号。' : 'Entry point: owner logs in, opens Users & Roles, adds front desk or clerk accounts, enters name, email, temporary password, then selects permissions. Each employee should use their own login.'}</p>`);
+    return panel(t('users'), actions, userTable() + `<p class="note">${lang === 'zh' ? '入口：老板登录后点左侧“账号权限”，新增前台或文员账号，输入姓名、联系电话、邮箱、临时密码，再勾选权限。建议每个人用自己的账号登录，不要共用老板账号。' : 'Entry point: owner logs in, opens Users & Roles, adds front desk or clerk accounts, enters name, phone, email, temporary password, then selects permissions. Each employee should use their own login.'}</p>`);
   },
   settings() {
     return `<div class="panel">
@@ -9778,11 +9778,12 @@ function printReimbursement(id) {
 
 function openUser(id, presetRole = 'frontdesk') {
   const initialBranchId = ownerBranchFilter && ownerBranchFilter !== 'all' ? ownerBranchFilter : 'las-vegas';
-  const item = state.users.find(x => x.id === id) || { name: '', email: '', role: presetRole, active: true, defaultBranchId: initialBranchId, branchIds: [initialBranchId] };
+  const item = state.users.find(x => x.id === id) || { name: '', phone: '', email: '', role: presetRole, active: true, defaultBranchId: initialBranchId, branchIds: [initialBranchId] };
   const permissions = { ...roleDefaultPermissions(item.role), ...(item.permissions || {}) };
   openModal(id ? (lang === 'zh' ? '编辑账号' : 'Edit User') : (lang === 'zh' ? '新增账号' : 'New User'), formHtml([
     ['employeeAvatarDataUrl', '', 'avatar', item.avatarDataUrl || '', null, 'wide'],
     ['employeeAccountName',t('name'),'text',item.name],
+    ['employeeAccountPhone',lang === 'zh' ? '联系电话' : 'Phone','tel',item.phone || ''],
     ['employeeAccountLogin',t('email'),'text',item.email],
     ['employeeAccountRole',t('role'),'select',item.role, roleOptions()],
     ['employeeDefaultBranchId',lang === 'zh' ? '默认分店' : 'Default branch','select',item.defaultBranchId || '',branchOptions()],
@@ -9790,9 +9791,10 @@ function openUser(id, presetRole = 'frontdesk') {
     ['employeeAccountActive',t('status'),'select',String(item.active), [['true',t('enabled')],['false',t('disabled')]]],
     ['employeeAccountSecret',id ? t('newPassword') : (lang === 'zh' ? '临时密码' : 'Temporary Password'),'password','']
   ]) + permissionEditor(permissions), () => {
-    const raw = readForm(['employeeAccountName','employeeAccountLogin','employeeAccountRole','employeeDefaultBranchId','employeeBranchIds','employeeAccountActive','employeeAccountSecret']);
+    const raw = readForm(['employeeAccountName','employeeAccountPhone','employeeAccountLogin','employeeAccountRole','employeeDefaultBranchId','employeeBranchIds','employeeAccountActive','employeeAccountSecret']);
     const data = {
       name: raw.employeeAccountName,
+      phone: String(raw.employeeAccountPhone || '').trim().slice(0, 80),
       email: raw.employeeAccountLogin,
       role: raw.employeeAccountRole,
       defaultBranchId: raw.employeeDefaultBranchId,
@@ -9822,20 +9824,22 @@ function openUser(id, presetRole = 'frontdesk') {
 }
 
 function prepareEmployeeAccountForm(isEdit, item) {
-  const fields = ['employeeAccountName', 'employeeAccountLogin', 'employeeAccountSecret'];
+  const fields = ['employeeAccountName', 'employeeAccountPhone', 'employeeAccountLogin', 'employeeAccountSecret'];
   fields.forEach(fieldId => {
     const input = document.getElementById(fieldId);
     if (!input) return;
-    input.setAttribute('autocomplete', fieldId === 'employeeAccountSecret' ? 'new-password' : 'off');
+    input.setAttribute('autocomplete', fieldId === 'employeeAccountSecret' ? 'new-password' : fieldId === 'employeeAccountPhone' ? 'tel' : 'off');
     input.setAttribute('autocapitalize', 'none');
     input.setAttribute('spellcheck', 'false');
   });
   if (isEdit) return;
   const clearNewEmployeeFields = () => {
     const name = document.getElementById('employeeAccountName');
+    const phone = document.getElementById('employeeAccountPhone');
     const email = document.getElementById('employeeAccountLogin');
     const password = document.getElementById('employeeAccountSecret');
     if (name) name.value = item.name || '';
+    if (phone) phone.value = item.phone || '';
     if (email) email.value = item.email || '';
     if (password) password.value = '';
   };
