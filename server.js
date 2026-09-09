@@ -2527,6 +2527,130 @@ function applyLasVegasLegacyBranchMigration() {
   console.log(`Legacy data assigned to Las Vegas. Backup saved as ${backupName}.`);
 }
 
+function applyGmProCanonicalSkuMigration() {
+  const version = 'gm-pro-canonical-sku-2026-09-08-v1';
+  const sourceSku = 'G20YD';
+  const targetSku = 'GM-PRO';
+  const db = readDb();
+  if (db.gmProCanonicalSkuMigrationVersion === version) return;
+
+  const sourceProduct = (db.products || []).find(product => String(product.sku || '').trim() === sourceSku);
+  const targetProduct = (db.products || []).find(product => String(product.sku || '').trim() === targetSku);
+  if (!sourceProduct) return;
+  if (!targetProduct) {
+    console.warn(`Skipped ${sourceSku} migration because canonical product ${targetSku} does not exist.`);
+    return;
+  }
+
+  fs.mkdirSync(BACKUP_DIR, { recursive: true });
+  const backupName = `db-before-gm-pro-canonical-sku-${new Date().toISOString().replace(/[:.]/g, '-')}.json`;
+  const backupPath = path.join(BACKUP_DIR, backupName);
+  try {
+    fs.writeFileSync(backupPath, JSON.stringify(db, null, 2));
+    const backup = JSON.parse(fs.readFileSync(backupPath, 'utf8'));
+    for (const requiredCollection of ['products', 'salesOrders', 'movements', 'portalCustomers', 'portalPriceTiers']) {
+      if (!Array.isArray(backup[requiredCollection])) throw new Error(`backup is missing ${requiredCollection}`);
+    }
+    if (!backup.products.some(product => product.sku === sourceSku) || !backup.products.some(product => product.sku === targetSku)) {
+      throw new Error('backup does not contain both source and canonical products');
+    }
+  } catch (err) {
+    console.warn(`Skipped ${sourceSku} migration because its backup could not be verified: ${err.message}`);
+    return;
+  }
+
+  const counts = {};
+  const replaceRows = (collection, field = 'sku') => {
+    counts[collection] = 0;
+    (db[collection] || []).forEach(row => {
+      if (String(row?.[field] || '').trim() !== sourceSku) return;
+      row[field] = targetSku;
+      if (row.productId === sourceProduct.id) row.productId = targetProduct.id;
+      counts[collection] += 1;
+    });
+  };
+
+  for (const collection of [
+    'movements', 'workshopMovements', 'inventoryReservations', 'shipments',
+    'shipmentReceipts', 'shipmentExceptions', 'branchTransfers', 'branchTransferExceptions'
+  ]) replaceRows(collection);
+  replaceRows('salesTrialRolls', 'productSku');
+
+  counts.salesOrders = 0;
+  (db.salesOrders || []).forEach(order => {
+    let changed = false;
+    if (String(order.item || '').trim() === sourceSku) { order.item = targetSku; changed = true; }
+    (Array.isArray(order.items) ? order.items : []).forEach(line => {
+      if (String(line.item || '').trim() === sourceSku) { line.item = targetSku; changed = true; }
+      if (String(line.sku || '').trim() === sourceSku) { line.sku = targetSku; changed = true; }
+      if (line.productId === sourceProduct.id) { line.productId = targetProduct.id; changed = true; }
+    });
+    if (changed) counts.salesOrders += 1;
+  });
+
+  const replaceProductLines = collection => {
+    counts[collection] = 0;
+    (db[collection] || []).forEach(record => {
+      let changed = false;
+      (Array.isArray(record.items) ? record.items : []).forEach(line => {
+        if (String(line.productSku || '').trim() === sourceSku) { line.productSku = targetSku; changed = true; }
+        if (String(line.sku || '').trim() === sourceSku) { line.sku = targetSku; changed = true; }
+        if (line.productId === sourceProduct.id) { line.productId = targetProduct.id; changed = true; }
+      });
+      if (changed) counts[collection] += 1;
+    });
+  };
+  replaceProductLines('salesConsignments');
+  replaceProductLines('salesFieldOrders');
+
+  counts.portalPriceTiers = 0;
+  counts.portalCustomers = 0;
+  const mergePriceKey = (record, collection) => {
+    const prices = record?.prices;
+    if (!prices || typeof prices !== 'object' || Array.isArray(prices) || !Object.prototype.hasOwnProperty.call(prices, sourceSku)) return;
+    if (!Object.prototype.hasOwnProperty.call(prices, targetSku)) prices[targetSku] = prices[sourceSku];
+    delete prices[sourceSku];
+    counts[collection] += 1;
+  };
+  (db.portalPriceTiers || []).forEach(record => mergePriceKey(record, 'portalPriceTiers'));
+  (db.portalCustomers || []).forEach(record => mergePriceKey(record, 'portalCustomers'));
+
+  const now = new Date().toISOString();
+  const sourceQty = Number(sourceProduct.qty || 0);
+  const targetQty = Number(targetProduct.qty || 0);
+  targetProduct.qty = Math.round((targetQty + sourceQty) * 1000) / 1000;
+  targetProduct.name = 'GM-PRO / G20-YD';
+  targetProduct.model = 'GM-PRO';
+  targetProduct.specification = '1.52 × 15m';
+  targetProduct.spec = '1.52 × 15m';
+  targetProduct.unit = 'roll';
+  targetProduct.active = true;
+  targetProduct.portalVisible = true;
+  targetProduct.portalPurchasable = true;
+  targetProduct.updatedAt = now;
+
+  sourceProduct.qty = 0;
+  sourceProduct.active = false;
+  sourceProduct.portalVisible = false;
+  sourceProduct.portalPurchasable = false;
+  sourceProduct.mergedIntoSku = targetSku;
+  sourceProduct.deactivatedAt = now;
+  sourceProduct.updatedAt = now;
+
+  counts.inventoryQuantityMoved = sourceQty;
+  db.gmProCanonicalSkuMigrationVersion = version;
+  db.gmProCanonicalSkuMigrationAt = now;
+  db.gmProCanonicalSkuMigrationBackup = backupName;
+  db.gmProCanonicalSkuMigrationCounts = counts;
+  audit(db, { id: 'system', name: 'System' }, 'merge-product-sku', {
+    collection: 'products', recordId: targetProduct.id, recordLabel: targetSku,
+    detail: `按老板确认，将重复商品 ${sourceSku} 合并到唯一正式 SKU ${targetSku}；迁移库存、历史业务引用和价格，停用并隐藏旧主档`,
+    sourceProductId: sourceProduct.id, targetProductId: targetProduct.id, counts, backupName
+  });
+  writeDb(db);
+  console.log(`${sourceSku} merged into ${targetSku}. Backup saved as ${backupName}. Counts: ${JSON.stringify(counts)}`);
+}
+
 function branchStockQty(db, sku, branchId) {
   return Number(branchInventorySnapshot(db, { role: 'owner' }).find(row => row.sku === sku && row.branchId === branchId)?.qty || 0);
 }
@@ -3386,8 +3510,17 @@ function productSkuReferences(db, sku) {
     ...(db.movements || []).filter(row => String(row.sku || '') === value),
     ...(db.workshopMovements || []).filter(row => String(row.sku || '') === value),
     ...(db.salesOrders || []).filter(order => salesOrderItems(order).some(line => line.item === value)),
+    ...(db.inventoryReservations || []).filter(row => String(row.sku || '') === value),
+    ...(db.shipments || []).filter(row => String(row.sku || '') === value),
     ...(db.shipmentReceipts || []).filter(row => String(row.sku || '') === value),
-    ...(db.branchTransfers || []).filter(row => String(row.sku || '') === value)
+    ...(db.shipmentExceptions || []).filter(row => String(row.sku || '') === value),
+    ...(db.branchTransfers || []).filter(row => String(row.sku || '') === value),
+    ...(db.branchTransferExceptions || []).filter(row => String(row.sku || '') === value),
+    ...(db.salesTrialRolls || []).filter(row => String(row.productSku || '') === value),
+    ...(db.salesConsignments || []).filter(row => (row.items || []).some(line => String(line.productSku || line.sku || '') === value)),
+    ...(db.salesFieldOrders || []).filter(row => (row.items || []).some(line => String(line.sku || '') === value)),
+    ...(db.portalPriceTiers || []).filter(row => Object.prototype.hasOwnProperty.call(row.prices || {}, value)),
+    ...(db.portalCustomers || []).filter(row => Object.prototype.hasOwnProperty.call(row.prices || {}, value))
   ];
 }
 
@@ -10867,6 +11000,7 @@ applyCustomerConversationDuplicateMerge();
 applyYelpLeadFormMessageMigration();
 applyCustomerNumberRemoval();
 applyLasVegasLegacyBranchMigration();
+applyGmProCanonicalSkuMigration();
 expireInternalMessageVideos();
 cleanupStaleMediaUploadParts();
 http.createServer((req, res) => {
