@@ -6354,6 +6354,28 @@ function checkoutBranchId(fulfillment) {
   return fulfillment === 'pickup-las-vegas' ? 'las-vegas' : fulfillment === 'pickup-los-angeles' ? 'los-angeles' : '';
 }
 
+function normalizedCustomerOrderFulfillment(order) {
+  const values = [order?.fulfillment, order?.deliveryMethod, order?.shippingMethod]
+    .map(value => String(value || '').trim())
+    .filter(Boolean);
+  for (const value of values) {
+    const normalized = value.toLowerCase().replace(/[_\s]+/g, '-');
+    if (['delivery', 'pickup-las-vegas', 'pickup-los-angeles'].includes(normalized)) return normalized;
+  }
+
+  const legacyText = [...values, order?.shipping]
+    .map(value => String(value || '').trim())
+    .filter(Boolean)
+    .join(' ');
+  if (/(las\s*vegas|拉斯维加斯).*(warehouse\s*)?(pickup|自提)|(pickup|自提).*(las\s*vegas|拉斯维加斯)/i.test(legacyText)) return 'pickup-las-vegas';
+  if (/(los\s*angeles|洛杉矶).*(warehouse\s*)?(pickup|自提)|(pickup|自提).*(los\s*angeles|洛杉矶)/i.test(legacyText)) return 'pickup-los-angeles';
+  if (/(delivery|deliver|shipping|freight|发货|配送|快递|物流)/i.test(legacyText)) return 'delivery';
+
+  const shippingAddress = order?.shippingAddress;
+  if (shippingAddress && typeof shippingAddress === 'object' && ['street', 'city', 'state', 'postalCode'].some(key => String(shippingAddress[key] || '').trim())) return 'delivery';
+  return '';
+}
+
 function checkoutInventoryDetails(db, requested, ignoreOrderId = '') {
   const requestedBySku = new Map();
   for (const line of requested) {
@@ -6967,26 +6989,28 @@ async function api(req, res) {
       const order = (db.salesOrders || []).find(row => row.id === orderId && row.portalCustomerId === customer.id);
       if (!order) return send(res,404,{ error:'找不到这张客户订单。' });
       if (String(order.paymentStatus || '').toLowerCase() === 'paid') return send(res,409,{ error:'这张订单已经付款。' });
+      const fulfillment = normalizedCustomerOrderFulfillment(order);
+      if (!fulfillment) return send(res,400,{ error:'订单缺少配送方式，请联系客服确认发货或仓库自提后再付款。',code:'MISSING_FULFILLMENT' });
       const items = salesOrderItems(order).map(line=>({ item:String(line.item || ''), name:String((db.products || []).find(product=>product.sku===line.item)?.name || line.item), qty:Math.max(0,Math.floor(Number(line.qty || 0))), unitPrice:Number(line.unitPrice || 0) }));
       const resumeRequested = items.map(line=>({sku:line.item,qty:line.qty}));
       const resumeInventoryDetails = checkoutInventoryDetails(db,resumeRequested,order.id);
-      const resumeInventoryError = checkoutInventoryError(resumeInventoryDetails,checkoutBranchId(order.fulfillment));
+      const resumeInventoryError = checkoutInventoryError(resumeInventoryDetails,checkoutBranchId(fulfillment));
       if (resumeInventoryError) return send(res,409,{ error:`库存不足：${resumeInventoryError}。如实物数量正确，请检查其他未付款订单的库存锁定。`,code:'INSUFFICIENT_INVENTORY',shortages:resumeInventoryDetails });
-      const deliveryAllocations = order.fulfillment === 'delivery' ? deliveryCheckoutAllocations(db,resumeRequested,order.id) : [];
+      const deliveryAllocations = fulfillment === 'delivery' ? deliveryCheckoutAllocations(db,resumeRequested,order.id) : [];
       const deliveryBranchIds = [...new Set(deliveryAllocations.map(row=>row.branchId))];
-      const branchId = checkoutBranchId(order.fulfillment) || deliveryBranchIds[0] || '';
-      if (!branchId) return send(res,400,{ error:'拉斯维加斯和洛杉矶两个仓库的可用库存合计不足，请调整数量或联系客服。' });
-      order.branchId=branchId; order.warehouse=branchId; order.fulfillmentBranchIds=order.fulfillment === 'delivery' ? deliveryBranchIds : [branchId];
+      const branchId = checkoutBranchId(fulfillment) || deliveryBranchIds[0] || '';
+      if (!branchId) return send(res,409,{ error:'库存分配失败，请检查所选型号和数量。',code:'INVENTORY_ALLOCATION_FAILED' });
+      order.branchId=branchId; order.warehouse=branchId; order.fulfillmentBranchIds=fulfillment === 'delivery' ? deliveryBranchIds : [branchId];
       if (!items.length || items.some(line=>!line.item || !line.qty || !Number.isFinite(line.unitPrice) || line.unitPrice<=0)) return send(res,400,{ error:'订单商品或锁定价格不完整，请联系客服。' });
       releaseOrderInventoryReservations(db,order.id,'released');
       for (const line of items) {
         const product = (db.products || []).find(row=>row.sku===line.item && row.portalVisible!==false && row.portalPurchasable!==false);
-        const available = order.fulfillment === 'delivery' ? line.qty : product ? branchStockQty(db,line.item,branchId)-activeInventoryReservationQty(db,line.item,branchId,order.id) : 0;
+        const available = fulfillment === 'delivery' ? line.qty : product ? branchStockQty(db,line.item,branchId)-activeInventoryReservationQty(db,line.item,branchId,order.id) : 0;
         if (!product || available<line.qty) { writeDb(db); return send(res,409,{ error:`${line.item} 当前库存不足，可用数量：${Math.max(0,available)}。` }); }
       }
       const total = Math.round(items.reduce((sum,line)=>sum+line.qty*line.unitPrice,0)*100)/100;
       const expiresAt = new Date(Date.now()+CUSTOMER_CHECKOUT_HOLD_MINUTES*60_000).toISOString();
-      const checkoutAllocations = order.fulfillment === 'delivery' ? deliveryAllocations : items.map(line=>({ sku:line.item,qty:line.qty,branchId }));
+      const checkoutAllocations = fulfillment === 'delivery' ? deliveryAllocations : items.map(line=>({ sku:line.item,qty:line.qty,branchId }));
       checkoutAllocations.forEach(line=>db.inventoryReservations.push({ id:id(),orderId:order.id,portalCustomerId:customer.id,sku:line.sku,qty:line.qty,branchId:line.branchId,status:'pending_payment',createdAt:new Date().toISOString(),expiresAt }));
       try {
         const baseUrl=customerCheckoutBaseUrl(req);
@@ -6995,7 +7019,7 @@ async function api(req, res) {
         applyCustomerStripeFields(fields,customer,body.locale);
         items.forEach((line,index)=>{ fields[`line_items[${index}][price_data][currency]`]='usd';fields[`line_items[${index}][price_data][unit_amount]`]=Math.round(line.unitPrice*100);fields[`line_items[${index}][price_data][product_data][name]`]=line.name;fields[`line_items[${index}][price_data][product_data][metadata][sku]`]=line.item;fields[`line_items[${index}][quantity]`]=line.qty; });
         const session=await stripeFormRequest('checkout/sessions',fields);
-        order.checkoutTotal=total;order.stripeCheckoutSessionId=String(session.id||'');order.checkoutUrl=String(session.url||'');order.checkoutExpiresAt=expiresAt;order.paymentStatus='pending';order.status='待付款';order.paymentMethod='Stripe';order.stripeLivemode=session.livemode === true;order.paymentEnvironment=session.livemode === true?'live':session.livemode === false?'test':paymentEnvironment;order.updatedAt=new Date().toISOString();
+        order.fulfillment=fulfillment;order.checkoutTotal=total;order.stripeCheckoutSessionId=String(session.id||'');order.checkoutUrl=String(session.url||'');order.checkoutExpiresAt=expiresAt;order.paymentStatus='pending';order.status='待付款';order.paymentMethod='Stripe';order.stripeLivemode=session.livemode === true;order.paymentEnvironment=session.livemode === true?'live':session.livemode === false?'test':paymentEnvironment;order.updatedAt=new Date().toISOString();
         writeDb(db);notifyDataChanged('customer-checkout-renewed',order.id);
         return send(res,201,{ orderId:order.id,checkoutUrl:order.checkoutUrl,expiresAt,total,currency:'usd' });
       } catch(error) {
