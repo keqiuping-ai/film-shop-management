@@ -419,7 +419,7 @@ function portalCustomerSnapshot(db, customer) {
   const names = new Set([customer.businessName, customer.contactName].map(normalizedWarrantyName).filter(Boolean));
   const warranties = (db.warranties || []).filter(item => (phone && normalizedWarrantyPhone(item.phone) === phone) || names.has(normalizedWarrantyName(item.customerName))).sort((a,b)=>String(b.installDate||'').localeCompare(String(a.installDate||''))).map(publicWarrantyRecord);
   const paymentEnvironment = customerStripePaymentEnvironment();
-  return { customer: { ...safePortalCustomer(customer), priceTierName: tier?.name || '批发价' }, tierProgress: portalCustomerTierProgress(db, customer), paymentEnvironment, products: (db.products || []).filter(product => product.portalVisible !== false).map(product => portalProductForCustomer(db, product, customer)), orders: (db.salesOrders || []).filter(order => order.portalCustomerId === customer.id).sort((a, b) => String(b.updatedAt || b.createdAt || '').localeCompare(String(a.updatedAt || a.createdAt || ''))).map(order => ({ id: order.id, date: order.date, status: order.status, paymentStatus: order.paymentStatus || '', items: salesOrderItems(order), subtotal: Number(order.subtotal || 0), shippingFee: Number(order.shippingFee || 0), salesTax: Number(order.salesTax || 0), checkoutTotal: Number(order.checkoutTotal || 0), fulfillment: order.fulfillment || '', customerDemand: order.customerDemand || '', shipping: order.shipping || '', shippingCarrier: order.shippingCarrier || '', trackingNo: order.trackingNo || '', paid: Number(order.paid || 0), paymentMethod: order.paymentMethod || '', createdAt: order.createdAt, updatedAt: order.updatedAt || '', portalMessages: order.portalMessages || [], attachments: order.portalAttachments || [] })), warranties };
+  return { customer: { ...safePortalCustomer(customer), priceTierName: tier?.name || '批发价' }, tierProgress: portalCustomerTierProgress(db, customer), paymentEnvironment, products: (db.products || []).filter(product => product.portalVisible !== false).map(product => portalProductForCustomer(db, product, customer)), orders: (db.salesOrders || []).filter(order => order.portalCustomerId === customer.id).sort((a, b) => String(b.updatedAt || b.createdAt || '').localeCompare(String(a.updatedAt || a.createdAt || ''))).map(order => ({ id: order.id, date: order.date, status: order.status, paymentStatus: order.paymentStatus || '', items: salesOrderItems(order), subtotal: Number(order.subtotal || 0), shippingFee: Number(order.shippingFee || 0), salesTax: Number(order.salesTax || 0), checkoutTotal: Number(order.checkoutTotal || 0), fulfillment: order.fulfillment || '', customerDemand: order.customerDemand || '', shipping: order.shipping || '', shippingCarrier: order.shippingCarrier || '', trackingNo: order.trackingNo || '', paid: Number(order.paid || 0), paymentMethod: order.paymentMethod || '', createdAt: order.createdAt, updatedAt: order.updatedAt || '', portalMessages: order.portalMessages || [], attachments: order.portalAttachments || [], customPrintedFilm:order.customPrintedFilm === true, customPrintedFilmDescription:order.customPrintedFilmDescription || '', customPrintedFilmMeters:Number(order.customPrintedFilmMeters || 0), customPrintedFilmPattern:order.customPrintedFilmPattern || '', customPrintedFilmVehicle:order.customPrintedFilmVehicle || null })), warranties };
 }
 
 function seedDb() {
@@ -6615,10 +6615,58 @@ async function stripeFormRequest(pathname, fields) {
   if (secretKey.startsWith('sk_live_') && process.env.STRIPE_CUSTOMER_ORDER_LIVE_ENABLED !== 'true') throw new Error('Live Stripe payments are locked. Set STRIPE_CUSTOMER_ORDER_LIVE_ENABLED=true only after final approval.');
   const form = new URLSearchParams();
   Object.entries(fields).forEach(([key,value]) => { if (value !== undefined && value !== null && value !== '') form.append(key, String(value)); });
-  const response = await fetch(`https://api.stripe.com/v1/${pathname}`, { method:'POST', headers:{ Authorization:`Bearer ${secretKey}`, 'Content-Type':'application/x-www-form-urlencoded' }, body:form });
+  const stripeApiBase = process.env.NODE_ENV === 'test' && process.env.STRIPE_API_BASE_URL
+    ? String(process.env.STRIPE_API_BASE_URL).replace(/\/$/, '')
+    : 'https://api.stripe.com';
+  const response = await fetch(`${stripeApiBase}/v1/${pathname}`, { method:'POST', headers:{ Authorization:`Bearer ${secretKey}`, 'Content-Type':'application/x-www-form-urlencoded' }, body:form });
   const body = await response.json().catch(()=>({}));
   if (!response.ok) throw new Error(body?.error?.message || `Stripe request failed (${response.status}).`);
   return body;
+}
+
+function customPrintedFilmCheckoutData(order) {
+  const amount = Math.round(Number(order?.checkoutTotal || order?.subtotal || 0) * 100) / 100;
+  const meters = Math.round(Number(order?.customPrintedFilmMeters || 0) * 100) / 100;
+  const description = String(order?.customPrintedFilmDescription || order?.customerDemand || '').trim().slice(0, 500);
+  if (!Number.isFinite(amount) || amount < 1 || amount > 100000) return null;
+  if (!Number.isFinite(meters) || meters <= 0 || meters > 1000) return null;
+  if (!description) return null;
+  return { amount, meters, description };
+}
+
+async function createCustomPrintedFilmStripeSession(req, db, customer, order, locale) {
+  const custom = customPrintedFilmCheckoutData(order);
+  if (!custom) throw new Error('The custom printed film payment details are incomplete.');
+  const paymentEnvironment = customerStripePaymentEnvironment();
+  const baseUrl = customerCheckoutBaseUrl(req);
+  const fields = {
+    mode:'payment', client_reference_id:order.id,
+    'metadata[orderId]':order.id,
+    'metadata[portalCustomerId]':customer.id,
+    'metadata[paymentEnvironment]':paymentEnvironment,
+    'metadata[customPrintedFilm]':'true',
+    'metadata[printedMeters]':custom.meters,
+    success_url:`${baseUrl}/customer.html?checkout=success&session_id={CHECKOUT_SESSION_ID}`,
+    cancel_url:`${baseUrl}/customer.html?checkout=canceled`,
+    'payment_method_types[0]':'card',
+    'line_items[0][price_data][currency]':'usd',
+    'line_items[0][price_data][unit_amount]':Math.round(custom.amount * 100),
+    'line_items[0][price_data][product_data][name]':`${custom.description} · ${custom.meters} m`.slice(0, 120),
+    'line_items[0][price_data][product_data][metadata][sku]':CUSTOM_PRINTED_FILM_SKU,
+    'line_items[0][price_data][product_data][metadata][printedMeters]':custom.meters,
+    'line_items[0][quantity]':1
+  };
+  applyCustomerStripeFields(fields, customer, locale);
+  const session = await stripeFormRequest('checkout/sessions', fields);
+  order.stripeCheckoutSessionId=String(session.id || '');
+  order.checkoutUrl=String(session.url || '');
+  order.paymentStatus='pending';
+  order.status='待付款';
+  order.paymentMethod='Stripe';
+  order.stripeLivemode=session.livemode === true;
+  order.paymentEnvironment=session.livemode === true ? 'live' : session.livemode === false ? 'test' : paymentEnvironment;
+  order.updatedAt=new Date().toISOString();
+  return { orderId:order.id, checkoutUrl:order.checkoutUrl, total:custom.amount, currency:'usd' };
 }
 
 function customerCheckoutBaseUrl(req) {
@@ -6640,7 +6688,7 @@ function confirmCustomerCheckout(db, session, eventRecord) {
   order.paid = paid;
   order.paymentStatus = 'paid';
   order.paymentMethod = 'Stripe';
-  order.status = '已付款待出库';
+  order.status = order.customPrintedFilm ? '已付款待设计确认' : '已付款待出库';
   order.stripeCheckoutSessionId = String(session.id || '');
   order.stripePaymentIntentId = String(session.payment_intent || '');
   order.paymentEnvironment = eventEnvironment;
@@ -7049,6 +7097,65 @@ async function api(req, res) {
       writeDb(db);
       return send(res,200,{ ok:true,deliveryProfile:profile });
     }
+    if (req.method === 'POST' && url.pathname === '/api/customer/custom-printed-film/checkout-session') {
+      const body = await readBody(req);
+      const requestId = String(body.requestId || '').trim().slice(0,120);
+      const description = String(body.description || '').trim().replace(/\s+/g,' ').slice(0,500);
+      const designNotes = String(body.designNotes || '').trim().slice(0,2000);
+      const meters = Math.round(Number(body.meters || 0) * 100) / 100;
+      const amount = Math.round(Number(body.amount || 0) * 100) / 100;
+      if (!requestId) return send(res,400,{ error:'The payment request ID is missing.' });
+      if (!description) return send(res,400,{ error:'Enter a payment description.' });
+      if (!Number.isFinite(meters) || meters <= 0 || meters > 1000) return send(res,400,{ error:'Printed length must be between 0.01 and 1,000 meters.' });
+      if (!Number.isFinite(amount) || amount < 1 || amount > 100000) return send(res,400,{ error:'Payment amount must be between $1 and $100,000.' });
+      const attachments = (Array.isArray(body.attachments) ? body.attachments : []).slice(0,5).map(item=>({
+        name:String(item?.name || 'Customer design').trim().slice(0,160),
+        type:String(item?.type || '').trim().slice(0,120),
+        size:Math.max(0,Number(item?.size || 0)),
+        url:String(item?.url || '').trim().slice(0,1000)
+      })).filter(item=>item.url.startsWith(`${requestPublicBaseUrl(req)}/customer-media/`) || /^\/customer-media\/[a-zA-Z0-9._-]+$/.test(item.url));
+      if ((Array.isArray(body.attachments) ? body.attachments : []).length !== attachments.length) return send(res,400,{ error:'One or more design attachments are invalid.' });
+      const existing = (db.salesOrders || []).find(order=>order.portalCustomerId===customer.id && order.portalRequestId===requestId);
+      if (existing) {
+        if (String(existing.paymentStatus || '').toLowerCase() === 'paid') return send(res,409,{ error:'This custom printed film payment has already been paid.' });
+        try {
+          const result = await createCustomPrintedFilmStripeSession(req,db,customer,existing,body.locale);
+          writeDb(db); notifyDataChanged('customer-custom-checkout-renewed',existing.id);
+          return send(res,200,result);
+        } catch(error) {
+          existing.paymentStatus='checkout_failed'; existing.paymentError=String(error.message || error).slice(0,500); existing.updatedAt=new Date().toISOString(); writeDb(db);
+          return send(res,502,{ error:existing.paymentError });
+        }
+      }
+      const now = new Date();
+      const pattern = String(body.pattern || '').trim().slice(0,160);
+      const vehicle = {
+        year:String(body.vehicleYear || '').trim().slice(0,20),
+        make:String(body.vehicleMake || '').trim().slice(0,100),
+        model:String(body.vehicleModel || '').trim().slice(0,100)
+      };
+      const vehicleLabel = [vehicle.year,vehicle.make,vehicle.model].filter(Boolean).join(' ');
+      const demandLines = [description,`${meters} m`,pattern ? `Design: ${pattern}` : '',vehicleLabel ? `Vehicle: ${vehicleLabel}` : '',designNotes].filter(Boolean);
+      const orderId=id();
+      const order={
+        id:orderId,date:dateInTimezone(db.settings?.timezone || 'America/Los_Angeles',0),branchId:'',warehouse:'',type:'wholesale-us',
+        customer:customer.businessName || customer.contactName,recipientName:customer.contactName || '',customerPhone:customer.phone || '',customerEmail:customer.email || '',customerAddress:customer.address || '',customerContact:[customer.contactName,customer.phone,customer.email].filter(Boolean).join(' · '),
+        salesRep:customer.salesRep || '',preparedBy:'客户客户端',items:[{ item:CUSTOM_PRINTED_FILM_SKU,qty:1,unitPrice:amount,unitCostSnapshot:0 }],item:CUSTOM_PRINTED_FILM_SKU,qty:1,unitPrice:amount,subtotal:amount,shippingFee:0,shippingFeeStatus:'pending_confirmation',salesTax:0,checkoutTotal:amount,fulfillment:'custom-production',status:'待付款',paymentStatus:'pending',paymentEnvironment:customerStripePaymentEnvironment(),shipping:'Production and delivery details pending confirmation',trackingNo:'',paid:0,paymentMethod:'Stripe',
+        note:designNotes,customerDemand:demandLines.join('\n').slice(0,3000),portalCustomerId:customer.id,portalRequestId:requestId,portalSource:true,portalNew:true,portalAttachments:attachments,paymentTransactions:[],createdAt:now.toISOString(),updatedAt:now.toISOString(),
+        customPrintedFilm:true,customerEnteredAmount:true,customPrintedFilmDescription:description,customPrintedFilmMeters:meters,customPrintedFilmPattern:pattern,customPrintedFilmVehicle:vehicle,customPrintedFilmDesignNotes:designNotes
+      };
+      db.salesOrders.push(order);
+      writeDb(db);
+      try {
+        const result=await createCustomPrintedFilmStripeSession(req,db,customer,order,body.locale);
+        audit(db,{ id:`customer-${customer.id}`,name:customer.businessName || customer.contactName },'create-custom-printed-film-checkout',{ collection:'salesOrders',recordId:order.id,recordLabel:order.customer,detail:`Custom printed film ${meters} m · customer-entered payment $${amount.toFixed(2)}` });
+        writeDb(db); notifyDataChanged('customer-custom-checkout-created',order.id);
+        return send(res,201,result);
+      } catch(error) {
+        order.status='付款建立失败';order.paymentStatus='checkout_failed';order.paymentError=String(error.message || error).slice(0,500);order.updatedAt=new Date().toISOString();writeDb(db);
+        return send(res,502,{ error:order.paymentError });
+      }
+    }
     if (req.method === 'POST' && url.pathname === '/api/customer/checkout-session') {
       const body = await readBody(req);
       const fulfillment = String(body.fulfillment || '');
@@ -7122,6 +7229,16 @@ async function api(req, res) {
       const order = (db.salesOrders || []).find(row => row.id === orderId && row.portalCustomerId === customer.id);
       if (!order) return send(res,404,{ error:'找不到这张客户订单。' });
       if (String(order.paymentStatus || '').toLowerCase() === 'paid') return send(res,409,{ error:'这张订单已经付款。' });
+      if (order.customPrintedFilm === true || String(order.item || '') === CUSTOM_PRINTED_FILM_SKU) {
+        try {
+          const result=await createCustomPrintedFilmStripeSession(req,db,customer,order,body.locale);
+          writeDb(db);notifyDataChanged('customer-custom-checkout-renewed',order.id);
+          return send(res,201,result);
+        } catch(error) {
+          order.paymentStatus='checkout_failed';order.paymentError=String(error.message||error).slice(0,500);order.updatedAt=new Date().toISOString();writeDb(db);
+          return send(res,502,{ error:order.paymentError });
+        }
+      }
       const fulfillment = normalizedCustomerOrderFulfillment(order);
       if (!fulfillment) return send(res,400,{ error:'订单缺少配送方式，请联系客服确认发货或仓库自提后再付款。',code:'MISSING_FULFILLMENT' });
       const items = salesOrderItems(order).map(line=>({ item:String(line.item || ''), name:String((db.products || []).find(product=>product.sku===line.item)?.name || line.item), qty:Math.max(0,Math.floor(Number(line.qty || 0))), unitPrice:Number(line.unitPrice || 0) }));

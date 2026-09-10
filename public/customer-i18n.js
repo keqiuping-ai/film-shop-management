@@ -108,6 +108,25 @@
     ['下一步：核对订单 →','次へ：注文確認 →','다음: 주문 확인 →','Siguiente: revisar pedido →','下一步：核对订单 →'],
     ['定制彩绘膜','カスタムプリントラップ','맞춤 그래픽 랩','Vinilo gráfico personalizado','定制彩绘膜'],
     ['选择图片或设计文件','画像またはデザインを選択','이미지 또는 디자인 선택','Seleccionar imagen o diseño','选择图片或设计文件'],
+    ['定制付款','カスタム支払い','맞춤 결제','PAGO PERSONALIZADO','定制付款'],
+    ['彩绘膜与定金付款','プリントラップ・手付金支払い','그래픽 랩 및 보증금 결제','PAGO DE VINILO GRÁFICO Y ANTICIPO','彩绘膜与定金付款'],
+    ['填写本次彩绘膜、设计费或定金说明，自由输入制作米数和已确认的付款金额，然后进入 Stripe 安全付款。','プリントラップ、デザイン料、または手付金の内容を入力し、製作メートル数と確認済み金額を指定してStripe安全決済へ進みます。','그래픽 랩, 디자인 비용 또는 보증금 내용을 입력하고 제작 미터 수와 확인된 금액을 지정한 뒤 Stripe 보안 결제로 이동하세요.','Describa el vinilo gráfico, diseño o anticipo, indique los metros y el monto confirmado, y continúe al pago seguro de Stripe.','填写本次彩绘膜、设计费或定金说明，自由输入制作米数和已确认的付款金额，然后进入 Stripe 安全付款。'],
+    ['1. 选择参考图案','1. 参考デザインを選択','1. 참고 디자인 선택','1. ELEGIR DISEÑO DE REFERENCIA','1. 选择参考图案'],
+    ['2. 上传图片或设计文件（可选）','2. 画像またはデザインをアップロード（任意）','2. 이미지 또는 디자인 업로드(선택 사항)','2. SUBIR IMAGEN O DISEÑO (OPCIONAL)','2. 上传图片或设计文件（可选）'],
+    ['支持图片或 PDF，文件小于 5 MB；付款订单会保留此附件。','画像またはPDF（5MB未満）に対応し、支払い注文に添付されます。','이미지 또는 PDF(5MB 미만)를 지원하며 결제 주문에 첨부됩니다.','Admite imágenes o PDF menores de 5 MB; el archivo quedará adjunto al pedido.','支持图片或 PDF，文件小于 5 MB；付款订单会保留此附件。'],
+    ['3. 车辆与付款资料','3. 車両・支払い情報','3. 차량 및 결제 정보','3. VEHÍCULO Y DATOS DE PAGO','3. 车辆与付款资料'],
+    ['付款说明','支払い内容','결제 설명','DESCRIPCIÓN DEL PAGO','付款说明'],
+    ['制作米数（米）','製作長（メートル）','제작 길이(미터)','METROS DE IMPRESIÓN','制作米数（米）'],
+    ['付款金额（美元）','支払額（米ドル）','결제 금액(미화)','MONTO A PAGAR (USD)','付款金额（美元）'],
+    ['设计要求与备注','デザイン要望・備考','디자인 요청 및 메모','REQUISITOS Y NOTAS','设计要求与备注'],
+    ['进入 Stripe 安全付款','Stripe安全決済へ','Stripe 보안 결제로 이동','CONTINUAR AL PAGO SEGURO DE STRIPE','进入 Stripe 安全付款'],
+    ['Production and delivery details pending confirmation','製作・配送内容は確認待ちです','제작 및 배송 세부 정보 확인 대기 중','Producción y entrega pendientes de confirmación','生产与交付详情待确认'],
+    ['Design attachments','デザイン添付ファイル','디자인 첨부 파일','Archivos de diseño','设计附件'],
+    ['金额由客户按已确认的报价或定金填写。此项目不扣成品库存；生产、余款、运费和交付方式由工作人员另行确认。','確認済み見積りまたは手付金に基づいて金額を入力してください。完成品在庫は差し引かれず、製作、残金、送料、受渡方法はスタッフが別途確認します。','확정 견적 또는 보증금에 따라 금액을 입력하세요. 완제품 재고는 차감되지 않으며 제작, 잔금, 배송비 및 인도 방식은 직원이 별도로 확인합니다.','Ingrese el monto según la cotización o anticipo confirmado. No se descuenta inventario terminado; producción, saldo, envío y entrega se confirman por separado.','金额由客户按已确认的报价或定金填写。此项目不扣成品库存；生产、余款、运费和交付方式由工作人员另行确认。'],
+    ['例如：Model Y 彩绘膜定金','例：Model Y プリントラップ手付金','예: Model Y 그래픽 랩 보증금','Ej.: Anticipo de vinilo gráfico Model Y','例如：Model Y 彩绘膜定金'],
+    ['例如：15 或 18','例：15 または18','예: 15 또는 18','Ej.: 15 o 18','例如：15 或 18'],
+    ['例如：500.00','例：500.00','예: 500.00','Ej.: 500.00','例如：500.00'],
+    ['可填写颜色、图案位置、文字内容、定金用途或其他要求','色、図柄位置、文字、手付金用途、その他の要望を入力できます','색상, 그래픽 위치, 문구, 보증금 용도 또는 기타 요청을 입력하세요','Indique color, ubicación, texto, propósito del anticipo u otros requisitos','可填写颜色、图案位置、文字内容、定金用途或其他要求'],
     ['窗膜产品订购页','ウインドウフィルム発注','윈도 필름 주문','Pedido de película para ventanas','窗膜产品订购页'],
     ['选择窗膜型号','ウインドウフィルムを選択','윈도 필름 모델 선택','Seleccione película para ventanas','选择窗膜型号'],
     ['透光率','可視光透過率','가시광선 투과율','Transmisión de luz','透光率'],
@@ -115,6 +134,7 @@
     ['加入订单','注文に追加','주문에 추가','Agregar al pedido','加入订单'],
     ['当前订单','現在の注文','현재 주문','Pedido actual','当前订单'],
     ['去结账','会計へ','결제하기','Ir a pagar','去结账'],
+    ['下一步：去结账 →','次へ：お会計 →','다음: 결제 →','SIGUIENTE: PAGAR →','下一步：去结账 →'],
     ['继续添加产品','製品を追加','제품 계속 추가','Seguir agregando productos','继续添加产品'],
     ['收货信息','配送情報','배송 정보','Datos de entrega','收货信息'],
     ['公司 / 门店名称','会社／店舗名','회사 / 매장명','Empresa / Tienda','公司 / 门店名称'],
@@ -284,6 +304,9 @@
     ['This preview does not check or deduct live inventory and does not create a final order.','このプレビューはリアルタイム在庫の照会・引当を行わず、正式注文も作成しません。','이 미리보기는 실시간 재고를 조회하거나 차감하지 않으며 정식 주문을 생성하지 않습니다.','Esta vista previa no consulta ni descuenta inventario y no crea un pedido final.','当前为页面设计预览，不查询实时库存、不扣减库存，也不会生成正式订单。'],
     ['Tap a swatch to view the full color and ordering options. Live color codes are synchronized from QUaD inventory.','色見本を選ぶと大きな色と注文項目を確認できます。正式な色番号はQUaD在庫から同期されます。','색상 견본을 눌러 큰 색상과 주문 옵션을 확인하세요. 실제 색상 코드는 QUaD 재고와 동기화됩니다.','Toque una muestra para ver el color y las opciones de pedido. Los códigos reales se sincronizan con el inventario QUaD.','点击色卡查看大色样和订货选项。当前色号为页面演示，正式色号将由 QUaD 库存系统同步。'],
     ['QUICK SELECT & ORDER','クイック選択・注文','빠른 선택 및 주문','SELECCIÓN Y PEDIDO RÁPIDO','快速选货与下单'],
+    ['搜索其他库存型号','その他の在庫型番を検索','다른 재고 모델 검색','BUSCAR OTRO MODELO EN INVENTARIO','搜索其他库存型号'],
+    ['例如：A18、A20、A17','例：A18、A20、A17','예: A18, A20, A17','Ej.: A18, A20, A17','例如：A18、A20、A17'],
+    ['只显示当前可购买且有库存的窗膜；价格按当前登录客户的协议价或等级价结算。','現在購入可能で在庫のあるウインドウフィルムのみ表示します。価格はログイン中のお客様の契約価格またはランク価格です。','현재 구매 가능하고 재고가 있는 윈도 필름만 표시합니다. 가격은 로그인한 고객의 계약가 또는 등급가를 적용합니다.','Solo muestra película para ventanas disponible y con inventario. El precio corresponde al acuerdo o nivel del cliente conectado.','只显示当前可购买且有库存的窗膜；价格按当前登录客户的协议价或等级价结算。'],
     ['INVENTORY MODEL','在庫型番','재고 모델','MODELO DE INVENTARIO','库存型号'],
     ['COLOR NAME','色名','색상 이름','NOMBRE DEL COLOR','颜色名称'],
     ['ORDER LIST','注文リスト','주문 목록','LISTA DE PEDIDO','订购清单'],
@@ -430,6 +453,15 @@
     '改色膜产品订购页':'COLOR WRAP ORDERING','选择改色膜颜色':'SELECT COLOR WRAP','全部':'ALL','亮光':'GLOSS','缎面':'SATIN','哑光':'MATTE',
     '搜索型号或颜色名称':'SEARCH MODEL OR COLOR','加入选色清单':'ADD TO SELECTION','下一步：核对订单 →':'NEXT: REVIEW ORDER →',
     '定制彩绘膜':'CUSTOM PRINTED WRAP','选择图片或设计文件':'SELECT IMAGE OR DESIGN FILE',
+    '定制付款':'CUSTOM PAYMENT','彩绘膜与定金付款':'CUSTOM PRINTED FILM & DEPOSIT PAYMENT',
+    '填写本次彩绘膜、设计费或定金说明，自由输入制作米数和已确认的付款金额，然后进入 Stripe 安全付款。':'Describe this custom printed film, design fee, or deposit; enter the production length and confirmed amount, then continue to Stripe Secure Checkout.',
+    '1. 选择参考图案':'1. CHOOSE A REFERENCE DESIGN','2. 上传图片或设计文件（可选）':'2. UPLOAD AN IMAGE OR DESIGN (OPTIONAL)',
+    '支持图片或 PDF，文件小于 5 MB；付款订单会保留此附件。':'Images or PDFs under 5 MB are supported and will be attached to the payment order.',
+    '3. 车辆与付款资料':'3. VEHICLE & PAYMENT DETAILS','付款说明':'PAYMENT DESCRIPTION','制作米数（米）':'PRINTED LENGTH (METERS)',
+    '付款金额（美元）':'PAYMENT AMOUNT (USD)','设计要求与备注':'DESIGN REQUIREMENTS & NOTES','进入 Stripe 安全付款':'CONTINUE TO STRIPE SECURE PAYMENT',
+    '金额由客户按已确认的报价或定金填写。此项目不扣成品库存；生产、余款、运费和交付方式由工作人员另行确认。':'Enter the amount from the confirmed quote or deposit. This payment does not deduct finished-goods inventory; production, balance, shipping, and delivery are confirmed separately.',
+    '例如：Model Y 彩绘膜定金':'Example: Model Y custom wrap deposit','例如：15 或 18':'Example: 15 or 18','例如：500.00':'Example: 500.00',
+    '可填写颜色、图案位置、文字内容、定金用途或其他要求':'Enter colors, graphic placement, wording, deposit purpose, or other requirements',
     '窗膜产品订购页':'WINDOW FILM ORDERING','选择窗膜型号':'SELECT WINDOW FILM','透光率':'VISIBLE LIGHT TRANSMISSION',
     '隔热率':'HEAT REJECTION','加入订单':'ADD TO ORDER','当前订单':'CURRENT ORDER','去结账':'CHECK OUT','下一步：去结账 →':'NEXT: CHECKOUT →','删除这一项':'Remove product','继续添加产品':'CONTINUE SHOPPING',
     '收货信息':'DELIVERY INFORMATION','公司 / 门店名称':'COMPANY / SHOP NAME','收货人':'RECIPIENT','联系电话':'PHONE',
@@ -451,7 +483,7 @@
     ,'20 英寸 × 100 英尺（约 0.51 × 30.5 米）':'20 in × 100 ft (approx. 0.51 × 30.5 m)','36 英寸 × 100 英尺（约 0.91 × 30.5 米）':'36 in × 100 ft (approx. 0.91 × 30.5 m)'
     ,'40 英寸 × 100 英尺（约 1.02 × 30.5 米）':'40 in × 100 ft (approx. 1.02 × 30.5 m)','60 英寸 × 100 英尺（约 1.52 × 30.5 米）':'60 in × 100 ft (approx. 1.52 × 30.5 m)'
     ,'当前为页面设计预览，不查询实时库存、不扣减库存，也不会生成正式订单。':'This preview does not check or deduct live inventory and does not create a final order.'
-    ,'快速选货与下单':'QUICK SELECT & ORDER','请先选择上方型号':'SELECT A MODEL ABOVE','型号参数将自动带入这里':'MODEL DETAILS APPEAR AUTOMATICALLY','卷材规格':'ROLL SIZE'
+    ,'快速选货与下单':'QUICK SELECT & ORDER','搜索其他库存型号':'SEARCH OTHER INVENTORY MODELS','例如：A18、A20、A17':'Example: A18, A20, A17','只显示当前可购买且有库存的窗膜；价格按当前登录客户的协议价或等级价结算。':'Only purchasable window film currently in stock is shown. Pricing uses the signed-in customer agreement or dealer tier.','请先选择上方型号':'SELECT A MODEL ABOVE','型号参数将自动带入这里':'MODEL DETAILS APPEAR AUTOMATICALLY','卷材规格':'ROLL SIZE'
     ,'汽车窗膜产品订购页':'AUTOMOTIVE WINDOW FILM ORDERING','03 · 汽车隔热膜':'03 · AUTOMOTIVE WINDOW FILM','高清低雾度':'HIGH CLARITY · LOW HAZE','高效隔热':'HIGH HEAT REJECTION','收缩施工友好':'INSTALLER-FRIENDLY SHRINK','多种透光率':'MULTIPLE VLT OPTIONS'
     ,'顶级双银':'PREMIUM DUAL-SILVER','SP 混合系列':'SP HYBRID SERIES','Nano 陶瓷':'NANO CERAMIC','P 经济系列':'P VALUE SERIES','TAI 天窗专用':'TAI ROOF SERIES'
     ,'按性能等级、透光率和应用位置选择产品。QUaD 窗膜重点突出高清、高透、低雾度、强隔热和良好的热收缩施工表现。':'Choose by performance, VLT, and application. QUaD window film delivers clarity, low haze, strong heat rejection, and installer-friendly shrinking.'
