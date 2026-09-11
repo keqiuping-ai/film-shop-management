@@ -2438,6 +2438,12 @@ function branchVisibleRecords(db, user, rows = []) {
   });
 }
 
+function canAccessCollectionBranch(db, user, collection, branchId) {
+  const companyWideCustomerCollection = collection === 'prospects' || collection === 'customerConversations';
+  if (companyWideCustomerCollection && canAccess(user, 'prospectsEdit')) return true;
+  return canAccessBranch(db, user, branchId);
+}
+
 function branchTransferVisibleRecords(db, user, rows = []) {
   const scope = userBranchIds(db, user);
   if (!scope) return rows;
@@ -2674,7 +2680,7 @@ function assignRecordBranch(db, user, item, collection) {
   item.branchId = String(item.branchId || user.defaultBranchId || '').trim();
   const valid = new Set(customerBranches(db).map(branch => branch.id));
   if (item.branchId && !valid.has(item.branchId)) return '所属分店不存在或已被移除';
-  if (!canAccessBranch(db, user, item.branchId)) return '你没有这个分店的数据权限';
+  if (!canAccessCollectionBranch(db, user, collection, item.branchId)) return '你没有这个分店的数据权限';
   return '';
 }
 
@@ -10569,7 +10575,7 @@ async function api(req, res) {
     const idx = db[collection].findIndex(x => x.id === recordId);
     const canSeeCosts = user.role === 'owner';
     if (idx < 0) return send(res, 404, { error: 'Record not found' });
-    if (!canAccessBranch(db, user, db[collection][idx]?.branchId)) return send(res, 403, { error: '你没有这条记录所属分店的数据权限' });
+    if (!canAccessCollectionBranch(db, user, collection, db[collection][idx]?.branchId)) return send(res, 403, { error: '你没有这条记录所属分店的数据权限' });
     if (collection === 'shipments' && db[collection][idx].receivedAt) {
       return send(res, 400, { error: '已经收货入库的在途单不能直接修改，避免库存与入库单不一致' });
     }
@@ -10789,7 +10795,7 @@ async function api(req, res) {
 
   if (req.method === 'DELETE' && recordId) {
     const branchProtectedRecord = (db[collection] || []).find(row => row.id === recordId);
-    if (branchProtectedRecord && !canAccessBranch(db, user, branchProtectedRecord.branchId)) return send(res, 403, { error: '你没有这条记录所属分店的数据权限' });
+    if (branchProtectedRecord && !canAccessCollectionBranch(db, user, collection, branchProtectedRecord.branchId)) return send(res, 403, { error: '你没有这条记录所属分店的数据权限' });
     if (collection === 'workshopMovements') {
       return send(res, 400, { error: '贴膜间库存流水不能删除。请用反向流水修正，保证库存台账完整。' });
     }
