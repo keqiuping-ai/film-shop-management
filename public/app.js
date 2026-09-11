@@ -9780,7 +9780,9 @@ function openUser(id, presetRole = 'frontdesk') {
   const initialBranchId = ownerBranchFilter && ownerBranchFilter !== 'all' ? ownerBranchFilter : 'las-vegas';
   const item = state.users.find(x => x.id === id) || { name: '', phone: '', email: '', role: presetRole, active: true, defaultBranchId: initialBranchId, branchIds: [initialBranchId] };
   const permissions = { ...roleDefaultPermissions(item.role), ...(item.permissions || {}) };
-  openModal(id ? (lang === 'zh' ? '编辑账号' : 'Edit User') : (lang === 'zh' ? '新增账号' : 'New User'), formHtml([
+  openModal(id ? (lang === 'zh' ? '编辑账号' : 'Edit User') : (lang === 'zh' ? '新增账号' : 'New User'), `
+    <div class="employee-account-save-status" id="employeeAccountSaveStatus" role="status" aria-live="polite" hidden></div>
+  ` + formHtml([
     ['employeeAvatarDataUrl', '', 'avatar', item.avatarDataUrl || '', null, 'wide'],
     ['employeeAccountName',t('name'),'text',item.name],
     ['employeeAccountPhone',lang === 'zh' ? '联系电话' : 'Phone','tel',item.phone || ''],
@@ -9790,7 +9792,7 @@ function openUser(id, presetRole = 'frontdesk') {
     ['employeeBranchIds',lang === 'zh' ? '可以访问的分店' : 'Accessible branches','multi',item.branchIds || [],branchOptions(false)],
     ['employeeAccountActive',t('status'),'select',String(item.active), [['true',t('enabled')],['false',t('disabled')]]],
     ['employeeAccountSecret',id ? t('newPassword') : (lang === 'zh' ? '临时密码' : 'Temporary Password'),'password','']
-  ]) + permissionEditor(permissions), () => {
+  ]) + permissionEditor(permissions), async () => {
     const raw = readForm(['employeeAccountName','employeeAccountPhone','employeeAccountLogin','employeeAccountRole','employeeDefaultBranchId','employeeBranchIds','employeeAccountActive','employeeAccountSecret']);
     const data = {
       name: raw.employeeAccountName,
@@ -9806,11 +9808,11 @@ function openUser(id, presetRole = 'frontdesk') {
     data.active = data.active === 'true';
     data.permissions = readPermissions();
     if (!data.password) delete data.password;
-    if (!data.name.trim()) return alert(lang === 'zh' ? '员工姓名不能为空。' : 'Employee name is required.');
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(data.email.trim())) return alert(lang === 'zh' ? '员工邮箱格式不正确。' : 'Employee email is invalid.');
-    if (!id && !data.password) return alert(lang === 'zh' ? '新增员工必须设置临时密码。' : 'A temporary password is required for new employees.');
-    if (data.password && data.password.length < 8) return alert(lang === 'zh' ? '密码至少 8 位。' : 'Password must be at least 8 characters.');
-    saveRecord('users', id, data);
+    if (!data.name.trim()) return showEmployeeAccountSaveError(lang === 'zh' ? '员工姓名不能为空。' : 'Employee name is required.', 'employeeAccountName');
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(data.email.trim())) return showEmployeeAccountSaveError(lang === 'zh' ? '员工邮箱格式不正确。' : 'Employee email is invalid.', 'employeeAccountLogin');
+    if (!id && !data.password) return showEmployeeAccountSaveError(lang === 'zh' ? '新增员工必须设置临时密码。' : 'A temporary password is required for new employees.', 'employeeAccountSecret');
+    if (data.password && data.password.length < 8) return showEmployeeAccountSaveError(lang === 'zh' ? '密码至少 8 位。' : 'Password must be at least 8 characters.', 'employeeAccountSecret');
+    await saveEmployeeAccount(id, data);
   });
   const headerSave = document.getElementById('modalHeaderAction');
   if (headerSave) {
@@ -9821,6 +9823,65 @@ function openUser(id, presetRole = 'frontdesk') {
   prepareEmployeeAccountForm(Boolean(id), item);
   const roleSelect = document.getElementById('employeeAccountRole');
   if (roleSelect) roleSelect.addEventListener('change', () => applyRolePermissions(roleSelect.value));
+}
+
+function setEmployeeAccountSaveState(type, message) {
+  const status = document.getElementById('employeeAccountSaveStatus');
+  if (status) {
+    status.hidden = false;
+    status.className = `employee-account-save-status ${type}`;
+    status.textContent = message;
+  }
+  const busy = type === 'saving' || type === 'success';
+  const buttonText = type === 'saving'
+    ? (lang === 'zh' ? '保存中…' : 'Saving…')
+    : type === 'success'
+      ? (lang === 'zh' ? '✓ 已保存' : '✓ Saved')
+      : (lang === 'zh' ? '保存' : 'Save');
+  ['modalSave', 'modalHeaderAction'].forEach(buttonId => {
+    const button = document.getElementById(buttonId);
+    if (!button) return;
+    button.disabled = busy;
+    button.textContent = buttonText;
+  });
+}
+
+function showEmployeeAccountSaveError(message, fieldId = '') {
+  setEmployeeAccountSaveState('error', `${lang === 'zh' ? '无法保存' : 'Could not save'}：${message}`);
+  document.querySelector('#modal .dialog')?.scrollTo({ top: 0, behavior: 'smooth' });
+  const field = fieldId ? document.getElementById(fieldId) : null;
+  if (field) {
+    field.setAttribute('aria-invalid', 'true');
+    field.focus({ preventScroll: true });
+  }
+}
+
+async function saveEmployeeAccount(id, data) {
+  document.querySelectorAll('#modalBody [aria-invalid="true"]').forEach(field => field.removeAttribute('aria-invalid'));
+  setEmployeeAccountSaveState('saving', lang === 'zh' ? '正在保存员工资料，请稍候…' : 'Saving employee details…');
+  document.querySelector('#modal .dialog')?.scrollTo({ top: 0, behavior: 'smooth' });
+  try {
+    state = await api(`/api/users${id ? `/${encodeURIComponent(id)}` : ''}`, {
+      method: id ? 'PUT' : 'POST',
+      body: JSON.stringify(data),
+      timeoutMs: 30000
+    });
+    const saved = (state.users || []).find(item => id ? item.id === id : String(item.email || '').toLowerCase() === String(data.email || '').trim().toLowerCase());
+    const expectedBranchIds = [...new Set([data.defaultBranchId, ...(Array.isArray(data.branchIds) ? data.branchIds : [])].filter(Boolean))];
+    const savedBranchIds = new Set(Array.isArray(saved?.branchIds) ? saved.branchIds : []);
+    if (!saved || expectedBranchIds.some(branchId => !savedBranchIds.has(branchId))) {
+      throw new Error(lang === 'zh' ? '服务器没有返回完整的分店权限，请重试。' : 'The server did not return all selected branch permissions. Please try again.');
+    }
+    broadcastDataChange();
+    const branchNameById = new Map(branchOptions(false).map(option => [String(option[0]), String(option[1])]));
+    const savedBranches = expectedBranchIds.map(branchId => branchNameById.get(branchId) || branchId).join(lang === 'zh' ? '、' : ', ');
+    setEmployeeAccountSaveState('success', lang === 'zh' ? `保存成功：可访问 ${savedBranches}` : `Saved successfully: access to ${savedBranches}`);
+    await new Promise(resolve => setTimeout(resolve, 900));
+    closeModal();
+    render();
+  } catch (err) {
+    showEmployeeAccountSaveError(err.message || (lang === 'zh' ? '服务器没有返回具体原因，请重试。' : 'The server did not provide a reason. Please try again.'));
+  }
 }
 
 function prepareEmployeeAccountForm(isEdit, item) {
@@ -10761,6 +10822,7 @@ function openModal(title, html, onSave) {
   const headerAction = document.getElementById('modalHeaderAction');
   if (headerAction) {
     headerAction.hidden = true;
+    headerAction.disabled = false;
     headerAction.textContent = '';
     headerAction.onclick = null;
   }
