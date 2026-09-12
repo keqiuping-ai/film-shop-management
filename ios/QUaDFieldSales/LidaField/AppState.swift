@@ -105,8 +105,11 @@ final class AppState: ObservableObject {
                 ? previewPlans[previewPlanIndex]
                 : previewPlans.first
             selectedCustomerIDs = Set(customers.prefix(3).map(\.customerId))
+            let unfinishedVisitPreview = ProcessInfo.processInfo.arguments.contains("-preview-unfinished-visit")
             for (index, previewPlan) in previewPlans.enumerated() {
-                completedArtifactsByPlan[previewPlan.planId] = ["arrival", "photos", "meeting", "samples", "order", "receipt", "follow-up"]
+                completedArtifactsByPlan[previewPlan.planId] = unfinishedVisitPreview
+                    ? []
+                    : ["arrival", "photos", "meeting", "samples", "order", "receipt", "follow-up"]
                 meetingDrafts[previewPlan.planId] = MeetingDraft(
                     transcript: index == 0
                         ? "客户主要使用陶瓷隔热膜，希望先测试 QD15；测试通过后再讨论批量价格。"
@@ -1235,6 +1238,24 @@ final class AppState: ObservableObject {
             return false
         }
         if isDesignPreview {
+            let updated = VisitPlan(
+                planId: plan.planId,
+                planCode: plan.planCode,
+                customerId: plan.customerId,
+                customerName: plan.customerName,
+                contactName: plan.contactName,
+                phone: plan.phone,
+                scheduledAt: plan.scheduledAt,
+                address: plan.address,
+                latitude: plan.latitude,
+                longitude: plan.longitude,
+                objective: plan.objective,
+                routeSequence: plan.routeSequence,
+                status: "TRAVELING",
+                cancellationReason: plan.cancellationReason
+            )
+            mergeNewlyCreatedVisitPlan(updated, persist: false)
+            selectedVisit = updated
             successMessage = "出发位置已保存，行程已开始"
             return true
         }
@@ -1719,7 +1740,12 @@ final class AppState: ObservableObject {
     }
 
     private func planDateKey(_ plan: VisitPlan) -> String? {
-        plan.scheduledAt.map { String($0.prefix(10)) }
+        guard let scheduledAt = plan.scheduledAt else { return nil }
+        let fractional = ISO8601DateFormatter()
+        fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let date = fractional.date(from: scheduledAt) ?? ISO8601DateFormatter().date(from: scheduledAt)
+        guard let date else { return String(scheduledAt.prefix(10)) }
+        return APIClient.localDate(date, timeZoneIdentifier: region.timeZoneIdentifier)
     }
 
     private func visitPlanComesBefore(_ lhs: VisitPlan, _ rhs: VisitPlan) -> Bool {

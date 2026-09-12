@@ -52,6 +52,8 @@ struct LidaFieldApp: App {
                         await app.clockOut()
                     } else if arguments.contains("-preview-run-one-tap-update") {
                         await app.updateWholeSystem()
+                    } else if arguments.contains("-preview-run-start-trip") {
+                        _ = await app.startTrip(app.selectedPlan)
                     } else if arguments.contains("-preview-run-meeting-recording") {
                         let plan = app.selectedPlan
                         app.prepareMeetingDraft(for: plan)

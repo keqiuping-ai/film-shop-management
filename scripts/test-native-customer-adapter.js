@@ -101,8 +101,8 @@ async function seed() {
   });
   db.salesAccounts = [{
     id: 'existing-native-customer',
-    businessName: 'Existing Tint Shop',
-    address: '100 Test Ave, Las Vegas, NV',
+    businessName: 'San Francisco Isolated Tint Shop',
+    address: '1 Market St, San Francisco, CA 94105',
     city: 'Las Vegas',
     contactName: 'Alex',
     phone: '7025550100',
@@ -110,8 +110,8 @@ async function seed() {
     customerType: '贴膜门店',
     source: '隔离测试',
     note: 'existing fixture',
-    lat: 36.1716,
-    lng: -115.1391,
+    lat: 37.7936,
+    lng: -122.3958,
     assignedUserId: 'native-sales-user',
     assignedUserName: 'Native Sales Test',
     createdByUserId: 'native-sales-user',
@@ -124,8 +124,8 @@ async function seed() {
   db.salesVisitPlans = [{
     id: 'isolated-visit-plan',
     accountId: 'existing-native-customer',
-    businessName: 'Existing Tint Shop',
-    address: '100 Test Ave, Las Vegas, NV',
+    businessName: 'San Francisco Isolated Tint Shop',
+    address: '1 Market St, San Francisco, CA 94105',
     userId: 'native-sales-user',
     assignedUserId: 'native-sales-user',
     date: '2026-09-11',
@@ -186,6 +186,10 @@ async function run() {
   ]) assert(source.includes(route), `missing native field-sales flow route ${route}`);
   assert(source.includes('route.hasPrefix("/api/field-sales/trips/")'), 'native app must allow old-trip cancellation');
   assert(source.includes('ACTIVE_TRIP_EXISTS'), 'native app must decode structured active-trip conflicts');
+  const visitViewSource = fs.readFileSync(path.join(ROOT, 'ios/QUaDFieldSales/LidaField/VisitDetailView.swift'), 'utf8');
+  assert(visitViewSource.includes('selected.planId == plan.planId'), 'visit screen must prefer the updated selected trip state');
+  const appStateSource = fs.readFileSync(path.join(ROOT, 'ios/QUaDFieldSales/LidaField/AppState.swift'), 'utf8');
+  assert(appStateSource.includes('APIClient.localDate(date, timeZoneIdentifier: region.timeZoneIdentifier)'), 'visit plan merging must use the configured business time zone');
   assert(source.includes('throw APIError.localOnly'), 'non-customer requests must be blocked locally');
   assert(source.includes('func dashboard(date: String)'), 'native dashboard must read QUaD mobile bootstrap');
   assert(source.includes('fieldSales.visitPlans'), 'native dashboard must map QUaD visit plans');
@@ -218,7 +222,7 @@ async function run() {
   const bootstrap = await jsonRequest('/api/mobile/bootstrap', { token: login.body.token });
   assert.equal(bootstrap.status, 200);
   assert.equal(bootstrap.body.fieldSales.accounts.length, 1);
-  assert.equal(bootstrap.body.fieldSales.accounts[0].businessName, 'Existing Tint Shop');
+  assert.equal(bootstrap.body.fieldSales.accounts[0].businessName, 'San Francisco Isolated Tint Shop');
   assert.equal(bootstrap.body.clockRecords.length, 0);
   assert.equal(bootstrap.body.fieldSales.visitPlans.length, 1);
   assert.equal(bootstrap.body.fieldSales.visitPlans[0].accountId, 'existing-native-customer');
@@ -230,8 +234,8 @@ async function run() {
     token: login.body.token,
     body: {
       type: 'in',
-      lat: 36.1716,
-      lng: -115.1391,
+      lat: 37.7936,
+      lng: -122.3958,
       accuracy: 7,
       locationConsent: true,
       note: 'isolated native clock-in'
@@ -335,8 +339,8 @@ async function run() {
     body: {
       accountId: 'existing-native-customer',
       locationConsent: true,
-      lat: 36.1716,
-      lng: -115.1391,
+      lat: 37.7936,
+      lng: -122.3958,
       accuracy: 6
     }
   });
@@ -358,7 +362,7 @@ async function run() {
   assert.equal(conflict.status, 409);
   assert.equal(conflict.body.code, 'ACTIVE_TRIP_EXISTS');
   assert.equal(conflict.body.activeTrip.id, trip.body.fieldSales.trips[0].id);
-  assert.equal(conflict.body.activeTrip.businessName, 'Existing Tint Shop');
+  assert.equal(conflict.body.activeTrip.businessName, 'San Francisco Isolated Tint Shop');
 
   const cancelledTrip = await jsonRequest(`/api/field-sales/trips/${conflict.body.activeTrip.id}/cancel`, {
     method: 'PUT',
@@ -378,8 +382,8 @@ async function run() {
     body: {
       accountId: 'existing-native-customer',
       locationConsent: true,
-      lat: 36.1716,
-      lng: -115.1391,
+      lat: 37.7936,
+      lng: -122.3958,
       accuracy: 6
     }
   });
@@ -405,8 +409,8 @@ async function run() {
     body: {
       accountId: 'existing-native-customer',
       locationConsent: true,
-      lat: 36.1716,
-      lng: -115.1391,
+      lat: 37.7936,
+      lng: -122.3958,
       accuracy: 6,
       photoUrl: arrivalPhoto.body.url,
       contactMet: 'Alex'

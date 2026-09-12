@@ -11,7 +11,8 @@ struct VisitExecutionView: View {
     @State private var abandonReason = ""
 
     private var currentPlan: VisitPlan {
-        app.activePlans.first(where: { $0.planId == plan.planId }) ?? plan
+        if let selected = app.selectedVisit, selected.planId == plan.planId { return selected }
+        return app.activePlans.first(where: { $0.planId == plan.planId }) ?? plan
     }
 
     private var customer: CustomerSummary? {
@@ -21,6 +22,15 @@ struct VisitExecutionView: View {
         app.isArtifactComplete(planId: plan.planId, kind: "arrival") || ["IN_PROGRESS", "COMPLETED"].contains(currentPlan.status)
     }
     private var hasDeparted: Bool { ["TRAVELING", "IN_PROGRESS", "COMPLETED"].contains(currentPlan.status) }
+    private var statusLabel: String {
+        switch currentPlan.status {
+        case "TRAVELING": app.localized(cn: "前往中", us: "Traveling")
+        case "IN_PROGRESS": app.localized(cn: "拜访中", us: "In progress")
+        case "COMPLETED": app.localized(cn: "已完成", us: "Completed")
+        case "CANCELLED": app.localized(cn: "已取消", us: "Cancelled")
+        default: app.localized(cn: "待出发", us: "Planned")
+        }
+    }
 
     private var actions: [VisitAction] {
         [
@@ -41,7 +51,7 @@ struct VisitExecutionView: View {
                     title: plan.customerName,
                     subtitle: plan.address ?? "尚未填写地址",
                     badge: hasArrived ? "已到店" : hasDeparted ? "前往中" : "待出发",
-                    metrics: [("计划时间", currentPlan.scheduledAt.map(app.region.formatTime) ?? "待安排"), ("顺序", currentPlan.routeSequence.map { String(Int($0)) } ?? "待排"), ("状态", currentPlan.status)]
+                    metrics: [("计划时间", currentPlan.scheduledAt.map(app.region.formatTime) ?? "待安排"), ("顺序", currentPlan.routeSequence.map { String(Int($0)) } ?? "待排"), ("状态", statusLabel)]
                 )
 
                 HStack(spacing: 11) {
