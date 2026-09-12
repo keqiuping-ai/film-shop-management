@@ -376,6 +376,7 @@ actor APIClient {
             "lat": .double(location.latitude),
             "lng": .double(location.longitude),
             "accuracy": .double(location.accuracy),
+            "address": .string(location.address ?? ""),
             "photoUrl": .string(photoURL),
             "contactMet": .string(plan.contactName ?? "")
         ]

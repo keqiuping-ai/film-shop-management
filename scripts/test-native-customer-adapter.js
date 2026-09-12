@@ -164,6 +164,7 @@ async function seed() {
 
 async function run() {
   const source = fs.readFileSync(API_SOURCE, 'utf8');
+  const serverSource = fs.readFileSync(path.join(ROOT, 'server.js'), 'utf8');
   assert(!source.includes('https://lidaqeos.com'), 'old QEOS host must not remain');
   for (const allowed of [
     '/api/login',
@@ -190,6 +191,11 @@ async function run() {
   assert(visitViewSource.includes('selected.planId == plan.planId'), 'visit screen must prefer the updated selected trip state');
   const appStateSource = fs.readFileSync(path.join(ROOT, 'ios/QUaDFieldSales/LidaField/AppState.swift'), 'utf8');
   assert(appStateSource.includes('APIClient.localDate(date, timeZoneIdentifier: region.timeZoneIdentifier)'), 'visit plan merging must use the configured business time zone');
+  const todayViewSource = fs.readFileSync(path.join(ROOT, 'ios/QUaDFieldSales/LidaField/TodayView.swift'), 'utf8');
+  assert(!todayViewSource.includes('仍超过 500 米考核范围'), 'native arrival must not block a valid actual location because the customer address differs');
+  assert(!appStateSource.includes('照片位置超过客户坐标 500 米'), 'native photo evidence must keep the actual location without a customer-distance block');
+  assert(!serverSource.includes("code: 'FIELD_SALES_LOCATION_MISMATCH'"), 'server must record rather than reject a customer-location difference');
+  assert(!serverSource.includes("code: 'FIELD_SALES_CUSTOMER_ADDRESS_UNRESOLVED'"), 'an unresolved saved customer address must not block actual-location check-in');
   assert(source.includes('throw APIError.localOnly'), 'non-customer requests must be blocked locally');
   assert(source.includes('func dashboard(date: String)'), 'native dashboard must read QUaD mobile bootstrap');
   assert(source.includes('fieldSales.visitPlans'), 'native dashboard must map QUaD visit plans');
@@ -409,15 +415,23 @@ async function run() {
     body: {
       accountId: 'existing-native-customer',
       locationConsent: true,
-      lat: 37.7936,
-      lng: -122.3958,
+      lat: 36.1716,
+      lng: -115.1391,
       accuracy: 6,
+      address: 'Isolated actual check-in location, Las Vegas, NV',
       photoUrl: arrivalPhoto.body.url,
       contactMet: 'Alex'
     }
   });
   assert.equal(visit.status, 201);
   assert.equal(visit.body.visit.status, '进行中');
+  assert.equal(visit.body.visit.checkIn.lat, 36.1716);
+  assert.equal(visit.body.visit.checkIn.lng, -115.1391);
+  assert.equal(visit.body.visit.checkIn.locationMatched, false);
+  assert(visit.body.visit.checkIn.distanceToAccountMeters > 500000);
+  assert(visit.body.visit.checkIn.address);
+  assert(visit.body.visit.checkIn.mapUrl.includes('36.1716'));
+  assert.equal(visit.body.fieldSales.checkInAttempts.length, 0);
   assert.equal(visit.body.fieldSales.visitPlans.find(item => item.id === 'isolated-visit-plan').status, '拜访中');
 
   const audio = await jsonRequest('/api/field-sales/attachments?objectId=isolated-visit-plan', {

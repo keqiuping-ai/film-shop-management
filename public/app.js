@@ -4325,7 +4325,8 @@ function fieldSalesVisitCards(visits) {
         ${check.photoUrl ? `<a href="${escapeHtml(check.photoUrl)}" target="_blank"><img src="${escapeHtml(check.photoUrl)}" alt="check in"></a>` : '<span>无门店照片</span>'}
         ${visit.ownerPhotoUrl ? `<a href="${escapeHtml(visit.ownerPhotoUrl)}" target="_blank"><img src="${escapeHtml(visit.ownerPhotoUrl)}" alt="owner"></a>` : ''}
       </div>
-      <p><b>${lang === 'zh' ? '定位核验：' : 'Location: '}</b>${fieldSalesStatusPill(matched ? (lang === 'zh' ? '范围内' : 'Matched') : (lang === 'zh' ? '异常' : 'Mismatch'), matched ? 'good' : 'bad')} ${Number.isFinite(Number(check.distanceToAccountMeters)) ? `${Math.round(Number(check.distanceToAccountMeters))}m` : ''} ${check.mapUrl ? `<a href="${escapeHtml(check.mapUrl)}" target="_blank">${lang === 'zh' ? '查看地图' : 'Map'}</a>` : ''}</p>
+      <p><b>${lang === 'zh' ? '现场实际位置：' : 'Actual check-in location: '}</b>${fieldSalesStatusPill(matched ? (lang === 'zh' ? '已记录' : 'Recorded') : (lang === 'zh' ? '已记录（与建档位置有差异）' : 'Recorded (differs from saved location)'), matched ? 'good' : 'warn')} ${Number.isFinite(Number(check.distanceToAccountMeters)) ? `${Math.round(Number(check.distanceToAccountMeters))}m` : ''} ${check.mapUrl ? `<a href="${escapeHtml(check.mapUrl)}" target="_blank">${lang === 'zh' ? '查看实际位置' : 'Open actual location'}</a>` : ''}</p>
+      <p><b>${lang === 'zh' ? '实际地址：' : 'Actual address: '}</b>${escapeHtml(check.address || (Number.isFinite(Number(check.lat)) && Number.isFinite(Number(check.lng)) ? `${Number(check.lat).toFixed(6)}, ${Number(check.lng).toFixed(6)}` : '—'))}</p>
       <p><b>${lang === 'zh' ? '拜访结果：' : 'Result: '}</b>${escapeHtml(visit.reportText || (visit.status === '进行中' ? '进行中，尚未提交结果' : '—'))}</p>
       ${visit.nextAction ? `<p><b>${lang === 'zh' ? '下一步：' : 'Next: '}</b>${escapeHtml(visit.nextAction)}</p>` : ''}
       ${analysis.managerAdviceZh || analysis.managerAdviceEn ? `<div class="field-sales-ai"><b>AI ${lang === 'zh' ? '主管建议' : 'manager advice'}</b><p>${escapeHtml(lang === 'zh' ? (analysis.managerAdviceZh || analysis.managerAdviceEn) : (analysis.managerAdviceEn || analysis.managerAdviceZh))}</p></div>` : ''}
@@ -4335,13 +4336,13 @@ function fieldSalesVisitCards(visits) {
 }
 
 function fieldSalesLocationIssueCards(attempts) {
-  if (!attempts.length) return `<div class="empty-state">${lang === 'zh' ? '没有发现地址不符的打卡。' : 'No rejected location check-ins.'}</div>`;
+  if (!attempts.length) return `<div class="empty-state">${lang === 'zh' ? '没有历史位置差异记录。新打卡均以手机现场实际位置为准，不会因客户建档地址不同而拦截。' : 'No historical location differences. New check-ins use the phone’s actual location and are not blocked by a different saved customer address.'}</div>`;
   return `<div class="field-sales-card-grid">${attempts.slice(0, 60).map(item => `<article class="field-sales-card">
-    <header><div><strong>${escapeHtml(item.businessName || '')}</strong><small>${escapeHtml(item.userName || '')} · ${fieldSalesDateTime(item.attemptedAt)}</small></div>${fieldSalesStatusPill(lang === 'zh' ? '已拦截' : 'Blocked', 'bad')}</header>
+    <header><div><strong>${escapeHtml(item.businessName || '')}</strong><small>${escapeHtml(item.userName || '')} · ${fieldSalesDateTime(item.attemptedAt)}</small></div>${fieldSalesStatusPill(lang === 'zh' ? '历史记录' : 'Historical', 'warn')}</header>
     ${item.photoUrl ? `<div class="field-sales-proof"><a href="${escapeHtml(item.photoUrl)}" target="_blank"><img src="${escapeHtml(item.photoUrl)}" alt="rejected check in"></a></div>` : ''}
     <p><b>${lang === 'zh' ? '客户地址：' : 'Customer address: '}</b>${escapeHtml(item.customerAddress || '—')}</p>
     <p><b>${lang === 'zh' ? '打卡位置：' : 'Check-in location: '}</b>${escapeHtml(item.checkInAddress || '—')}</p>
-    <p class="field-sales-danger"><b>${lang === 'zh' ? '偏差距离：' : 'Distance: '}</b>${Math.round(Number(item.distanceToAccountMeters || 0))}m / ${lang === 'zh' ? '允许' : 'allowed'} ${Math.round(Number(item.allowedRadiusMeters || 0))}m</p>
+    <p><b>${lang === 'zh' ? '位置差异：' : 'Location difference: '}</b>${Math.round(Number(item.distanceToAccountMeters || 0))}m</p>
     ${item.mapUrl ? `<footer><a class="btn" href="${escapeHtml(item.mapUrl)}" target="_blank">${lang === 'zh' ? '查看现场地图' : 'Open map'}</a></footer>` : ''}
   </article>`).join('')}</div>`;
 }
@@ -4408,14 +4409,14 @@ function fieldSalesManagementView() {
   return `<div class="field-sales-management">
     <section class="field-sales-hero"><div><span>QUaD FIELD SALES</span><h2>${lang === 'zh' ? '业务员管理中心' : 'Field Sales Management'}</h2><p>${lang === 'zh' ? '电脑端统一监督：谁去了、是否到店、谈了什么、下一步什么时候完成。' : 'Desktop supervision for assignments, verified visits, results, and next actions.'}</p></div><button class="btn primary" onclick="openFieldSalesAccount()">${lang === 'zh' ? '+ 新增 / 分配客户' : '+ Add / Assign account'}</button></section>
     <div class="field-sales-toolbar"><label>${lang === 'zh' ? '查看业务员' : 'Salesperson'}<select onchange="setFieldSalesUserFilter(this.value)"><option value="all">${lang === 'zh' ? '全部业务员' : 'All salespeople'}</option>${people.map(item => `<option value="${escapeHtml(item.id)}" ${fieldSalesUserFilter === item.id ? 'selected' : ''}>${escapeHtml(item.name || item.email)}</option>`).join('')}</select></label><small>${lang === 'zh' ? '手机端数据会自动同步到这里' : 'Mobile activity syncs here automatically'}</small></div>
-    <div class="grid stats field-sales-stats"><div class="stat"><span>${lang === 'zh' ? '负责客户' : 'Accounts'}</span><strong>${accounts.length}</strong></div><div class="stat"><span>${lang === 'zh' ? '今日拜访' : 'Visits today'}</span><strong>${todayVisits}</strong></div><div class="stat"><span>${lang === 'zh' ? '逾期回访' : 'Overdue'}</span><strong class="${overdue ? 'field-sales-danger' : ''}">${overdue}</strong></div><div class="stat"><span>${lang === 'zh' ? '进行中' : 'In progress'}</span><strong>${activeVisits}</strong></div><div class="stat"><span>${lang === 'zh' ? '定位异常' : 'Location issues'}</span><strong class="${locationIssues ? 'field-sales-danger' : ''}">${locationIssues}</strong></div></div>
+    <div class="grid stats field-sales-stats"><div class="stat"><span>${lang === 'zh' ? '负责客户' : 'Accounts'}</span><strong>${accounts.length}</strong></div><div class="stat"><span>${lang === 'zh' ? '今日拜访' : 'Visits today'}</span><strong>${todayVisits}</strong></div><div class="stat"><span>${lang === 'zh' ? '逾期回访' : 'Overdue'}</span><strong class="${overdue ? 'field-sales-danger' : ''}">${overdue}</strong></div><div class="stat"><span>${lang === 'zh' ? '进行中' : 'In progress'}</span><strong>${activeVisits}</strong></div><div class="stat"><span>${lang === 'zh' ? '位置差异' : 'Location differences'}</span><strong>${locationIssues}</strong></div></div>
     ${panel(lang === 'zh' ? '客户分配与回访计划' : 'Assignments and follow-up plan', `<button class="btn primary" onclick="openFieldSalesAccount()">${lang === 'zh' ? '新增客户' : 'New account'}</button>`, fieldSalesAccountTable(accounts))}
     ${panel(lang === 'zh' ? '上下班打卡记录' : 'Clock-in and clock-out records', '', desktopClockTable(clockRecords))}
     ${panel(lang === 'zh' ? '每日拜访安排' : 'Daily visit schedule', '', fieldSalesPlanTable(plans))}
     ${panel(lang === 'zh' ? '出发、到店与行程状态' : 'Departure, arrival, and trip status', '', fieldSalesTripTable(trips))}
     ${panel(lang === 'zh' ? '定位拜访审核' : 'Verified visit review', '', fieldSalesVisitCards(visits))}
     ${panel(lang === 'zh' ? '现场照片、录音与业务凭证' : 'Photos, audio, and visit evidence', '', fieldSalesAttachmentCards(attachments))}
-    ${panel(lang === 'zh' ? '打卡地址异常（已拦截）' : 'Rejected location check-ins', '', fieldSalesLocationIssueCards(checkInAttempts))}
+    ${panel(lang === 'zh' ? '历史位置差异记录' : 'Historical location differences', '', fieldSalesLocationIssueCards(checkInAttempts))}
     ${panel(lang === 'zh' ? '业务员工作日报与 AI 分析' : 'Daily reports and AI analysis', '', fieldSalesReportCards(reports))}
     ${panel(lang === 'zh' ? '试用膜与批发转化跟进' : 'Trial rolls and wholesale conversion', '', fieldSalesTrialTable(trials))}
   </div>`;

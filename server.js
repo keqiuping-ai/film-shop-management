@@ -3263,7 +3263,7 @@ Summary: ${report.summary || ''}
 Problems/support needed: ${report.blockers || ''}
 Next plan: ${report.plan || ''}
 Verified visits: ${JSON.stringify(visitDigest)}
-Rejected location check-ins: ${JSON.stringify(locationIncidents)}
+Historical location differences: ${JSON.stringify(locationIncidents)}
 Return exactly these fields: performanceSummaryZh, performanceSummaryEn, customerPatternsZh, customerPatternsEn, coachingZh, coachingEn, followUpsZh, followUpsEn, riskLevel. riskLevel must be low, medium, or high. Be concise, factual, and do not invent visits.`;
   let content = '';
   if (provider === 'openai') {
@@ -8237,7 +8237,8 @@ async function api(req, res) {
     if (existing) return send(res, 200, { visit: existing, ...mobileSnapshot(db, user) });
     const activeTrip = (db.salesTrips || []).find(item => item.accountId === account.id && item.userId === user.id && item.status === '前往中');
     if (!activeTrip) return send(res, 409, { error:'请先在客户卡片点击“准备出发”，到店后再拍照打卡' });
-    const address = await reverseGeocode(lat, lng);
+    const capturedAddress = String(body.address || '').trim().slice(0, 300);
+    const address = (await reverseGeocode(lat, lng)) || capturedAddress || `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
     if (!hasValidCoordinates(account.lat, account.lng)) {
       const geocoded = await forwardGeocode(account.address);
       if (geocoded) {
@@ -8248,44 +8249,12 @@ async function api(req, res) {
         account.locationVerifiedAt = new Date().toISOString();
       }
     }
-    if (!hasValidCoordinates(account.lat, account.lng)) {
-      return send(res, 422, {
-        error: `客户地址“${account.address}”暂时无法定位，不能打卡。请先补充完整门牌号、城市、州和邮编。`,
-        code: 'FIELD_SALES_CUSTOMER_ADDRESS_UNRESOLVED',
-        customerAddress: account.address
-      });
-    }
     const allowedRadiusMeters = Math.max(50, Number(db.settings?.fieldSalesVisitRadiusMeters || 250));
-    const distanceToAccountMeters = distanceMeters(lat, lng, Number(account.lat), Number(account.lng));
-    if (distanceToAccountMeters > allowedRadiusMeters) {
-      const attempt = {
-        id: id(), accountId: account.id, businessName: account.businessName,
-        branchId: account.branchId || '',
-        customerAddress: account.address,
-        customerLat: Number(account.lat), customerLng: Number(account.lng),
-        userId: user.id, userName: user.name || user.email,
-        lat, lng, accuracy: Number.isFinite(accuracy) ? Math.round(accuracy) : 0,
-        checkInAddress: address, mapUrl: mapUrlForLatLng(lat, lng), photoUrl,
-        distanceToAccountMeters, allowedRadiusMeters,
-        status: '位置不符', attemptedAt: new Date().toISOString()
-      };
-      db.salesCheckInAttempts.unshift(attempt);
-      audit(db, user, 'reject-field-sales-check-in', {
-        collection: 'salesCheckInAttempts', recordId: attempt.id, recordLabel: account.businessName,
-        after: attempt, detail: `${attempt.userName} 在距离客户地址 ${distanceToAccountMeters} 米处尝试打卡，已拦截`
-      });
-      writeDb(db);
-      notifyDataChanged('field-sales-location-mismatch', attempt.id);
-      return send(res, 409, {
-        error: `当前位置距离客户地址约 ${distanceToAccountMeters} 米，超过允许范围 ${allowedRadiusMeters} 米，不能打卡。请到达客户门店后重试；若客户地址有误，请先修改地址。`,
-        code: 'FIELD_SALES_LOCATION_MISMATCH',
-        distanceMeters: distanceToAccountMeters,
-        allowedRadiusMeters,
-        customerAddress: account.address,
-        currentAddress: address,
-        attemptId: attempt.id
-      });
-    }
+    const accountLocationAvailable = hasValidCoordinates(account.lat, account.lng);
+    const distanceToAccountMeters = accountLocationAvailable
+      ? distanceMeters(lat, lng, Number(account.lat), Number(account.lng))
+      : null;
+    const locationMatched = distanceToAccountMeters === null ? null : distanceToAccountMeters <= allowedRadiusMeters;
     const arrivedAt = new Date().toISOString();
     const actualMinutes = Math.max(1, Math.round((new Date(arrivedAt).getTime() - new Date(activeTrip.departedAt).getTime()) / 60000));
     const delayMinutes = actualMinutes - Number(activeTrip.estimatedMinutes || 0);
@@ -8310,13 +8279,20 @@ async function api(req, res) {
         address, mapUrl: mapUrlForLatLng(lat, lng), photoUrl,
         distanceToAccountMeters,
         allowedRadiusMeters,
-        locationMatched: true,
+        locationMatched,
         locationConsent: true
       },
       contactMet: String(body.contactMet || '').trim().slice(0, 120),
       createdAt: new Date().toISOString(), updatedAt: new Date().toISOString()
     };
     db.salesVisits.unshift(visit);
+    if (locationMatched === false) {
+      audit(db, user, 'record-field-sales-location-difference', {
+        collection: 'salesVisits', recordId: visit.id, recordLabel: account.businessName,
+        after: visit,
+        detail: `${visit.userName} 的现场实际位置距离客户建档坐标约 ${distanceToAccountMeters} 米；实际位置已保存，未拦截到店打卡`
+      });
+    }
     const plannedVisit = (db.salesVisitPlans || []).find(item => item.accountId === account.id && item.userId === user.id && item.status === '前往中');
     if (plannedVisit) { plannedVisit.status = '拜访中'; plannedVisit.visitId = visit.id; plannedVisit.updatedAt = arrivedAt; }
     account.stage = '拜访中';

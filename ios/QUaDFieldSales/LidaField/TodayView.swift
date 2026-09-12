@@ -170,20 +170,13 @@ enum PhotoCapturePolicy {
     static let maximumCustomerDistanceM = 500.0
     static let maximumLocationAgeSeconds: TimeInterval = 180
 
-    static func locationIssue(_ location: CLLocation, customerLocation: CLLocation? = nil) -> String? {
+    static func locationIssue(_ location: CLLocation, customerLocation _: CLLocation? = nil) -> String? {
         let age = abs(Date().timeIntervalSince(location.timestamp))
         guard age <= maximumLocationAgeSeconds else {
             return "手机位置已经超过 3 分钟，请重新获取当前位置后再继续。"
         }
         guard location.horizontalAccuracy >= 0, location.horizontalAccuracy <= maximumAccuracyM else {
             return "当前手机定位过于粗略（约 ±\(Int(max(0, location.horizontalAccuracy))) 米）。请开启定位、Wi-Fi 或蜂窝网络后重试。"
-        }
-        if let customerLocation {
-            let distance = location.distance(from: customerLocation)
-            let nearestPossibleDistance = max(0, distance - location.horizontalAccuracy)
-            if nearestPossibleDistance > maximumCustomerDistanceM {
-                return "当前位置距离客户坐标约 \(Int(distance)) 米；计入系统定位误差后仍超过 500 米考核范围。"
-            }
         }
         return nil
     }
@@ -290,9 +283,9 @@ struct PhotoLocationEvidenceView: View {
                 .font(.caption2)
                 .foregroundStyle(.secondary)
             if let distance = evidence.distanceToCustomerM {
-                Text("距客户建档坐标约 \(Int(distance)) 米")
+                Text("距客户建档坐标约 \(Int(distance)) 米，仅供参考，不影响保存")
                     .font(.caption2)
-                    .foregroundStyle(distance <= PhotoCapturePolicy.maximumCustomerDistanceM ? Color.quadGreen : Color.red)
+                    .foregroundStyle(.secondary)
             }
         }
     }

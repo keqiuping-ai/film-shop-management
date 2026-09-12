@@ -1363,7 +1363,8 @@ final class AppState: ObservableObject {
             markArtifactComplete(planId: plan.planId, kind: "photos")
             mergeNewlyCreatedVisitPlan(updated, persist: false)
             selectedVisit = updated
-            successMessage = "到店打卡已保存，手机定位精度约 ±\(Int(current.horizontalAccuracy)) 米"
+            let actualPlace = evidence.address?.isEmpty == false ? evidence.address! : evidence.coordinateText
+            successMessage = "到店打卡已保存：\(actualPlace)（精度约 ±\(Int(current.horizontalAccuracy)) 米）"
             saved = true
         }
         return saved
@@ -1413,11 +1414,6 @@ final class AppState: ObservableObject {
     func uploadPhoto(evidence: CapturedPhotoEvidence, category: String, plan: VisitPlan) async -> Bool {
         guard evidence.accuracyM >= 0, evidence.accuracyM <= PhotoCapturePolicy.maximumAccuracyM else {
             errorMessage = "照片缺少合格定位，请在客户现场重新拍摄"
-            return false
-        }
-        if let distance = evidence.distanceToCustomerM,
-           distance > PhotoCapturePolicy.maximumCustomerDistanceM {
-            errorMessage = "照片位置超过客户坐标 500 米，不能作为到店凭证"
             return false
         }
         if isDesignPreview {
