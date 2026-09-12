@@ -651,6 +651,20 @@ private struct ChatMessageRow: View {
                             .font(.body)
                             .foregroundStyle(isOutgoing ? Color.black.opacity(0.88) : Color.primary)
                     }
+                    if let translation = message.aiTranslation,
+                       !translation.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        Divider().overlay(Color.secondary.opacity(0.22))
+                        HStack(alignment: .firstTextBaseline, spacing: 6) {
+                            Text(translation.label)
+                                .font(.caption2.weight(.bold))
+                                .foregroundStyle(Color.teal)
+                            Text(translation.text)
+                                .font(.caption)
+                                .foregroundStyle(isOutgoing ? Color.black.opacity(0.68) : Color.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        .accessibilityElement(children: .combine)
+                    }
                     ForEach(message.attachments) { attachment in
                         Button {
                             Task {

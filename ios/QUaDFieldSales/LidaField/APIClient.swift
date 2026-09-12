@@ -668,6 +668,7 @@ private struct QUaDMessage: Decodable {
     let createdAt: String
     let readAt: String?
     let readByUserIds: [String]?
+    let aiTranslation: InternalMessageAITranslation?
 
     func appMessage(currentUserId: String) -> InternalMessage {
         let incoming = fromUserId != currentUserId
@@ -687,6 +688,7 @@ private struct QUaDMessage: Decodable {
             recipientName: toName,
             viewerStatus: incoming && !read ? "UNREAD" : "READ",
             received: incoming ? 1 : 0,
+            aiTranslation: aiTranslation,
             attachments: []
         )
     }

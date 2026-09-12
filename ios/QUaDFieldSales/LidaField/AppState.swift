@@ -713,6 +713,7 @@ final class AppState: ObservableObject {
                     recipientName: internalMessageUsers.first(where: { $0.userId == recipientId })?.resolvedName,
                     viewerStatus: nil,
                     received: 0,
+                    aiTranslation: nil,
                     attachments: attachment.map { [$0] } ?? []
                 )
             )
@@ -881,6 +882,7 @@ final class AppState: ObservableObject {
                 recipientName: internalMessageUsers.first(where: { $0.userId == pending.recipientId })?.resolvedName,
                 viewerStatus: nil,
                 received: 0,
+                aiTranslation: nil,
                 attachments: attachment.map { [$0] } ?? []
             )
         )

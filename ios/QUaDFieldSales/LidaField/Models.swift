@@ -465,6 +465,17 @@ struct InternalMessageAttachment: Decodable, Identifiable, Hashable {
     }
 }
 
+struct InternalMessageAITranslation: Decodable, Hashable {
+    let sourceLanguage: String
+    let targetLanguage: String
+    let text: String
+    let provider: String?
+    let model: String?
+    let createdAt: String?
+
+    var label: String { targetLanguage == "en" ? "AI English" : "AI 中文" }
+}
+
 struct InternalMessage: Decodable, Identifiable, Hashable {
     let messageId: String
     let senderId: String
@@ -478,6 +489,7 @@ struct InternalMessage: Decodable, Identifiable, Hashable {
     let recipientName: String?
     let viewerStatus: String?
     let received: Int?
+    let aiTranslation: InternalMessageAITranslation?
     let attachments: [InternalMessageAttachment]
 
     var id: String { messageId }
@@ -492,7 +504,7 @@ struct InternalMessage: Decodable, Identifiable, Hashable {
         case senderName = "sender_name"
         case recipientName = "recipient_name"
         case viewerStatus = "viewer_status"
-        case received, attachments
+        case received, aiTranslation, attachments
     }
 }
 
@@ -937,25 +949,31 @@ enum PreviewData {
             messageId: "msg-preview-1", senderId: "manager-li", recipientId: "preview-user",
             subject: "今日客户跟进", content: "今天完成拜访后，请把 QD15 样品反馈发到工作日报。",
             status: "READ", sentAt: "2026-08-28T09:18:00+08:00", readAt: "2026-08-28T09:20:00+08:00",
-            senderName: "李经理", recipientName: "Chrissie 万卉", viewerStatus: "READ", received: 1, attachments: []
+            senderName: "李经理", recipientName: "Chrissie 万卉", viewerStatus: "READ", received: 1,
+            aiTranslation: .init(sourceLanguage: "zh", targetLanguage: "en", text: "After today's customer visit, please include the QD15 sample feedback in your daily report.", provider: "openai", model: nil, createdAt: nil),
+            attachments: []
         ),
         .init(
             messageId: "msg-preview-2", senderId: "preview-user", recipientId: "manager-li",
             subject: "今日客户跟进", content: "收到，我会在下班前提交完整日报。",
             status: "READ", sentAt: "2026-08-28T09:22:00+08:00", readAt: nil,
-            senderName: "Chrissie 万卉", recipientName: "李经理", viewerStatus: nil, received: 0, attachments: []
+            senderName: "Chrissie 万卉", recipientName: "李经理", viewerStatus: nil, received: 0,
+            aiTranslation: .init(sourceLanguage: "zh", targetLanguage: "en", text: "Got it. I will submit the complete daily report before the end of the day.", provider: "openai", model: nil, createdAt: nil),
+            attachments: []
         ),
         .init(
             messageId: "msg-preview-3", senderId: "finance-wang", recipientId: "preview-user",
             subject: "报销资料提醒", content: "报销时请上传清晰的发票或付款凭证。",
             status: "UNREAD", sentAt: "2026-08-28T11:36:00+08:00", readAt: nil,
-            senderName: "王会计", recipientName: "Chrissie 万卉", viewerStatus: "UNREAD", received: 1, attachments: []
+            senderName: "王会计", recipientName: "Chrissie 万卉", viewerStatus: "UNREAD", received: 1,
+            aiTranslation: nil, attachments: []
         ),
         .init(
             messageId: "msg-preview-4", senderId: "service-team", recipientId: "__ALL__",
             subject: "系统通知", content: "新版员工 App 已增加站内信息、请假和报销入口。",
             status: "UNREAD", sentAt: "2026-08-28T12:05:00+08:00", readAt: nil,
-            senderName: "客服小组", recipientName: "全体员工群聊", viewerStatus: "UNREAD", received: 1, attachments: []
+            senderName: "客服小组", recipientName: "全体员工群聊", viewerStatus: "UNREAD", received: 1,
+            aiTranslation: nil, attachments: []
         )
     ]
 

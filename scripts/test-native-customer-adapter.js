@@ -1,6 +1,7 @@
 const assert = require('assert');
 const crypto = require('crypto');
 const fs = require('fs');
+const http = require('http');
 const os = require('os');
 const path = require('path');
 const { spawn } = require('child_process');
@@ -8,9 +9,32 @@ const { spawn } = require('child_process');
 const ROOT = path.resolve(__dirname, '..');
 const DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'quad-native-customer-test-'));
 const PORT = 47000 + Math.floor(Math.random() * 1000);
+const AI_PORT = PORT + 1000;
 const BASE_URL = `http://127.0.0.1:${PORT}`;
 const API_SOURCE = path.join(ROOT, 'ios/QUaDFieldSales/LidaField/APIClient.swift');
 let server;
+let aiServer;
+
+function startAiServer() {
+  aiServer = http.createServer((req, res) => {
+    req.resume();
+    req.on('end', () => {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({
+        choices: [{ message: { content: JSON.stringify({ translatedText: '来自原生 App 的隔离测试回复' }) } }]
+      }));
+    });
+  });
+  return new Promise((resolve, reject) => {
+    aiServer.once('error', reject);
+    aiServer.listen(AI_PORT, '127.0.0.1', resolve);
+  });
+}
+
+function stopAiServer() {
+  if (!aiServer?.listening) return Promise.resolve();
+  return new Promise(resolve => aiServer.close(resolve));
+}
 
 function hashPassword(password, salt = crypto.randomBytes(16).toString('hex')) {
   const hash = crypto.scryptSync(String(password), salt, 64).toString('hex');
@@ -27,6 +51,8 @@ function startServer() {
         DATA_DIR,
         PORT: String(PORT),
         HOST: '127.0.0.1',
+        OPENAI_API_KEY: 'isolated-native-test-key',
+        OPENAI_API_BASE_URL: `http://127.0.0.1:${AI_PORT}/v1`,
         ENABLE_CLOUD_DAILY_BACKUPS: 'false'
       },
       stdio: ['ignore', 'pipe', 'pipe']
@@ -152,6 +178,14 @@ async function seed() {
     toUserId: 'native-sales-user',
     toName: 'Native Sales Test',
     text: 'Isolated message from the QUaD main system',
+    aiTranslation: {
+      sourceLanguage: 'en',
+      targetLanguage: 'zh',
+      text: '来自 QUaD 主系统的隔离测试消息',
+      provider: 'openai',
+      model: 'gpt-5-mini',
+      createdAt: '2026-09-11T15:10:00.000Z'
+    },
     attachment: null,
     clientRequestId: 'isolated-incoming-request',
     createdAt: '2026-09-11T15:10:00.000Z',
@@ -204,11 +238,15 @@ async function run() {
   assert(!source.includes('request("/api/collaboration")'), 'old collaboration overview route must not remain');
   assert(source.includes('request("/api/messages")'), 'native chat must read QUaD internal messages');
   assert(source.includes('"/api/messages/read"'), 'native chat must mark QUaD messages read');
+  assert(source.includes('let aiTranslation: InternalMessageAITranslation?'), 'native chat must decode AI translations');
   assert(source.includes('avatarDataUrl: avatarDataUrl'), 'native chat must map QUaD employee avatars');
+  const messagingViewSource = fs.readFileSync(path.join(ROOT, 'ios/QUaDFieldSales/LidaField/MessagingViews.swift'), 'utf8');
+  assert(messagingViewSource.includes('translation.text'), 'native chat must render AI translations');
   const chatAudioSource = fs.readFileSync(path.join(ROOT, 'ios/QUaDFieldSales/LidaField/ChatAudio.swift'), 'utf8');
   assert(chatAudioSource.includes('chatSpeechAuthorization()'), 'speech permission callback must use a non-actor helper');
   assert(chatAudioSource.includes('chatMicrophonePermission()'), 'microphone permission callback must use a non-actor helper');
 
+  await startAiServer();
   await seed();
   const holdMs = Math.max(0, Number(process.env.UI_TEST_HOLD_MS || 0));
   if (holdMs) {
@@ -292,6 +330,8 @@ async function run() {
   assert(messages.body.users.find(item => item.id === 'native-manager-user').avatarDataUrl.startsWith('data:image/png;base64,'));
   assert.equal(messages.body.messages.length, 1);
   assert.equal(messages.body.messages[0].text, 'Isolated message from the QUaD main system');
+  assert.equal(messages.body.messages[0].aiTranslation.targetLanguage, 'zh');
+  assert.equal(messages.body.messages[0].aiTranslation.text, '来自 QUaD 主系统的隔离测试消息');
 
   const sentMessage = await jsonRequest('/api/messages', {
     method: 'POST',
@@ -489,5 +529,6 @@ run().catch(error => {
   process.exitCode = 1;
 }).finally(async () => {
   await stopServer();
+  await stopAiServer();
   fs.rmSync(DATA_DIR, { recursive: true, force: true });
 });
