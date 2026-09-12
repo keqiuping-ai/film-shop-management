@@ -2689,6 +2689,18 @@ function assignRecordBranch(db, user, item, collection) {
   return '';
 }
 
+function canEditCustomerRecordAcrossBranches(user, collection) {
+  return (collection === 'prospects' || collection === 'customerConversations')
+    && canAccess(user, 'prospectsEdit');
+}
+
+function validateCustomerRecordBranch(db, item) {
+  item.branchId = String(item.branchId || '').trim();
+  const valid = new Set(customerBranches(db).map(branch => branch.id));
+  if (item.branchId && !valid.has(item.branchId)) return '所属分店不存在或已被移除';
+  return '';
+}
+
 function customerBranchAliases(branch) {
   return [branch?.city, branch?.name, ...String(branch?.aliases || '').split(/[,，;；\n]/), ...String(branch?.serviceCities || '').split(/[,，;；\n]/)]
     .map(value => String(value || '').trim()).filter(value => value.length >= 2);
@@ -10630,7 +10642,9 @@ async function api(req, res) {
       next.branchIds = [...new Set([next.defaultBranchId, ...(Array.isArray(next.branchIds) ? next.branchIds : [])].map(value => String(value || '').trim()).filter(Boolean))];
       if (next.branchIds.some(branchId => !customerBranches(db).some(branch => branch.id === branchId))) return send(res, 400, { error: '员工分店权限中包含不存在的分店' });
     }
-    const updateBranchError = assignRecordBranch(db, user, next, collection);
+    const updateBranchError = canEditAcrossBranches
+      ? validateCustomerRecordBranch(db, next)
+      : assignRecordBranch(db, user, next, collection);
     if (updateBranchError) return send(res, 400, { error: updateBranchError });
     if (collection === 'schedules') {
       const error = prepareScheduleItem(db, next);
