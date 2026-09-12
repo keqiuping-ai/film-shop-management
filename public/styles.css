@@ -1808,6 +1808,21 @@ body.modal-lock .prospect-workspace { pointer-events: none; }
   font-size: 14px;
   line-height: 1.42;
 }
+.message-ai-translation {
+  margin-top: 5px;
+  padding-top: 5px;
+  border-top: 1px solid rgba(100, 116, 139, .18);
+  color: #52606d;
+  white-space: pre-wrap;
+  font-size: 11px;
+  line-height: 1.4;
+}
+.message-ai-translation span {
+  margin-right: 6px;
+  color: #0f6f86;
+  font-size: 10px;
+  font-weight: 800;
+}
 .message-bubble.attachment-only {
   width: fit-content;
   max-width: 72%;

@@ -2149,6 +2149,11 @@ function messageBubbleHtml(message) {
   const sender = (state.messageUsers || state.users || []).find(item => item.id === message.fromUserId) || { name: message.fromName || '' };
   const time = message.createdAt ? new Date(message.createdAt).toLocaleString([], { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) : '';
   const attachmentOnly = !String(message.text || '').trim() && message.attachment;
+  const aiTranslation = String(message.aiTranslation?.text || '').trim();
+  const translationLanguage = message.aiTranslation?.targetLanguage === 'en' ? 'en' : 'zh-CN';
+  const translationLabel = message.aiTranslation?.targetLanguage === 'en'
+    ? (lang === 'zh' ? 'AI 英文' : 'AI English')
+    : (lang === 'zh' ? 'AI 中文' : 'AI Chinese');
   const readStatus = mine
     ? ` · <span class="message-read-status ${(message.scope === 'group' ? (message.readByUserIds || []).length > 1 : message.readAt) ? 'read' : 'unread'}">${(message.scope === 'group' ? (message.readByUserIds || []).length > 1 : message.readAt) ? (lang === 'zh' ? '已读' : 'Read') : (lang === 'zh' ? '未读' : 'Unread')}</span>`
     : '';
@@ -2158,8 +2163,9 @@ function messageBubbleHtml(message) {
       ${message.pending ? (message.failed ? `<button class="message-retry" type="button" onclick="retryInternalMessageUpload('${message.id}')">${lang === 'zh' ? '重试' : 'Retry'}</button>` : '') : `<button class="message-delete" type="button" title="${lang === 'zh' ? '删除/撤销' : 'Delete'}" onclick="deleteMessage('${message.id}')">×</button>`}
       <div class="message-sender-name">${escapeHtml(mine ? (user?.name || (lang === 'zh' ? '我' : 'Me')) : (message.fromName || ''))}</div>
       ${message.text ? `<div class="message-text">${escapeHtml(message.text || '')}</div>` : ''}
+      ${aiTranslation ? `<div class="message-ai-translation" lang="${translationLanguage}"><span>${translationLabel}</span>${escapeHtml(aiTranslation)}</div>` : ''}
       ${messageAttachmentHtml(message.attachment)}
-      <small>${escapeHtml(time)}${message.pending ? ` · ${message.failed ? (lang === 'zh' ? '发送失败，可重试' : 'Failed, tap retry') : (lang === 'zh' ? '后台发送中…' : 'Sending in background…')}` : readStatus}</small>
+      <small>${escapeHtml(time)}${message.pending ? ` · ${message.failed ? (lang === 'zh' ? '发送失败，可重试' : 'Failed, tap retry') : (lang === 'zh' ? 'AI 翻译并发送中…' : 'AI translating and sending…')}` : readStatus}</small>
     </div>
   </div>`;
 }
