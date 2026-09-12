@@ -982,9 +982,15 @@ function messageHtml(message) {
   const mine = message.fromUserId === user?.id;
   const read = mine && message.scope !== 'group' ? ` · ${message.readAt ? t('read') : t('unread')}` : '';
   const sender = (state.messageUsers || state.users || []).find(item => item.id === message.fromUserId) || { name: message.fromName || '' };
+  const aiTranslation = String(message.aiTranslation?.text || '').trim();
+  const translationLanguage = message.aiTranslation?.targetLanguage === 'en' ? 'en' : 'zh-CN';
+  const translationLabel = message.aiTranslation?.targetLanguage === 'en'
+    ? (lang === 'zh' ? 'AI 英文' : 'AI English')
+    : (lang === 'zh' ? 'AI 中文' : 'AI Chinese');
   return `<div class="message-line ${mine ? 'mine' : ''}">${!mine ? avatarHtml(sender) : ''}<div class="bubble ${mine ? 'mine' : ''}">
     ${mine ? (message.pending ? (message.failed ? `<button class="mobile-message-retry" onclick="retryMobileMessageUpload('${message.id}')">${lang === 'zh' ? '重试' : 'Retry'}</button>` : '') : `<button class="delete" onclick="deleteMessage('${message.id}')">×</button>`) : ''}
-    ${message.text ? `<div>${escapeHtml(message.text || '')}</div>` : ''}
+    ${message.text ? `<div class="mobile-message-text">${escapeHtml(message.text || '')}</div>` : ''}
+    ${aiTranslation ? `<div class="mobile-message-ai-translation" lang="${translationLanguage}"><span>${translationLabel}</span>${escapeHtml(aiTranslation)}</div>` : ''}
     ${messageAttachmentHtml(message.attachment)}
     <small>${mine ? t('self') : escapeHtml(message.fromName || '')} · ${fmtDateTime(message.createdAt)}${message.pending ? ` · ${message.failed ? (lang === 'zh' ? '发送失败' : 'Failed') : (lang === 'zh' ? '后台发送中…' : 'Sending in background…')}` : read}</small>
   </div>${mine ? avatarHtml(user) : ''}</div>`;

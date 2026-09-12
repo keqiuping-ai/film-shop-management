@@ -402,6 +402,24 @@ button {
 .bubble.mine {
   background: #95ec69;
 }
+.mobile-message-text,
+.mobile-message-ai-translation {
+  white-space: pre-wrap;
+}
+.mobile-message-ai-translation {
+  margin-top: 5px;
+  padding-top: 5px;
+  border-top: 1px solid rgba(71, 85, 105, .2);
+  color: #52606d;
+  font-size: 11px;
+  line-height: 1.4;
+}
+.mobile-message-ai-translation span {
+  margin-right: 6px;
+  color: #0f6f86;
+  font-size: 10px;
+  font-weight: 800;
+}
 .bubble small {
   display: block;
   margin-top: 5px;
