@@ -268,6 +268,7 @@ struct CameraCaptureView: UIViewControllerRepresentable {
 }
 
 struct PhotoLocationEvidenceView: View {
+    @EnvironmentObject private var app: AppState
     let evidence: CapturedPhotoEvidence
 
     var body: some View {
@@ -283,7 +284,10 @@ struct PhotoLocationEvidenceView: View {
                 .font(.caption2)
                 .foregroundStyle(.secondary)
             if let distance = evidence.distanceToCustomerM {
-                Text("距客户建档坐标约 \(Int(distance)) 米，仅供参考，不影响保存")
+                Text(app.localized(
+                    cn: "距客户建档坐标约 \(Int(distance)) 米，仅供参考，不影响保存",
+                    us: "About \(Int(distance)) m from the saved customer location; for reference only and does not prevent saving"
+                ))
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             }

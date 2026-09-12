@@ -1364,7 +1364,10 @@ final class AppState: ObservableObject {
             mergeNewlyCreatedVisitPlan(updated, persist: false)
             selectedVisit = updated
             let actualPlace = evidence.address?.isEmpty == false ? evidence.address! : evidence.coordinateText
-            successMessage = "到店打卡已保存：\(actualPlace)（精度约 ±\(Int(current.horizontalAccuracy)) 米）"
+            successMessage = localized(
+                cn: "到店打卡已保存：\(actualPlace)（精度约 ±\(Int(current.horizontalAccuracy)) 米）",
+                us: "Arrival check-in saved: \(actualPlace) (accuracy about ±\(Int(current.horizontalAccuracy)) m)"
+            )
             saved = true
         }
         return saved

@@ -4318,6 +4318,7 @@ function fieldSalesVisitCards(visits) {
   return `<div class="field-sales-card-grid">${visits.slice(0, 60).map(visit => {
     const check = visit.checkIn || {};
     const matched = check.locationMatched !== false;
+    const distanceAvailable = check.distanceToAccountMeters !== null && check.distanceToAccountMeters !== undefined && check.distanceToAccountMeters !== '' && Number.isFinite(Number(check.distanceToAccountMeters));
     const analysis = visit.aiAnalysis || {};
     return `<article class="field-sales-card">
       <header><div><strong>${escapeHtml(visit.businessName || '')}</strong><small>${escapeHtml(visit.userName || '')} · ${fieldSalesDateTime(visit.startedAt)}</small></div>${fieldSalesStatusPill(visit.status || '—', visit.status === '已完成' ? 'good' : 'warn')}</header>
@@ -4325,7 +4326,7 @@ function fieldSalesVisitCards(visits) {
         ${check.photoUrl ? `<a href="${escapeHtml(check.photoUrl)}" target="_blank"><img src="${escapeHtml(check.photoUrl)}" alt="check in"></a>` : '<span>无门店照片</span>'}
         ${visit.ownerPhotoUrl ? `<a href="${escapeHtml(visit.ownerPhotoUrl)}" target="_blank"><img src="${escapeHtml(visit.ownerPhotoUrl)}" alt="owner"></a>` : ''}
       </div>
-      <p><b>${lang === 'zh' ? '现场实际位置：' : 'Actual check-in location: '}</b>${fieldSalesStatusPill(matched ? (lang === 'zh' ? '已记录' : 'Recorded') : (lang === 'zh' ? '已记录（与建档位置有差异）' : 'Recorded (differs from saved location)'), matched ? 'good' : 'warn')} ${Number.isFinite(Number(check.distanceToAccountMeters)) ? `${Math.round(Number(check.distanceToAccountMeters))}m` : ''} ${check.mapUrl ? `<a href="${escapeHtml(check.mapUrl)}" target="_blank">${lang === 'zh' ? '查看实际位置' : 'Open actual location'}</a>` : ''}</p>
+      <p><b>${lang === 'zh' ? '现场实际位置：' : 'Actual check-in location: '}</b>${fieldSalesStatusPill(matched ? (lang === 'zh' ? '已记录' : 'Recorded') : (lang === 'zh' ? '已记录（与建档位置有差异）' : 'Recorded (differs from saved location)'), matched ? 'good' : 'warn')} ${distanceAvailable ? `${Math.round(Number(check.distanceToAccountMeters))}m` : ''} ${check.mapUrl ? `<a href="${escapeHtml(check.mapUrl)}" target="_blank">${lang === 'zh' ? '查看实际位置' : 'Open actual location'}</a>` : ''}</p>
       <p><b>${lang === 'zh' ? '实际地址：' : 'Actual address: '}</b>${escapeHtml(check.address || (Number.isFinite(Number(check.lat)) && Number.isFinite(Number(check.lng)) ? `${Number(check.lat).toFixed(6)}, ${Number(check.lng).toFixed(6)}` : '—'))}</p>
       <p><b>${lang === 'zh' ? '拜访结果：' : 'Result: '}</b>${escapeHtml(visit.reportText || (visit.status === '进行中' ? '进行中，尚未提交结果' : '—'))}</p>
       ${visit.nextAction ? `<p><b>${lang === 'zh' ? '下一步：' : 'Next: '}</b>${escapeHtml(visit.nextAction)}</p>` : ''}
