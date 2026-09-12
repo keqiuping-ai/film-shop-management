@@ -4369,6 +4369,21 @@ function fieldSalesTrialTable(rows) {
   </tr>`).join('')}</tbody></table></div>`;
 }
 
+function fieldSalesPlanTable(rows) {
+  if (!rows.length) return `<div class="empty-state">${lang === 'zh' ? '还没有拜访计划。' : 'No visit plans yet.'}</div>`;
+  return `<div class="table-wrap"><table><thead><tr><th>${lang === 'zh' ? '计划时间' : 'Scheduled'}</th><th>${lang === 'zh' ? '客户门店' : 'Store'}</th><th>${lang === 'zh' ? '业务员' : 'Salesperson'}</th><th>${lang === 'zh' ? '状态' : 'Status'}</th><th>${lang === 'zh' ? '地址' : 'Address'}</th></tr></thead><tbody>${rows.slice(0, 100).map(row => `<tr><td>${fieldSalesDateTime(row.plannedAt)}</td><td><strong>${escapeHtml(row.businessName || '')}</strong></td><td>${escapeHtml(row.userName || '')}</td><td>${fieldSalesStatusPill(row.status || '—', row.status === '已完成' ? 'good' : row.status === '待出发' ? 'info' : 'warn')}</td><td>${escapeHtml(row.address || '—')}</td></tr>`).join('')}</tbody></table></div>`;
+}
+
+function fieldSalesTripTable(rows) {
+  if (!rows.length) return `<div class="empty-state">${lang === 'zh' ? '还没有外勤行程。' : 'No field trips yet.'}</div>`;
+  return `<div class="table-wrap"><table><thead><tr><th>${lang === 'zh' ? '出发时间' : 'Departed'}</th><th>${lang === 'zh' ? '客户门店' : 'Store'}</th><th>${lang === 'zh' ? '业务员' : 'Salesperson'}</th><th>${lang === 'zh' ? '预计路程' : 'Estimate'}</th><th>${lang === 'zh' ? '状态' : 'Status'}</th></tr></thead><tbody>${rows.slice(0, 100).map(row => `<tr><td>${fieldSalesDateTime(row.departedAt)}</td><td><strong>${escapeHtml(row.businessName || '')}</strong><br><small>${escapeHtml(row.destination?.address || '')}</small></td><td>${escapeHtml(row.userName || '')}</td><td>${Math.round(Number(row.estimatedDistanceMeters || 0) / 1609.344 * 10) / 10} mi · ${Math.round(Number(row.estimatedMinutes || 0))} min</td><td>${fieldSalesStatusPill(row.routeStatus || row.status || '—', row.status === '已到达' ? 'good' : row.status === '已取消' ? 'bad' : 'warn')}</td></tr>`).join('')}</tbody></table></div>`;
+}
+
+function fieldSalesAttachmentCards(rows) {
+  if (!rows.length) return `<div class="empty-state">${lang === 'zh' ? '还没有照片、录音或业务凭证。' : 'No photos, audio, or visit evidence yet.'}</div>`;
+  return `<div class="field-sales-card-grid">${rows.slice(0, 80).map(item => `<article class="field-sales-card"><header><div><strong>${escapeHtml(item.fileName || '附件')}</strong><small>${escapeHtml(item.userName || '')} · ${fieldSalesDateTime(item.createdAt)}</small></div>${fieldSalesStatusPill(item.contentType?.startsWith('audio/') ? (lang === 'zh' ? '录音' : 'Audio') : item.contentType?.startsWith('image/') ? (lang === 'zh' ? '照片' : 'Photo') : (lang === 'zh' ? '资料' : 'File'), 'info')}</header><p>${Math.max(1, Math.round(Number(item.sizeBytes || 0) / 1024))} KB</p>${item.url ? `<footer><a class="btn" href="${escapeHtml(item.url)}" target="_blank" rel="noopener">${lang === 'zh' ? '查看凭证' : 'Open evidence'}</a></footer>` : ''}</article>`).join('')}</div>`;
+}
+
 function fieldSalesManagementView() {
   const data = state.fieldSales || {};
   if (!data.enabled || !data.canManage) return `<div class="empty-state">${lang === 'zh' ? '当前账号没有业务员管理权限。' : 'This account cannot manage field sales.'}</div>`;
@@ -4377,6 +4392,10 @@ function fieldSalesManagementView() {
   const reports = fieldSalesFiltered(data.dailyReports || [], 'userId');
   const trials = fieldSalesFiltered(data.trialRolls || [], 'userId');
   const checkInAttempts = fieldSalesFiltered(data.checkInAttempts || [], 'userId');
+  const plans = fieldSalesFiltered(data.visitPlans || [], 'userId');
+  const trips = fieldSalesFiltered(data.trips || [], 'userId');
+  const attachments = fieldSalesFiltered(data.attachments || [], 'userId');
+  const clockRecords = fieldSalesFiltered(state.clockRecords || [], 'userId');
   const day = today();
   const overdue = accounts.filter(item => item.nextVisitAt && new Date(item.nextVisitAt).getTime() < Date.now() && !['成交','暂停','无效'].includes(item.stage)).length;
   const todayVisits = visits.filter(item => {
@@ -4391,7 +4410,11 @@ function fieldSalesManagementView() {
     <div class="field-sales-toolbar"><label>${lang === 'zh' ? '查看业务员' : 'Salesperson'}<select onchange="setFieldSalesUserFilter(this.value)"><option value="all">${lang === 'zh' ? '全部业务员' : 'All salespeople'}</option>${people.map(item => `<option value="${escapeHtml(item.id)}" ${fieldSalesUserFilter === item.id ? 'selected' : ''}>${escapeHtml(item.name || item.email)}</option>`).join('')}</select></label><small>${lang === 'zh' ? '手机端数据会自动同步到这里' : 'Mobile activity syncs here automatically'}</small></div>
     <div class="grid stats field-sales-stats"><div class="stat"><span>${lang === 'zh' ? '负责客户' : 'Accounts'}</span><strong>${accounts.length}</strong></div><div class="stat"><span>${lang === 'zh' ? '今日拜访' : 'Visits today'}</span><strong>${todayVisits}</strong></div><div class="stat"><span>${lang === 'zh' ? '逾期回访' : 'Overdue'}</span><strong class="${overdue ? 'field-sales-danger' : ''}">${overdue}</strong></div><div class="stat"><span>${lang === 'zh' ? '进行中' : 'In progress'}</span><strong>${activeVisits}</strong></div><div class="stat"><span>${lang === 'zh' ? '定位异常' : 'Location issues'}</span><strong class="${locationIssues ? 'field-sales-danger' : ''}">${locationIssues}</strong></div></div>
     ${panel(lang === 'zh' ? '客户分配与回访计划' : 'Assignments and follow-up plan', `<button class="btn primary" onclick="openFieldSalesAccount()">${lang === 'zh' ? '新增客户' : 'New account'}</button>`, fieldSalesAccountTable(accounts))}
+    ${panel(lang === 'zh' ? '上下班打卡记录' : 'Clock-in and clock-out records', '', desktopClockTable(clockRecords))}
+    ${panel(lang === 'zh' ? '每日拜访安排' : 'Daily visit schedule', '', fieldSalesPlanTable(plans))}
+    ${panel(lang === 'zh' ? '出发、到店与行程状态' : 'Departure, arrival, and trip status', '', fieldSalesTripTable(trips))}
     ${panel(lang === 'zh' ? '定位拜访审核' : 'Verified visit review', '', fieldSalesVisitCards(visits))}
+    ${panel(lang === 'zh' ? '现场照片、录音与业务凭证' : 'Photos, audio, and visit evidence', '', fieldSalesAttachmentCards(attachments))}
     ${panel(lang === 'zh' ? '打卡地址异常（已拦截）' : 'Rejected location check-ins', '', fieldSalesLocationIssueCards(checkInAttempts))}
     ${panel(lang === 'zh' ? '业务员工作日报与 AI 分析' : 'Daily reports and AI analysis', '', fieldSalesReportCards(reports))}
     ${panel(lang === 'zh' ? '试用膜与批发转化跟进' : 'Trial rolls and wholesale conversion', '', fieldSalesTrialTable(trials))}

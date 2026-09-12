@@ -2083,6 +2083,11 @@ function fieldSalesSnapshot(db, user) {
     trips: trips.slice(0, 500),
     visits: visits.slice(0, 500),
     checkInAttempts: checkInAttempts.slice(0, 500),
+    attachments: (db.salesAttachments || [])
+      .filter(item => canManage || item.userId === user.id)
+      .filter(item => !item.branchId || canAccessBranch(db, user, item.branchId))
+      .sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')))
+      .slice(0, 1000),
     trialRolls: (db.salesTrialRolls || [])
       .filter(item => accountIds.has(item.accountId) && (canManage || fieldSalesVisible(item, user)))
       .sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')))
@@ -7935,6 +7940,33 @@ async function api(req, res) {
     audit(db, user, 'create-field-sales-visit-plan', { collection:'salesVisitPlans', detail:`安排 ${date} 拜访计划 ${created.length} 家` });
     writeDb(db); notifyDataChanged('field-sales-plan-created', created[0].id);
     return send(res, 201, mobileSnapshot(db, user));
+  }
+
+  const fieldSalesVisitPlanMatch = url.pathname.match(/^\/api\/field-sales\/visit-plans\/([^/]+)$/);
+  if (req.method === 'DELETE' && fieldSalesVisitPlanMatch) {
+    if (!canUseFieldSales(user)) return send(res, 403, { error: '当前账号没有业务员管理权限' });
+    const planId = decodeURIComponent(fieldSalesVisitPlanMatch[1]);
+    const index = (db.salesVisitPlans || []).findIndex(item => item.id === planId);
+    if (index < 0) return send(res, 404, { error: '找不到这个拜访计划' });
+    const plan = db.salesVisitPlans[index];
+    if (!canManageFieldSales(user) && plan.userId !== user.id) return send(res, 403, { error: '不能取消其他业务员的拜访计划' });
+    if (!canAccessBranch(db, user, plan.branchId)) return send(res, 403, { error: '你没有这个计划所属分店的数据权限' });
+    if (!['待出发', 'PLANNED', 'PENDING', 'SCHEDULED'].includes(String(plan.status || ''))) {
+      return send(res, 409, { error: '只有尚未出发的计划可以取消' });
+    }
+    db.salesVisitPlans.splice(index, 1);
+    const account = (db.salesAccounts || []).find(item => item.id === plan.accountId);
+    if (account && account.nextVisitAt === plan.plannedAt) {
+      const nextPlan = (db.salesVisitPlans || [])
+        .filter(item => item.accountId === plan.accountId && !['已完成', '已取消'].includes(item.status))
+        .sort((a, b) => String(a.plannedAt || '').localeCompare(String(b.plannedAt || '')))[0];
+      account.nextVisitAt = nextPlan?.plannedAt || '';
+      account.updatedAt = new Date().toISOString();
+    }
+    audit(db, user, 'delete-field-sales-visit-plan', { collection:'salesVisitPlans', recordId:plan.id, recordLabel:plan.businessName, before:plan, detail:`取消拜访计划 ${plan.businessName}` });
+    writeDb(db);
+    notifyDataChanged('field-sales-plan-deleted', plan.id);
+    return send(res, 200, { recordId: plan.id, status: 'DELETED' });
   }
 
   if (req.method === 'POST' && url.pathname === '/api/field-sales/follow-ups') {
