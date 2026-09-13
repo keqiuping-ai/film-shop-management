@@ -1405,7 +1405,7 @@ function defaultPermissions(role) {
   const all = Object.fromEntries(Object.keys(none).map(k => [k, true]));
   const byRole = {
     owner: all,
-    manager: { ...all, customerCodexChat: false },
+    manager: { ...all, fieldSalesManage: false, customerCodexChat: false },
     frontdesk: { ...none, jobsView: true, jobsCreate: true, pricingView: true, ordersView: true, ordersEdit: true, shipmentsView: true, schedulesView: true, leadsView: true, leadsEdit: true, prospectsView: true, prospectsEdit: true, reimbursementsView: true, reimbursementsCreate: true },
     sales: { ...none, jobsView: true, jobsCreate: true, pricingView: true, ordersView: true, ordersEdit: true, shipmentsView: true, schedulesView: true, leadsView: true, leadsEdit: true, prospectsView: true, prospectsEdit: true, reimbursementsView: true, reimbursementsCreate: true, fieldSalesView: true, fieldSalesEdit: true },
     clerk: { ...none, jobsView: true, jobsCreate: true, jobsEdit: true, pricingView: true, inventoryView: true, ordersView: true, ordersEdit: true, shipmentsView: true, shipmentsEdit: true, schedulesView: true, schedulesEdit: true, leadsView: true, leadsEdit: true, prospectsView: true, prospectsEdit: true, expensesView: true, expensesEdit: true, reimbursementsView: true, reimbursementsCreate: true },
@@ -1982,7 +1982,7 @@ async function createCompletedJobsWorkbook(db, user, query) {
 }
 
 function canManageFieldSales(user) {
-  return ['owner', 'manager'].includes(user?.role) || Boolean(effectivePermissions(user).fieldSalesManage);
+  return user?.role === 'owner' || Boolean(effectivePermissions(user).fieldSalesManage);
 }
 
 function canUseFieldSales(user) {
@@ -2052,6 +2052,7 @@ function fieldSalesInventoryPricingResults(db, user, query, limit = 40) {
 }
 
 function fieldSalesVisible(item, user) {
+  if (item?.active === false) return false;
   if (canManageFieldSales(user)) return true;
   return [item?.assignedUserId, item?.userId, item?.createdByUserId].includes(user?.id);
 }
@@ -8247,6 +8248,51 @@ async function api(req, res) {
   }
 
   const fieldSalesAccountMatch = url.pathname.match(/^\/api\/field-sales\/accounts\/([^/]+)$/);
+  if (req.method === 'DELETE' && fieldSalesAccountMatch) {
+    if (user.role !== 'owner') return send(res, 403, { error: '只有老板可以删除业务客户', code: 'FIELD_SALES_ACCOUNT_DELETE_FORBIDDEN' });
+    const accountId = decodeURIComponent(fieldSalesAccountMatch[1]);
+    const account = (db.salesAccounts || []).find(item => item.id === accountId && item.active !== false);
+    if (!account) return send(res, 404, { error: '找不到这个业务客户' });
+    if (!canAccessBranch(db, user, account.branchId)) return send(res, 403, { error: '你没有这个业务客户所属分店的数据权限' });
+    const now = new Date().toISOString();
+    const before = { ...account };
+    account.active = false;
+    account.deletedAt = now;
+    account.deletedByUserId = user.id;
+    account.deletedByName = user.name || user.email;
+    account.updatedAt = now;
+    (db.salesVisitPlans || []).filter(item => item.accountId === accountId && !['已完成', '已取消'].includes(item.status)).forEach(item => {
+      item.status = '已取消';
+      item.cancelReason = '客户已由老板删除';
+      item.cancelledAt = now;
+      item.updatedAt = now;
+    });
+    (db.salesTrips || []).filter(item => item.accountId === accountId && item.status === '前往中').forEach(item => {
+      item.status = '已取消';
+      item.routeStatus = '已取消';
+      item.cancelReason = '客户已由老板删除';
+      item.cancelledAt = now;
+      item.cancelledByUserId = user.id;
+      item.cancelledByName = user.name || user.email;
+      item.updatedAt = now;
+    });
+    (db.salesVisits || []).filter(item => item.accountId === accountId && item.status === '进行中').forEach(item => {
+      item.status = '已取消';
+      item.cancelReason = '客户已由老板删除';
+      item.cancelledAt = now;
+      item.updatedAt = now;
+    });
+    (db.salesFollowUps || []).filter(item => item.accountId === accountId && !['已完成', '已取消'].includes(item.status)).forEach(item => {
+      item.status = '已取消';
+      item.cancelReason = '客户已由老板删除';
+      item.cancelledAt = now;
+      item.updatedAt = now;
+    });
+    audit(db, user, 'delete-field-sales-account', { collection:'salesAccounts', recordId:account.id, recordLabel:account.businessName, before, after:{ ...account }, detail:`老板删除业务客户 ${account.businessName}；历史拜访和录音保留` });
+    writeDb(db);
+    notifyDataChanged('field-sales-account-deleted', account.id);
+    return send(res, 200, { deleted:true, accountId:account.id, fieldSales:fieldSalesSnapshot(db, user) });
+  }
   if (req.method === 'PUT' && fieldSalesAccountMatch) {
     if (!canUseFieldSales(user)) return send(res, 403, { error: '当前账号没有业务员管理权限' });
     const accountId = decodeURIComponent(fieldSalesAccountMatch[1]);

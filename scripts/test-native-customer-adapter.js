@@ -123,7 +123,28 @@ async function seed() {
     avatarDataUrl: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M/wHwAEAQH/2G7fGQAAAABJRU5ErkJggg==',
     defaultBranchId: 'las-vegas',
     branchIds: ['las-vegas'],
-    passwordHash: hashPassword('isolated-manager-password')
+    passwordHash: hashPassword('isolated-manager-password'),
+    permissions: { fieldSalesManage: true }
+  });
+  db.users.push({
+    id: 'native-manager-no-field-sales',
+    name: 'Manager Without Field Sales',
+    email: 'manager-no-field-sales@test.local',
+    role: 'manager',
+    active: true,
+    defaultBranchId: 'las-vegas',
+    branchIds: ['las-vegas'],
+    passwordHash: hashPassword('isolated-no-access-password')
+  });
+  db.users.push({
+    id: 'native-owner-user',
+    name: 'Native Owner Test',
+    email: 'native-owner@test.local',
+    role: 'owner',
+    active: true,
+    defaultBranchId: 'las-vegas',
+    branchIds: ['las-vegas'],
+    passwordHash: hashPassword('isolated-owner-password')
   });
   db.salesAccounts = [{
     id: 'existing-native-customer',
@@ -246,6 +267,10 @@ async function run() {
   assert(adminSource.includes('function fieldSalesEmployeeRouteMap'), 'desktop salesperson lanes must include the daily route map');
   assert(adminSource.includes('沟通记录与 AI 总结'), 'desktop salesperson lanes must include conversation and AI summaries');
   assert(adminSource.includes('<audio controls'), 'desktop salesperson lanes must support inline recording playback');
+  assert(adminSource.includes("manager: { ...all, fieldSalesManage: false"), 'manager role must not receive the management center without an explicit checkbox');
+  assert(adminSource.includes("user?.role === 'owner' ? `<button class=\"btn danger\""), 'only owners should receive a customer delete button');
+  assert(serverSource.includes("return user?.role === 'owner' || Boolean(effectivePermissions(user).fieldSalesManage)"), 'server management access must require owner or explicit permission');
+  assert(serverSource.includes('FIELD_SALES_ACCOUNT_DELETE_FORBIDDEN'), 'server must reject customer deletion by non-owners');
 
   await startAiServer();
   await seed();
@@ -263,6 +288,16 @@ async function run() {
   assert.equal(login.status, 200);
   assert(login.body.token);
   assert.equal(login.body.user.id, 'native-sales-user');
+
+  const noAccessLogin = await jsonRequest('/api/login', {
+    method: 'POST',
+    body: { email: 'manager-no-field-sales@test.local', password: 'isolated-no-access-password' }
+  });
+  assert.equal(noAccessLogin.status, 200);
+  assert.equal(noAccessLogin.body.user.permissions.fieldSalesManage, false);
+  const noAccessBootstrap = await jsonRequest('/api/bootstrap', { token: noAccessLogin.body.token });
+  assert.equal(noAccessBootstrap.status, 200);
+  assert.equal(noAccessBootstrap.body.data.fieldSales.canManage, false);
 
   const bootstrap = await jsonRequest('/api/mobile/bootstrap', { token: login.body.token });
   assert.equal(bootstrap.status, 200);
@@ -567,11 +602,27 @@ async function run() {
   const salespersonRefresh = await jsonRequest('/api/mobile/bootstrap', { token: login.body.token });
   assert.equal(salespersonRefresh.status, 200);
   assert(salespersonRefresh.body.fieldSales.visitPlans.some(item => item.id === managerCreatedPlan.id));
-  const managerDeletedPlan = await jsonRequest(`/api/field-sales/visit-plans/${managerCreatedPlan.id}`, {
+  const managerDeleteCustomer = await jsonRequest(`/api/field-sales/accounts/${saved.id}`, {
     method: 'DELETE',
     token: managerLogin.body.token
   });
-  assert.equal(managerDeletedPlan.status, 200);
+  assert.equal(managerDeleteCustomer.status, 403);
+  assert.equal(managerDeleteCustomer.body.code, 'FIELD_SALES_ACCOUNT_DELETE_FORBIDDEN');
+  const ownerLogin = await jsonRequest('/api/login', {
+    method: 'POST',
+    body: { email: 'native-owner@test.local', password: 'isolated-owner-password' }
+  });
+  assert.equal(ownerLogin.status, 200);
+  const ownerDeletedCustomer = await jsonRequest(`/api/field-sales/accounts/${saved.id}`, {
+    method: 'DELETE',
+    token: ownerLogin.body.token
+  });
+  assert.equal(ownerDeletedCustomer.status, 200);
+  assert.equal(ownerDeletedCustomer.body.deleted, true);
+  assert(!ownerDeletedCustomer.body.fieldSales.accounts.some(item => item.id === saved.id));
+  assert.equal(ownerDeletedCustomer.body.fieldSales.visitPlans.find(item => item.id === managerCreatedPlan.id).status, '已取消');
+  const afterOwnerDelete = await jsonRequest('/api/mobile/bootstrap', { token: login.body.token });
+  assert(!afterOwnerDelete.body.fieldSales.accounts.some(item => item.id === saved.id));
   console.log('Native QUaD login, customer, planning, trip recovery, visit evidence, recording attachment, attendance, route and internal messaging isolated regression passed.');
 }
 

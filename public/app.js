@@ -833,7 +833,7 @@ const permissionLabels = [
   ['reimbursementsApprove', '审批员工报销', 'Approve reimbursements'],
   ['fieldSalesView', '查看本人业务客户和拜访', 'View own field-sales accounts and visits'],
   ['fieldSalesEdit', '执行外勤拜访和提交日报', 'Perform field visits and submit reports'],
-  ['fieldSalesManage', '使用业务员管理中心管理业务员、客户和拜访', 'Use Field Sales Management Center to manage salespeople, accounts, and visits'],
+  ['fieldSalesManage', '查看和管理业务员管理中心', 'View and manage Field Sales Management Center'],
   ['fieldSalesInventoryView', '业务员手机端查看仓库库存', 'View warehouse inventory in field sales mobile'],
   ['fieldSalesPriceWholesale', '业务员手机端查看批发价', 'View wholesale pricing in field sales mobile'],
   ['fieldSalesPriceFirstOrder', '业务员手机端查看首次进货价', 'View first-order pricing in field sales mobile'],
@@ -4332,7 +4332,7 @@ function fieldSalesAccountTable(accounts) {
       <td>${fieldSalesStatusPill(account.stage || '待拜访', account.stage === '成交' ? 'good' : 'info')}</td>
       <td>${fieldSalesDateTime(account.lastVisitAt)}</td>
       <td>${overdue ? fieldSalesStatusPill(lang === 'zh' ? '已逾期' : 'Overdue', 'bad') : ''}<small class="field-sales-muted">${fieldSalesDateTime(account.nextVisitAt)}</small></td>
-      <td><button class="btn" onclick="openFieldSalesAccount('${account.id}')">${lang === 'zh' ? '管理' : 'Manage'}</button></td>
+      <td><div class="mini-actions"><button class="btn" onclick="openFieldSalesAccount('${account.id}')">${lang === 'zh' ? '管理' : 'Manage'}</button>${user?.role === 'owner' ? `<button class="btn danger" onclick="deleteFieldSalesAccount('${account.id}')">${lang === 'zh' ? '删除' : 'Delete'}</button>` : ''}</div></td>
     </tr>`;
   }).join('')}</tbody></table></div>`;
 }
@@ -4650,6 +4650,37 @@ function openFieldSalesAccount(accountId = '') {
     <label><span>${lang === 'zh' ? '下次回访时间' : 'Next visit'}</span><input id="fieldSalesNextVisit" type="datetime-local" value="${fieldSalesDateTimeInput(account.nextVisitAt)}"></label>
     <label class="wide"><span>${lang === 'zh' ? '客户备注' : 'Notes'}</span><textarea id="fieldSalesNote">${escapeHtml(account.note || '')}</textarea></label>
   </div>`, () => saveFieldSalesAccount(accountId));
+  const deleteButton = document.getElementById('modalDelete');
+  if (accountId && deleteButton && user?.role === 'owner') {
+    deleteButton.hidden = false;
+    deleteButton.textContent = lang === 'zh' ? '删除客户' : 'Delete customer';
+    deleteButton.onclick = () => deleteFieldSalesAccount(accountId);
+  }
+}
+
+async function deleteFieldSalesAccount(accountId) {
+  const account = (state.fieldSales?.accounts || []).find(item => item.id === accountId);
+  if (!account || user?.role !== 'owner') return;
+  const confirmed = confirm(lang === 'zh'
+    ? `确定删除业务客户“${account.businessName || '未命名客户'}”吗？\n\n客户将从业务员管理中心移除，未完成的计划和行程会取消；历史拜访、录音和操作记录会保留。`
+    : `Delete “${account.businessName || 'Unnamed customer'}”?\n\nThe customer will be removed from Field Sales Management Center and unfinished plans or trips will be cancelled. Historical visits, recordings, and audit records will be retained.`);
+  if (!confirmed) return;
+  const deleteButton = document.getElementById('modalDelete');
+  if (deleteButton) {
+    deleteButton.disabled = true;
+    deleteButton.textContent = lang === 'zh' ? '正在删除…' : 'Deleting…';
+  }
+  try {
+    await api(`/api/field-sales/accounts/${encodeURIComponent(accountId)}`, { method:'DELETE' });
+    closeModal();
+    await sync();
+  } catch (error) {
+    if (deleteButton) {
+      deleteButton.disabled = false;
+      deleteButton.textContent = lang === 'zh' ? '删除客户' : 'Delete customer';
+    }
+    alert(error.message);
+  }
 }
 
 async function saveFieldSalesAccount(accountId = '') {
@@ -11037,7 +11068,7 @@ function roleDefaultPermissions(role) {
   const all = Object.fromEntries(permissionLabels.map(([key]) => [key, true]));
   const byRole = {
     owner: all,
-    manager: { ...all, customerCodexChat: false },
+    manager: { ...all, fieldSalesManage: false, customerCodexChat: false },
     frontdesk: { ...none, jobsView: true, jobsCreate: true, pricingView: true, ordersView: true, ordersEdit: true, shipmentsView: true, schedulesView: true, leadsView: true, leadsEdit: true, prospectsView: true, prospectsEdit: true, reimbursementsView: true, reimbursementsCreate: true },
     sales: { ...none, jobsView: true, jobsCreate: true, pricingView: true, ordersView: true, ordersEdit: true, shipmentsView: true, schedulesView: true, leadsView: true, leadsEdit: true, prospectsView: true, prospectsEdit: true, reimbursementsView: true, reimbursementsCreate: true, fieldSalesView: true, fieldSalesEdit: true },
     clerk: { ...none, jobsView: true, jobsCreate: true, jobsEdit: true, pricingView: true, inventoryView: true, ordersView: true, ordersEdit: true, shipmentsView: true, shipmentsEdit: true, schedulesView: true, schedulesEdit: true, leadsView: true, leadsEdit: true, prospectsView: true, prospectsEdit: true, expensesView: true, expensesEdit: true, reimbursementsView: true, reimbursementsCreate: true },
