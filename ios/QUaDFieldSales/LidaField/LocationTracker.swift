@@ -20,7 +20,9 @@ final class LocationTracker: NSObject, ObservableObject, @preconcurrency CLLocat
         super.init()
         manager.delegate = self
         manager.desiredAccuracy = kCLLocationAccuracyBest
-        manager.distanceFilter = 20
+        // Ask Core Location for updates even while the employee is stationary;
+        // the app itself persists at most one route point every five minutes.
+        manager.distanceFilter = kCLDistanceFilterNone
         // Core Location selects the best position available from satellites,
         // Wi-Fi, cellular networks and cached system locations. Field work can
         // happen indoors or on foot, so do not model every request as driving.
@@ -186,7 +188,9 @@ final class LocationTracker: NSObject, ObservableObject, @preconcurrency CLLocat
                 status = "已收到手机位置，正在等待系统改善定位精度"
             }
         }
-        guard let shiftId, Date().timeIntervalSince(lastQueuedAt) >= 300 else { return }
+        guard let shiftId,
+              isUsable(location, maximumAge: 120),
+              Date().timeIntervalSince(lastQueuedAt) >= 300 else { return }
         lastQueuedAt = Date()
         Task { [weak self] in
             guard let self else { return }

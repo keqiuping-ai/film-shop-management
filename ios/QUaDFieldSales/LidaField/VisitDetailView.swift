@@ -790,7 +790,7 @@ struct SamplesAndConsignmentView: View {
                 .quadCard()
                 QuadPrimaryButton(title: "保存并进入客户签收", systemImage: "arrow.right", color: .quadTeal) {
                     Task {
-                        let saved = await app.saveArtifact(kind: "samples", values: ["mode": mode, "warehouse": warehouse, "paymentStatus": paymentStatus, "received": received.description, "paymentMethod": paymentMethod, "notes": notes], products: products, plan: plan)
+                        let saved = await app.saveSamplesAndConsignment(plan: plan, mode: mode, warehouse: warehouse, products: products, paymentStatus: paymentStatus, received: received, paymentMethod: paymentMethod, notes: notes)
                         if saved { dismiss() }
                     }
                 }
@@ -1252,7 +1252,7 @@ struct FollowUpView: View {
                 .quadCard()
                 QuadPrimaryButton(title: "保存跟进任务", systemImage: "checkmark", color: .quadTeal) {
                     Task {
-                        let saved = await app.saveArtifact(kind: "follow-up", values: ["method": method, "type": type, "date": date.ISO8601Format(), "owner": owner, "reminder": reminder, "reason": reason], plan: plan)
+                        let saved = await app.saveFollowUp(plan: plan, dueAt: date, method: method, type: type, reason: reason)
                         if saved { dismiss() }
                     }
                 }
@@ -1310,8 +1310,8 @@ struct VisitCompletionView: View {
                 }
                 .quadCard()
                 VStack(spacing: 10) {
-                    QuadPrimaryButton(title: "完成拜访并前往下一家", systemImage: "arrow.right", color: .quadGreen) { Task { _ = await app.completeVisit(endDay: false, summary: summary) } }
-                    Button("完成拜访并结束今日行程") { Task { _ = await app.completeVisit(endDay: true, summary: summary) } }.buttonStyle(.bordered).tint(.quadGreen)
+                    QuadPrimaryButton(title: "完成拜访并前往下一家", systemImage: "arrow.right", color: .quadGreen) { Task { _ = await app.completeVisit(plan: plan, endDay: false, summary: summary) } }
+                    Button("完成拜访并结束今日行程") { Task { _ = await app.completeVisit(plan: plan, endDay: true, summary: summary) } }.buttonStyle(.bordered).tint(.quadGreen)
                 }
             }
             .padding()

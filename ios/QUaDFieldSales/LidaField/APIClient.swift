@@ -250,9 +250,70 @@ actor APIClient {
         )
     }
 
+    func createConsignment(
+        plan: VisitPlan,
+        mode: String,
+        warehouse: String,
+        products: [VisitProductLine],
+        paymentStatus: String,
+        amountPaid: Double,
+        paymentMethod: String,
+        notes: String,
+        clientRequestId: String
+    ) async throws {
+        guard let accountId = plan.customerId, !accountId.isEmpty else {
+            throw APIError.message("拜访计划没有关联客户")
+        }
+        let body = QUaDConsignmentRequest(
+            clientRequestId: clientRequestId,
+            accountId: accountId,
+            visitId: plan.planId,
+            mode: mode,
+            warehouse: warehouse,
+            items: products.map {
+                QUaDConsignmentItemRequest(
+                    sku: $0.sku, name: $0.name, unit: $0.unit,
+                    quantity: $0.quantity, unitPrice: $0.unitPrice,
+                    discount: $0.discount,
+                    pricingMode: $0.usesSpecialPrice ? "special" : "wholesale"
+                )
+            },
+            paymentStatus: paymentStatus,
+            amountPaid: amountPaid,
+            paymentMethod: paymentMethod,
+            note: notes
+        )
+        let _: QUaDMobileBootstrap = try await request(
+            "/api/field-sales/consignments",
+            method: "POST",
+            body: try encoder.encode(body)
+        )
+    }
+
+    func createFollowUp(
+        plan: VisitPlan,
+        dueAt: String,
+        method: String,
+        type: String,
+        reason: String
+    ) async throws {
+        guard let accountId = plan.customerId, !accountId.isEmpty else {
+            throw APIError.message("拜访计划没有关联客户")
+        }
+        let body: [String: AnyEncodable] = [
+            "accountId": .string(accountId), "dueAt": .string(dueAt),
+            "method": .string(method), "type": .string(type), "reason": .string(reason)
+        ]
+        let _: QUaDMobileBootstrap = try await request(
+            "/api/field-sales/follow-ups",
+            method: "POST",
+            body: try encoder.encode(body)
+        )
+    }
+
     func dashboard(date: String) async throws -> FieldDashboard {
         let response: QUaDMobileBootstrap = try await request("/api/mobile/bootstrap")
-        return response.appDashboard(for: date)
+        return response.appDashboard(for: date, timeZoneIdentifier: regionalConfiguration.timeZoneIdentifier)
     }
 
     func createCustomer(_ draft: CustomerDraft) async throws -> CustomerSummary {
@@ -659,6 +720,8 @@ actor APIClient {
              ("POST", "/api/field-sales/visit-plans"),
              ("POST", "/api/field-sales/trips/start"),
              ("POST", "/api/field-sales/visits/start"),
+             ("POST", "/api/field-sales/consignments"),
+             ("POST", "/api/field-sales/follow-ups"),
              ("POST", "/api/field-sales/orders"),
              ("POST", "/api/field-sales/daily-reports"):
             true
@@ -693,6 +756,29 @@ private struct QUaDFieldOrderRequest: Encodable {
 private struct QUaDFieldOrderItemRequest: Encodable {
     let sku: String
     let name: String
+    let quantity: Double
+    let unitPrice: Double
+    let discount: Double
+    let pricingMode: String
+}
+
+private struct QUaDConsignmentRequest: Encodable {
+    let clientRequestId: String
+    let accountId: String
+    let visitId: String
+    let mode: String
+    let warehouse: String
+    let items: [QUaDConsignmentItemRequest]
+    let paymentStatus: String
+    let amountPaid: Double
+    let paymentMethod: String
+    let note: String
+}
+
+private struct QUaDConsignmentItemRequest: Encodable {
+    let sku: String
+    let name: String
+    let unit: String
     let quantity: Double
     let unitPrice: Double
     let discount: Double
@@ -787,7 +873,7 @@ private struct QUaDMobileBootstrap: Decodable {
     let clockRecords: [QUaDClockRecord]?
     let fieldSales: QUaDFieldSalesSnapshot
 
-    func appDashboard(for date: String) -> FieldDashboard {
+    func appDashboard(for date: String, timeZoneIdentifier: String) -> FieldDashboard {
         let accountsById = Dictionary(uniqueKeysWithValues: fieldSales.accounts.map { ($0.id, $0) })
         let plans = (fieldSales.visitPlans ?? [])
             .filter { $0.date == date }
@@ -816,7 +902,10 @@ private struct QUaDMobileBootstrap: Decodable {
             shifts: shifts,
             todayCustomers: plans,
             route: (fieldSales.locationPoints ?? [])
-                .filter { String($0.collectedAt.prefix(10)) == date }
+                .filter { item in
+                    guard let instant = ISO8601DateFormatter().date(from: item.collectedAt) else { return false }
+                    return APIClient.localDate(instant, timeZoneIdentifier: timeZoneIdentifier) == date
+                }
                 .map(\.appLocationPoint)
         )
     }

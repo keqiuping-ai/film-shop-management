@@ -8,7 +8,7 @@ const { spawn } = require('child_process');
 
 const ROOT = path.resolve(__dirname, '..');
 const DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'quad-native-customer-test-'));
-const PORT = 47000 + Math.floor(Math.random() * 1000);
+const PORT = Number(process.env.TEST_PORT || 0) || 47000 + Math.floor(Math.random() * 1000);
 const AI_PORT = PORT + 1000;
 const BASE_URL = `http://127.0.0.1:${PORT}`;
 const API_SOURCE = path.join(ROOT, 'ios/QUaDFieldSales/LidaField/APIClient.swift');
@@ -197,6 +197,11 @@ async function seed() {
     updatedAt: '2026-09-11T00:00:00.000Z'
   }];
   db.clockRecords = [];
+  db.products.push({
+    id:'isolated-film-product', sku:'ISOLATED-FILM-001', name:'Isolated Ceramic Film',
+    model:'ISOLATED-001', specification:'60 in × 100 ft', unit:'卷', category:'汽车膜',
+    price:325, wholesale:325, prices:{ standard:325 }, qty:20, branchQty:{ 'las-vegas':12, 'los-angeles':8 }
+  });
   db.salesVisitPlans = [{
     id: 'isolated-visit-plan',
     accountId: 'existing-native-customer',
@@ -284,6 +289,8 @@ async function run() {
     '/api/field-sales/accounts',
     '/api/field-sales/location-points',
     '/api/field-sales/inventory-pricing',
+    '/api/field-sales/consignments',
+    '/api/field-sales/follow-ups',
     '/api/field-sales/orders'
   ]) {
     assert(source.includes(allowed), `missing native allowlist route ${allowed}`);
@@ -314,6 +321,12 @@ async function run() {
   assert(!visitViewSource.includes('sku: "待选择"'), 'native order flow must not create placeholder product rows');
   const appStateSource = fs.readFileSync(path.join(ROOT, 'ios/QUaDFieldSales/LidaField/AppState.swift'), 'utf8');
   assert(appStateSource.includes('APIClient.localDate(date, timeZoneIdentifier: region.timeZoneIdentifier)'), 'visit plan merging must use the configured business time zone');
+  assert(appStateSource.includes('api.createConsignment'), 'samples must create a structured QUaD consignment');
+  assert(appStateSource.includes('api.createFollowUp'), 'follow-up UI must create a structured QUaD follow-up task');
+  assert(appStateSource.includes('api.completeVisit(plan,'), 'visit completion must use the explicitly displayed plan');
+  const locationSource = fs.readFileSync(path.join(ROOT, 'ios/QUaDFieldSales/LidaField/LocationTracker.swift'), 'utf8');
+  assert(locationSource.includes('manager.distanceFilter = kCLDistanceFilterNone'), 'tracking must keep receiving stationary updates for five-minute sampling');
+  assert(locationSource.includes('isUsable(location, maximumAge: 120)'), 'stale cached coordinates must not enter the daily route');
   const todayViewSource = fs.readFileSync(path.join(ROOT, 'ios/QUaDFieldSales/LidaField/TodayView.swift'), 'utf8');
   assert(todayViewSource.includes('cn: "保存成功", us: "Saved successfully"'), 'visit planning must show a localized explicit save-success confirmation');
   assert(todayViewSource.includes('距手机当前出发位置直线约'), 'visit planning must show distance from the current phone location');
@@ -326,6 +339,7 @@ async function run() {
   assert(source.includes('func dashboard(date: String)'), 'native dashboard must read QUaD mobile bootstrap');
   assert(source.includes('fieldSales.visitPlans'), 'native dashboard must map QUaD visit plans');
   assert(source.includes('fieldSales.locationPoints'), 'native dashboard must map QUaD route points');
+  assert(source.includes('APIClient.localDate(instant, timeZoneIdentifier: timeZoneIdentifier)'), 'native route dates must use the configured business time zone');
   assert(source.includes('clockRecords'), 'native dashboard must map QUaD attendance records');
   assert(!source.includes('request("/api/collaboration")'), 'old collaboration overview route must not remain');
   assert(source.includes('request("/api/messages")'), 'native chat must read QUaD internal messages');
@@ -340,6 +354,8 @@ async function run() {
   const adminSource = fs.readFileSync(path.join(ROOT, 'public/app.js'), 'utf8');
   assert(adminSource.includes("fieldSales: '业务员管理中心'"), 'desktop module must be named 业务员管理中心');
   assert(adminSource.includes('function fieldSalesEmployeeRouteMap'), 'desktop salesperson lanes must include the daily route map');
+  assert(adminSource.includes('(item.businessDate || fieldSalesRouteDateKey(item.collectedAt)) === selectedDate'), 'desktop routes must use the server business date');
+  assert(adminSource.includes("item.date === selectedDate || fieldSalesMatchesSelectedDate(item, ['plannedAt'], selectedDate)"), 'future plans must not appear on their creation date');
   assert(adminSource.includes('沟通记录与 AI 总结'), 'desktop salesperson lanes must include conversation and AI summaries');
   assert(adminSource.includes('<audio controls'), 'desktop salesperson lanes must support inline recording playback');
   assert(adminSource.includes('let fieldSalesEmployeeDates = {}'), 'each salesperson lane must keep its own selected date');
@@ -357,7 +373,7 @@ async function run() {
   assert(serverSource.includes('const timeoutId = setTimeout(() => controller.abort(), 6000)'), 'address geocoding must never block customer saving indefinitely');
   assert(serverSource.includes('function normalizeUsStreetAddress(address)'), 'server must normalize loosely typed U.S. addresses');
   assert(serverSource.includes("code:'CUSTOMER_ADDRESS_UNLOCATABLE'"), 'unlocatable customer addresses must return a structured error code');
-  assert(adminSource.includes("fieldSalesMatchesSelectedDate(item, ['plannedAt', 'createdAt'], selectedDate)"), 'salesperson visit plans must follow that employee selected date');
+  assert(adminSource.includes("item.date === selectedDate || fieldSalesMatchesSelectedDate(item, ['plannedAt'], selectedDate)"), 'salesperson visit plans must follow their scheduled date rather than creation date');
   assert(adminSource.includes("fieldSalesMatchesSelectedDate(item, ['startedAt', 'arrivedAt', 'createdAt'], selectedDate)"), 'salesperson visits must follow that employee selected date');
   assert(adminSource.includes("expanded ? `<div class=\"field-sales-employee-detail\">"), 'salesperson day details must not render while collapsed');
   assert(adminSource.includes('const visiblePeople = expandedPerson ? [expandedPerson] : people'), 'opening one salesperson must hide other salesperson cards');
@@ -436,6 +452,18 @@ async function run() {
   });
   assert.equal(locationPoint.status, 201);
   assert.equal(locationPoint.body.shiftId, isolatedShiftId);
+  assert(/^\d{4}-\d{2}-\d{2}$/.test(locationPoint.body.businessDate));
+
+  const beforeMidnight = await jsonRequest('/api/field-sales/location-points', {
+    method: 'POST', token: login.body.token,
+    body: { clientPointId:'isolated-la-before-midnight', shiftId:isolatedShiftId, collectedAt:'2026-09-13T06:55:00.000Z', latitude:34.0522, longitude:-118.2437, accuracyM:8 }
+  });
+  const afterMidnight = await jsonRequest('/api/field-sales/location-points', {
+    method: 'POST', token:login.body.token,
+    body: { clientPointId:'isolated-la-after-midnight', shiftId:isolatedShiftId, collectedAt:'2026-09-13T07:05:00.000Z', latitude:34.0523, longitude:-118.2438, accuracyM:8 }
+  });
+  assert.equal(beforeMidnight.body.businessDate, '2026-09-12');
+  assert.equal(afterMidnight.body.businessDate, '2026-09-13');
 
   const clockOut = await jsonRequest('/api/mobile/clock', {
     method: 'POST',
@@ -691,6 +719,16 @@ async function run() {
   assert(savedMeeting.transcript.includes('heat rejection'));
   assert(savedMeeting.analysis.includes('intent is strong'));
 
+  const receiptPayload = {
+    kind:'receipt', customerName:'San Francisco Isolated Tint Shop', createdAt:new Date().toISOString(),
+    values:{ printedName:'Alex', title:'Owner', total:'650', paid:'200', balance:'450', signatureCaptured:'true' }, products:[]
+  };
+  const receiptArtifact = await jsonRequest('/api/field-sales/attachments?objectId=isolated-visit-plan', {
+    method:'POST', token:login.body.token,
+    body:{ objectId:'isolated-visit-plan', fileName:'isolated-receipt.json', contentType:'application/json', contentBase64:Buffer.from(JSON.stringify(receiptPayload)).toString('base64') }
+  });
+  assert.equal(receiptArtifact.status, 201);
+
   const fieldOrder = await jsonRequest('/api/field-sales/orders', {
     method: 'POST',
     token: login.body.token,
@@ -708,6 +746,34 @@ async function run() {
   assert(savedFieldOrder);
   assert.equal(savedFieldOrder.total, 650);
   assert.equal(savedFieldOrder.amountDue, 450);
+
+  const consignment = await jsonRequest('/api/field-sales/consignments', {
+    method:'POST', token:login.body.token,
+    body:{
+      clientRequestId:'isolated-consignment-request', accountId:'existing-native-customer', visitId:visit.body.visit.id,
+      mode:'免费样品', warehouse:'拉斯维加斯仓', paymentStatus:'未收款', amountPaid:0, paymentMethod:'', note:'isolated sample handoff',
+      items:[{ sku:'ISOLATED-FILM-001', name:'Isolated Ceramic Film', unit:'卷', quantity:1, unitPrice:0, discount:0, pricingMode:'wholesale' }]
+    }
+  });
+  assert.equal(consignment.status, 201);
+  const savedConsignment = consignment.body.fieldSales.consignments.find(item => item.clientRequestId === 'isolated-consignment-request');
+  assert(savedConsignment);
+  assert.equal(savedConsignment.accountId, 'existing-native-customer');
+  assert.equal(savedConsignment.items[0].productSku, 'ISOLATED-FILM-001');
+  assert(consignment.body.fieldSales.trialRolls.some(item => item.consignmentId === savedConsignment.id));
+  const duplicateConsignment = await jsonRequest('/api/field-sales/consignments', {
+    method:'POST', token:login.body.token,
+    body:{ clientRequestId:'isolated-consignment-request', accountId:'existing-native-customer', items:[{ sku:'ISOLATED-FILM-001', quantity:1 }] }
+  });
+  assert.equal(duplicateConsignment.status, 200);
+  assert.equal(duplicateConsignment.body.fieldSales.consignments.filter(item => item.clientRequestId === 'isolated-consignment-request').length, 1);
+
+  const followUp = await jsonRequest('/api/field-sales/follow-ups', {
+    method:'POST', token:login.body.token,
+    body:{ accountId:'existing-native-customer', dueAt:'2026-09-20T17:00:00.000Z', method:'电话', type:'样品测试跟进', reason:'Confirm isolated sample test' }
+  });
+  assert.equal(followUp.status, 201);
+  assert(followUp.body.fieldSales.followUps.some(item => item.accountId === 'existing-native-customer' && item.reason === 'Confirm isolated sample test'));
 
   const completedVisit = await jsonRequest(`/api/field-sales/visits/${visit.body.visit.id}/complete`, {
     method: 'PUT',
@@ -771,6 +837,27 @@ async function run() {
     body: { email: 'native-owner@test.local', password: 'isolated-owner-password' }
   });
   assert.equal(ownerLogin.status, 200);
+  const ownerSnapshot = await jsonRequest('/api/mobile/bootstrap', { token:ownerLogin.body.token });
+  assert.equal(ownerSnapshot.status, 200);
+  const ownerFieldSales = ownerSnapshot.body.fieldSales;
+  const completedOwnerVisit = ownerFieldSales.visits.find(item => item.id === visit.body.visit.id);
+  assert.equal(completedOwnerVisit.status, '已完成');
+  assert.equal(completedOwnerVisit.reportText, 'Isolated end-to-end visit completed');
+  assert(ownerFieldSales.attachments.some(item => item.id === audio.body.attachmentId && item.accountId === 'existing-native-customer'));
+  assert(ownerFieldSales.attachments.some(item => item.id === meetingArtifact.body.attachmentId && item.artifactKind === 'meeting'));
+  const ownerReceipt = ownerFieldSales.attachments.find(item => item.id === receiptArtifact.body.attachmentId);
+  assert.equal(ownerReceipt.artifactKind, 'receipt');
+  assert.equal(ownerReceipt.artifactValues.printedName, 'Alex');
+  assert(ownerFieldSales.fieldOrders.some(item => item.id === savedFieldOrder.id));
+  assert(ownerFieldSales.consignments.some(item => item.id === savedConsignment.id));
+  assert(ownerFieldSales.followUps.some(item => item.reason === 'Confirm isolated sample test'));
+  assert(ownerFieldSales.dailyReports.some(item => item.summary === 'Isolated native field-sales daily report'));
+  assert(ownerFieldSales.locationPoints.some(item => item.clientPointId === 'isolated-la-before-midnight' && item.businessDate === '2026-09-12'));
+  assert(ownerFieldSales.locationPoints.some(item => item.clientPointId === 'isolated-la-after-midnight' && item.businessDate === '2026-09-13'));
+  if (Number(process.env.UI_TEST_HOLD_AFTER_MS || 0) > 0) {
+    console.log(`Isolated UI fixture ready at ${BASE_URL} (owner: native-owner@test.local)`);
+    await new Promise(resolve => setTimeout(resolve, Number(process.env.UI_TEST_HOLD_AFTER_MS)));
+  }
   const ownerDeletedCustomer = await jsonRequest(`/api/field-sales/accounts/${saved.id}`, {
     method: 'DELETE',
     token: ownerLogin.body.token

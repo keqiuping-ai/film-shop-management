@@ -2134,6 +2134,10 @@ function fieldSalesSnapshot(db, user) {
       .slice(0, 200),
     locationPoints: (db.salesLocationPoints || [])
       .filter(item => canManage || item.userId === user.id)
+      .map(item => ({
+        ...item,
+        businessDate:item.businessDate || instantDateInTimezone(item.collectedAt, db.settings?.timezone || 'America/Los_Angeles')
+      }))
       .sort((a, b) => String(a.collectedAt || '').localeCompare(String(b.collectedAt || '')))
       .slice(-1000),
     visitPlans: (db.salesVisitPlans || [])
@@ -8011,6 +8015,11 @@ async function api(req, res) {
     const longitude = Number(body.longitude);
     const accuracyM = Number(body.accuracyM ?? body.accuracy);
     if (!clientPointId || !hasValidCoordinates(latitude, longitude)) return send(res, 400, { error: '定位点缺少有效编号或坐标' });
+    const collectedAt = String(body.collectedAt || new Date().toISOString());
+    const collectedInstant = new Date(collectedAt);
+    if (!Number.isFinite(collectedInstant.getTime()) || collectedInstant.getTime() > Date.now() + 5 * 60 * 1000) {
+      return send(res, 400, { error:'定位时间无效', code:'FIELD_SALES_LOCATION_TIME_INVALID' });
+    }
     const existing = (db.salesLocationPoints || []).find(item => item.userId === user.id && item.clientPointId === clientPointId);
     if (existing) return send(res, 200, existing);
     const point = {
@@ -8018,7 +8027,8 @@ async function api(req, res) {
       userId: user.id, userName: user.name || user.email,
       branchId: String(user.defaultBranchId || '').trim(),
       shiftId: String(body.shiftId || '').trim().slice(0, 100),
-      collectedAt: String(body.collectedAt || new Date().toISOString()),
+      collectedAt,
+      businessDate:instantDateInTimezone(collectedAt, db.settings?.timezone || 'America/Los_Angeles'),
       latitude, longitude,
       accuracyM: Number.isFinite(accuracyM) ? Math.max(0, accuracyM) : 0,
       source: String(body.source || 'IOS_NATIVE').trim().slice(0, 40),
@@ -8037,7 +8047,7 @@ async function api(req, res) {
     if (req.method === 'GET') {
       const items = (db.salesAttachments || [])
         .filter(item => item.objectId === objectId && (canManageFieldSales(user) || item.userId === user.id))
-        .map(item => ({ attachmentId:item.id, accountId:item.accountId || '', visitId:item.visitId || '', fileName:item.fileName, sizeBytes:item.sizeBytes, contentType:item.contentType, url:item.url, artifactKind:item.artifactKind || '', customerName:item.customerName || '', transcript:item.transcript || '', analysis:item.analysis || '', createdAt:item.createdAt }));
+        .map(item => ({ attachmentId:item.id, accountId:item.accountId || '', visitId:item.visitId || '', fileName:item.fileName, sizeBytes:item.sizeBytes, contentType:item.contentType, url:item.url, artifactKind:item.artifactKind || '', artifactValues:item.artifactValues || {}, artifactProducts:item.artifactProducts || [], customerName:item.customerName || '', transcript:item.transcript || '', analysis:item.analysis || '', createdAt:item.createdAt }));
       return send(res, 200, { items });
     }
     if (req.method === 'POST') {
@@ -8053,7 +8063,8 @@ async function api(req, res) {
       if (contentType === 'application/json' && data.length <= 2 * 1024 * 1024) {
         try {
           const parsed = JSON.parse(data.toString('utf8'));
-          if (parsed && typeof parsed === 'object' && String(parsed.kind || '') === 'meeting') artifact = parsed;
+          const allowedArtifactKinds = new Set(['meeting', 'samples', 'receipt', 'follow-up']);
+          if (parsed && typeof parsed === 'object' && allowedArtifactKinds.has(String(parsed.kind || ''))) artifact = parsed;
         } catch {}
       }
       const linkedVisit = (db.salesVisits || []).find(row => row.id === targetId);
@@ -8069,7 +8080,16 @@ async function api(req, res) {
         id:id(), objectId:targetId, userId:user.id, userName:user.name || user.email,
         branchId:String(user.defaultBranchId || '').trim(), fileName, contentType,
         sizeBytes:data.length, url:`${requestPublicBaseUrl(req)}/customer-media/${storedName}`,
-        artifactKind:artifact ? 'meeting' : '',
+        artifactKind:artifact ? String(artifact.kind || '').slice(0, 40) : '',
+        artifactValues:artifact && artifact.values && typeof artifact.values === 'object'
+          ? Object.fromEntries(Object.entries(artifact.values).slice(0, 40).map(([key, value]) => [String(key).slice(0, 80), String(value ?? '').slice(0, 5000)]))
+          : {},
+        artifactProducts:artifact && Array.isArray(artifact.products)
+          ? artifact.products.slice(0, 30).map(product => ({
+            sku:String(product?.sku || '').slice(0, 80), name:String(product?.name || '').slice(0, 180), unit:String(product?.unit || '').slice(0, 40),
+            quantity:Math.max(0, Number(product?.quantity || 0)), unitPrice:Math.max(0, Number(product?.unitPrice || 0)), discount:Math.max(0, Number(product?.discount || 0))
+          }))
+          : [],
         customerName:artifact ? String(artifact.customerName || '').trim().slice(0, 300) : '',
         transcript:artifact ? String(artifact.values?.transcript || '').trim().slice(0, 30000) : '',
         analysis:artifact ? String(artifact.values?.analysis || '').trim().slice(0, 20000) : '',
@@ -8179,6 +8199,71 @@ async function api(req, res) {
     db.salesFollowUps.unshift(task); account.nextVisitAt = dueAt; account.updatedAt = task.updatedAt;
     audit(db, user, 'create-field-sales-follow-up', { collection:'salesFollowUps', recordId:task.id, recordLabel:account.businessName, after:task, detail:`新增跟进任务 ${account.businessName}` });
     writeDb(db); notifyDataChanged('field-sales-follow-up-created', task.id);
+    return send(res, 201, mobileSnapshot(db, user));
+  }
+
+  if (req.method === 'POST' && url.pathname === '/api/field-sales/consignments') {
+    if (!canUseFieldSales(user)) return send(res, 403, { error:'当前账号没有业务员管理权限' });
+    const body = await readBody(req);
+    const account = (db.salesAccounts || []).find(item => item.id === body.accountId && fieldSalesVisible(item, user) && canAccessBranch(db, user, item.branchId));
+    if (!account) return send(res, 404, { error:'找不到这个客户' });
+    const clientRequestId = String(body.clientRequestId || '').trim().slice(0, 120);
+    const existing = clientRequestId && (db.salesConsignments || []).find(item => item.userId === user.id && item.clientRequestId === clientRequestId);
+    if (existing) return send(res, 200, mobileSnapshot(db, user));
+    const pricingAccess = fieldSalesInventoryPricingAccess(user);
+    const mode = String(body.mode || '免费样品').trim().slice(0, 80);
+    const isFreeSample = ['免费样品', 'free-sample', 'free sample'].includes(mode.toLowerCase()) || mode === '免费样品';
+    const items = [];
+    for (const item of (Array.isArray(body.items) ? body.items : []).slice(0, 30)) {
+      const sku = String(item?.sku || '').trim().slice(0, 80);
+      const product = (db.products || []).find(row => row.sku === sku || row.id === item?.productId);
+      const quantity = Math.max(0, Number(item?.quantity || 0));
+      if (!sku || !Number.isFinite(quantity) || quantity <= 0) continue;
+      if (!product) return send(res, 400, { error:`找不到样品产品 ${sku}`, code:'FIELD_SALES_SAMPLE_PRODUCT_NOT_FOUND' });
+      const pricingMode = item?.pricingMode === 'special' ? 'special' : 'wholesale';
+      let unitPrice = isFreeSample ? 0 : Math.max(0, Number(item?.unitPrice || 0));
+      if (!isFreeSample && pricingMode === 'wholesale') {
+        if (!pricingAccess.priceTierIds.includes('standard')) return send(res, 403, { error:'当前账号没有批发价查看和使用权限', code:'FIELD_SALES_WHOLESALE_PRICE_FORBIDDEN' });
+        const wholesalePrice = fieldSalesTierPrice(db, product, 'standard');
+        if (!Number.isFinite(wholesalePrice)) return send(res, 422, { error:`产品 ${product.sku} 尚未设置批发价`, code:'FIELD_SALES_WHOLESALE_PRICE_MISSING' });
+        unitPrice = wholesalePrice;
+      }
+      const discount = Math.max(0, Number(item?.discount || 0));
+      items.push({
+        productId:product.id || '', productSku:product.sku || sku, sku:product.sku || sku,
+        productName:product.name || sku, name:product.name || sku, unit:String(item?.unit || product.unit || '卷').slice(0,40),
+        quantity, unitPrice, discount, pricingMode,
+        lineTotal:Number(Math.max(0, quantity * unitPrice - discount).toFixed(2))
+      });
+    }
+    if (!items.length) return send(res, 400, { error:'请至少选择一项样品产品' });
+    const totalAmount = Number(items.reduce((sum, item) => sum + item.lineTotal, 0).toFixed(2));
+    const amountPaid = Math.max(0, Math.min(totalAmount, Number(body.amountPaid || 0)));
+    const now = new Date().toISOString();
+    const recordId = id();
+    const record = {
+      id:recordId, clientRequestId,
+      receiptNumber:`FSC-${now.slice(0,10).replace(/-/g,'')}-${recordId.slice(-6).toUpperCase()}`,
+      accountId:account.id, businessName:account.businessName, branchId:account.branchId || '',
+      visitId:String(body.visitId || '').trim().slice(0,120), userId:user.id, userName:user.name || user.email,
+      mode, warehouse:String(body.warehouse || '').trim().slice(0,120), items,
+      totalAmount, amountPaid:Number(amountPaid.toFixed(2)), amountDue:Number((totalAmount - amountPaid).toFixed(2)),
+      paymentStatus:String(body.paymentStatus || (totalAmount > amountPaid ? '未收清' : '已收清')).slice(0,80),
+      paymentMethod:String(body.paymentMethod || '').slice(0,80), note:String(body.note || '').slice(0,3000),
+      inventoryStatus:'待仓库确认', status:isFreeSample ? '样品已记录' : (totalAmount > amountPaid ? '待收款' : '已付清'),
+      createdAt:now, updatedAt:now
+    };
+    db.salesConsignments.unshift(record);
+    for (const item of items) {
+      db.salesTrialRolls.unshift({
+        id:id(), accountId:account.id, businessName:account.businessName, branchId:account.branchId || '', visitId:record.visitId,
+        consignmentId:record.id, userId:user.id, userName:user.name || user.email,
+        productId:item.productId, productSku:item.productSku, productName:item.productName, quantity:item.quantity,
+        singlePrice:item.unitPrice, status:'试用中', deliveredAt:now, followUpAt:addDaysIso(db, 7, 17), inventoryStatus:'待仓库确认', createdAt:now, updatedAt:now
+      });
+    }
+    audit(db, user, 'create-field-sales-consignment', { collection:'salesConsignments', recordId:record.id, recordLabel:account.businessName, after:record, detail:`记录样品/放货 ${account.businessName}` });
+    writeDb(db); notifyDataChanged('field-sales-consignment-created', record.id);
     return send(res, 201, mobileSnapshot(db, user));
   }
 

@@ -1455,6 +1455,61 @@ final class AppState: ObservableObject {
         return saved
     }
 
+    func saveSamplesAndConsignment(
+        plan: VisitPlan,
+        mode: String,
+        warehouse: String,
+        products: [VisitProductLine],
+        paymentStatus: String,
+        received: Double,
+        paymentMethod: String,
+        notes: String
+    ) async -> Bool {
+        guard !products.isEmpty, products.allSatisfy({ !$0.sku.isEmpty && $0.sku != "待选择" && $0.quantity > 0 && $0.unitPrice >= 0 }) else {
+            errorMessage = localized(cn: "请从库存中选择产品，并填写正确的数量和价格", us: "Select products from inventory and enter valid quantities and prices.")
+            return false
+        }
+        if isDesignPreview {
+            markArtifactComplete(planId: plan.planId, kind: "samples")
+            successMessage = localized(cn: "样品/放货记录已保存", us: "Sample/consignment record saved.")
+            return true
+        }
+        var saved = false
+        await perform {
+            try await api.createConsignment(
+                plan: plan, mode: mode, warehouse: warehouse, products: products,
+                paymentStatus: paymentStatus, amountPaid: received,
+                paymentMethod: paymentMethod, notes: notes,
+                clientRequestId: UUID().uuidString
+            )
+            markArtifactComplete(planId: plan.planId, kind: "samples")
+            successMessage = localized(cn: "样品/放货记录已保存并由总系统确认", us: "The sample/consignment record was saved and confirmed by the main system.")
+            saved = true
+        }
+        return saved
+    }
+
+    func saveFollowUp(plan: VisitPlan, dueAt: Date, method: String, type: String, reason: String) async -> Bool {
+        let cleanReason = reason.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleanReason.isEmpty else {
+            errorMessage = localized(cn: "请填写跟进原因", us: "Enter a follow-up reason.")
+            return false
+        }
+        if isDesignPreview {
+            markArtifactComplete(planId: plan.planId, kind: "follow-up")
+            successMessage = localized(cn: "跟进任务已保存", us: "Follow-up task saved.")
+            return true
+        }
+        var saved = false
+        await perform {
+            try await api.createFollowUp(plan: plan, dueAt: dueAt.ISO8601Format(), method: method, type: type, reason: cleanReason)
+            markArtifactComplete(planId: plan.planId, kind: "follow-up")
+            successMessage = localized(cn: "跟进任务已保存并由总系统确认", us: "The follow-up task was saved and confirmed by the main system.")
+            saved = true
+        }
+        return saved
+    }
+
     func searchInventoryPricing(_ query: String) async throws -> InventoryPricingResponse {
         if isDesignPreview {
             return InventoryPricingResponse(
@@ -1608,16 +1663,17 @@ final class AppState: ObservableObject {
         return saved
     }
 
-    func completeVisit(endDay: Bool, summary: String) async -> Bool {
+    func completeVisit(plan: VisitPlan, endDay: Bool, summary: String) async -> Bool {
         if isDesignPreview {
             successMessage = endDay ? "拜访已完成，今日行程已结束" : "拜访已完成，准备前往下一家"
             return true
         }
         var saved = false
         await perform {
-            let updated = try await api.completeVisit(selectedPlan, reportText: summary)
+            let updated = try await api.completeVisit(plan, reportText: summary)
             mergeNewlyCreatedVisitPlan(updated, persist: false)
             selectedVisit = updated
+            _ = await refreshBusinessData(showCompletion: false)
             successMessage = endDay ? "拜访已完成，今日行程已结束" : "拜访已完成，准备前往下一家"
             saved = true
         }
