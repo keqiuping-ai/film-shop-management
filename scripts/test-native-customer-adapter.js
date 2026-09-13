@@ -160,15 +160,11 @@ async function seed() {
     status: '待出发',
     note: 'isolated visit fixture'
   }];
-  db.salesLocationPoints = [{
-    locationId: 'isolated-location-point',
-    clientPointId: 'isolated-client-point',
-    userId: 'native-sales-user',
-    collectedAt: '2026-09-11T15:05:00.000Z',
-    latitude: 36.1716,
-    longitude: -115.1391,
-    accuracyM: 8
-  }];
+  db.salesLocationPoints = [
+    { locationId: 'isolated-location-point-1', clientPointId: 'isolated-client-point', userId: 'native-sales-user', collectedAt: '2026-09-11T15:05:00.000Z', latitude: 36.1716, longitude: -115.1391, accuracyM: 8 },
+    { locationId: 'isolated-location-point-2', clientPointId: 'isolated-client-point-2', userId: 'native-sales-user', collectedAt: '2026-09-11T16:10:00.000Z', latitude: 36.1671, longitude: -115.1487, accuracyM: 9 },
+    { locationId: 'isolated-location-point-3', clientPointId: 'isolated-client-point-3', userId: 'native-sales-user', collectedAt: '2026-09-11T17:20:00.000Z', latitude: 36.1598, longitude: -115.1537, accuracyM: 7 }
+  ];
   db.messages = [{
     id: 'isolated-internal-message',
     scope: 'direct',
@@ -245,6 +241,11 @@ async function run() {
   const chatAudioSource = fs.readFileSync(path.join(ROOT, 'ios/QUaDFieldSales/LidaField/ChatAudio.swift'), 'utf8');
   assert(chatAudioSource.includes('chatSpeechAuthorization()'), 'speech permission callback must use a non-actor helper');
   assert(chatAudioSource.includes('chatMicrophonePermission()'), 'microphone permission callback must use a non-actor helper');
+  const adminSource = fs.readFileSync(path.join(ROOT, 'public/app.js'), 'utf8');
+  assert(adminSource.includes("fieldSales: '业务员管理中心'"), 'desktop module must be named 业务员管理中心');
+  assert(adminSource.includes('function fieldSalesEmployeeRouteMap'), 'desktop salesperson lanes must include the daily route map');
+  assert(adminSource.includes('沟通记录与 AI 总结'), 'desktop salesperson lanes must include conversation and AI summaries');
+  assert(adminSource.includes('<audio controls'), 'desktop salesperson lanes must support inline recording playback');
 
   await startAiServer();
   await seed();
@@ -270,7 +271,7 @@ async function run() {
   assert.equal(bootstrap.body.clockRecords.length, 0);
   assert.equal(bootstrap.body.fieldSales.visitPlans.length, 1);
   assert.equal(bootstrap.body.fieldSales.visitPlans[0].accountId, 'existing-native-customer');
-  assert.equal(bootstrap.body.fieldSales.locationPoints.length, 1);
+  assert.equal(bootstrap.body.fieldSales.locationPoints.length, 3);
   assert.equal(bootstrap.body.fieldSales.locationPoints[0].clientPointId, 'isolated-client-point');
 
   const clockIn = await jsonRequest('/api/mobile/clock', {
@@ -485,9 +486,35 @@ async function run() {
     }
   });
   assert.equal(audio.status, 201);
+  const meetingArtifactPayload = {
+    kind: 'meeting',
+    customerName: 'San Francisco Isolated Tint Shop',
+    createdAt: new Date().toISOString(),
+    values: {
+      transcript: 'Customer asked about heat rejection and delivery timing.',
+      analysis: 'Customer intent is strong. Send the approved quote and follow up tomorrow.'
+    },
+    products: []
+  };
+  const meetingArtifact = await jsonRequest('/api/field-sales/attachments?objectId=isolated-visit-plan', {
+    method: 'POST',
+    token: login.body.token,
+    body: {
+      objectId: 'isolated-visit-plan',
+      fileName: 'isolated-meeting-summary.json',
+      contentType: 'application/json',
+      contentBase64: Buffer.from(JSON.stringify(meetingArtifactPayload)).toString('base64')
+    }
+  });
+  assert.equal(meetingArtifact.status, 201);
   const evidence = await jsonRequest('/api/field-sales/attachments?objectId=isolated-visit-plan', { token: login.body.token });
   assert.equal(evidence.status, 200);
-  assert.equal(evidence.body.items.length, 2);
+  assert.equal(evidence.body.items.length, 3);
+  const savedMeeting = evidence.body.items.find(item => item.attachmentId === meetingArtifact.body.attachmentId);
+  assert.equal(savedMeeting.artifactKind, 'meeting');
+  assert.equal(savedMeeting.customerName, 'San Francisco Isolated Tint Shop');
+  assert(savedMeeting.transcript.includes('heat rejection'));
+  assert(savedMeeting.analysis.includes('intent is strong'));
 
   const completedVisit = await jsonRequest(`/api/field-sales/visits/${visit.body.visit.id}/complete`, {
     method: 'PUT',
@@ -521,6 +548,30 @@ async function run() {
   });
   assert.equal(deletedPlan.status, 200);
   assert.equal(deletedPlan.body.status, 'DELETED');
+  const managerLogin = await jsonRequest('/api/login', {
+    method: 'POST',
+    body: { email: 'native-manager@test.local', password: 'isolated-manager-password' }
+  });
+  assert.equal(managerLogin.status, 200);
+  const managerPlanned = await jsonRequest('/api/field-sales/visit-plans', {
+    method: 'POST',
+    token: managerLogin.body.token,
+    body: { accountIds: [saved.id], date: futureDate, startMinutes: 660, stayMinutes: 30, note: 'manager assigned isolated plan' }
+  });
+  assert.equal(managerPlanned.status, 201);
+  const managerCreatedPlan = managerPlanned.body.fieldSales.visitPlans.find(item => item.note === 'manager assigned isolated plan');
+  assert(managerCreatedPlan);
+  assert.equal(managerCreatedPlan.userId, 'native-sales-user');
+  assert.equal(managerCreatedPlan.assignedUserId, 'native-sales-user');
+  assert.equal(managerCreatedPlan.createdByUserId, 'native-manager-user');
+  const salespersonRefresh = await jsonRequest('/api/mobile/bootstrap', { token: login.body.token });
+  assert.equal(salespersonRefresh.status, 200);
+  assert(salespersonRefresh.body.fieldSales.visitPlans.some(item => item.id === managerCreatedPlan.id));
+  const managerDeletedPlan = await jsonRequest(`/api/field-sales/visit-plans/${managerCreatedPlan.id}`, {
+    method: 'DELETE',
+    token: managerLogin.body.token
+  });
+  assert.equal(managerDeletedPlan.status, 200);
   console.log('Native QUaD login, customer, planning, trip recovery, visit evidence, recording attachment, attendance, route and internal messaging isolated regression passed.');
 }
 

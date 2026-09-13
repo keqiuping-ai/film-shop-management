@@ -2105,7 +2105,7 @@ function fieldSalesSnapshot(db, user) {
       .sort((a, b) => String(a.collectedAt || '').localeCompare(String(b.collectedAt || '')))
       .slice(-1000),
     visitPlans: (db.salesVisitPlans || [])
-      .filter(item => canManage || item.userId === user.id)
+      .filter(item => canManage || item.userId === user.id || item.assignedUserId === user.id)
       .sort((a, b) => String(a.plannedAt || '').localeCompare(String(b.plannedAt || '')))
       .slice(0, 500),
     followUps: (db.salesFollowUps || [])
@@ -7936,7 +7936,7 @@ async function api(req, res) {
     if (req.method === 'GET') {
       const items = (db.salesAttachments || [])
         .filter(item => item.objectId === objectId && (canManageFieldSales(user) || item.userId === user.id))
-        .map(item => ({ attachmentId:item.id, fileName:item.fileName, sizeBytes:item.sizeBytes, contentType:item.contentType, url:item.url, createdAt:item.createdAt }));
+        .map(item => ({ attachmentId:item.id, fileName:item.fileName, sizeBytes:item.sizeBytes, contentType:item.contentType, url:item.url, artifactKind:item.artifactKind || '', customerName:item.customerName || '', transcript:item.transcript || '', analysis:item.analysis || '', createdAt:item.createdAt }));
       return send(res, 200, { items });
     }
     if (req.method === 'POST') {
@@ -7948,6 +7948,13 @@ async function api(req, res) {
       if (!targetId || !raw || !/^[A-Za-z0-9+/=\r\n]+$/.test(raw)) return send(res, 400, { error: '附件对象或内容不完整' });
       const data = Buffer.from(raw, 'base64');
       if (!data.length || data.length > MAX_CLOUD_FILE_BYTES) return send(res, 413, { error: '附件为空或超过 20MB' });
+      let artifact = null;
+      if (contentType === 'application/json' && data.length <= 2 * 1024 * 1024) {
+        try {
+          const parsed = JSON.parse(data.toString('utf8'));
+          if (parsed && typeof parsed === 'object' && String(parsed.kind || '') === 'meeting') artifact = parsed;
+        } catch {}
+      }
       fs.mkdirSync(CUSTOMER_MEDIA_DIR, { recursive: true });
       const storedName = `${crypto.randomBytes(6).toString('hex')}${safeCustomerMediaExtension(fileName, contentType)}`;
       fs.writeFileSync(path.join(CUSTOMER_MEDIA_DIR, storedName), data);
@@ -7955,6 +7962,10 @@ async function api(req, res) {
         id:id(), objectId:targetId, userId:user.id, userName:user.name || user.email,
         branchId:String(user.defaultBranchId || '').trim(), fileName, contentType,
         sizeBytes:data.length, url:`${requestPublicBaseUrl(req)}/customer-media/${storedName}`,
+        artifactKind:artifact ? 'meeting' : '',
+        customerName:artifact ? String(artifact.customerName || '').trim().slice(0, 300) : '',
+        transcript:artifact ? String(artifact.values?.transcript || '').trim().slice(0, 30000) : '',
+        analysis:artifact ? String(artifact.values?.analysis || '').trim().slice(0, 20000) : '',
         createdAt:new Date().toISOString()
       };
       db.salesAttachments.unshift(item);
@@ -7995,10 +8006,14 @@ async function api(req, res) {
       const hh = String(Math.floor(minute / 60)).padStart(2, '0');
       const mm = String(minute % 60).padStart(2, '0');
       const plannedAt = zonedDateTimeToIso(db.settings?.timezone || 'America/Los_Angeles', date, Number(hh), Number(mm));
+      const assignedUserId = account.assignedUserId || user.id;
+      const assignedUser = (db.users || []).find(item => item.id === assignedUserId);
       const plan = {
         id:id(), accountId:account.id, businessName:account.businessName, address:account.address,
-        branchId:account.branchId || '', userId:user.id, userName:user.name || user.email,
-        assignedUserId:account.assignedUserId || user.id, order:index + 1, date, plannedAt,
+        branchId:account.branchId || '', userId:assignedUserId, userName:assignedUser?.name || assignedUser?.email || '',
+        assignedUserId, assignedUserName:assignedUser?.name || assignedUser?.email || '',
+        createdByUserId:user.id, createdByName:user.name || user.email,
+        order:index + 1, date, plannedAt,
         stayMinutes, status:'待出发', note:String(body.note || '').trim().slice(0, 1000), createdAt:now, updatedAt:now
       };
       db.salesVisitPlans.unshift(plan); created.push(plan);
@@ -8017,7 +8032,7 @@ async function api(req, res) {
     const index = (db.salesVisitPlans || []).findIndex(item => item.id === planId);
     if (index < 0) return send(res, 404, { error: '找不到这个拜访计划' });
     const plan = db.salesVisitPlans[index];
-    if (!canManageFieldSales(user) && plan.userId !== user.id) return send(res, 403, { error: '不能取消其他业务员的拜访计划' });
+    if (!canManageFieldSales(user) && ![plan.userId, plan.assignedUserId].includes(user.id)) return send(res, 403, { error: '不能取消其他业务员的拜访计划' });
     if (!canAccessBranch(db, user, plan.branchId)) return send(res, 403, { error: '你没有这个计划所属分店的数据权限' });
     if (!['待出发', 'PLANNED', 'PENDING', 'SCHEDULED'].includes(String(plan.status || ''))) {
       return send(res, 409, { error: '只有尚未出发的计划可以取消' });
