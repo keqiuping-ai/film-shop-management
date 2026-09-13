@@ -267,6 +267,11 @@ async function run() {
   assert(adminSource.includes('function fieldSalesEmployeeRouteMap'), 'desktop salesperson lanes must include the daily route map');
   assert(adminSource.includes('沟通记录与 AI 总结'), 'desktop salesperson lanes must include conversation and AI summaries');
   assert(adminSource.includes('<audio controls'), 'desktop salesperson lanes must support inline recording playback');
+  assert(adminSource.includes("let fieldSalesExpandedEmployeeId = ''"), 'salesperson lanes must start collapsed');
+  assert(adminSource.includes('function toggleFieldSalesEmployeeLane'), 'salesperson summaries must expand only when clicked');
+  assert(adminSource.includes("fieldSalesMatchesSelectedDate(item, ['plannedAt', 'createdAt'])"), 'salesperson visit plans must follow the selected date');
+  assert(adminSource.includes("fieldSalesMatchesSelectedDate(item, ['startedAt', 'arrivedAt', 'createdAt'])"), 'salesperson visits must follow the selected date');
+  assert(adminSource.includes("expanded ? `<div class=\"field-sales-employee-detail\">"), 'salesperson day details must not render while collapsed');
   assert(adminSource.includes("manager: { ...all, fieldSalesManage: false"), 'manager role must not receive the management center without an explicit checkbox');
   assert(adminSource.includes("user?.role === 'owner' ? `<button class=\"btn danger\""), 'only owners should receive a customer delete button');
   assert(serverSource.includes("return user?.role === 'owner' || Boolean(effectivePermissions(user).fieldSalesManage)"), 'server management access must require owner or explicit permission');
