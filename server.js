@@ -2046,9 +2046,8 @@ function fieldSalesInventoryPricingResults(db, user, query, limit = 40) {
   const access = fieldSalesInventoryPricingAccess(user);
   if (!access.allowed) return null;
   const needle = String(query || '').trim().toLowerCase();
-  if (!needle) return [];
   return (db.products || [])
-    .filter(product => [product.sku, product.name, product.model, product.specification, product.spec]
+    .filter(product => !needle || [product.sku, product.name, product.model, product.specification, product.spec]
       .some(value => String(value || '').toLowerCase().includes(needle)))
     .slice(0, Math.min(50, Math.max(1, Number(limit) || 40)))
     .map(product => {
@@ -2057,7 +2056,9 @@ function fieldSalesInventoryPricingResults(db, user, query, limit = 40) {
         name: String(product.name || ''),
         model: String(product.model || product.sku || ''),
         specification: String(product.specification || product.spec || ''),
-        unit: String(product.unit || '')
+        unit: String(product.unit || ''),
+        category: String(product.category || ''),
+        description: String(product.portalDescription || product.description || '').slice(0, 1000)
       };
       if (access.inventory) {
         result.inventory = {
@@ -8186,13 +8187,37 @@ async function api(req, res) {
     const body = await readBody(req);
     const account = (db.salesAccounts || []).find(item => item.id === body.accountId && fieldSalesVisible(item, user) && canAccessBranch(db, user, item.branchId));
     if (!account) return send(res, 404, { error:'找不到这个客户' });
-    const items = (Array.isArray(body.items) ? body.items : []).slice(0, 30).map(item => {
+    const pricingAccess = fieldSalesInventoryPricingAccess(user);
+    const items = [];
+    for (const item of (Array.isArray(body.items) ? body.items : []).slice(0, 30)) {
       const sku = String(item?.sku || '').trim().slice(0, 80);
       const product = (db.products || []).find(row => row.sku === sku || row.id === item?.productId);
-      const quantity = Math.max(0, Number(item?.quantity || 0));
-      const unitPrice = Math.max(0, Number(item?.unitPrice || 0));
-      return { productId:product?.id || '', sku:product?.sku || sku, name:product?.name || String(item?.name || sku).slice(0,180), quantity, unitPrice, lineTotal:Number((quantity * unitPrice).toFixed(2)) };
-    }).filter(item => item.sku && item.quantity > 0);
+      const submittedQuantity = Number(item?.quantity || 0);
+      const submittedDiscount = Number(item?.discount || 0);
+      const submittedUnitPrice = Number(item?.unitPrice || 0);
+      const quantity = Number.isFinite(submittedQuantity) ? Math.max(0, submittedQuantity) : 0;
+      const discount = Number.isFinite(submittedDiscount) ? Math.max(0, submittedDiscount) : 0;
+      const pricingMode = ['wholesale', 'special'].includes(String(item?.pricingMode || '')) ? String(item.pricingMode) : 'legacy';
+      if (!sku || quantity <= 0) continue;
+      if (pricingMode !== 'legacy' && !product) return send(res, 400, { error:`找不到订单产品 ${sku}`, code:'FIELD_SALES_ORDER_PRODUCT_NOT_FOUND' });
+      let unitPrice = Number.isFinite(submittedUnitPrice) ? Math.max(0, submittedUnitPrice) : 0;
+      if (pricingMode === 'wholesale') {
+        if (!pricingAccess.priceTierIds.includes('standard')) {
+          return send(res, 403, { error:'当前账号没有批发价查看和使用权限', code:'FIELD_SALES_WHOLESALE_PRICE_FORBIDDEN' });
+        }
+        const wholesalePrice = fieldSalesTierPrice(db, product, 'standard');
+        if (!Number.isFinite(wholesalePrice)) {
+          return send(res, 422, { error:`产品 ${product.sku} 尚未设置批发价`, code:'FIELD_SALES_WHOLESALE_PRICE_MISSING' });
+        }
+        unitPrice = wholesalePrice;
+      }
+      items.push({
+        productId:product?.id || '', sku:product?.sku || sku,
+        name:product?.name || String(item?.name || sku).slice(0,180), quantity,
+        unitPrice, discount, pricingMode,
+        lineTotal:Number(Math.max(0, quantity * unitPrice - discount).toFixed(2))
+      });
+    }
     if (!items.length) return send(res, 400, { error:'请至少填写一项订单产品' });
     const total = Number(items.reduce((sum,item) => sum + item.lineTotal, 0).toFixed(2));
     const paid = Math.max(0, Math.min(total, Number(body.amountPaid || 0)));

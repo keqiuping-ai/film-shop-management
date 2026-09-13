@@ -709,10 +709,8 @@ struct SamplesAndConsignmentView: View {
     @Environment(\.dismiss) private var dismiss
     let plan: VisitPlan
     @State private var mode = "试用放货"
-    @State private var products = [
-        VisitProductLine(name: "QD15 陶瓷隔热膜", sku: "QD15-BLK-15218", quantity: 2, unitPrice: 300),
-        VisitProductLine(name: "QD35 展示样品", sku: "QD35-SAMPLE", unit: "片", quantity: 5, unitPrice: 20)
-    ]
+    @State private var products: [VisitProductLine] = []
+    @State private var showsProductPicker = false
     @State private var warehouse = ""
     @State private var paymentStatus = "部分收款"
     @State private var received = 100.0
@@ -729,19 +727,44 @@ struct SamplesAndConsignmentView: View {
                     .pickerStyle(.segmented)
                 VStack(alignment: .leading, spacing: 14) {
                     QuadSectionHeader(title: "产品明细", trailing: "结构化保存")
+                    if products.isEmpty {
+                        ContentUnavailableView(
+                            app.localized(cn: "尚未选择产品", us: "No products selected"),
+                            systemImage: "shippingbox",
+                            description: Text(app.localized(cn: "请从真实库存中搜索 SKU、型号或产品名称", us: "Search the live catalog by SKU, model, or product name."))
+                        )
+                    }
                     ForEach($products) { $product in
                         VStack(alignment: .leading, spacing: 8) {
-                            HStack { VStack(alignment: .leading) { Text(product.name).font(.headline); Text("SKU：\(product.sku) · 单位：\(product.unit)").font(.caption).foregroundStyle(.secondary) }; Spacer(); Button(role: .destructive) { products.removeAll { $0.id == product.id } } label: { Image(systemName: "xmark.circle") } }
+                            HStack {
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text(product.name).font(.headline)
+                                    Text("SKU: \(product.sku) · \(app.localized(cn: "单位", us: "Unit")): \(product.unit)").font(.caption).foregroundStyle(.secondary)
+                                }
+                                Spacer()
+                                Button(role: .destructive) { products.removeAll { $0.id == product.id } } label: { Image(systemName: "xmark.circle") }
+                            }
                             HStack {
                                 TextField("数量", value: $product.quantity, format: .number).keyboardType(.decimalPad)
                                 TextField("约定单价", value: $product.unitPrice, format: .number).keyboardType(.decimalPad)
                                 Text(app.region.formatCurrency(product.amount)).font(.subheadline.weight(.bold)).frame(minWidth: 68)
                             }
                             .textFieldStyle(.roundedBorder)
+                            if mode != "免费样品", let wholesale = product.referenceWholesalePrice {
+                                HStack {
+                                    Text(app.localized(cn: "系统批发价 \(app.region.formatCurrency(wholesale))", us: "Wholesale \(app.region.formatCurrency(wholesale))"))
+                                    if product.usesSpecialPrice {
+                                        Text(app.localized(cn: "特殊价格", us: "Special price"))
+                                            .font(.caption.weight(.bold)).foregroundStyle(.orange)
+                                    }
+                                }
+                                .font(.caption).foregroundStyle(.secondary)
+                            }
                         }
                         if product.id != products.last?.id { Divider() }
                     }
-                    Button("添加产品", systemImage: "plus") { products.append(VisitProductLine(name: "新产品", sku: "待选择", quantity: 1, unitPrice: 0)) }.buttonStyle(.bordered)
+                    Button(app.localized(cn: "搜索并添加产品", us: "Search and add product"), systemImage: "magnifyingglass") { showsProductPicker = true }
+                        .buttonStyle(.bordered)
                 }
                 .quadCard()
 
@@ -779,10 +802,40 @@ struct SamplesAndConsignmentView: View {
         .quadScreen()
         .navigationTitle("样品 / 放货")
         .navigationBarTitleDisplayMode(.inline)
+        .sheet(isPresented: $showsProductPicker) {
+            InventoryProductPicker { selected in
+                addProduct(selected)
+            }
+            .environmentObject(app)
+        }
+        .onChange(of: mode) { _, newMode in
+            for index in products.indices {
+                if newMode == "免费样品" {
+                    products[index].unitPrice = 0
+                } else if products[index].unitPrice == 0, let wholesale = products[index].referenceWholesalePrice {
+                    products[index].unitPrice = wholesale
+                }
+            }
+        }
         .task {
             if warehouse.isEmpty { warehouse = app.region.warehouseNames.first ?? "" }
             if paymentMethod.isEmpty { paymentMethod = app.region.paymentMethods.first ?? "" }
         }
+    }
+
+    private func addProduct(_ selected: InventoryPricingProduct) {
+        if let index = products.firstIndex(where: { $0.sku == selected.sku }) {
+            products[index].quantity += 1
+            return
+        }
+        let reference = selected.wholesalePrice
+        products.append(VisitProductLine(
+            name: selected.name, sku: selected.sku,
+            unit: selected.unit.isEmpty ? app.localized(cn: "件", us: "item") : selected.unit,
+            quantity: 1,
+            unitPrice: mode == "免费样品" ? 0 : (reference ?? selected.preferredAuthorizedPrice ?? 0),
+            referenceWholesalePrice: reference
+        ))
     }
 }
 
@@ -790,10 +843,9 @@ struct OnsiteOrderView: View {
     @EnvironmentObject private var app: AppState
     @Environment(\.dismiss) private var dismiss
     let plan: VisitPlan
-    @State private var products = [
-        VisitProductLine(name: "QD15 陶瓷隔热膜", sku: "QD15-BLK-15218", quantity: 6, unitPrice: 360),
-        VisitProductLine(name: "QD35 陶瓷隔热膜", sku: "QD35-BLK-15218", quantity: 4, unitPrice: 330, discount: 60)
-    ]
+    @State private var products: [VisitProductLine] = []
+    @State private var showsProductPicker = false
+    @State private var warehouse = ""
     @State private var delivery = ""
     @State private var payment = ""
     @State private var received = 1_000.0
@@ -810,24 +862,56 @@ struct OnsiteOrderView: View {
                     QuadSectionHeader(title: "订单信息")
                     LabeledContent("业务员 · 可选可填", value: app.user?.displayName ?? "当前业务员")
                     LabeledContent("订单类型 · 可选可填", value: "批发订单")
-                    LabeledContent("出货仓库 · 可选可填", value: app.region.warehouseNames.first ?? "—")
+                    Picker("出货仓库", selection: $warehouse) {
+                        ForEach(app.region.warehouseNames, id: \.self) { Text($0) }
+                    }
                 }
                 .quadCard()
 
                 VStack(alignment: .leading, spacing: 14) {
                     QuadSectionHeader(title: "订单产品", trailing: "正式产品数据")
+                    if products.isEmpty {
+                        ContentUnavailableView(
+                            app.localized(cn: "尚未选择产品", us: "No products selected"),
+                            systemImage: "cart",
+                            description: Text(app.localized(cn: "选择产品后自动带入获准查看的批发价，也可修改为特殊价格", us: "Select a product to apply the authorized wholesale price, or enter a special price."))
+                        )
+                    }
                     ForEach($products) { $product in
                         VStack(alignment: .leading, spacing: 8) {
-                            HStack { VStack(alignment: .leading) { Text(product.name).font(.headline); Text("SKU：\(product.sku) · 单位：\(product.unit)").font(.caption).foregroundStyle(.secondary) }; Spacer(); Button(role: .destructive) { products.removeAll { $0.id == product.id } } label: { Image(systemName: "xmark.circle") } }
+                            HStack {
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text(product.name).font(.headline)
+                                    Text("SKU: \(product.sku) · \(app.localized(cn: "单位", us: "Unit")): \(product.unit)").font(.caption).foregroundStyle(.secondary)
+                                }
+                                Spacer()
+                                Button(role: .destructive) { products.removeAll { $0.id == product.id } } label: { Image(systemName: "xmark.circle") }
+                            }
                             HStack {
                                 TextField("数量", value: $product.quantity, format: .number).keyboardType(.decimalPad)
                                 TextField("成交单价", value: $product.unitPrice, format: .number).keyboardType(.decimalPad)
                                 TextField("折扣", value: $product.discount, format: .number).keyboardType(.decimalPad)
                             }.textFieldStyle(.roundedBorder)
+                            LabeledContent(app.localized(cn: "本项金额", us: "Line amount"), value: app.region.formatCurrency(product.amount))
+                                .font(.subheadline.weight(.semibold))
+                            HStack {
+                                if let wholesale = product.referenceWholesalePrice {
+                                    Text(app.localized(cn: "系统批发价 \(app.region.formatCurrency(wholesale))", us: "Wholesale \(app.region.formatCurrency(wholesale))"))
+                                } else {
+                                    Text(app.localized(cn: "未获批发价权限，请填写特殊价格", us: "Wholesale price unavailable; enter a special price."))
+                                }
+                                Spacer()
+                                if product.usesSpecialPrice {
+                                    Text(app.localized(cn: "特殊价格", us: "Special price"))
+                                        .fontWeight(.bold).foregroundStyle(.orange)
+                                }
+                            }
+                            .font(.caption).foregroundStyle(.secondary)
                         }
-                        Divider()
+                        if product.id != products.last?.id { Divider() }
                     }
-                    Button("选择或输入产品", systemImage: "plus") { products.append(VisitProductLine(name: "新产品", sku: "待选择", quantity: 1, unitPrice: 0)) }.buttonStyle(.bordered)
+                    Button(app.localized(cn: "搜索并添加产品", us: "Search and add product"), systemImage: "magnifyingglass") { showsProductPicker = true }
+                        .buttonStyle(.bordered)
                 }
                 .quadCard()
 
@@ -856,7 +940,7 @@ struct OnsiteOrderView: View {
 
                 QuadPrimaryButton(title: "创建订单并进入客户签收", systemImage: "arrow.right", color: .quadTeal) {
                     Task {
-                        let saved = await app.saveArtifact(kind: "order", values: ["delivery": delivery, "payment": payment, "received": received.description, "dueDate": dueDate.ISO8601Format(), "notes": notes, "total": total.description], products: products, plan: plan)
+                        let saved = await app.createFieldOrder(plan: plan, products: products, warehouse: warehouse, deliveryMethod: delivery, paymentMethod: payment, received: received, dueDate: dueDate, notes: notes)
                         if saved { dismiss() }
                     }
                 }
@@ -868,9 +952,150 @@ struct OnsiteOrderView: View {
         .quadScreen()
         .navigationTitle("现场订单")
         .navigationBarTitleDisplayMode(.inline)
+        .sheet(isPresented: $showsProductPicker) {
+            InventoryProductPicker { selected in
+                addProduct(selected)
+            }
+            .environmentObject(app)
+        }
         .task {
+            if warehouse.isEmpty { warehouse = app.region.warehouseNames.first ?? "" }
             if delivery.isEmpty { delivery = app.region.deliveryMethods.first ?? "" }
             if payment.isEmpty { payment = app.region.paymentMethods.first ?? "" }
+        }
+    }
+
+    private func addProduct(_ selected: InventoryPricingProduct) {
+        if let index = products.firstIndex(where: { $0.sku == selected.sku }) {
+            products[index].quantity += 1
+            return
+        }
+        products.append(VisitProductLine(
+            name: selected.name, sku: selected.sku,
+            unit: selected.unit.isEmpty ? app.localized(cn: "件", us: "item") : selected.unit,
+            quantity: 1,
+            unitPrice: selected.wholesalePrice ?? 0,
+            referenceWholesalePrice: selected.wholesalePrice
+        ))
+    }
+}
+
+private struct InventoryProductPicker: View {
+    @EnvironmentObject private var app: AppState
+    @Environment(\.dismiss) private var dismiss
+    let onSelect: (InventoryPricingProduct) -> Void
+    @State private var query = ""
+    @State private var response: InventoryPricingResponse?
+    @State private var isLoading = false
+    @State private var errorText = ""
+
+    var body: some View {
+        NavigationStack {
+            List {
+                if isLoading {
+                    HStack { Spacer(); ProgressView(); Spacer() }
+                }
+                if !errorText.isEmpty {
+                    ContentUnavailableView(
+                        app.localized(cn: "无法读取产品", us: "Products unavailable"),
+                        systemImage: "exclamationmark.triangle",
+                        description: Text(errorText)
+                    )
+                } else if let response, response.products.isEmpty, !isLoading {
+                    ContentUnavailableView.search(text: query)
+                }
+                ForEach(response?.products ?? []) { product in
+                    Button {
+                        onSelect(product)
+                        dismiss()
+                    } label: {
+                        VStack(alignment: .leading, spacing: 7) {
+                            HStack(alignment: .firstTextBaseline) {
+                                Text(product.name).font(.headline).foregroundStyle(.primary)
+                                Spacer()
+                                Image(systemName: "plus.circle.fill").foregroundStyle(Color.quadTeal)
+                            }
+                            Text([product.model, product.specification].filter { !$0.isEmpty }.joined(separator: " · "))
+                                .font(.subheadline).foregroundStyle(.secondary)
+                            if !product.category.isEmpty || !product.description.isEmpty {
+                                Text([product.category, product.description].filter { !$0.isEmpty }.joined(separator: " · "))
+                                    .font(.caption).foregroundStyle(.secondary)
+                            }
+                            Text("SKU: \(product.sku) · \(app.localized(cn: "单位", us: "Unit")): \(product.unit.isEmpty ? "—" : product.unit)")
+                                .font(.caption).foregroundStyle(.secondary)
+                            if let inventory = product.inventory {
+                                HStack(spacing: 12) {
+                                    Label("\(inventory["las-vegas"] ?? 0)", systemImage: "shippingbox")
+                                    Text(app.localized(cn: "拉斯维加斯可用库存", us: "Las Vegas available"))
+                                    Spacer()
+                                    Label("\(inventory["los-angeles"] ?? 0)", systemImage: "shippingbox")
+                                    Text(app.localized(cn: "洛杉矶可用库存", us: "Los Angeles available"))
+                                }
+                                .font(.caption).foregroundStyle(.secondary)
+                            }
+                            if !priceRows(for: product).isEmpty {
+                                VStack(alignment: .leading, spacing: 3) {
+                                    ForEach(priceRows(for: product), id: \.tier) { row in
+                                        HStack {
+                                            Text(tierName(row.tier))
+                                            Spacer()
+                                            Text(app.region.formatCurrency(row.price)).fontWeight(.semibold)
+                                        }
+                                    }
+                                }
+                                .font(.caption).foregroundStyle(Color.quadTeal)
+                            }
+                        }
+                        .padding(.vertical, 5)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .navigationTitle(app.localized(cn: "选择产品", us: "Select Product"))
+            .navigationBarTitleDisplayMode(.inline)
+            .searchable(text: $query, prompt: app.localized(cn: "搜索 SKU、型号或产品名称", us: "Search SKU, model, or product name"))
+            .onSubmit(of: .search) { Task { await load() } }
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button(app.localized(cn: "取消", us: "Cancel")) { dismiss() }
+                }
+                ToolbarItem(placement: .primaryAction) {
+                    Button(app.localized(cn: "搜索", us: "Search")) { Task { await load() } }
+                        .disabled(isLoading)
+                }
+            }
+            .task { await load() }
+        }
+    }
+
+    private func load() async {
+        isLoading = true
+        errorText = ""
+        defer { isLoading = false }
+        do {
+            response = try await app.searchInventoryPricing(query)
+        } catch {
+            errorText = error.localizedDescription
+        }
+    }
+
+    private func priceRows(for product: InventoryPricingProduct) -> [(tier: String, price: Double)] {
+        let order = ["standard", "first-order", "bronze", "silver", "gold", "strategic"]
+        return order.compactMap { tier in
+            guard let price = product.prices?[tier] ?? nil else { return nil }
+            return (tier, price)
+        }
+    }
+
+    private func tierName(_ tier: String) -> String {
+        switch tier {
+        case "standard": return app.localized(cn: "批发价", us: "Wholesale")
+        case "first-order": return app.localized(cn: "首次进货价", us: "First order")
+        case "bronze": return app.localized(cn: "铜牌价", us: "Bronze")
+        case "silver": return app.localized(cn: "银牌价", us: "Silver")
+        case "gold": return app.localized(cn: "金牌价", us: "Gold")
+        case "strategic": return app.localized(cn: "战略合作价", us: "Strategic")
+        default: return tier
         }
     }
 }

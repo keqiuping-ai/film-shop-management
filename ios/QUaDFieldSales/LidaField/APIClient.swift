@@ -202,6 +202,54 @@ actor APIClient {
         return response.fieldSales.accounts.map(\.appCustomer)
     }
 
+    func inventoryPricing(query: String) async throws -> InventoryPricingResponse {
+        let allowed = CharacterSet.urlQueryAllowed.subtracting(CharacterSet(charactersIn: "&+=?"))
+        let encoded = query.trimmingCharacters(in: .whitespacesAndNewlines)
+            .addingPercentEncoding(withAllowedCharacters: allowed) ?? ""
+        return try await request("/api/field-sales/inventory-pricing?q=\(encoded)")
+    }
+
+    func createFieldOrder(
+        plan: VisitPlan,
+        products: [VisitProductLine],
+        warehouse: String,
+        deliveryMethod: String,
+        paymentMethod: String,
+        amountPaid: Double,
+        paymentDueAt: String,
+        notes: String
+    ) async throws {
+        guard let accountId = plan.customerId, !accountId.isEmpty else {
+            throw APIError.message("拜访计划没有关联客户")
+        }
+        let requestBody = QUaDFieldOrderRequest(
+            accountId: accountId,
+            visitId: plan.planId,
+            type: "批发订单",
+            warehouse: warehouse,
+            items: products.map {
+                QUaDFieldOrderItemRequest(
+                    sku: $0.sku,
+                    name: $0.name,
+                    quantity: $0.quantity,
+                    unitPrice: $0.unitPrice,
+                    discount: $0.discount,
+                    pricingMode: $0.usesSpecialPrice ? "special" : "wholesale"
+                )
+            },
+            amountPaid: amountPaid,
+            paymentMethod: paymentMethod,
+            paymentDueAt: paymentDueAt,
+            deliveryMethod: deliveryMethod,
+            note: notes
+        )
+        let _: QUaDMobileBootstrap = try await request(
+            "/api/field-sales/orders",
+            method: "POST",
+            body: try encoder.encode(requestBody)
+        )
+    }
+
     func dashboard(date: String) async throws -> FieldDashboard {
         let response: QUaDMobileBootstrap = try await request("/api/mobile/bootstrap")
         return response.appDashboard(for: date)
@@ -607,9 +655,11 @@ actor APIClient {
              ("PUT", "/api/messages/read"),
              ("POST", "/api/field-sales/accounts"),
              ("POST", "/api/field-sales/location-points"),
+             ("GET", "/api/field-sales/inventory-pricing"),
              ("POST", "/api/field-sales/visit-plans"),
              ("POST", "/api/field-sales/trips/start"),
              ("POST", "/api/field-sales/visits/start"),
+             ("POST", "/api/field-sales/orders"),
              ("POST", "/api/field-sales/daily-reports"):
             true
         default:
@@ -625,6 +675,28 @@ actor APIClient {
         formatter.dateFormat = "yyyy-MM-dd"
         return formatter.string(from: date)
     }
+}
+
+private struct QUaDFieldOrderRequest: Encodable {
+    let accountId: String
+    let visitId: String
+    let type: String
+    let warehouse: String
+    let items: [QUaDFieldOrderItemRequest]
+    let amountPaid: Double
+    let paymentMethod: String
+    let paymentDueAt: String
+    let deliveryMethod: String
+    let note: String
+}
+
+private struct QUaDFieldOrderItemRequest: Encodable {
+    let sku: String
+    let name: String
+    let quantity: Double
+    let unitPrice: Double
+    let discount: Double
+    let pricingMode: String
 }
 
 private struct QUaDMessageOverview: Decodable {

@@ -670,6 +670,7 @@ struct VisitProductLine: Identifiable, Codable, Hashable {
     var quantity: Double
     var unitPrice: Double
     var discount: Double
+    var referenceWholesalePrice: Double?
 
     init(
         id: UUID = UUID(),
@@ -678,7 +679,8 @@ struct VisitProductLine: Identifiable, Codable, Hashable {
         unit: String = "卷",
         quantity: Double,
         unitPrice: Double,
-        discount: Double = 0
+        discount: Double = 0,
+        referenceWholesalePrice: Double? = nil
     ) {
         self.id = id
         self.name = name
@@ -687,9 +689,47 @@ struct VisitProductLine: Identifiable, Codable, Hashable {
         self.quantity = quantity
         self.unitPrice = unitPrice
         self.discount = discount
+        self.referenceWholesalePrice = referenceWholesalePrice
     }
 
     var amount: Double { max(0, quantity * unitPrice - discount) }
+    var usesSpecialPrice: Bool {
+        guard let referenceWholesalePrice else { return true }
+        return abs(unitPrice - referenceWholesalePrice) > 0.005
+    }
+}
+
+struct InventoryPricingResponse: Decodable {
+    let query: String
+    let access: InventoryPricingAccess
+    let products: [InventoryPricingProduct]
+}
+
+struct InventoryPricingAccess: Decodable {
+    let inventory: Bool
+    let priceTierIds: [String]
+}
+
+struct InventoryPricingProduct: Decodable, Identifiable, Hashable {
+    let sku: String
+    let name: String
+    let model: String
+    let specification: String
+    let unit: String
+    let category: String
+    let description: String
+    let inventory: [String: Int]?
+    let prices: [String: Double?]?
+
+    var id: String { sku }
+    var wholesalePrice: Double? { prices?["standard"] ?? nil }
+    var preferredAuthorizedPrice: Double? {
+        if let wholesalePrice { return wholesalePrice }
+        for tier in ["first-order", "bronze", "silver", "gold", "strategic"] {
+            if let price = prices?[tier] ?? nil { return price }
+        }
+        return nil
+    }
 }
 
 struct VisitArtifact: Encodable {

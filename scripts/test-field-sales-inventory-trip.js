@@ -112,11 +112,14 @@ async function seedIsolatedFixture() {
   db.users.push(
     testUser('sales-none', 'none@test.local', {}),
     testUser('sales-inventory', 'inventory@test.local', { fieldSalesInventoryView:true }),
-    testUser('sales-prices', 'prices@test.local', { fieldSalesPriceSilver:true, fieldSalesPriceGold:true })
+    testUser('sales-prices', 'prices@test.local', { fieldSalesPriceSilver:true, fieldSalesPriceGold:true }),
+    testUser('sales-orders', 'orders@test.local', { fieldSalesView:true, fieldSalesEdit:true, fieldSalesInventoryView:true, fieldSalesPriceWholesale:true })
   );
   db.salesAccounts = [
     { id:'old-account', businessName:'Old Hotel', address:'100 Old St', lat:36.1, lng:-115.2, assignedUserId:'sales-prices', stage:'前往中' },
-    { id:'new-account', businessName:'New Film Shop', address:'200 New St', lat:36.11, lng:-115.21, assignedUserId:'sales-prices', stage:'待拜访' }
+    { id:'new-account', businessName:'New Film Shop', address:'200 New St', lat:36.11, lng:-115.21, assignedUserId:'sales-prices', stage:'待拜访' },
+    { id:'order-account', businessName:'Order Test Shop', address:'300 Order St', assignedUserId:'sales-orders', stage:'待拜访' },
+    { id:'inventory-account', businessName:'Inventory Test Shop', address:'400 Inventory St', assignedUserId:'sales-inventory', stage:'待拜访' }
   ];
   db.salesTrips = [{
     id:'old-trip', accountId:'old-account', businessName:'Old Hotel', userId:'sales-prices', userName:'sales-prices',
@@ -143,6 +146,7 @@ async function run() {
   const noPermissionToken = await login('none@test.local');
   const inventoryToken = await login('inventory@test.local');
   const pricesToken = await login('prices@test.local');
+  const ordersToken = await login('orders@test.local');
 
   const denied = await request('/api/field-sales/inventory-pricing?q=QD15', { token:noPermissionToken });
   assert.equal(denied.status, 403);
@@ -164,6 +168,40 @@ async function run() {
   assert.deepEqual(priced.body.products[0].prices, { silver:300, gold:250 });
   const wholesaleFallback = await request('/api/field-sales/inventory-pricing?q=QD35', { token:pricesToken });
   assert.deepEqual(wholesaleFallback.body.products[0].prices, { silver:180, gold:180 });
+
+  const catalog = await request('/api/field-sales/inventory-pricing?q=', { token:ordersToken });
+  assert.equal(catalog.status, 200);
+  assert.equal(catalog.body.products.length, 2);
+  assert.equal(catalog.body.products[0].category, '');
+  assert.deepEqual(catalog.body.products[0].prices, { standard:300 });
+
+  const wholesaleOrder = await request('/api/field-sales/orders', {
+    token:ordersToken, method:'POST',
+    body:{ accountId:'order-account', items:[{ sku:'QD15-BLK-15218', quantity:2, unitPrice:999, discount:10, pricingMode:'wholesale' }], amountPaid:100 }
+  });
+  assert.equal(wholesaleOrder.status, 201);
+  const savedWholesaleOrder = wholesaleOrder.body.fieldSales.fieldOrders.find(item => item.accountId === 'order-account');
+  assert.equal(savedWholesaleOrder.items[0].unitPrice, 300);
+  assert.equal(savedWholesaleOrder.items[0].pricingMode, 'wholesale');
+  assert.equal(savedWholesaleOrder.total, 590);
+  assert.equal(savedWholesaleOrder.amountDue, 490);
+
+  const specialOrder = await request('/api/field-sales/orders', {
+    token:ordersToken, method:'POST',
+    body:{ accountId:'order-account', items:[{ sku:'QD35-SLV-6020', quantity:2, unitPrice:155, pricingMode:'special' }] }
+  });
+  assert.equal(specialOrder.status, 201);
+  const savedSpecialOrder = specialOrder.body.fieldSales.fieldOrders.find(item => item.items?.[0]?.sku === 'QD35-SLV-6020');
+  assert.equal(savedSpecialOrder.items[0].unitPrice, 155);
+  assert.equal(savedSpecialOrder.items[0].pricingMode, 'special');
+  assert.equal(savedSpecialOrder.total, 310);
+
+  const deniedWholesaleOrder = await request('/api/field-sales/orders', {
+    token:inventoryToken, method:'POST',
+    body:{ accountId:'inventory-account', items:[{ sku:'QD15-BLK-15218', quantity:1, unitPrice:1, pricingMode:'wholesale' }] }
+  });
+  assert.equal(deniedWholesaleOrder.status, 403);
+  assert.equal(deniedWholesaleOrder.body.code, 'FIELD_SALES_WHOLESALE_PRICE_FORBIDDEN');
 
   const conflict = await request('/api/field-sales/trips/start', { token:pricesToken, method:'POST', body:{ accountId:'new-account', locationConsent:true, lat:36.11, lng:-115.21, accuracy:5 } });
   assert.equal(conflict.status, 409);

@@ -1455,6 +1455,64 @@ final class AppState: ObservableObject {
         return saved
     }
 
+    func searchInventoryPricing(_ query: String) async throws -> InventoryPricingResponse {
+        if isDesignPreview {
+            return InventoryPricingResponse(
+                query: query,
+                access: InventoryPricingAccess(inventory: true, priceTierIds: ["standard", "silver", "gold"]),
+                products: [
+                    InventoryPricingProduct(
+                        sku: "QD15-BLK-15218", name: "QD15 陶瓷隔热膜", model: "QD15", specification: "60 in × 100 ft", unit: "卷", category: "汽车膜", description: "纳米陶瓷隔热膜",
+                        inventory: ["las-vegas": 18, "los-angeles": 9], prices: ["standard": 300, "silver": 285, "gold": 270]
+                    ),
+                    InventoryPricingProduct(
+                        sku: "QD35-BLK-15218", name: "QD35 陶瓷隔热膜", model: "QD35", specification: "60 in × 100 ft", unit: "卷", category: "汽车膜", description: "纳米陶瓷隔热膜",
+                        inventory: ["las-vegas": 12, "los-angeles": 6], prices: ["standard": 330, "silver": 315, "gold": 300]
+                    )
+                ]
+            )
+        }
+        return try await api.inventoryPricing(query: query)
+    }
+
+    func createFieldOrder(
+        plan: VisitPlan,
+        products: [VisitProductLine],
+        warehouse: String,
+        deliveryMethod: String,
+        paymentMethod: String,
+        received: Double,
+        dueDate: Date,
+        notes: String
+    ) async -> Bool {
+        guard !products.isEmpty, products.allSatisfy({ !$0.sku.isEmpty && $0.sku != "待选择" && $0.quantity > 0 && $0.unitPrice >= 0 }) else {
+            errorMessage = localized(cn: "请从库存中选择产品，并填写正确的数量和价格", us: "Select products from inventory and enter valid quantities and prices.")
+            return false
+        }
+        if isDesignPreview {
+            markArtifactComplete(planId: plan.planId, kind: "order")
+            successMessage = localized(cn: "现场订单已创建", us: "Field order created.")
+            return true
+        }
+        var saved = false
+        await perform {
+            try await api.createFieldOrder(
+                plan: plan,
+                products: products,
+                warehouse: warehouse,
+                deliveryMethod: deliveryMethod,
+                paymentMethod: paymentMethod,
+                amountPaid: received,
+                paymentDueAt: dueDate.ISO8601Format(),
+                notes: notes
+            )
+            markArtifactComplete(planId: plan.planId, kind: "order")
+            successMessage = localized(cn: "现场订单已保存并由总系统确认", us: "The field order was saved and confirmed by the main system.")
+            saved = true
+        }
+        return saved
+    }
+
     func uploadPhoto(evidence: CapturedPhotoEvidence, category: String, plan: VisitPlan) async -> Bool {
         guard evidence.accuracyM >= 0, evidence.accuracyM <= PhotoCapturePolicy.maximumAccuracyM else {
             errorMessage = "照片缺少合格定位，请在客户现场重新拍摄"

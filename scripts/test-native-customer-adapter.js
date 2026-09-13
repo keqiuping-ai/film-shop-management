@@ -282,7 +282,9 @@ async function run() {
     '/api/mobile/bootstrap',
     '/api/mobile/clock',
     '/api/field-sales/accounts',
-    '/api/field-sales/location-points'
+    '/api/field-sales/location-points',
+    '/api/field-sales/inventory-pricing',
+    '/api/field-sales/orders'
   ]) {
     assert(source.includes(allowed), `missing native allowlist route ${allowed}`);
   }
@@ -303,6 +305,13 @@ async function run() {
   assert(visitViewSource.includes('selected.planId == plan.planId'), 'visit screen must prefer the updated selected trip state');
   assert(visitViewSource.includes('综合定位（卫星、Wi-Fi、蜂窝网络）'), 'departure screen must explain fused iPhone positioning');
   assert(visitViewSource.includes('refreshDeparturePreview'), 'departure screen must preview current location and distance');
+  assert(visitViewSource.includes('InventoryProductPicker'), 'samples and onsite orders must use the live inventory product picker');
+  assert(visitViewSource.includes('拉斯维加斯可用库存'), 'product picker must show authorized Las Vegas inventory');
+  assert(visitViewSource.includes('洛杉矶可用库存'), 'product picker must show authorized Los Angeles inventory');
+  assert(visitViewSource.includes('系统批发价'), 'onsite orders must display the server wholesale reference price');
+  assert(visitViewSource.includes('特殊价格'), 'onsite orders must identify a manual special price');
+  assert(visitViewSource.includes('app.createFieldOrder'), 'onsite order save must create a structured QUaD field order');
+  assert(!visitViewSource.includes('sku: "待选择"'), 'native order flow must not create placeholder product rows');
   const appStateSource = fs.readFileSync(path.join(ROOT, 'ios/QUaDFieldSales/LidaField/AppState.swift'), 'utf8');
   assert(appStateSource.includes('APIClient.localDate(date, timeZoneIdentifier: region.timeZoneIdentifier)'), 'visit plan merging must use the configured business time zone');
   const todayViewSource = fs.readFileSync(path.join(ROOT, 'ios/QUaDFieldSales/LidaField/TodayView.swift'), 'utf8');
