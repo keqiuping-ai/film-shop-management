@@ -627,6 +627,14 @@ struct PlanScheduleView: View {
     @State private var optimized = false
     @State private var showToday = false
     @State private var isSubmitting = false
+    @State private var originLocation: CLLocation?
+    @State private var resolvedCustomerLocations: [String: CLLocation] = [:]
+    @State private var routeLocationStatus = ""
+    @State private var routeLocationWarning = false
+    @State private var isResolvingRoute = false
+    @State private var showSaveConfirmation = false
+    @State private var savedContainsToday = false
+    @State private var savedPlanCount = 0
 
     init(
         selectedCustomers: [CustomerSummary],
@@ -649,10 +657,23 @@ struct PlanScheduleView: View {
     }
 
     private var totalDistanceMiles: Double {
-        schedules.reduce(0) { $0 + ($1.customer.distanceMiles ?? 0) }
+        guard let originLocation else {
+            return schedules.reduce(0) { $0 + ($1.customer.distanceMiles ?? 0) }
+        }
+        var previous = originLocation
+        var total = 0.0
+        for schedule in schedules.sorted(by: routeOrder) {
+            guard let destination = customerLocation(for: schedule.customer) else { continue }
+            total += previous.distance(from: destination) / 1_609.344
+            previous = destination
+        }
+        return total
     }
     private var totalTravelMinutes: Int {
-        schedules.reduce(0) { $0 + ($1.customer.travelMinutes ?? 0) }
+        guard originLocation != nil else {
+            return schedules.reduce(0) { $0 + ($1.customer.travelMinutes ?? 0) }
+        }
+        return estimatedTravelMinutes(for: totalDistanceMiles)
     }
     private var plannedDays: [Date] {
         Array(Set(schedules.map { dayStart(for: $0.scheduledAt) })).sorted()
@@ -677,8 +698,26 @@ struct PlanScheduleView: View {
                     badge: "\(schedules.count) 位客户"
                 )
                 VStack(alignment: .leading, spacing: 10) {
-                    Text("出发地点 · 可选择或输入").font(.caption).foregroundStyle(.secondary)
+                    HStack {
+                        Text(app.localized(cn: "手机当前出发位置", us: "Current phone departure location")).font(.headline)
+                        Spacer()
+                        if isResolvingRoute { ProgressView() }
+                        Button(app.localized(cn: "更新位置", us: "Refresh location")) {
+                            Task { await resolvePlanningRoute(forceRefresh: true) }
+                        }
+                        .buttonStyle(.bordered)
+                        .disabled(isResolvingRoute)
+                    }
                     TextField("出发地点", text: $startAddress).textFieldStyle(.roundedBorder)
+                    Text(routeLocationStatus)
+                        .font(.caption)
+                        .foregroundStyle(routeLocationWarning ? Color.orange : Color.secondary)
+                    Text(app.localized(
+                        cn: "使用 iPhone 系统综合定位（卫星、Wi-Fi、蜂窝网络）；地址文字无法识别时仍以经纬度为准。",
+                        us: "Uses iPhone fused positioning from GPS, Wi-Fi, and cellular networks. Coordinates remain authoritative if the address label is unavailable."
+                    ))
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
                 }
                 .quadCard()
 
@@ -713,8 +752,10 @@ struct PlanScheduleView: View {
                                         .frame(width: 30, height: 30).background(Color.quadPurple, in: Circle())
                                     VStack(alignment: .leading, spacing: 3) {
                                         Text(schedule.customer.customerName).font(.headline)
-                                        Text("\(app.region.formatDistance(miles: schedule.customer.distanceMiles ?? 0)) · 预计车程 \(schedule.customer.travelMinutes ?? 0) 分钟")
+                                        Text(distanceSummary(for: schedule.customer))
                                             .font(.caption).foregroundStyle(.secondary)
+                                        Text(schedule.customer.address)
+                                            .font(.caption2).foregroundStyle(.secondary).lineLimit(2)
                                     }
                                     Spacer()
                                     VStack(spacing: 4) {
@@ -764,8 +805,10 @@ struct PlanScheduleView: View {
                         normalizeSequences()
                         let containsToday = schedules.contains { dayStart(for: $0.scheduledAt) == dayStart(for: Date()) }
                         if await app.confirmVisitPlans(schedules: schedules) {
-                            if containsToday { showToday = true }
-                            else { dismiss() }
+                            savedContainsToday = containsToday
+                            savedPlanCount = schedules.count
+                            isSubmitting = false
+                            showSaveConfirmation = true
                         } else {
                             isSubmitting = false
                         }
@@ -780,7 +823,24 @@ struct PlanScheduleView: View {
         .navigationTitle("安排顺序和时间")
         .navigationBarTitleDisplayMode(.inline)
         .task {
-            if startAddress.isEmpty { startAddress = app.region.defaultStartAddress }
+            await resolvePlanningRoute()
+        }
+        .alert(app.localized(cn: "保存成功", us: "Saved successfully"), isPresented: $showSaveConfirmation) {
+            if savedContainsToday {
+                Button(app.localized(cn: "查看今日拜访", us: "View today's visits")) { showToday = true }
+            } else {
+                Button(app.localized(cn: "完成", us: "Done")) { dismiss() }
+            }
+        } message: {
+            Text(savedContainsToday
+                 ? app.localized(
+                    cn: "已明确保存 \(savedPlanCount) 项计划；今天的计划已进入“今日拜访”。资料已安全保存在手机，并会同步到总系统。",
+                    us: "Saved \(savedPlanCount) plans. Today's plans are now in Today's Visits. They are safely stored on this phone and will sync with the main system."
+                 )
+                 : app.localized(
+                    cn: "已明确保存 \(savedPlanCount) 项计划；到安排日期会自动显示。资料已安全保存在手机，并会同步到总系统。",
+                    us: "Saved \(savedPlanCount) plans. They will appear on their scheduled dates. They are safely stored on this phone and will sync with the main system."
+                 ))
         }
         .navigationDestination(isPresented: $showToday) {
             TodayVisitsView()
@@ -864,8 +924,8 @@ struct PlanScheduleView: View {
             let daySchedules = schedulesForDay(day)
             let timeSlots = daySchedules.map(\.scheduledAt).sorted()
             let byDistance = daySchedules.sorted {
-                let lhs = $0.customer.distanceMiles ?? .greatestFiniteMagnitude
-                let rhs = $1.customer.distanceMiles ?? .greatestFiniteMagnitude
+                let lhs = currentDistanceMiles(to: $0.customer) ?? $0.customer.distanceMiles ?? .greatestFiniteMagnitude
+                let rhs = currentDistanceMiles(to: $1.customer) ?? $1.customer.distanceMiles ?? .greatestFiniteMagnitude
                 if lhs != rhs { return lhs < rhs }
                 return $0.scheduledAt < $1.scheduledAt
             }
@@ -874,6 +934,107 @@ struct PlanScheduleView: View {
                 schedules[source].scheduledAt = timeSlots[index]
                 schedules[source].sequence = index + 1
             }
+        }
+    }
+
+    private func routeOrder(_ lhs: VisitScheduleDraft, _ rhs: VisitScheduleDraft) -> Bool {
+        if lhs.scheduledAt != rhs.scheduledAt { return lhs.scheduledAt < rhs.scheduledAt }
+        return lhs.sequence < rhs.sequence
+    }
+
+    private func customerLocation(for customer: CustomerSummary) -> CLLocation? {
+        if let latitude = customer.latitude, let longitude = customer.longitude,
+           (-90...90).contains(latitude), (-180...180).contains(longitude),
+           !(latitude == 0 && longitude == 0) {
+            return CLLocation(latitude: latitude, longitude: longitude)
+        }
+        return resolvedCustomerLocations[customer.customerId]
+    }
+
+    private func currentDistanceMiles(to customer: CustomerSummary) -> Double? {
+        guard let originLocation, let destination = customerLocation(for: customer) else { return nil }
+        return originLocation.distance(from: destination) / 1_609.344
+    }
+
+    private func estimatedTravelMinutes(for directMiles: Double) -> Int {
+        guard directMiles > 0 else { return 0 }
+        return max(5, Int(((directMiles * 1.22) / 30 * 60 + 3).rounded()))
+    }
+
+    private func distanceSummary(for customer: CustomerSummary) -> String {
+        if let miles = currentDistanceMiles(to: customer) {
+            return app.localized(
+                cn: "距手机当前出发位置直线约 \(app.region.formatDistance(miles: miles)) · 预计车程 \(estimatedTravelMinutes(for: miles)) 分钟",
+                us: "About \(app.region.formatDistance(miles: miles)) straight-line from the phone · Estimated drive \(estimatedTravelMinutes(for: miles)) min"
+            )
+        }
+        if isResolvingRoute { return app.localized(cn: "正在根据当前位置计算距离…", us: "Calculating distance from your current location…") }
+        if let miles = customer.distanceMiles {
+            return app.localized(
+                cn: "服务器估算 \(app.region.formatDistance(miles: miles)) · 预计车程 \(customer.travelMinutes ?? estimatedTravelMinutes(for: miles)) 分钟",
+                us: "Server estimate \(app.region.formatDistance(miles: miles)) · Estimated drive \(customer.travelMinutes ?? estimatedTravelMinutes(for: miles)) min"
+            )
+        }
+        return app.localized(
+            cn: "客户地址暂未转换为地图坐标，可更新位置后重试",
+            us: "The customer address has not resolved to map coordinates yet. Refresh the location to retry."
+        )
+    }
+
+    @MainActor
+    private func resolvePlanningRoute(forceRefresh: Bool = false) async {
+        guard !isResolvingRoute else { return }
+        isResolvingRoute = true
+        routeLocationWarning = false
+        routeLocationStatus = app.localized(cn: "正在取得手机当前位置并计算距离…", us: "Getting the phone's current location and calculating distances…")
+        defer { isResolvingRoute = false }
+
+        do {
+            let location: CLLocation
+            if !forceRefresh, let originLocation {
+                location = originLocation
+            } else {
+                location = try await app.location.currentSystemLocation(for: .tripDeparture)
+                originLocation = location
+            }
+            let coordinateText = String(format: "%.5f, %.5f", location.coordinate.latitude, location.coordinate.longitude)
+            if let address = await app.location.humanReadableAddress(for: location), !address.isEmpty {
+                startAddress = address
+            } else {
+                startAddress = coordinateText
+            }
+
+            var resolvedCount = 0
+            var unresolvedCount = 0
+            for customer in schedules.map(\.customer) {
+                if customerLocation(for: customer) != nil {
+                    resolvedCount += 1
+                    continue
+                }
+                if let resolved = await app.location.customerLocation(for: customer.address) {
+                    resolvedCustomerLocations[customer.customerId] = resolved
+                    resolvedCount += 1
+                } else {
+                    unresolvedCount += 1
+                }
+            }
+            routeLocationStatus = unresolvedCount == 0
+                ? app.localized(
+                    cn: "已取得手机当前综合位置（精度约 ±\(Int(location.horizontalAccuracy)) 米），并计算 \(resolvedCount) 位客户的距离",
+                    us: "Current fused phone location acquired (about ±\(Int(location.horizontalAccuracy)) m); calculated distances for \(resolvedCount) customers."
+                )
+                : app.localized(
+                    cn: "已取得手机当前位置；\(resolvedCount) 位客户已计算，\(unresolvedCount) 个地址暂时无法识别",
+                    us: "Current phone location acquired; \(resolvedCount) customers calculated and \(unresolvedCount) addresses could not be resolved yet."
+                )
+            routeLocationWarning = unresolvedCount > 0
+        } catch {
+            if startAddress.isEmpty { startAddress = app.region.defaultStartAddress }
+            routeLocationWarning = true
+            routeLocationStatus = app.localized(
+                cn: "无法取得手机当前位置：\(error.localizedDescription)",
+                us: "Unable to get the phone's current location: \(error.localizedDescription)"
+            )
         }
     }
 }

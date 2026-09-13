@@ -9,6 +9,10 @@ struct VisitExecutionView: View {
     @State private var isArrivalCameraPresented = false
     @State private var arrivalError = ""
     @State private var abandonReason = ""
+    @State private var departureLocation: CLLocation?
+    @State private var destinationLocation: CLLocation?
+    @State private var departureLocationStatus = ""
+    @State private var isRefreshingDepartureLocation = false
 
     private var currentPlan: VisitPlan {
         if let selected = app.selectedVisit, selected.planId == plan.planId { return selected }
@@ -22,6 +26,10 @@ struct VisitExecutionView: View {
         app.isArtifactComplete(planId: plan.planId, kind: "arrival") || ["IN_PROGRESS", "COMPLETED"].contains(currentPlan.status)
     }
     private var hasDeparted: Bool { ["TRAVELING", "IN_PROGRESS", "COMPLETED"].contains(currentPlan.status) }
+    private var departureDistanceMiles: Double? {
+        guard let departureLocation, let destinationLocation else { return nil }
+        return departureLocation.distance(from: destinationLocation) / 1_609.344
+    }
     private var statusLabel: String {
         switch currentPlan.status {
         case "TRAVELING": app.localized(cn: "前往中", us: "Traveling")
@@ -54,6 +62,47 @@ struct VisitExecutionView: View {
                     metrics: [("计划时间", currentPlan.scheduledAt.map(app.region.formatTime) ?? "待安排"), ("顺序", currentPlan.routeSequence.map { String(Int($0)) } ?? "待排"), ("状态", statusLabel)]
                 )
 
+                if !hasDeparted {
+                    VStack(alignment: .leading, spacing: 9) {
+                        HStack {
+                            Label(app.localized(cn: "当前出发位置", us: "Current departure location"), systemImage: "location.fill")
+                                .font(.headline)
+                            Spacer()
+                            Button(isRefreshingDepartureLocation
+                                   ? app.localized(cn: "定位中…", us: "Locating…")
+                                   : app.localized(cn: "重新定位", us: "Refresh")) {
+                                Task { await refreshDeparturePreview() }
+                            }
+                            .buttonStyle(.bordered)
+                            .disabled(isRefreshingDepartureLocation)
+                        }
+                        Text(departureLocationStatus.isEmpty
+                             ? app.localized(cn: "正在读取手机综合定位（卫星、Wi-Fi、蜂窝网络）", us: "Reading the phone's fused location from GPS, Wi-Fi, and cellular networks")
+                             : departureLocationStatus)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        if let departureDistanceMiles {
+                            Label(
+                                app.localized(
+                                    cn: "从当前位置到客户地址直线约 \(app.region.formatDistance(miles: departureDistanceMiles))",
+                                    us: "About \(app.region.formatDistance(miles: departureDistanceMiles)) straight-line distance from here"
+                                ),
+                                systemImage: "arrow.triangle.swap"
+                            )
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(Color.quadTeal)
+                        } else if destinationLocation == nil {
+                            Text(app.localized(
+                                cn: "客户地址坐标正在解析；地址会自动补齐州名与邮编空格后重试。",
+                                us: "Resolving the customer address with normalized state and ZIP formatting."
+                            ))
+                            .font(.caption)
+                            .foregroundStyle(Color.quadOrange)
+                        }
+                    }
+                    .quadCard()
+                }
+
                 HStack(spacing: 11) {
                     Image(systemName: hasArrived ? "checkmark.circle.fill" : "location.circle.fill")
                         .font(.title2).foregroundStyle(hasArrived ? Color.quadGreen : Color.quadOrange)
@@ -63,7 +112,15 @@ struct VisitExecutionView: View {
                     }
                     Spacer()
                     if !hasDeparted {
-                        Button("准备出发") { Task { _ = await app.startTrip(currentPlan) } }
+                        Button(app.localized(cn: "准备出发", us: "Start trip")) {
+                            Task {
+                                _ = await app.startTrip(
+                                    currentPlan,
+                                    currentLocation: departureLocation,
+                                    destinationLocation: destinationLocation
+                                )
+                            }
+                        }
                             .buttonStyle(.borderedProminent).tint(.quadTeal)
                     } else if !hasArrived {
                         Button("拍门头并到店打卡") { prepareArrivalCamera() }
@@ -138,6 +195,41 @@ struct VisitExecutionView: View {
             Text(arrivalError)
         }
         .onAppear { app.selectedVisit = plan }
+        .task { await refreshDeparturePreview() }
+    }
+
+    @MainActor
+    private func refreshDeparturePreview() async {
+        guard !isRefreshingDepartureLocation, !hasDeparted else { return }
+        isRefreshingDepartureLocation = true
+        departureLocationStatus = app.localized(cn: "正在读取手机综合定位…", us: "Reading the phone's fused location…")
+        defer { isRefreshingDepartureLocation = false }
+        do {
+            let current = try await app.location.currentSystemLocation(for: .tripDeparture)
+            departureLocation = current
+            let readableAddress = await app.location.humanReadableAddress(for: current)
+            departureLocationStatus = readableAddress ?? String(
+                format: app.localized(cn: "当前位置 %.5f, %.5f · 精度约 ±%d 米", us: "Current location %.5f, %.5f · accuracy about ±%d m"),
+                current.coordinate.latitude,
+                current.coordinate.longitude,
+                Int(max(0, current.horizontalAccuracy.rounded()))
+            )
+            if let latitude = currentPlan.latitude, let longitude = currentPlan.longitude {
+                destinationLocation = CLLocation(latitude: latitude, longitude: longitude)
+            } else if let customer,
+                      let latitude = customer.latitude,
+                      let longitude = customer.longitude {
+                destinationLocation = CLLocation(latitude: latitude, longitude: longitude)
+            } else if let address = currentPlan.address, !address.isEmpty {
+                destinationLocation = await app.location.customerLocation(for: address)
+            }
+        } catch {
+            departureLocation = nil
+            departureLocationStatus = app.localized(
+                cn: "暂时未取得当前位置：\(error.localizedDescription)。点击“重新定位”可再次尝试。",
+                us: "Current location unavailable: \(error.localizedDescription). Tap Refresh to try again."
+            )
+        }
     }
 
     private func prepareArrivalCamera() {

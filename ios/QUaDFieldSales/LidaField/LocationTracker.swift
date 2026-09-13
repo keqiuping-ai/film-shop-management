@@ -13,6 +13,7 @@ final class LocationTracker: NSObject, ObservableObject, @preconcurrency CLLocat
     private var oneShotContinuation: CheckedContinuation<CLLocation, Error>?
     private var oneShotTimeoutTask: Task<Void, Never>?
     private let maximumUsableAccuracyM: CLLocationAccuracy = 1_000
+    private var customerLocationCache: [String: CLLocation] = [:]
     var onPoint: ((QueuedLocation) -> Void)?
 
     override init() {
@@ -73,6 +74,48 @@ final class LocationTracker: NSObject, ObservableObject, @preconcurrency CLLocat
         } catch {
             return nil
         }
+    }
+
+    func customerLocation(for address: String) async -> CLLocation? {
+        let query = Self.normalizedUSAddress(address)
+        guard !query.isEmpty else { return nil }
+        if let cached = customerLocationCache[query] { return cached }
+        do {
+            let placemarks = try await CLGeocoder().geocodeAddressString(
+                query,
+                in: nil,
+                preferredLocale: Locale(identifier: "en_US")
+            )
+            guard let location = placemarks.first?.location else { return nil }
+            customerLocationCache[query] = location
+            return location
+        } catch {
+            return nil
+        }
+    }
+
+    nonisolated static func normalizedUSAddress(_ address: String) -> String {
+        var value = address
+            .replacingOccurrences(of: "，", with: ",")
+            .replacingOccurrences(of: "；", with: ",")
+            .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+            .replacingOccurrences(of: #"\s*,\s*"#, with: ", ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !value.isEmpty else { return "" }
+        value = value.replacingOccurrences(
+            of: #"(?i)\b([A-Z]{2})\s*(\d{5}(?:-\d{4})?)\b"#,
+            with: "$1 $2",
+            options: .regularExpression
+        )
+        value = value.replacingOccurrences(
+            of: #"(?i)^(.+?\b(?:st(?:reet)?|ave(?:nue)?|blvd|boulevard|rd|road|dr|drive|ln|lane|ct|court|pkwy|parkway|hwy|highway|way)\.?)\s+(.+?)\s+([A-Z]{2})\s+(\d{5}(?:-\d{4})?)$"#,
+            with: "$1, $2, $3 $4",
+            options: .regularExpression
+        )
+        if value.range(of: #"(?i)\b(?:USA|United States)\b"#, options: .regularExpression) == nil {
+            value += ", United States"
+        }
+        return value
     }
 
     private func liveSystemLocation(timeoutSeconds: Double) async throws -> CLLocation {
@@ -196,6 +239,7 @@ final class LocationTracker: NSObject, ObservableObject, @preconcurrency CLLocat
 
 enum SystemLocationPurpose: Sendable {
     case attendance
+    case tripDeparture
     case visitArrival
     case fieldEvidence
     case nearbyCustomers
@@ -205,7 +249,7 @@ enum SystemLocationPurpose: Sendable {
         switch self {
         case .customerRecognition: 12
         case .nearbyCustomers: 15
-        case .attendance, .visitArrival, .fieldEvidence: 25
+        case .attendance, .tripDeparture, .visitArrival, .fieldEvidence: 25
         }
     }
 
@@ -214,6 +258,7 @@ enum SystemLocationPurpose: Sendable {
     var displayName: String {
         switch self {
         case .attendance: "上下班打卡"
+        case .tripDeparture: "行程出发"
         case .visitArrival: "拜访到店"
         case .fieldEvidence: "现场凭证"
         case .nearbyCustomers: "附近客户"

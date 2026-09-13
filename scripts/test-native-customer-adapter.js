@@ -177,6 +177,24 @@ async function seed() {
     stage: '待拜访',
     createdAt: '2026-09-11T00:00:00.000Z',
     updatedAt: '2026-09-11T00:00:00.000Z'
+  }, {
+    id: 'malformed-santa-monica-customer',
+    businessName: 'Malformed Santa Monica Address Test',
+    address: '3212 santa monica blvd santa monica ca90404',
+    city: 'Santa Monica',
+    contactName: 'Address Test',
+    phone: '6265559040',
+    email: 'malformed-address@example.test',
+    customerType: '贴膜门店',
+    source: '隔离测试',
+    note: 'intentionally missing punctuation and ZIP spacing',
+    assignedUserId: 'native-sales-user',
+    assignedUserName: 'Native Sales Test',
+    createdByUserId: 'native-sales-user',
+    branchId: 'las-vegas',
+    stage: '待拜访',
+    createdAt: '2026-09-11T00:00:00.000Z',
+    updatedAt: '2026-09-11T00:00:00.000Z'
   }];
   db.clockRecords = [];
   db.salesVisitPlans = [{
@@ -280,11 +298,17 @@ async function run() {
   ]) assert(source.includes(route), `missing native field-sales flow route ${route}`);
   assert(source.includes('route.hasPrefix("/api/field-sales/trips/")'), 'native app must allow old-trip cancellation');
   assert(source.includes('ACTIVE_TRIP_EXISTS'), 'native app must decode structured active-trip conflicts');
+  assert(source.includes('destinationLatitude'), 'native trip start must send device-resolved customer coordinates');
   const visitViewSource = fs.readFileSync(path.join(ROOT, 'ios/QUaDFieldSales/LidaField/VisitDetailView.swift'), 'utf8');
   assert(visitViewSource.includes('selected.planId == plan.planId'), 'visit screen must prefer the updated selected trip state');
+  assert(visitViewSource.includes('综合定位（卫星、Wi-Fi、蜂窝网络）'), 'departure screen must explain fused iPhone positioning');
+  assert(visitViewSource.includes('refreshDeparturePreview'), 'departure screen must preview current location and distance');
   const appStateSource = fs.readFileSync(path.join(ROOT, 'ios/QUaDFieldSales/LidaField/AppState.swift'), 'utf8');
   assert(appStateSource.includes('APIClient.localDate(date, timeZoneIdentifier: region.timeZoneIdentifier)'), 'visit plan merging must use the configured business time zone');
   const todayViewSource = fs.readFileSync(path.join(ROOT, 'ios/QUaDFieldSales/LidaField/TodayView.swift'), 'utf8');
+  assert(todayViewSource.includes('cn: "保存成功", us: "Saved successfully"'), 'visit planning must show a localized explicit save-success confirmation');
+  assert(todayViewSource.includes('距手机当前出发位置直线约'), 'visit planning must show distance from the current phone location');
+  assert(todayViewSource.includes('resolvePlanningRoute'), 'visit planning must resolve its route from the phone location');
   assert(!todayViewSource.includes('仍超过 500 米考核范围'), 'native arrival must not block a valid actual location because the customer address differs');
   assert(!appStateSource.includes('照片位置超过客户坐标 500 米'), 'native photo evidence must keep the actual location without a customer-distance block');
   assert(!serverSource.includes("code: 'FIELD_SALES_LOCATION_MISMATCH'"), 'server must record rather than reject a customer-location difference');
@@ -322,6 +346,8 @@ async function run() {
   assert(adminSource.includes('showActionFeedback(lang ==='), 'field customer save must show a persistent success confirmation');
   assert(adminSource.includes("timeoutMs:15000"), 'field customer save must recover from a stalled request');
   assert(serverSource.includes('const timeoutId = setTimeout(() => controller.abort(), 6000)'), 'address geocoding must never block customer saving indefinitely');
+  assert(serverSource.includes('function normalizeUsStreetAddress(address)'), 'server must normalize loosely typed U.S. addresses');
+  assert(serverSource.includes("code:'CUSTOMER_ADDRESS_UNLOCATABLE'"), 'unlocatable customer addresses must return a structured error code');
   assert(adminSource.includes("fieldSalesMatchesSelectedDate(item, ['plannedAt', 'createdAt'], selectedDate)"), 'salesperson visit plans must follow that employee selected date');
   assert(adminSource.includes("fieldSalesMatchesSelectedDate(item, ['startedAt', 'arrivedAt', 'createdAt'], selectedDate)"), 'salesperson visits must follow that employee selected date');
   assert(adminSource.includes("expanded ? `<div class=\"field-sales-employee-detail\">"), 'salesperson day details must not render while collapsed');
@@ -360,7 +386,7 @@ async function run() {
 
   const bootstrap = await jsonRequest('/api/mobile/bootstrap', { token: login.body.token });
   assert.equal(bootstrap.status, 200);
-  assert.equal(bootstrap.body.fieldSales.accounts.length, 1);
+  assert.equal(bootstrap.body.fieldSales.accounts.length, 2);
   assert.equal(bootstrap.body.fieldSales.accounts[0].businessName, 'San Francisco Isolated Tint Shop');
   assert.equal(bootstrap.body.clockRecords.length, 0);
   assert.equal(bootstrap.body.fieldSales.visitPlans.length, 1);
@@ -533,6 +559,34 @@ async function run() {
   assert(cancelledTrip.body.fieldSales.trips[0].cancelledAt);
   assert.equal(cancelledTrip.body.fieldSales.visitPlans.find(item => item.id === 'isolated-visit-plan').status, '待出发');
   assert.equal(cancelledTrip.body.fieldSales.accounts.find(item => item.id === 'existing-native-customer').stage, '待拜访');
+
+  const malformedAddressTrip = await jsonRequest('/api/field-sales/trips/start', {
+    method: 'POST',
+    token: login.body.token,
+    body: {
+      accountId: 'malformed-santa-monica-customer',
+      destinationAddress: '3212 santa monica blvd santa monica ca90404',
+      destinationLat: 34.0379829,
+      destinationLng: -118.4683777,
+      locationConsent: true,
+      lat: 34.0500,
+      lng: -118.2500,
+      accuracy: 18
+    }
+  });
+  assert.equal(malformedAddressTrip.status, 201);
+  const malformedSavedAccount = malformedAddressTrip.body.fieldSales.accounts.find(item => item.id === 'malformed-santa-monica-customer');
+  assert.equal(malformedSavedAccount.locationSource, 'ios-customer-address-geocode');
+  assert.equal(malformedSavedAccount.lat, 34.0379829);
+  const malformedActiveTrip = malformedAddressTrip.body.fieldSales.trips.find(item => item.accountId === 'malformed-santa-monica-customer');
+  assert(malformedActiveTrip.estimatedDistanceMeters > 0);
+
+  const cancelledMalformedTrip = await jsonRequest(`/api/field-sales/trips/${malformedActiveTrip.id}/cancel`, {
+    method: 'PUT',
+    token: login.body.token,
+    body: { reason: 'isolated malformed-address trip cleanup' }
+  });
+  assert.equal(cancelledMalformedTrip.status, 200);
 
   const restartedTrip = await jsonRequest('/api/field-sales/trips/start', {
     method: 'POST',

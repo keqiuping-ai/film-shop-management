@@ -337,17 +337,28 @@ actor APIClient {
         )
     }
 
-    func startTrip(for plan: VisitPlan, location: CLLocationPayload) async throws -> VisitPlan {
+    func startTrip(
+        for plan: VisitPlan,
+        location: CLLocationPayload,
+        destinationAddress: String? = nil,
+        destinationLatitude: Double? = nil,
+        destinationLongitude: Double? = nil
+    ) async throws -> VisitPlan {
         guard let accountId = plan.customerId, !accountId.isEmpty else {
             throw APIError.message("拜访计划没有关联客户")
         }
-        let body: [String: AnyEncodable] = [
+        var body: [String: AnyEncodable] = [
             "accountId": .string(accountId),
             "locationConsent": .bool(true),
             "lat": .double(location.latitude),
             "lng": .double(location.longitude),
-            "accuracy": .double(location.accuracy)
+            "accuracy": .double(location.accuracy),
+            "destinationAddress": .string(destinationAddress ?? plan.address ?? "")
         ]
+        if let destinationLatitude, let destinationLongitude {
+            body["destinationLat"] = .double(destinationLatitude)
+            body["destinationLng"] = .double(destinationLongitude)
+        }
         let response: QUaDMobileBootstrap = try await request(
             "/api/field-sales/trips/start",
             method: "POST",

@@ -1727,7 +1727,8 @@ async function reverseGeocode(lat, lng) {
 }
 
 async function forwardGeocode(address) {
-  const query = String(address || '').trim();
+  const rawQuery = String(address || '').trim();
+  const query = normalizeUsStreetAddress(rawQuery);
   if (!query) return null;
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 6000);
@@ -1755,6 +1756,20 @@ async function forwardGeocode(address) {
   } finally {
     clearTimeout(timeoutId);
   }
+}
+
+function normalizeUsStreetAddress(address) {
+  let value = String(address || '')
+    .replace(/[，；;]/g, ',')
+    .replace(/\s+/g, ' ')
+    .replace(/\s*,\s*/g, ', ')
+    .trim();
+  if (!value) return '';
+  value = value.replace(/\b([A-Za-z]{2})\s*(\d{5}(?:-\d{4})?)\b/g, '$1 $2');
+  const unpunctuated = value.match(/^(.+?\b(?:st(?:reet)?|ave(?:nue)?|blvd|boulevard|rd|road|dr|drive|ln|lane|ct|court|pkwy|parkway|hwy|highway|way)\.?)\s+(.+?)\s+([A-Za-z]{2})\s+(\d{5}(?:-\d{4})?)$/i);
+  if (unpunctuated) value = `${unpunctuated[1]}, ${unpunctuated[2]}, ${unpunctuated[3].toUpperCase()} ${unpunctuated[4]}`;
+  if (!/\b(?:USA|United States)\b/i.test(value)) value += ', United States';
+  return value;
 }
 
 function canApproveLeave(user) {
@@ -8252,15 +8267,24 @@ async function api(req, res) {
       });
     }
     if (!hasValidCoordinates(account.lat, account.lng)) {
-      const geocoded = await forwardGeocode(account.address);
+      const clientAddressMatches = normalizeUsStreetAddress(body.destinationAddress).toLowerCase() === normalizeUsStreetAddress(account.address).toLowerCase();
+      const deviceGeocoded = clientAddressMatches && hasValidCoordinates(body.destinationLat, body.destinationLng)
+        ? { lat:Number(body.destinationLat), lng:Number(body.destinationLng), displayName:String(account.address || '') }
+        : null;
+      const geocoded = deviceGeocoded || await forwardGeocode(account.address);
       if (geocoded) {
         account.lat = geocoded.lat; account.lng = geocoded.lng;
         account.geocodedAddress = geocoded.displayName;
-        account.locationSource = 'customer-address-geocode';
+        account.locationSource = deviceGeocoded ? 'ios-customer-address-geocode' : 'customer-address-geocode';
         account.locationVerifiedAt = new Date().toISOString();
       }
     }
-    if (!hasValidCoordinates(account.lat, account.lng)) return send(res, 422, { error:`客户地址“${account.address}”无法定位，请先补充完整地址` });
+    if (!hasValidCoordinates(account.lat, account.lng)) return send(res, 422, {
+      error:`客户地址“${account.address}”暂时无法转换为地图坐标，请检查门牌号、城市、州和邮编`,
+      code:'CUSTOMER_ADDRESS_UNLOCATABLE',
+      address:account.address,
+      normalizedAddress:normalizeUsStreetAddress(account.address)
+    });
     const straightMeters = distanceMeters(lat, lng, Number(account.lat), Number(account.lng));
     const estimatedDistanceMeters = Math.max(straightMeters, Math.round(straightMeters * 1.22));
     const estimatedMinutes = Math.max(5, Math.round((estimatedDistanceMeters / 1000) / 48 * 60 + 3));

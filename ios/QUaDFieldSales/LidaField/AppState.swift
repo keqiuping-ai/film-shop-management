@@ -1234,7 +1234,11 @@ final class AppState: ObservableObject {
         return String(format: "%016llX", hash)
     }
 
-    func startTrip(_ plan: VisitPlan) async -> Bool {
+    func startTrip(
+        _ plan: VisitPlan,
+        currentLocation suppliedCurrentLocation: CLLocation? = nil,
+        destinationLocation suppliedDestinationLocation: CLLocation? = nil
+    ) async -> Bool {
         if appVersionState.blocksWrites {
             errorMessage = "当前版本低于企业允许的最低版本，请更新 App 后再出发"
             return false
@@ -1267,8 +1271,29 @@ final class AppState: ObservableObject {
         activeTripConflict = nil
         defer { isBusy = false }
         do {
-            let current = try await location.currentSystemLocation(for: .visitArrival)
+            let current: CLLocation
+            if let suppliedCurrentLocation {
+                current = suppliedCurrentLocation
+            } else {
+                current = try await location.currentSystemLocation(for: .tripDeparture)
+            }
             let address = await location.humanReadableAddress(for: current)
+            let destinationAddress = plan.address
+                ?? plan.customerId.flatMap { customerId in customers.first(where: { $0.customerId == customerId })?.address }
+            var destination = suppliedDestinationLocation
+            if destination == nil, let latitude = plan.latitude, let longitude = plan.longitude {
+                destination = CLLocation(latitude: latitude, longitude: longitude)
+            }
+            if destination == nil,
+               let customerId = plan.customerId,
+               let customer = customers.first(where: { $0.customerId == customerId }),
+               let latitude = customer.latitude,
+               let longitude = customer.longitude {
+                destination = CLLocation(latitude: latitude, longitude: longitude)
+            }
+            if destination == nil, let destinationAddress, !destinationAddress.isEmpty {
+                destination = await location.customerLocation(for: destinationAddress)
+            }
             let updated = try await api.startTrip(
                 for: plan,
                 location: CLLocationPayload(
@@ -1276,11 +1301,25 @@ final class AppState: ObservableObject {
                     longitude: current.coordinate.longitude,
                     accuracy: current.horizontalAccuracy,
                     address: address
-                )
+                ),
+                destinationAddress: destinationAddress,
+                destinationLatitude: destination?.coordinate.latitude,
+                destinationLongitude: destination?.coordinate.longitude
             )
             mergeNewlyCreatedVisitPlan(updated, persist: false)
             selectedVisit = updated
-            successMessage = "已记录出发位置，正在前往 \(plan.customerName)"
+            if let destination {
+                let miles = current.distance(from: destination) / 1_609.344
+                successMessage = localized(
+                    cn: "已记录手机综合定位，正在前往 \(plan.customerName)；直线约 \(region.formatDistance(miles: miles))",
+                    us: "Phone location recorded. Traveling to \(plan.customerName), about \(region.formatDistance(miles: miles)) straight-line distance."
+                )
+            } else {
+                successMessage = localized(
+                    cn: "已记录手机综合定位，正在前往 \(plan.customerName)",
+                    us: "Phone location recorded. Traveling to \(plan.customerName)."
+                )
+            }
             return true
         } catch APIError.activeTrip(let trip) {
             activeTripConflict = trip
