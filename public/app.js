@@ -5208,15 +5208,14 @@ const views = {
             <label>${lang === 'zh' ? 'Webhook Verify Token' : 'Webhook Verify Token'}<input id="metaVerifyToken" type="password" autocomplete="off" placeholder="${lang === 'zh' ? '自己设置的验证口令' : 'Your custom verify token'}" /></label>
             <label>${lang === 'zh' ? 'App Secret（建议填写）' : 'App Secret (recommended)'}<input id="metaAppSecret" type="password" autocomplete="off" placeholder="${lang === 'zh' ? '用于校验 Meta 签名' : 'Used to verify Meta signatures'}" /></label>
             <label>${lang === 'zh' ? 'Graph API 版本' : 'Graph API Version'}<input id="metaGraphVersion" value="v23.0" placeholder="v23.0" /></label>
-            <label class="wide">${lang === 'zh' ? 'Messenger Webhook URL' : 'Messenger Webhook URL'}<input id="metaMessengerWebhookUrl" readonly placeholder="${lang === 'zh' ? '保存后显示' : 'Shown after saving'}" /></label>
-            <label class="wide">${lang === 'zh' ? 'Lead Ads Webhook URL' : 'Lead Ads Webhook URL'}<input id="metaLeadAdsWebhookUrl" readonly placeholder="${lang === 'zh' ? '保存后显示' : 'Shown after saving'}" /></label>
+            <label class="wide">${lang === 'zh' ? 'Meta 统一 Webhook URL' : 'Unified Meta Webhook URL'}<input id="metaMessengerWebhookUrl" readonly placeholder="${lang === 'zh' ? '保存后显示' : 'Shown after saving'}" /></label>
             <div class="wide">
               <button class="btn primary" type="button" onclick="saveMetaSettings()">${lang === 'zh' ? '保存Meta设置' : 'Save Meta Settings'}</button>
               <button class="btn" type="button" onclick="clearMetaSettings()">${lang === 'zh' ? '清除系统内Meta密钥' : 'Clear Saved Meta Keys'}</button>
               <span id="metaSettingsStatus" class="note" style="margin-left:10px">${lang === 'zh' ? '正在读取状态...' : 'Loading status...'}</span>
             </div>
           </div>
-          <p class="note" style="margin:8px 0 0">${lang === 'zh' ? '保存后，在 Meta Developers 后台把 Messenger Webhook URL 填到 Webhooks，并订阅 messages/messaging_postbacks；Lead Ads 表单继续使用 Lead Ads Webhook URL。私信发送仍需员工人工确认后点击发送。' : 'After saving, add the Messenger Webhook URL in Meta Developers Webhooks and subscribe to messages/messaging_postbacks. Lead Ads can continue using the Lead Ads Webhook URL. Replies still require a human click before sending.'}</p>
+          <p class="note" style="margin:8px 0 0">${lang === 'zh' ? '在 Meta Developers 的 Page 和 Instagram Webhook 中都使用上方同一地址。Page 订阅 messages、messaging_postbacks、leadgen；Instagram 订阅 messages。正式客户消息还需 pages_messaging、pages_manage_metadata、instagram_basic 和 instagram_manage_messages 权限。' : 'Use the same URL for both Page and Instagram webhooks in Meta Developers. Subscribe Page to messages, messaging_postbacks, and leadgen; subscribe Instagram to messages. Live customer messaging also requires pages_messaging, pages_manage_metadata, instagram_basic, and instagram_manage_messages.'}</p>
         </div>
         <label>${t('oldPassword')}<input id="oldPassword" type="password" /></label>
         <label>${t('newPassword')}<input id="newPassword" type="password" /></label>
@@ -10750,10 +10749,8 @@ function renderMetaSettingsStatus(info) {
   const status = document.getElementById('metaSettingsStatus');
   const graphVersion = document.getElementById('metaGraphVersion');
   const messengerWebhook = document.getElementById('metaMessengerWebhookUrl');
-  const leadAdsWebhook = document.getElementById('metaLeadAdsWebhookUrl');
   if (graphVersion && info?.graphVersion) graphVersion.value = info.graphVersion;
-  if (messengerWebhook && info?.webhookUrl) messengerWebhook.value = info.webhookUrl;
-  if (leadAdsWebhook && info?.leadAdsWebhookUrl) leadAdsWebhook.value = info.leadAdsWebhookUrl;
+  if (messengerWebhook && (info?.unifiedWebhookUrl || info?.webhookUrl)) messengerWebhook.value = info.unifiedWebhookUrl || info.webhookUrl;
   if (!status) return;
   if (!info) {
     status.textContent = lang === 'zh' ? '状态读取失败' : 'Failed to load status';
@@ -10762,8 +10759,8 @@ function renderMetaSettingsStatus(info) {
   const token = info.pageAccessTokenMask ? ` Page ${info.pageAccessTokenMask}` : '';
   const verify = info.verifyTokenMask ? ` Verify ${info.verifyTokenMask}` : '';
   status.textContent = lang === 'zh'
-    ? `状态：${info.messengerReady ? '已配置' : '未完整配置'}｜签名校验：${info.signatureCheckEnabled ? '已开启' : '未开启'}${token}${verify}`
-    : `Status: ${info.messengerReady ? 'Configured' : 'Incomplete'} | Signature check: ${info.signatureCheckEnabled ? 'On' : 'Off'}${token}${verify}`;
+    ? `密钥：${info.messengerReady ? '已配置' : '未完整配置'}｜签名校验：${info.signatureCheckEnabled ? '已开启' : '未开启'}｜Meta 订阅/权限需在 Developers 后台另行确认${token}${verify}`
+    : `Keys: ${info.messengerReady ? 'Configured' : 'Incomplete'} | Signature check: ${info.signatureCheckEnabled ? 'On' : 'Off'} | Verify Meta subscriptions/permissions separately in Developers${token}${verify}`;
 }
 
 async function loadMetaSettings() {
