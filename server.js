@@ -3116,7 +3116,7 @@ function metaSettingsStatus(db, req = null) {
       messenger: `${baseUrl}/api/meta/messenger/webhook`,
       leadAds: `${baseUrl}/api/meta/lead-ads/webhook`
     } : {},
-    requiredReviewPermissions: ['pages_messaging', 'pages_manage_metadata', 'instagram_manage_messages'],
+    requiredReviewPermissions: ['pages_messaging', 'pages_manage_metadata', 'instagram_basic', 'instagram_manage_messages'],
     updatedAt: db?.settings?.metaMessengerUpdatedAt || '',
     updatedBy: db?.settings?.metaMessengerUpdatedBy || ''
   };

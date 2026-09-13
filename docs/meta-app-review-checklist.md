@@ -36,6 +36,17 @@ Both legacy paths dispatch through the same unified parser, so changing the Meta
 
 ## Permissions to request
 
+Instagram messaging also requires `instagram_basic` as a prerequisite. Include it in the review/access request together with the three messaging and Webhook permissions below.
+
+Current Meta Developers preparation status (2026-09-12):
+
+- `pages_messaging`: added, status `Ready for testing`
+- `pages_manage_metadata`: added, status `Ready for testing`
+- `instagram_basic`: added, status `Ready for testing`
+- `instagram_manage_messages`: added, status `Ready for testing`
+- Final review has not been submitted.
+- Instagram Page authorization and callback configuration are still pending deployment and a real end-to-end test.
+
 ### `pages_messaging`
 
 QUAD staff use the customer communication center to receive customer messages sent to the QD Auto Image Facebook Page and to send a staff-confirmed reply. The permission is not used for unsolicited messages.
