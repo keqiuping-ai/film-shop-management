@@ -3096,6 +3096,7 @@ function metaSettingsStatus(db, req = null) {
   const envAppSecret = String(process.env.META_APP_SECRET || '').trim();
   const envVerifyToken = String(process.env.META_WEBHOOK_VERIFY_TOKEN || '').trim();
   const baseUrl = req ? requestPublicBaseUrl(req) : '';
+  const unifiedWebhookUrl = baseUrl ? `${baseUrl}/api/meta/webhook` : '';
   return {
     configured: Boolean(pageToken && verifyToken),
     messengerReady: Boolean(pageToken && verifyToken),
@@ -3108,8 +3109,14 @@ function metaSettingsStatus(db, req = null) {
     pageAccessTokenSource: envPageToken ? 'env' : pageToken ? 'settings' : '',
     appSecretSource: envAppSecret ? 'env' : appSecret ? 'settings' : '',
     verifyTokenSource: envVerifyToken ? 'env' : verifyToken ? 'settings' : '',
-    webhookUrl: baseUrl ? `${baseUrl}/api/meta/messenger/webhook` : '',
-    leadAdsWebhookUrl: baseUrl ? `${baseUrl}/api/meta/lead-ads/webhook` : '',
+    unifiedWebhookUrl,
+    webhookUrl: unifiedWebhookUrl,
+    leadAdsWebhookUrl: unifiedWebhookUrl,
+    legacyWebhookUrls: baseUrl ? {
+      messenger: `${baseUrl}/api/meta/messenger/webhook`,
+      leadAds: `${baseUrl}/api/meta/lead-ads/webhook`
+    } : {},
+    requiredReviewPermissions: ['pages_messaging', 'pages_manage_metadata', 'instagram_manage_messages'],
     updatedAt: db?.settings?.metaMessengerUpdatedAt || '',
     updatedBy: db?.settings?.metaMessengerUpdatedBy || ''
   };
@@ -4485,17 +4492,19 @@ function metaPsidFromItem(item) {
   const direct = String(item?.metaPsid || item?.psid || '').trim();
   if (direct) return direct;
   const external = String(item?.externalId || '').trim();
-  const match = external.match(/^meta-(?:messenger|psid):(.+)$/i);
+  const match = external.match(/^meta-(?:messenger|instagram|psid):(.+)$/i);
   return match ? match[1].trim() : '';
 }
 
-function findMetaConversation(db, pageId, psid) {
-  const expectedExternalId = psid ? `meta-messenger:${psid}` : '';
+function findMetaConversation(db, pageId, psid, platform = 'facebook') {
+  const normalizedPlatform = platform === 'instagram' ? 'instagram' : 'facebook';
+  const expectedExternalId = psid ? `meta-${normalizedPlatform === 'instagram' ? 'instagram' : 'messenger'}:${psid}` : '';
   const collections = ['customerConversations', 'prospects'];
   for (const collection of collections) {
     const item = (db[collection] || []).find(row => {
       const rowPsid = metaPsidFromItem(row);
-      return rowPsid && rowPsid === psid;
+      const rowPlatform = String(row.metaPlatform || (String(row.externalId || '').startsWith('meta-instagram:') ? 'instagram' : 'facebook')).toLowerCase();
+      return rowPsid && rowPsid === psid && rowPlatform === normalizedPlatform;
     });
     if (item) return { collection, item };
     const byExternal = expectedExternalId ? (db[collection] || []).find(row => String(row.externalId || '') === expectedExternalId) : null;
@@ -4513,7 +4522,25 @@ function metaMessageText(message = {}) {
   return text || (attachmentSummary ? `Meta attachment: ${attachmentSummary}` : '');
 }
 
-function appendMetaMessengerMessage(item, message, pageId, psid, direction = 'inbound', speakerName = '') {
+function metaMessagingEventMessage(event = {}) {
+  if (event.message) return event.message.timestamp || !event.timestamp
+    ? event.message
+    : { ...event.message, timestamp: event.timestamp };
+  if (!event.postback) return null;
+  const title = String(event.postback.title || '').trim();
+  const payload = String(event.postback.payload || '').trim();
+  const text = title && payload && title !== payload ? `${title} (${payload})` : title || payload;
+  if (!text) return null;
+  return {
+    mid: String(event.postback.mid || event.postback.id || '').trim(),
+    text,
+    timestamp: event.timestamp
+  };
+}
+
+function appendMetaMessengerMessage(item, message, pageId, psid, direction = 'inbound', speakerName = '', platform = 'facebook') {
+  const normalizedPlatform = platform === 'instagram' ? 'instagram' : 'facebook';
+  const provider = normalizedPlatform === 'instagram' ? 'meta-instagram' : 'meta-messenger';
   const mid = String(message.mid || message.message_id || message.id || '').trim();
   const timestamp = message.timestamp
     ? new Date(Number(message.timestamp)).toISOString()
@@ -4527,7 +4554,7 @@ function appendMetaMessengerMessage(item, message, pageId, psid, direction = 'in
     speakerName: speakerName || (direction === 'outbound' ? 'Meta Page' : 'Meta Customer'),
     direction,
     channel: 'meta',
-    provider: 'meta-messenger',
+    provider,
     providerSid: mid,
     text,
     timestamp,
@@ -4541,7 +4568,8 @@ function appendMetaMessengerMessage(item, message, pageId, psid, direction = 'in
   const changed = after.length !== before.length;
   item.conversationMessages = after;
   item.metaPsid = psid || item.metaPsid || '';
-  item.externalId = item.externalId || (psid ? `meta-messenger:${psid}` : '');
+  item.metaPlatform = normalizedPlatform;
+  item.externalId = item.externalId || (psid ? `meta-${normalizedPlatform === 'instagram' ? 'instagram' : 'messenger'}:${psid}` : '');
   item.externalBusinessId = item.externalBusinessId || pageId || '';
   item.source = item.source || 'Meta / Facebook';
   item.updatedAt = timestamp;
@@ -4560,23 +4588,9 @@ async function fetchMetaUserProfile(psid, pageAccessToken, graphVersion) {
   return response.json().catch(() => ({}));
 }
 
-async function handleMetaMessengerWebhook(req, res, db, url) {
-  const config = metaMessengerConfig(db);
-  if (req.method === 'GET') {
-    const mode = String(url.searchParams.get('hub.mode') || '');
-    const token = String(url.searchParams.get('hub.verify_token') || '');
-    const challenge = String(url.searchParams.get('hub.challenge') || '');
-    if (mode === 'subscribe' && config.verifyToken && secureEqualString(token, config.verifyToken)) {
-      return send(res, 200, challenge, 'text/plain; charset=utf-8');
-    }
-    return send(res, 403, { error: 'Meta Messenger webhook verification failed' });
-  }
-  if (req.method !== 'POST') return send(res, 405, { error: 'Method not allowed' });
-  const raw = await readRawBody(req);
-  if (!verifyMetaWebhookSignature(req, raw, config.appSecret)) {
-    return send(res, 403, { error: 'Meta Messenger webhook signature verification failed' });
-  }
-  const payload = raw ? JSON.parse(raw) : {};
+async function processMetaMessagingPayload(db, payload, config) {
+  const platform = String(payload?.object || '').toLowerCase() === 'instagram' ? 'instagram' : 'facebook';
+  const provider = platform === 'instagram' ? 'Meta Instagram Webhook' : 'Meta Messenger Webhook';
   let imported = 0;
   let updated = 0;
   let skipped = 0;
@@ -4585,23 +4599,25 @@ async function handleMetaMessengerWebhook(req, res, db, url) {
     for (const event of Array.isArray(entry.messaging) ? entry.messaging : []) {
       const psid = String(event?.sender?.id || '').trim();
       const recipientId = String(event?.recipient?.id || pageId || '').trim();
-      if (!psid || !event.message || event.message.is_echo) {
+      const message = metaMessagingEventMessage(event);
+      if (!psid || !message || message.is_echo) {
         skipped += 1;
         continue;
       }
-      const text = metaMessageText(event.message);
+      const text = metaMessageText(message);
       if (!text) {
         skipped += 1;
         continue;
       }
-      let match = findMetaConversation(db, recipientId || pageId, psid);
+      let match = findMetaConversation(db, recipientId || pageId, psid, platform);
       if (!match) {
         const profile = config.pageAccessToken ? await fetchMetaUserProfile(psid, config.pageAccessToken, config.graphVersion) : {};
         const customer = String(profile.name || [profile.first_name, profile.last_name].filter(Boolean).join(' ') || 'Meta Customer').trim();
+        const externalPrefix = platform === 'instagram' ? 'meta-instagram' : 'meta-messenger';
         const item = {
           id: id(),
           date: new Date().toISOString().slice(0, 10),
-          source: 'Meta / Facebook',
+          source: platform === 'instagram' ? 'Meta / Instagram' : 'Meta / Facebook',
           customer,
           phone: '',
           vehicle: '',
@@ -4611,21 +4627,22 @@ async function handleMetaMessengerWebhook(req, res, db, url) {
           ownerName: '',
           status: '新意向',
           intentLevel: '普通',
-          externalId: `meta-messenger:${psid}`,
+          externalId: `${externalPrefix}:${psid}`,
           externalBusinessId: recipientId || pageId,
           metaPsid: psid,
+          metaPlatform: platform,
           profileUrl: psid ? `https://business.facebook.com/latest/inbox/all?asset_id=${encodeURIComponent(recipientId || pageId)}` : '',
           sourceCreatedAt: new Date().toISOString(),
           sourceUpdatedAt: new Date().toISOString(),
           chatContext: '',
           conversationMessages: [],
-          rawPayload: { firstMessengerEvent: event }
+          rawPayload: { firstMessagingEvent: event, metaObject: payload?.object || 'page' }
         };
         db.customerConversations.unshift(item);
         match = { collection: 'customerConversations', item };
         imported += 1;
       }
-      if (appendMetaMessengerMessage(match.item, event.message, recipientId || pageId, psid, 'inbound', match.item.customer || 'Meta Customer')) {
+      if (appendMetaMessengerMessage(match.item, message, recipientId || pageId, psid, 'inbound', match.item.customer || 'Meta Customer', platform)) {
         creditCustomerAiExperienceReply(db, match.item, (match.item.conversationMessages || []).at(-1));
         enrichCustomerIdentity(db, match.item);
         customerNurtureMarkInbound(db, match.collection, match.item, text, new Date().toISOString(), 'meta');
@@ -4636,14 +4653,16 @@ async function handleMetaMessengerWebhook(req, res, db, url) {
     }
   }
   if (imported || updated) {
-    audit(db, { id: 'meta-messenger-webhook', name: 'Meta Messenger Webhook' }, 'receive-meta-messenger-message', {
+    audit(db, { id: `meta-${platform}-webhook`, name: provider }, 'receive-meta-messaging-event', {
       collection: 'customerConversations',
-      detail: `Meta Messenger imported ${imported}, updated ${updated}, skipped ${skipped}`
+      detail: `${provider} imported ${imported}, updated ${updated}, skipped ${skipped}`
     });
-    writeDb(db);
-    notifyDataChanged('receive-meta-messenger-message', { imported, updated, skipped });
   }
-  return send(res, 200, { ok: true, imported, updated, skipped });
+  return { imported, updated, skipped, platform };
+}
+
+async function handleMetaMessengerWebhook(req, res, db, url) {
+  return handleMetaWebhook(req, res, db, url);
 }
 
 async function sendMetaMessengerReply(db, item, text) {
@@ -4685,23 +4704,7 @@ async function sendMetaMessengerImage(db, item, imageUrl) {
   return { messageId: String(body.message_id || ''), status: 'sent' };
 }
 
-async function handleMetaLeadWebhook(req, res, db, url) {
-  const config = metaLeadConfig(db);
-  if (req.method === 'GET') {
-    const mode = String(url.searchParams.get('hub.mode') || '');
-    const token = String(url.searchParams.get('hub.verify_token') || '');
-    const challenge = String(url.searchParams.get('hub.challenge') || '');
-    if (mode === 'subscribe' && config.verifyToken && secureEqualString(token, config.verifyToken)) {
-      return send(res, 200, challenge, 'text/plain; charset=utf-8');
-    }
-    return send(res, 403, { error: 'Meta webhook verification failed' });
-  }
-  if (req.method !== 'POST') return send(res, 405, { error: 'Method not allowed' });
-  const raw = await readRawBody(req);
-  if (!verifyMetaWebhookSignature(req, raw, config.appSecret)) {
-    return send(res, 403, { error: 'Meta webhook signature verification failed' });
-  }
-  const payload = raw ? JSON.parse(raw) : {};
+async function processMetaLeadPayload(db, payload, config) {
   const changes = [];
   for (const entry of Array.isArray(payload.entry) ? payload.entry : []) {
     for (const change of Array.isArray(entry.changes) ? entry.changes : []) {
@@ -4710,9 +4713,9 @@ async function handleMetaLeadWebhook(req, res, db, url) {
       if (value.leadgen_id) changes.push({ ...value, time: entry.time, page_id: value.page_id || entry.id });
     }
   }
-  if (!changes.length) return send(res, 200, { ok: true, imported: 0, updated: 0, skipped: 0 });
+  if (!changes.length) return { imported: 0, updated: 0, skipped: 0, duplicateCount: 0, detected: 0 };
   if (!config.pageAccessToken) {
-    return send(res, 500, { error: 'META_PAGE_ACCESS_TOKEN is not configured' });
+    throw new Error('META_PAGE_ACCESS_TOKEN is not configured');
   }
   const items = [];
   for (const change of changes.slice(0, 50)) {
@@ -4735,14 +4738,58 @@ async function handleMetaLeadWebhook(req, res, db, url) {
     sourceDevice: 'meta-lead-ads-webhook',
     items
   });
-  writeDb(db);
-  notifyDataChanged('meta-lead-webhook', {
-    imported: result.imported,
-    updated: result.updated,
-    skipped: result.skipped,
-    duplicateCount: result.duplicateCount
-  });
-  return send(res, 200, { ok: true, ...result });
+  return { ...result, detected: changes.length };
+}
+
+async function handleMetaLeadWebhook(req, res, db, url) {
+  return handleMetaWebhook(req, res, db, url);
+}
+
+async function handleMetaWebhook(req, res, db, url) {
+  const config = metaMessengerConfig(db);
+  if (req.method === 'GET') {
+    const mode = String(url.searchParams.get('hub.mode') || '');
+    const token = String(url.searchParams.get('hub.verify_token') || '');
+    const challenge = String(url.searchParams.get('hub.challenge') || '');
+    if (mode === 'subscribe' && config.verifyToken && secureEqualString(token, config.verifyToken)) {
+      return send(res, 200, challenge, 'text/plain; charset=utf-8');
+    }
+    return send(res, 403, { error: 'Meta webhook verification failed' });
+  }
+  if (req.method !== 'POST') return send(res, 405, { error: 'Method not allowed' });
+  const raw = await readRawBody(req);
+  if (!verifyMetaWebhookSignature(req, raw, config.appSecret)) {
+    return send(res, 403, { error: 'Meta webhook signature verification failed' });
+  }
+  let payload;
+  try {
+    payload = raw ? JSON.parse(raw) : {};
+  } catch {
+    return send(res, 400, { error: 'Invalid Meta webhook JSON' });
+  }
+  try {
+    const messaging = await processMetaMessagingPayload(db, payload, config);
+    const leadgen = await processMetaLeadPayload(db, payload, config);
+    const changed = messaging.imported || messaging.updated || leadgen.imported || leadgen.updated;
+    if (changed) {
+      writeDb(db);
+      notifyDataChanged('receive-meta-webhook', {
+        messaging: { imported: messaging.imported, updated: messaging.updated, skipped: messaging.skipped, platform: messaging.platform },
+        leadgen: { imported: leadgen.imported, updated: leadgen.updated, skipped: leadgen.skipped, duplicateCount: leadgen.duplicateCount }
+      });
+    }
+    return send(res, 200, {
+      ok: true,
+      imported: messaging.imported + leadgen.imported,
+      updated: messaging.updated + leadgen.updated,
+      skipped: messaging.skipped + leadgen.skipped,
+      messaging,
+      leadgen
+    });
+  } catch (error) {
+    console.error('Meta webhook processing failed:', error);
+    return send(res, 500, { error: error.message || 'Meta webhook processing failed' });
+  }
 }
 
 function readBinaryBody(req, limit) {
@@ -6792,6 +6839,10 @@ function confirmCustomerCheckout(db, session, eventRecord) {
 async function api(req, res) {
   const db = readDb();
   const url = new URL(req.url, `http://${req.headers.host}`);
+
+  if (url.pathname === '/api/meta/webhook') {
+    return handleMetaWebhook(req, res, db, url);
+  }
 
   if (url.pathname === '/api/meta/lead-ads/webhook') {
     return handleMetaLeadWebhook(req, res, db, url);
