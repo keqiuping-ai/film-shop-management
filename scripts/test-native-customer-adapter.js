@@ -317,6 +317,11 @@ async function run() {
   assert(adminSource.includes('门店与现场照片'), 'customer profile must group storefront and visit photos');
   assert(adminSource.includes('订货、样品与放货'), 'customer profile must group orders and product activity');
   assert(adminSource.includes('历史资料均保留在本客户档案中'), 'customer profile must retain historical activity');
+  assert(adminSource.includes("saveButton.textContent = lang === 'zh' ? '正在保存…' : 'Saving…'"), 'field customer save must show an immediate busy state');
+  assert(adminSource.includes("const value = id => String(document.getElementById(id)?.value || '').trim();\n  const nextVisitValue"), 'field customer save must define its form value reader before collecting fields');
+  assert(adminSource.includes('showActionFeedback(lang ==='), 'field customer save must show a persistent success confirmation');
+  assert(adminSource.includes("timeoutMs:15000"), 'field customer save must recover from a stalled request');
+  assert(serverSource.includes('const timeoutId = setTimeout(() => controller.abort(), 6000)'), 'address geocoding must never block customer saving indefinitely');
   assert(adminSource.includes("fieldSalesMatchesSelectedDate(item, ['plannedAt', 'createdAt'], selectedDate)"), 'salesperson visit plans must follow that employee selected date');
   assert(adminSource.includes("fieldSalesMatchesSelectedDate(item, ['startedAt', 'arrivedAt', 'createdAt'], selectedDate)"), 'salesperson visits must follow that employee selected date');
   assert(adminSource.includes("expanded ? `<div class=\"field-sales-employee-detail\">"), 'salesperson day details must not render while collapsed');
@@ -464,6 +469,23 @@ async function run() {
     }
   });
   assert.equal(created.status, 201);
+
+  const geocodedCreateStartedAt = Date.now();
+  const geocodedCreate = await jsonRequest('/api/field-sales/accounts', {
+    method: 'POST',
+    token: login.body.token,
+    body: {
+      businessName: 'Santa Monica Save Feedback Test',
+      address: '3212 Santa Monica Blvd, Santa Monica, CA 90404',
+      phone: '6265864446',
+      email: 'isolated-save-feedback@example.test',
+      contactName: 'Isolated Save Test',
+      note: 'isolated address geocoding and save feedback regression'
+    }
+  });
+  assert.equal(geocodedCreate.status, 201);
+  assert(Date.now() - geocodedCreateStartedAt < 8000, 'address lookup must not block customer creation beyond its hard timeout');
+  assert(geocodedCreate.body.fieldSales.accounts.some(item => item.businessName === 'Santa Monica Save Feedback Test'));
   const saved = created.body.fieldSales.accounts.find(item => item.businessName === 'New Native Customer');
   assert(saved);
   assert.equal(saved.createdByUserId, 'native-sales-user');

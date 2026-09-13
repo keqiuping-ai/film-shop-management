@@ -1482,6 +1482,8 @@ body.modal-lock .prospect-workspace { pointer-events: none; }
 .employee-account-save-status.saving { border-color:#9ec7cf; background:#eef8fa; color:#155d69; }
 .employee-account-save-status.success { border-color:#9acdad; background:#edf8f0; color:#176638; }
 .employee-account-save-status.error { border-color:#e0a3a3; background:#fff1f1; color:#9d2525; }
+.app-action-feedback { position:fixed; z-index:320; top:22px; left:50%; width:min(560px,calc(100vw - 32px)); box-sizing:border-box; padding:14px 18px; border:1px solid transparent; border-radius:12px; color:#fff; font-weight:800; line-height:1.45; text-align:center; box-shadow:0 12px 32px rgba(15,23,42,.28); opacity:0; pointer-events:none; transform:translate(-50%,-18px); transition:opacity .18s ease,transform .18s ease; }
+.app-action-feedback.show { opacity:1; transform:translate(-50%,0); }.app-action-feedback.success { border-color:#167848; background:#198754; }.app-action-feedback.error { border-color:#9f2633; background:#b42332; }
 #modalBody [aria-invalid="true"] { border-color:#c93434; box-shadow:0 0 0 3px rgba(201,52,52,.14); }
 .confirmation-editor-intro { display:flex; justify-content:space-between; gap:12px; align-items:center; padding:12px 14px; margin-bottom:14px; border-radius:10px; background:#eef7f8; }
 .confirmation-editor-intro span { color:var(--muted); font-size:13px; text-align:right; }

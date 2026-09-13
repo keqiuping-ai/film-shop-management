@@ -4800,6 +4800,9 @@ async function deleteFieldSalesAccount(accountId) {
 }
 
 async function saveFieldSalesAccount(accountId = '') {
+  const saveButton = document.getElementById('modalSave');
+  if (saveButton?.disabled) return;
+  const value = id => String(document.getElementById(id)?.value || '').trim();
   const nextVisitValue = document.getElementById('fieldSalesNextVisit')?.value || '';
   const body = {
     businessName: value('fieldSalesBusinessName'), address: value('fieldSalesAddress'),
@@ -4810,12 +4813,32 @@ async function saveFieldSalesAccount(accountId = '') {
     nextVisitAt: nextVisitValue ? new Date(nextVisitValue).toISOString() : ''
   };
   if (!body.businessName || !body.address) return alert(lang === 'zh' ? '请填写客户门店名称和地址。' : 'Business name and address are required.');
+  if (saveButton) {
+    saveButton.disabled = true;
+    saveButton.setAttribute('aria-busy', 'true');
+    saveButton.textContent = lang === 'zh' ? '正在保存…' : 'Saving…';
+  }
   try {
-    await api(accountId ? `/api/field-sales/accounts/${accountId}` : '/api/field-sales/accounts', { method:accountId ? 'PUT' : 'POST', body:JSON.stringify(body) });
+    await api(accountId ? `/api/field-sales/accounts/${encodeURIComponent(accountId)}` : '/api/field-sales/accounts', {
+      method:accountId ? 'PUT' : 'POST',
+      body:JSON.stringify(body),
+      timeoutMs:15000
+    });
+    if (saveButton) saveButton.textContent = lang === 'zh' ? '✓ 保存成功' : '✓ Saved';
+    await sync({ silent:true });
     closeModal();
     setPage('fieldSales');
-    await sync();
-  } catch (error) { alert(error.message); }
+    showActionFeedback(lang === 'zh'
+      ? `${accountId ? '客户资料修改' : '新客户创建'}成功，数据已经写入系统。`
+      : `${accountId ? 'Customer changes' : 'New customer'} saved successfully.`, 'success');
+  } catch (error) {
+    if (saveButton) {
+      saveButton.disabled = false;
+      saveButton.removeAttribute('aria-busy');
+      saveButton.textContent = lang === 'zh' ? '保存失败，请重试' : 'Save failed — retry';
+    }
+    showActionFeedback(`${lang === 'zh' ? '保存失败：' : 'Save failed: '}${error.message || (lang === 'zh' ? '未知错误' : 'Unknown error')}`, 'error');
+  }
 }
 
 async function analyzeFieldSalesVisit(id) {
@@ -11224,6 +11247,22 @@ function openModal(title, html, onSave) {
   if (cancel) cancel.textContent = t('cancel');
   document.getElementById('modal').classList.add('open');
 }
+
+function showActionFeedback(message, type = 'success') {
+  let notice = document.getElementById('appActionFeedback');
+  if (!notice) {
+    notice = document.createElement('div');
+    notice.id = 'appActionFeedback';
+    notice.setAttribute('role', 'status');
+    notice.setAttribute('aria-live', 'polite');
+    document.body.appendChild(notice);
+  }
+  clearTimeout(showActionFeedback.timer);
+  notice.textContent = String(message || '');
+  notice.className = `app-action-feedback ${type} show`;
+  showActionFeedback.timer = setTimeout(() => notice.classList.remove('show'), type === 'error' ? 7000 : 4200);
+}
+
 function closeModal() {
   uiNavigationRevision += 1;
   stopMessageTimeZones();

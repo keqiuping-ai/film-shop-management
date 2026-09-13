@@ -1706,34 +1706,38 @@ function hasValidCoordinates(lat, lng) {
 }
 
 async function reverseGeocode(lat, lng) {
-  const timeout = AbortSignal.timeout ? AbortSignal.timeout(4500) : undefined;
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 4500);
   try {
     const response = await fetch(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lng)}&zoom=18&addressdetails=1`, {
       headers: {
         'User-Agent': 'QUAD-FILM-Management/1.0 contact@quadfilmus.com',
         Accept: 'application/json'
       },
-      signal: timeout
+      signal: controller.signal
     });
     if (!response.ok) return '';
     const body = await response.json().catch(() => ({}));
     return String(body.display_name || '').trim().slice(0, 300);
   } catch {
     return '';
+  } finally {
+    clearTimeout(timeoutId);
   }
 }
 
 async function forwardGeocode(address) {
   const query = String(address || '').trim();
   if (!query) return null;
-  const timeout = AbortSignal.timeout ? AbortSignal.timeout(6000) : undefined;
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 6000);
   try {
     const response = await fetch(`https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&countrycodes=us&addressdetails=1&q=${encodeURIComponent(query)}`, {
       headers: {
         'User-Agent': 'QUAD-FILM-Management/1.0 contact@quadfilmus.com',
         Accept: 'application/json'
       },
-      signal: timeout
+      signal: controller.signal
     });
     if (!response.ok) return null;
     const body = await response.json().catch(() => []);
@@ -1748,6 +1752,8 @@ async function forwardGeocode(address) {
     };
   } catch {
     return null;
+  } finally {
+    clearTimeout(timeoutId);
   }
 }
 
