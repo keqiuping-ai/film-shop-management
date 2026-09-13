@@ -115,6 +115,17 @@ async function seed() {
     permissions: { fieldSalesView: true, fieldSalesEdit: true }
   });
   db.users.push({
+    id: 'native-sales-user-two',
+    name: 'Second Sales Test',
+    email: 'native-sales-two@test.local',
+    role: 'sales',
+    active: true,
+    defaultBranchId: 'las-vegas',
+    branchIds: ['las-vegas'],
+    passwordHash: hashPassword('isolated-password-two'),
+    permissions: { fieldSalesView: true, fieldSalesEdit: true }
+  });
+  db.users.push({
     id: 'native-manager-user',
     name: 'Native Manager Test',
     email: 'native-manager@test.local',
@@ -267,11 +278,14 @@ async function run() {
   assert(adminSource.includes('function fieldSalesEmployeeRouteMap'), 'desktop salesperson lanes must include the daily route map');
   assert(adminSource.includes('沟通记录与 AI 总结'), 'desktop salesperson lanes must include conversation and AI summaries');
   assert(adminSource.includes('<audio controls'), 'desktop salesperson lanes must support inline recording playback');
+  assert(adminSource.includes('let fieldSalesEmployeeDates = {}'), 'each salesperson lane must keep its own selected date');
   assert(adminSource.includes("let fieldSalesExpandedEmployeeId = ''"), 'salesperson lanes must start collapsed');
   assert(adminSource.includes('function toggleFieldSalesEmployeeLane'), 'salesperson summaries must expand only when clicked');
-  assert(adminSource.includes("fieldSalesMatchesSelectedDate(item, ['plannedAt', 'createdAt'])"), 'salesperson visit plans must follow the selected date');
-  assert(adminSource.includes("fieldSalesMatchesSelectedDate(item, ['startedAt', 'arrivedAt', 'createdAt'])"), 'salesperson visits must follow the selected date');
+  assert(adminSource.includes('function setFieldSalesEmployeeDate(personId, value)'), 'each salesperson date must update independently');
+  assert(adminSource.includes("fieldSalesMatchesSelectedDate(item, ['plannedAt', 'createdAt'], selectedDate)"), 'salesperson visit plans must follow that employee selected date');
+  assert(adminSource.includes("fieldSalesMatchesSelectedDate(item, ['startedAt', 'arrivedAt', 'createdAt'], selectedDate)"), 'salesperson visits must follow that employee selected date');
   assert(adminSource.includes("expanded ? `<div class=\"field-sales-employee-detail\">"), 'salesperson day details must not render while collapsed');
+  assert(adminSource.includes('const visiblePeople = expandedPerson ? [expandedPerson] : people'), 'opening one salesperson must hide other salesperson cards');
   assert(adminSource.includes("manager: { ...all, fieldSalesManage: false"), 'manager role must not receive the management center without an explicit checkbox');
   assert(adminSource.includes("user?.role === 'owner' ? `<button class=\"btn danger\""), 'only owners should receive a customer delete button');
   assert(serverSource.includes("return user?.role === 'owner' || Boolean(effectivePermissions(user).fieldSalesManage)"), 'server management access must require owner or explicit permission');
