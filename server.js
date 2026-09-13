@@ -2077,6 +2077,19 @@ function fieldSalesSnapshot(db, user) {
   const checkInAttempts = (db.salesCheckInAttempts || [])
     .filter(item => accountIds.has(item.accountId) && (canManage || item.userId === user.id))
     .sort((a, b) => String(b.attemptedAt || '').localeCompare(String(a.attemptedAt || '')));
+  const visitAccountById = new Map(visits.map(item => [item.id, item.accountId]));
+  const planAccountById = new Map((db.salesVisitPlans || []).map(item => [item.id, item.accountId]));
+  const attachments = (db.salesAttachments || [])
+    .filter(item => canManage || item.userId === user.id)
+    .filter(item => !item.branchId || canAccessBranch(db, user, item.branchId))
+    .map(item => {
+      const accountId = item.accountId || visitAccountById.get(item.objectId) || planAccountById.get(item.objectId) || (accountIds.has(item.objectId) ? item.objectId : '');
+      const visitId = item.visitId || (visitAccountById.has(item.objectId) ? item.objectId : '');
+      return { ...item, accountId, visitId };
+    })
+    .filter(item => !item.accountId || accountIds.has(item.accountId))
+    .sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')))
+    .slice(0, 1000);
   return {
     enabled: canUseFieldSales(user),
     canManage,
@@ -2084,11 +2097,7 @@ function fieldSalesSnapshot(db, user) {
     trips: trips.slice(0, 500),
     visits: visits.slice(0, 500),
     checkInAttempts: checkInAttempts.slice(0, 500),
-    attachments: (db.salesAttachments || [])
-      .filter(item => canManage || item.userId === user.id)
-      .filter(item => !item.branchId || canAccessBranch(db, user, item.branchId))
-      .sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')))
-      .slice(0, 1000),
+    attachments,
     trialRolls: (db.salesTrialRolls || [])
       .filter(item => accountIds.has(item.accountId) && (canManage || fieldSalesVisible(item, user)))
       .sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')))
@@ -2114,7 +2123,7 @@ function fieldSalesSnapshot(db, user) {
       .sort((a, b) => String(a.dueAt || '').localeCompare(String(b.dueAt || '')))
       .slice(0, 500),
     fieldOrders: (db.salesFieldOrders || [])
-      .filter(item => canManage || item.userId === user.id)
+      .filter(item => accountIds.has(item.accountId) && (canManage || item.userId === user.id))
       .sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')))
       .slice(0, 500),
     products: (db.products || []).map(item => ({
@@ -7988,7 +7997,7 @@ async function api(req, res) {
     if (req.method === 'GET') {
       const items = (db.salesAttachments || [])
         .filter(item => item.objectId === objectId && (canManageFieldSales(user) || item.userId === user.id))
-        .map(item => ({ attachmentId:item.id, fileName:item.fileName, sizeBytes:item.sizeBytes, contentType:item.contentType, url:item.url, artifactKind:item.artifactKind || '', customerName:item.customerName || '', transcript:item.transcript || '', analysis:item.analysis || '', createdAt:item.createdAt }));
+        .map(item => ({ attachmentId:item.id, accountId:item.accountId || '', visitId:item.visitId || '', fileName:item.fileName, sizeBytes:item.sizeBytes, contentType:item.contentType, url:item.url, artifactKind:item.artifactKind || '', customerName:item.customerName || '', transcript:item.transcript || '', analysis:item.analysis || '', createdAt:item.createdAt }));
       return send(res, 200, { items });
     }
     if (req.method === 'POST') {
@@ -8007,6 +8016,12 @@ async function api(req, res) {
           if (parsed && typeof parsed === 'object' && String(parsed.kind || '') === 'meeting') artifact = parsed;
         } catch {}
       }
+      const linkedVisit = (db.salesVisits || []).find(row => row.id === targetId);
+      const linkedPlan = (db.salesVisitPlans || []).find(row => row.id === targetId);
+      const linkedAccount = (db.salesAccounts || []).find(row => row.id === targetId);
+      if (!canManageFieldSales(user) && linkedVisit && linkedVisit.userId !== user.id) return send(res, 403, { error:'不能上传到其他业务员的拜访记录' });
+      if (!canManageFieldSales(user) && linkedPlan && ![linkedPlan.userId, linkedPlan.assignedUserId].includes(user.id)) return send(res, 403, { error:'不能上传到其他业务员的拜访计划' });
+      if (linkedAccount && !fieldSalesVisible(linkedAccount, user)) return send(res, 403, { error:'不能上传到无权查看的客户档案' });
       fs.mkdirSync(CUSTOMER_MEDIA_DIR, { recursive: true });
       const storedName = `${crypto.randomBytes(6).toString('hex')}${safeCustomerMediaExtension(fileName, contentType)}`;
       fs.writeFileSync(path.join(CUSTOMER_MEDIA_DIR, storedName), data);
@@ -8020,6 +8035,9 @@ async function api(req, res) {
         analysis:artifact ? String(artifact.values?.analysis || '').trim().slice(0, 20000) : '',
         createdAt:new Date().toISOString()
       };
+      const requestedAccount = (db.salesAccounts || []).find(row => row.id === body.accountId && fieldSalesVisible(row, user) && canAccessBranch(db, user, row.branchId));
+      item.accountId = String(requestedAccount?.id || linkedVisit?.accountId || linkedPlan?.accountId || linkedAccount?.id || '').trim().slice(0, 120);
+      item.visitId = String(body.visitId || linkedVisit?.id || '').trim().slice(0, 120);
       db.salesAttachments.unshift(item);
       audit(db, user, 'upload-field-sales-attachment', { collection:'salesAttachments', recordId:item.id, recordLabel:fileName, detail:`上传外勤附件 ${fileName}` });
       writeDb(db);

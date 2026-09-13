@@ -197,6 +197,37 @@ async function seed() {
     { locationId: 'isolated-location-point-2', clientPointId: 'isolated-client-point-2', userId: 'native-sales-user', collectedAt: '2026-09-11T16:10:00.000Z', latitude: 36.1671, longitude: -115.1487, accuracyM: 9 },
     { locationId: 'isolated-location-point-3', clientPointId: 'isolated-client-point-3', userId: 'native-sales-user', collectedAt: '2026-09-11T17:20:00.000Z', latitude: 36.1598, longitude: -115.1537, accuracyM: 7 }
   ];
+  const fixturePhoto = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M/wHwAEAQH/2G7fGQAAAABJRU5ErkJggg==';
+  db.salesVisits = [{
+    id: 'isolated-history-visit',
+    accountId: 'existing-native-customer',
+    businessName: 'San Francisco Isolated Tint Shop',
+    userId: 'native-sales-user',
+    userName: 'Native Sales Test',
+    branchId: 'las-vegas',
+    status: '已完成',
+    startedAt: '2026-09-11T17:05:00.000Z',
+    completedAt: '2026-09-11T18:10:00.000Z',
+    reportText: 'Customer reviewed ceramic film options and requested a delivery quote.',
+    nextAction: 'Send approved quotation tomorrow',
+    checkIn: { photoUrl: fixturePhoto, address: 'Isolated storefront test address', lat: 36.1716, lng: -115.1391, locationMatched: true },
+    evidencePhotoUrls: [fixturePhoto],
+    aiAnalysis: { summaryEn: 'Strong interest in ceramic film.', summaryZh: '客户对陶瓷膜有较强兴趣。', managerAdviceEn: 'Send the quote promptly.', managerAdviceZh: '尽快发送正式报价。' }
+  }];
+  db.salesAttachments = [{
+    id: 'isolated-history-meeting', objectId: 'isolated-history-visit', userId: 'native-sales-user', userName: 'Native Sales Test', branchId: 'las-vegas',
+    fileName: 'customer-meeting-summary.json', contentType: 'application/json', sizeBytes: 512, url: '', artifactKind: 'meeting', customerName: 'San Francisco Isolated Tint Shop',
+    transcript: 'Customer asked about ceramic film, heat rejection, and delivery timing.', analysis: 'High purchase intent; send the approved quote and follow up tomorrow.', createdAt: '2026-09-11T18:00:00.000Z'
+  }, {
+    id: 'isolated-history-audio', objectId: 'isolated-history-visit', userId: 'native-sales-user', userName: 'Native Sales Test', branchId: 'las-vegas',
+    fileName: 'customer-visit-recording.m4a', contentType: 'audio/mp4', sizeBytes: 1024, url: '', createdAt: '2026-09-11T17:40:00.000Z'
+  }];
+  db.salesFieldOrders = [{
+    id: 'isolated-history-order', orderNumber: 'FSO-ISOLATED-001', accountId: 'existing-native-customer', businessName: 'San Francisco Isolated Tint Shop', branchId: 'las-vegas',
+    userId: 'native-sales-user', userName: 'Native Sales Test', visitId: 'isolated-history-visit', type: '批发订单', warehouse: 'Las Vegas',
+    items: [{ productId: '', sku: 'ISOLATED-FILM-001', name: 'Isolated Ceramic Film', quantity: 2, unitPrice: 325, lineTotal: 650 }],
+    total: 650, amountPaid: 200, amountDue: 450, status: '待仓库确认', inventoryStatus: '待仓库确认', createdAt: '2026-09-11T18:05:00.000Z', updatedAt: '2026-09-11T18:05:00.000Z'
+  }];
   db.messages = [{
     id: 'isolated-internal-message',
     scope: 'direct',
@@ -282,6 +313,10 @@ async function run() {
   assert(adminSource.includes("let fieldSalesExpandedEmployeeId = ''"), 'salesperson lanes must start collapsed');
   assert(adminSource.includes('function toggleFieldSalesEmployeeLane'), 'salesperson summaries must expand only when clicked');
   assert(adminSource.includes('function setFieldSalesEmployeeDate(personId, value)'), 'each salesperson date must update independently');
+  assert(adminSource.includes('function openFieldSalesCustomerDetail'), 'day customers must open a complete customer profile');
+  assert(adminSource.includes('门店与现场照片'), 'customer profile must group storefront and visit photos');
+  assert(adminSource.includes('订货、样品与放货'), 'customer profile must group orders and product activity');
+  assert(adminSource.includes('历史资料均保留在本客户档案中'), 'customer profile must retain historical activity');
   assert(adminSource.includes("fieldSalesMatchesSelectedDate(item, ['plannedAt', 'createdAt'], selectedDate)"), 'salesperson visit plans must follow that employee selected date');
   assert(adminSource.includes("fieldSalesMatchesSelectedDate(item, ['startedAt', 'arrivedAt', 'createdAt'], selectedDate)"), 'salesperson visits must follow that employee selected date');
   assert(adminSource.includes("expanded ? `<div class=\"field-sales-employee-detail\">"), 'salesperson day details must not render while collapsed');
@@ -566,9 +601,28 @@ async function run() {
   assert.equal(evidence.body.items.length, 3);
   const savedMeeting = evidence.body.items.find(item => item.attachmentId === meetingArtifact.body.attachmentId);
   assert.equal(savedMeeting.artifactKind, 'meeting');
+  assert.equal(savedMeeting.accountId, 'existing-native-customer');
   assert.equal(savedMeeting.customerName, 'San Francisco Isolated Tint Shop');
   assert(savedMeeting.transcript.includes('heat rejection'));
   assert(savedMeeting.analysis.includes('intent is strong'));
+
+  const fieldOrder = await jsonRequest('/api/field-sales/orders', {
+    method: 'POST',
+    token: login.body.token,
+    body: {
+      accountId: 'existing-native-customer',
+      visitId: visit.body.visit.id,
+      items: [{ sku: 'ISOLATED-FILM-001', name: 'Isolated Ceramic Film', quantity: 2, unitPrice: 325 }],
+      amountPaid: 200,
+      paymentMethod: 'isolated test',
+      deliveryMethod: 'isolated pickup'
+    }
+  });
+  assert.equal(fieldOrder.status, 201);
+  const savedFieldOrder = fieldOrder.body.fieldSales.fieldOrders.find(item => item.accountId === 'existing-native-customer');
+  assert(savedFieldOrder);
+  assert.equal(savedFieldOrder.total, 650);
+  assert.equal(savedFieldOrder.amountDue, 450);
 
   const completedVisit = await jsonRequest(`/api/field-sales/visits/${visit.body.visit.id}/complete`, {
     method: 'PUT',

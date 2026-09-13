@@ -4316,7 +4316,9 @@ function fieldSalesLocalizedStatus(label) {
     '待拜访':'Pending visit', '待出发':'Ready to depart', '前往中':'En route', '拜访中':'Visiting',
     '进行中':'In progress', '已完成':'Completed', '已取消':'Cancelled', '成交':'Won',
     '暂停':'Paused', '无效':'Invalid', '待分析':'Pending analysis', '已记录':'Recorded',
-    '历史记录':'Historical', '业务员':'Salesperson', '正常':'Normal', '路线异常':'Route issue'
+    '历史记录':'Historical', '业务员':'Salesperson', '正常':'Normal', '路线异常':'Route issue',
+    '待仓库确认':'Pending warehouse confirmation', '已到达':'Arrived', '待完成':'Pending',
+    '已付款':'Paid', '部分付款':'Partially paid', '待付款':'Payment due'
   };
   const reverse = Object.fromEntries(Object.entries(translations).map(([zh, en]) => [en, zh]));
   return lang === 'zh' ? (reverse[text] || text) : (translations[text] || text);
@@ -4523,18 +4525,110 @@ function fieldSalesMeetingArtifacts(personId, data) {
   return (data.attachments || []).filter(item => item.userId === personId && item.artifactKind === 'meeting');
 }
 
+function fieldSalesAttachmentAccountId(item, data) {
+  if (item.accountId) return item.accountId;
+  const visit = (data.visits || []).find(row => row.id === item.objectId);
+  if (visit?.accountId) return visit.accountId;
+  const plan = (data.visitPlans || []).find(row => row.id === item.objectId);
+  if (plan?.accountId) return plan.accountId;
+  return (data.accounts || []).some(row => row.id === item.objectId) ? item.objectId : '';
+}
+
+function fieldSalesDayCustomers(data, dayPlans, dayVisits) {
+  const accountById = new Map((data.accounts || []).map(item => [item.id, item]));
+  const result = [];
+  const seen = new Set();
+  [...dayPlans, ...dayVisits].forEach(item => {
+    const accountId = item.accountId || '';
+    if (!accountId || seen.has(accountId)) return;
+    seen.add(accountId);
+    result.push(accountById.get(accountId) || {
+      id:accountId,
+      businessName:item.businessName || (lang === 'zh' ? '历史客户' : 'Historical customer'),
+      address:item.address || item.destination?.address || '',
+      stage:item.status || ''
+    });
+  });
+  return result;
+}
+
+function fieldSalesMoney(value) {
+  return new Intl.NumberFormat(lang === 'zh' ? 'zh-CN' : 'en-US', { style:'currency', currency:'USD' }).format(Number(value || 0));
+}
+
+function fieldSalesCustomerPhotos(visits, attachments) {
+  const photos = [];
+  const seen = new Set();
+  const add = (url, label, at) => {
+    if (!url || seen.has(url)) return;
+    seen.add(url);
+    photos.push({ url, label, at });
+  };
+  visits.forEach(visit => {
+    add(visit.checkIn?.photoUrl, lang === 'zh' ? '到店门头照片' : 'Storefront at check-in', visit.startedAt || visit.createdAt);
+    (visit.evidencePhotoUrls || []).forEach(url => add(url, lang === 'zh' ? '现场照片' : 'Visit photo', visit.completedAt || visit.updatedAt));
+    add(visit.ownerPhotoUrl, lang === 'zh' ? '客户现场合影' : 'Customer visit photo', visit.completedAt || visit.updatedAt);
+  });
+  attachments.filter(item => String(item.contentType || '').startsWith('image/')).forEach(item => add(item.url, item.fileName || (lang === 'zh' ? '现场照片' : 'Visit photo'), item.createdAt));
+  return photos;
+}
+
+function fieldSalesCustomerProfileHtml(account, personId, selectedDate, data) {
+  const accountId = account.id;
+  const visits = (data.visits || []).filter(item => item.accountId === accountId).sort((a, b) => String(b.startedAt || b.createdAt || '').localeCompare(String(a.startedAt || a.createdAt || '')));
+  const plans = (data.visitPlans || []).filter(item => item.accountId === accountId).sort((a, b) => String(b.plannedAt || '').localeCompare(String(a.plannedAt || '')));
+  const attachments = (data.attachments || []).filter(item => fieldSalesAttachmentAccountId(item, data) === accountId);
+  const meetings = attachments.filter(item => item.artifactKind === 'meeting');
+  const recordings = attachments.filter(item => String(item.contentType || '').startsWith('audio/'));
+  const photos = fieldSalesCustomerPhotos(visits, attachments);
+  const orders = (data.fieldOrders || []).filter(item => item.accountId === accountId).sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')));
+  const trials = (data.trialRolls || []).filter(item => item.accountId === accountId);
+  const consignments = (data.consignments || []).filter(item => item.accountId === accountId);
+  const followUps = (data.followUps || []).filter(item => item.accountId === accountId);
+  const dayVisits = visits.filter(item => fieldSalesMatchesSelectedDate(item, ['startedAt', 'arrivedAt', 'createdAt'], selectedDate));
+  const dayPlans = plans.filter(item => fieldSalesMatchesSelectedDate(item, ['plannedAt', 'createdAt'], selectedDate));
+  const dayObjectIds = new Set([...dayVisits.map(item => item.id), ...dayPlans.map(item => item.id)]);
+  const dayAttachments = attachments.filter(item => fieldSalesMatchesSelectedDate(item, ['createdAt'], selectedDate) || dayObjectIds.has(item.objectId));
+  const dayOrders = orders.filter(item => fieldSalesMatchesSelectedDate(item, ['createdAt'], selectedDate));
+  const photoHtml = photos.length ? `<div class="field-sales-customer-photos">${photos.map(photo => `<a href="${escapeHtml(photo.url)}" target="_blank" rel="noopener"><img src="${escapeHtml(photo.url)}" alt="${escapeHtml(photo.label)}"><span><b>${escapeHtml(photo.label)}</b><small>${fieldSalesDateTime(photo.at)}</small></span></a>`).join('')}</div>` : `<p class="field-sales-lane-empty">${lang === 'zh' ? '该客户还没有同步现场照片。' : 'No visit photos have synced for this customer.'}</p>`;
+  const orderHtml = orders.length ? `<div class="field-sales-customer-orders">${orders.map(order => `<article><header><span><b>${escapeHtml(order.orderNumber || '')}</b><small>${fieldSalesDateTime(order.createdAt)}</small></span>${fieldSalesStatusPill(order.status || '—', 'warn')}</header><div>${(order.items || []).map(item => `<p>${escapeHtml(item.sku || '')} · ${escapeHtml(item.name || '')} × ${Number(item.quantity || 0)} <b>${fieldSalesMoney(item.lineTotal)}</b></p>`).join('')}</div><footer><strong>${lang === 'zh' ? '订单合计：' : 'Order total: '}${fieldSalesMoney(order.total)}</strong><small>${lang === 'zh' ? '未付：' : 'Due: '}${fieldSalesMoney(order.amountDue)}</small></footer></article>`).join('')}</div>` : `<p class="field-sales-lane-empty">${lang === 'zh' ? '该客户还没有现场订单。' : 'No field orders for this customer yet.'}</p>`;
+  const meetingHtml = meetings.length ? meetings.map(item => `<article class="field-sales-customer-conversation"><header><b>${escapeHtml(item.customerName || item.fileName || (lang === 'zh' ? '沟通记录' : 'Conversation'))}</b><small>${fieldSalesDateTime(item.createdAt)}</small></header><p><b>${lang === 'zh' ? '沟通原文：' : 'Transcript: '}</b>${escapeHtml(item.transcript || '—')}</p><p class="field-sales-manager-advice"><b>${lang === 'zh' ? 'AI 总结：' : 'AI summary: '}</b>${escapeHtml(item.analysis || '—')}</p></article>`).join('') : `<p class="field-sales-lane-empty">${lang === 'zh' ? '该客户还没有沟通文字或 AI 总结。' : 'No transcript or AI summary for this customer yet.'}</p>`;
+  const recordingHtml = recordings.length ? recordings.map(item => `<div class="field-sales-customer-recording"><span><b>${escapeHtml(item.fileName || (lang === 'zh' ? '拜访录音' : 'Visit recording'))}</b><small>${fieldSalesDateTime(item.createdAt)}</small></span>${item.url ? `<audio controls preload="none" src="${escapeHtml(item.url)}"></audio>` : ''}</div>`).join('') : `<p class="field-sales-lane-empty">${lang === 'zh' ? '该客户还没有录音。' : 'No recordings for this customer yet.'}</p>`;
+  return `<div class="field-sales-customer-profile">
+    <section class="field-sales-customer-hero"><div><small>${lang === 'zh' ? '客户完整档案' : 'Complete customer profile'}</small><h2>${escapeHtml(account.businessName || '')}</h2><p>${escapeHtml(account.address || '—')}</p></div><div>${fieldSalesStatusPill(account.stage || '待拜访', 'info')}<button class="btn" onclick="openFieldSalesAccount('${accountId}')">${lang === 'zh' ? '编辑客户资料' : 'Edit customer'}</button></div></section>
+    <div class="field-sales-customer-facts"><span><small>${lang === 'zh' ? '联系人' : 'Contact'}</small><b>${escapeHtml(account.contactName || '—')}</b></span><span><small>${lang === 'zh' ? '电话' : 'Phone'}</small><b>${escapeHtml(account.phone || '—')}</b></span><span><small>${lang === 'zh' ? '负责业务员' : 'Salesperson'}</small><b>${escapeHtml(account.assignedUserName || '—')}</b></span><span><small>${lang === 'zh' ? '查看日期' : 'Selected date'}</small><b>${escapeHtml(selectedDate)}</b></span></div>
+    <section><h3>${lang === 'zh' ? `${selectedDate} 当天拜访` : `Visit on ${selectedDate}`}</h3>${dayPlans.length || dayVisits.length ? `${fieldSalesEmployeeMiniRows(dayPlans, '', plan => `<div class="field-sales-lane-row"><span><b>${lang === 'zh' ? '拜访计划' : 'Visit plan'}</b><small>${fieldSalesDateTime(plan.plannedAt)}</small></span>${fieldSalesStatusPill(plan.status || '待出发', 'warn')}</div>`)}${dayVisits.map(visit => `<article class="field-sales-customer-visit"><header><b>${fieldSalesDateTime(visit.startedAt || visit.createdAt)}</b>${fieldSalesStatusPill(visit.status || '—', visit.status === '已完成' ? 'good' : 'warn')}</header>${fieldSalesVisitSummaryBlock(visit)}</article>`).join('')}` : `<p class="field-sales-lane-empty">${lang === 'zh' ? '当天只有客户关联记录，尚无实际拜访内容。' : 'The customer is linked to the day, but no visit activity was recorded.'}</p>`}</section>
+    <section><h3>${lang === 'zh' ? `门店与现场照片（${photos.length}）` : `Storefront and visit photos (${photos.length})`}</h3>${photoHtml}</section>
+    <section><h3>${lang === 'zh' ? `订货、样品与放货（${orders.length + trials.length + consignments.length}）` : `Orders, samples, and consignments (${orders.length + trials.length + consignments.length})`}</h3>${orderHtml}${trials.length ? `<p class="field-sales-customer-note">${lang === 'zh' ? `试用膜记录 ${trials.length} 条` : `${trials.length} trial-roll records`}</p>` : ''}${consignments.length ? `<p class="field-sales-customer-note">${lang === 'zh' ? `放货记录 ${consignments.length} 条` : `${consignments.length} consignment records`}</p>` : ''}</section>
+    <section><h3>${lang === 'zh' ? `沟通记录与 AI 总结（${meetings.length}）` : `Conversations and AI summaries (${meetings.length})`}</h3>${meetingHtml}</section>
+    <section><h3>${lang === 'zh' ? `录音回放（${recordings.length}）` : `Recordings (${recordings.length})`}</h3>${recordingHtml}</section>
+    <section><h3>${lang === 'zh' ? `历史拜访（${visits.length}）` : `Visit history (${visits.length})`}</h3>${visits.length ? visits.map(visit => `<details class="field-sales-customer-history" ${dayVisits.includes(visit) ? 'open' : ''}><summary><span><b>${fieldSalesDateTime(visit.startedAt || visit.createdAt)}</b><small>${escapeHtml(visit.userName || '')}</small></span>${fieldSalesStatusPill(visit.status || '—', visit.status === '已完成' ? 'good' : 'warn')}</summary>${fieldSalesVisitSummaryBlock(visit)}</details>`).join('') : `<p class="field-sales-lane-empty">${lang === 'zh' ? '还没有历史拜访。' : 'No historical visits yet.'}</p>`}</section>
+    ${followUps.length ? `<section><h3>${lang === 'zh' ? `后续跟进（${followUps.length}）` : `Follow-ups (${followUps.length})`}</h3>${fieldSalesEmployeeMiniRows(followUps, '', item => `<div class="field-sales-lane-row"><span><b>${escapeHtml(item.reason || item.type || '')}</b><small>${fieldSalesDateTime(item.dueAt)}</small></span>${fieldSalesStatusPill(item.status || '—', 'info')}</div>`)}</section>` : ''}
+    <p class="field-sales-customer-sync-note">${lang === 'zh' ? `当天关联：${dayAttachments.length} 个附件、${dayOrders.length} 张订单。历史资料均保留在本客户档案中。` : `Linked that day: ${dayAttachments.length} ${dayAttachments.length === 1 ? 'attachment' : 'attachments'} and ${dayOrders.length} ${dayOrders.length === 1 ? 'order' : 'orders'}. Historical records remain in this customer profile.`}</p>
+  </div>`;
+}
+
+function openFieldSalesCustomerDetail(accountId, personId = '', selectedDate = '') {
+  const data = state.fieldSales || {};
+  const account = (data.accounts || []).find(item => item.id === accountId);
+  if (!account) return alert(lang === 'zh' ? '找不到这个客户档案。' : 'Customer profile not found.');
+  const date = /^\d{4}-\d{2}-\d{2}$/.test(selectedDate) ? selectedDate : fieldSalesEmployeeDate(personId || account.assignedUserId || '');
+  openModal(lang === 'zh' ? '客户拜访完整档案' : 'Complete customer visit profile', fieldSalesCustomerProfileHtml(account, personId, date, data), closeModal);
+  const save = document.getElementById('modalSave');
+  if (save) { save.textContent = lang === 'zh' ? '关闭' : 'Close'; save.onclick = closeModal; }
+  const cancel = document.querySelector('.dialog footer .btn[onclick="closeModal()"]');
+  if (cancel) cancel.hidden = true;
+}
+
 function fieldSalesEmployeeLane(person, data) {
   const personId = person.id;
   const selectedDate = fieldSalesEmployeeDate(personId);
-  const accounts = (data.accounts || []).filter(item => item.assignedUserId === personId);
   const plans = (data.visitPlans || []).filter(item => (item.assignedUserId || item.userId) === personId);
   const dayPlans = plans.filter(item => fieldSalesMatchesSelectedDate(item, ['plannedAt', 'createdAt'], selectedDate));
   const visits = (data.visits || []).filter(item => item.userId === personId && fieldSalesMatchesSelectedDate(item, ['startedAt', 'arrivedAt', 'createdAt'], selectedDate));
   const reports = (data.dailyReports || []).filter(item => item.userId === personId && (item.date === selectedDate || fieldSalesMatchesSelectedDate(item, ['createdAt'], selectedDate)));
   const recordings = (data.attachments || []).filter(item => item.userId === personId && String(item.contentType || '').startsWith('audio/') && fieldSalesMatchesSelectedDate(item, ['createdAt'], selectedDate));
-  const meetings = fieldSalesMeetingArtifacts(personId, data).filter(item => fieldSalesMatchesSelectedDate(item, ['createdAt'], selectedDate));
-  const dayAccountIds = new Set([...dayPlans.map(item => item.accountId), ...visits.map(item => item.accountId)].filter(Boolean));
-  const dayAccounts = accounts.filter(item => dayAccountIds.has(item.id));
+  const dayAccounts = fieldSalesDayCustomers(data, dayPlans, visits);
   const selected = fieldSalesUserFilter === personId;
   const expanded = fieldSalesExpandedEmployeeId === personId;
   return `<article class="field-sales-employee-lane ${selected ? 'selected' : ''} ${expanded ? 'expanded' : ''}">
@@ -4554,12 +4648,9 @@ function fieldSalesEmployeeLane(person, data) {
     </button>
     ${expanded ? `<div class="field-sales-employee-detail">
       <section><h4>${lang === 'zh' ? `${selectedDate} 行动轨迹` : `Route for ${selectedDate}`}</h4>${fieldSalesEmployeeRouteMap(personId, data, selectedDate)}</section>
-      <section><h4>${lang === 'zh' ? '当天客户' : 'Customers for the day'}</h4>${fieldSalesEmployeeMiniRows(dayAccounts, lang === 'zh' ? '当天没有安排或拜访客户' : 'No customers scheduled or visited that day', account => `<button class="field-sales-lane-row action" onclick="openFieldSalesAccount('${account.id}')"><span><b>${escapeHtml(account.businessName || '')}</b><small>${escapeHtml(account.address || '')}</small></span>${fieldSalesStatusPill(account.stage || '待拜访', 'info')}</button>`)}</section>
+      <section><h4>${lang === 'zh' ? '当天客户（点击查看全部细节）' : 'Customers for the day (open full details)'}</h4>${fieldSalesEmployeeMiniRows(dayAccounts, lang === 'zh' ? '当天没有安排或拜访客户' : 'No customers scheduled or visited that day', account => `<button class="field-sales-lane-row action customer-entry" onclick="openFieldSalesCustomerDetail('${account.id}', '${personId}', '${selectedDate}')"><span><b>${escapeHtml(account.businessName || '')}</b><small>${escapeHtml(account.address || '')}</small></span><span class="field-sales-customer-open">${lang === 'zh' ? '照片 · 订货 · 沟通 · 历史 ›' : 'Photos · Orders · Conversations · History ›'}</span></button>`)}</section>
       <section><h4>${lang === 'zh' ? '当天拜访计划' : 'Visit plans for the day'}</h4>${fieldSalesEmployeeMiniRows(dayPlans, lang === 'zh' ? '当天没有拜访计划' : 'No visit plans that day', plan => `<div class="field-sales-lane-row"><span><b>${escapeHtml(plan.businessName || '')}</b><small>${fieldSalesDateTime(plan.plannedAt)}</small></span>${fieldSalesStatusPill(plan.status || '待出发', 'warn')}</div>`)}</section>
-      <details><summary>${lang === 'zh' ? `当天拜访记录与总结（${visits.length}）` : `Visit history and summaries for the day (${visits.length})`}</summary>${fieldSalesEmployeeMiniRows(visits, lang === 'zh' ? '当天没有拜访记录' : 'No visit history that day', visit => `<div class="field-sales-lane-row stacked"><span><b>${escapeHtml(visit.businessName || '')}</b><small>${fieldSalesDateTime(visit.startedAt)} · ${escapeHtml(fieldSalesLocalizedStatus(visit.status || ''))}</small></span>${fieldSalesVisitSummaryBlock(visit)}</div>`)}</details>
-      <details><summary>${lang === 'zh' ? `当天沟通记录与 AI 总结（${meetings.length}）` : `Conversation and AI summaries for the day (${meetings.length})`}</summary>${fieldSalesEmployeeMiniRows(meetings, lang === 'zh' ? '当天没有同步沟通记录' : 'No conversations synced that day', item => `<div class="field-sales-lane-row stacked"><span><b>${escapeHtml(item.customerName || item.fileName || '')}</b><small>${fieldSalesDateTime(item.createdAt)}</small></span><div class="field-sales-meeting-text"><b>${lang === 'zh' ? '沟通原文' : 'Transcript'}</b><p>${escapeHtml(item.transcript || '—')}</p><b>${lang === 'zh' ? 'AI 总结' : 'AI summary'}</b><p>${escapeHtml(item.analysis || '—')}</p></div></div>`)}</details>
       <details><summary>${lang === 'zh' ? `当天工作日报（${reports.length}）` : `Daily summaries for the day (${reports.length})`}</summary>${fieldSalesEmployeeMiniRows(reports, lang === 'zh' ? '当天没有工作日报' : 'No daily summaries that day', report => `<div class="field-sales-lane-row stacked"><span><b>${escapeHtml(report.date || '')}</b><small>${fieldSalesDateTime(report.createdAt)}</small></span><p>${escapeHtml(report.summary || '—')}</p></div>`)}</details>
-      <details><summary>${lang === 'zh' ? `当天录音回放（${recordings.length}）` : `Recordings for the day (${recordings.length})`}</summary>${fieldSalesEmployeeMiniRows(recordings, lang === 'zh' ? '当天没有录音' : 'No recordings that day', recording => `<div class="field-sales-lane-row stacked"><span><b>${escapeHtml(recording.fileName || (lang === 'zh' ? '拜访录音' : 'Visit recording'))}</b><small>${fieldSalesDateTime(recording.createdAt)}</small></span>${recording.url ? `<audio controls preload="none" src="${escapeHtml(recording.url)}"></audio>` : ''}</div>`)}</details>
       <footer><button class="btn" onclick="setFieldSalesUserFilter('${personId}')">${lang === 'zh' ? '查看该业务员全部记录' : 'View all salesperson records'}</button><button class="btn primary" onclick="openFieldSalesPlan('${personId}')">${lang === 'zh' ? '安排拜访' : 'Schedule visits'}</button></footer>
     </div>` : ''}
   </article>`;
@@ -4587,7 +4678,6 @@ function fieldSalesManagementView() {
   const checkInAttempts = fieldSalesFiltered(data.checkInAttempts || [], 'userId');
   const plans = fieldSalesFiltered(data.visitPlans || [], 'userId');
   const trips = fieldSalesFiltered(data.trips || [], 'userId');
-  const attachments = fieldSalesFiltered(data.attachments || [], 'userId');
   const clockRecords = fieldSalesFiltered(state.clockRecords || [], 'userId');
   const day = today();
   const overdue = accounts.filter(item => item.nextVisitAt && new Date(item.nextVisitAt).getTime() < Date.now() && !['成交','暂停','无效'].includes(item.stage)).length;
@@ -4610,7 +4700,6 @@ function fieldSalesManagementView() {
     ${panel(lang === 'zh' ? '每日拜访安排' : 'Daily visit schedule', '', fieldSalesPlanTable(plans))}
     ${panel(lang === 'zh' ? '出发、到店与行程状态' : 'Departure, arrival, and trip status', '', fieldSalesTripTable(trips))}
     ${panel(lang === 'zh' ? '定位拜访审核' : 'Verified visit review', '', fieldSalesVisitCards(visits))}
-    ${panel(lang === 'zh' ? '现场照片、录音与业务凭证' : 'Photos, audio, and visit evidence', '', fieldSalesAttachmentCards(attachments))}
     ${panel(lang === 'zh' ? '历史位置差异记录' : 'Historical location differences', '', fieldSalesLocationIssueCards(checkInAttempts))}
     ${panel(lang === 'zh' ? '业务员工作日报与 AI 分析' : 'Daily reports and AI analysis', '', fieldSalesReportCards(reports))}
     ${panel(lang === 'zh' ? '试用膜与批发转化跟进' : 'Trial rolls and wholesale conversion', '', fieldSalesTrialTable(trials))}
