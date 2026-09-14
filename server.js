@@ -10948,6 +10948,7 @@ async function api(req, res) {
     const idx = db[collection].findIndex(x => x.id === recordId);
     const canSeeCosts = user.role === 'owner';
     if (idx < 0) return send(res, 404, { error: 'Record not found' });
+    const canEditAcrossBranches = canEditCustomerRecordAcrossBranches(user, collection);
     if (!canAccessCollectionBranch(db, user, collection, db[collection][idx]?.branchId)) return send(res, 403, { error: '你没有这条记录所属分店的数据权限' });
     if (collection === 'shipments' && db[collection][idx].receivedAt) {
       return send(res, 400, { error: '已经收货入库的在途单不能直接修改，避免库存与入库单不一致' });
