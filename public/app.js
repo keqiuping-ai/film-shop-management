@@ -7692,9 +7692,16 @@ function renderProspectWorkspace() {
   const isMetaSource = normalizeSourceKey(item.source) === 'meta';
   const canReplyMeta = isMetaSource && Boolean(prospectMetaPsid(item));
   const requiredReplyChannel = requiredProspectReplyChannel(item);
-  const defaultReplyChannel = (requiredReplyChannel === 'yelp' && canReplyYelp) || (requiredReplyChannel === 'sms' && canReplySms) || (requiredReplyChannel === 'meta' && canReplyMeta)
-    ? requiredReplyChannel
-    : savedProspectReplyChannel(canReplyYelp, canReplySms, canReplyMeta);
+  const savedReplyChannel = savedProspectReplyChannel(canReplyYelp, canReplySms, canReplyMeta);
+  const requiredReplyChannelAvailable = (requiredReplyChannel === 'yelp' && canReplyYelp)
+    || (requiredReplyChannel === 'sms' && canReplySms)
+    || (requiredReplyChannel === 'meta' && canReplyMeta);
+  // An employee may deliberately switch a Meta/Yelp lead to SMS so an
+  // attachment can be sent. Keep that explicit choice across composer
+  // re-renders (for example after choosing an image from the reply library).
+  const defaultReplyChannel = savedReplyChannel === 'sms'
+    ? 'sms'
+    : (requiredReplyChannelAvailable ? requiredReplyChannel : savedReplyChannel);
   workspace.innerHTML = `
     <header class="prospect-workspace-header">
       <div class="prospect-workspace-customer">
@@ -8336,6 +8343,8 @@ function openReplyReferenceLibrary(type = 'text', category = replyTemplateCatego
 function useReplyTemplate(id) {
   const item = (state.replyTemplates || []).find(row => row.id === id);
   if (!item) return;
+  const selectedChannel = document.getElementById('prospectReplyChannel')?.value || '';
+  if (selectedChannel) rememberProspectReplyChannel(selectedChannel);
   const draft = String(document.getElementById('prospectReplyInput')?.value || '');
   if (item.type === 'text') {
     closeModal();
@@ -8615,7 +8624,15 @@ async function sendProspectMessage() {
     preserveProspectWorkspaceRender = false;
     render();
   } catch (err) {
-    alert(err.message);
+    const metaReplyWindowExpired = channel === 'meta'
+      && /(\(#?10\)|outside (?:the )?messaging window|消息发送时间窗|24[- ]?hour)/i.test(String(err.message || ''));
+    const canRetryBySms = metaReplyWindowExpired && customerPhoneMatchKey(item.phone).length === 10;
+    if (canRetryBySms) rememberProspectReplyChannel('sms');
+    alert(metaReplyWindowExpired
+      ? (canRetryBySms
+        ? (lang === 'zh' ? 'Meta 已超过允许回复时间，平台拒绝了这条消息。系统已保留内容并切换到手机短信，请确认后点击“发送短信”。' : 'Meta rejected this message because the reply window expired. Your content was kept and the channel was switched to SMS for review.')
+        : (lang === 'zh' ? 'Meta 已超过允许回复时间，平台拒绝了这条消息；该客户没有可用手机号，暂时无法改用短信。' : 'Meta rejected this message because the reply window expired, and this customer has no usable phone number for SMS.'))
+      : err.message);
     prospectPendingLocalMessages.delete(workspaceKey);
     prospectPendingAttachment = localAttachment;
     renderProspectWorkspace();
