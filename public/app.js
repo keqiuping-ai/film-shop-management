@@ -7608,6 +7608,16 @@ function rememberProspectReplyChannel(channel) {
   localStorage.setItem(`filmShopCloud.replyChannel.${activeProspectWorkspaceId}`, channel);
 }
 
+function chooseProspectReplyChannel(savedReplyChannel, requiredReplyChannel, canReplyYelp, canReplySms, canReplyMeta) {
+  const requiredReplyChannelAvailable = (requiredReplyChannel === 'yelp' && canReplyYelp)
+    || (requiredReplyChannel === 'sms' && canReplySms)
+    || (requiredReplyChannel === 'meta' && canReplyMeta);
+  // SMS may be an employee's deliberate choice for sending an attachment.
+  // Keep that choice across composer re-renders, including after library picks.
+  if (savedReplyChannel === 'sms' && canReplySms) return 'sms';
+  return requiredReplyChannelAvailable ? requiredReplyChannel : savedReplyChannel;
+}
+
 function requiredProspectReplyChannel(item) {
   const inbound = (Array.isArray(item?.conversationMessages) ? item.conversationMessages : [])
     .map((message, index) => ({ message, index, at: new Date(message.timestamp || message.time || message.createdAt || 0).getTime() }))
@@ -7693,15 +7703,7 @@ function renderProspectWorkspace() {
   const canReplyMeta = isMetaSource && Boolean(prospectMetaPsid(item));
   const requiredReplyChannel = requiredProspectReplyChannel(item);
   const savedReplyChannel = savedProspectReplyChannel(canReplyYelp, canReplySms, canReplyMeta);
-  const requiredReplyChannelAvailable = (requiredReplyChannel === 'yelp' && canReplyYelp)
-    || (requiredReplyChannel === 'sms' && canReplySms)
-    || (requiredReplyChannel === 'meta' && canReplyMeta);
-  // An employee may deliberately switch a Meta/Yelp lead to SMS so an
-  // attachment can be sent. Keep that explicit choice across composer
-  // re-renders (for example after choosing an image from the reply library).
-  const defaultReplyChannel = savedReplyChannel === 'sms'
-    ? 'sms'
-    : (requiredReplyChannelAvailable ? requiredReplyChannel : savedReplyChannel);
+  const defaultReplyChannel = chooseProspectReplyChannel(savedReplyChannel, requiredReplyChannel, canReplyYelp, canReplySms, canReplyMeta);
   workspace.innerHTML = `
     <header class="prospect-workspace-header">
       <div class="prospect-workspace-customer">
@@ -7793,11 +7795,12 @@ function renderProspectWorkspace() {
             <button id="customerAiDraftButton" class="reply-reference-button" type="button" onclick="generateCustomerAiReplyDraft()" ${hasPerm('prospectsEdit') ? '' : 'disabled'}>AI ${lang === 'zh' ? '生成回复' : 'Draft reply'}</button>
             <button class="reply-reference-button ai-coach-button" type="button" onclick="openCustomerAiCoach()" ${hasPerm('prospectsEdit') ? '' : 'disabled'}>🎓 ${lang === 'zh' ? '教AI' : 'Teach AI'}</button>
             <button id="customerSmsRefreshButton" class="reply-reference-button" type="button" onclick="reconcileCustomerSmsNow()">${lang === 'zh' ? '收短信' : 'Check SMS'}</button>
-            <span id="prospectAttachmentPreview">${prospectPendingAttachment ? `${escapeHtml(prospectPendingAttachment.name)} <button type="button" onclick="clearProspectAttachment()">×</button>` : ''}</span>
+            <span id="prospectAttachmentUploadStatus" class="prospect-attachment-upload-status" role="status" aria-live="polite"></span>
             <input class="hidden" id="prospectImageInput" type="file" accept="image/*" onchange="uploadProspectAttachment(this.files[0]); this.value=''">
             <input class="hidden" id="prospectVideoInput" type="file" accept="video/*" onchange="uploadProspectAttachment(this.files[0]); this.value=''">
             <input class="hidden" id="prospectFileInput" type="file" onchange="uploadProspectAttachment(this.files[0]); this.value=''">
           </div>
+          ${prospectPendingAttachment ? prospectPendingAttachmentPreviewHtml(prospectPendingAttachment, defaultReplyChannel) : ''}
           <div class="prospect-compose-row">
             <textarea id="prospectReplyInput" oninput="prospectReplyRevision += 1" onpaste="handleProspectReplyPaste(event)" placeholder="${lang === 'zh' ? '输入或粘贴文字、截图、图片…' : 'Write or paste text, screenshots, or images…'}"></textarea>
             <button id="prospectSendSmsButton" class="btn primary" onclick="sendProspectMessage()" ${hasPerm('prospectsEdit') ? '' : 'disabled'}>${defaultReplyChannel === 'yelp' ? (lang === 'zh' ? '通过 Yelp 发送' : 'Send via Yelp') : defaultReplyChannel === 'meta' ? (lang === 'zh' ? '通过 Meta 发送' : 'Send via Meta') : (lang === 'zh' ? '发送短信' : 'Send SMS')}</button>
@@ -7938,6 +7941,23 @@ async function optimizeProspectImage(file) {
   }
 }
 
+function prospectPendingAttachmentPreviewHtml(attachment, channel) {
+  const type = String(attachment?.type || '');
+  const isImage = type.startsWith('image/');
+  const isVideo = type.startsWith('video/');
+  const kind = isImage ? (lang === 'zh' ? '图片' : 'Image') : isVideo ? (lang === 'zh' ? '视频' : 'Video') : (lang === 'zh' ? '文件' : 'File');
+  const sendLabel = channel === 'yelp'
+    ? (lang === 'zh' ? '通过 Yelp 发送' : 'Send via Yelp')
+    : channel === 'meta'
+      ? (lang === 'zh' ? '通过 Meta 发送' : 'Send via Meta')
+      : (lang === 'zh' ? '发送短信' : 'Send SMS');
+  return `<div id="prospectAttachmentPreview" class="prospect-attachment-ready" role="status" aria-live="polite">
+    ${isImage && attachment.url ? `<img src="${escapeHtml(attachment.url)}" alt="">` : `<span class="prospect-attachment-ready-icon">${isVideo ? '▶' : '📎'}</span>`}
+    <span class="prospect-attachment-ready-copy"><strong>${lang === 'zh' ? `${kind}已选择，尚未发送` : `${kind} selected, not sent yet`}</strong><small>${escapeHtml(attachment.name || kind)} · ${lang === 'zh' ? `确认无误后点击“${sendLabel}”` : `Review it, then click “${sendLabel}”`}</small></span>
+    <button type="button" onclick="clearProspectAttachment()" aria-label="${lang === 'zh' ? '移除待发送附件' : 'Remove pending attachment'}">×</button>
+  </div>`;
+}
+
 async function uploadProspectAttachment(file) {
   if (!file) return;
   const replyDraft = String(document.getElementById('prospectReplyInput')?.value || '');
@@ -7947,7 +7967,7 @@ async function uploadProspectAttachment(file) {
   const isVideo = String(file.type || '').startsWith('video/');
   const maxBytes = isVideo ? MAX_CLOUD_VIDEO_BYTES : MAX_MESSAGE_ATTACHMENT_BYTES;
   if (file.size > maxBytes) return alert(isVideo ? (lang === 'zh' ? '视频不能超过200MB，且最长5分钟。' : 'Videos must be 200MB or smaller and no longer than 5 minutes.') : (lang === 'zh' ? '附件不能超过20MB。' : 'Attachments must be 20MB or smaller.'));
-  const preview = document.getElementById('prospectAttachmentPreview');
+  const preview = document.getElementById('prospectAttachmentUploadStatus');
   if (preview) preview.textContent = isVideo ? (lang === 'zh' ? '正在上传高清原视频…' : 'Uploading original-quality video…') : (lang === 'zh' ? '正在上传高清图片…' : 'Uploading high-quality image…');
   try {
     const uploaded = await uploadCloudMedia('/api/customer-media/upload', file);
