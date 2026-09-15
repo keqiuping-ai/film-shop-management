@@ -8638,6 +8638,7 @@ async function sendProspectMessage() {
     state = result.data;
     lastDataRevision = String(result.revision || lastDataRevision || '');
     broadcastDataChange();
+    if (result.fallbackMessage) alert(result.fallbackMessage);
     if (editedAiDraftExperience) {
       api('/api/customer-ai/experiences', { method:'POST', body:JSON.stringify(editedAiDraftExperience) }).catch(() => {});
     }
