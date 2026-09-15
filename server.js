@@ -4431,7 +4431,8 @@ function metaMessengerConfig(db = null) {
     verifyToken: savedMetaVerifyToken(db),
     appSecret: savedMetaAppSecret(db),
     pageAccessToken: savedMetaPageAccessToken(db),
-    graphVersion: String(process.env.META_GRAPH_API_VERSION || db?.settings?.metaGraphApiVersion || 'v23.0').trim()
+    graphVersion: String(process.env.META_GRAPH_API_VERSION || db?.settings?.metaGraphApiVersion || 'v23.0').trim(),
+    graphBaseUrl: String(process.env.META_GRAPH_API_BASE_URL || 'https://graph.facebook.com').trim().replace(/\/$/, '')
   };
 }
 
@@ -4547,6 +4548,18 @@ function metaPsidFromItem(item) {
   const external = String(item?.externalId || '').trim();
   const match = external.match(/^meta-(?:messenger|instagram|psid):(.+)$/i);
   return match ? match[1].trim() : '';
+}
+
+function metaBusinessIdFromItem(item) {
+  const direct = String(item?.externalBusinessId || item?.metaPageId || item?.pageId || '').trim();
+  if (direct) return direct;
+  const messages = Array.isArray(item?.conversationMessages) ? [...item.conversationMessages].reverse() : [];
+  for (const message of messages) {
+    if (!String(message?.provider || '').startsWith('meta-')) continue;
+    const candidate = String(message.direction === 'outbound' ? message.from : message.to || '').trim();
+    if (candidate) return candidate;
+  }
+  return String(item?.rawPayload?.firstMessagingEvent?.recipient?.id || '').trim();
 }
 
 function findMetaConversation(db, pageId, psid, platform = 'facebook') {
@@ -4723,7 +4736,9 @@ async function sendMetaMessengerReply(db, item, text) {
   if (!config.pageAccessToken) throw new Error('Meta Page Access Token 尚未配置，请先在设置里填写');
   const psid = metaPsidFromItem(item);
   if (!psid) throw new Error('这条客户记录没有 Meta PSID，不能通过 Meta 私信回复');
-  const endpoint = `https://graph.facebook.com/${encodeURIComponent(config.graphVersion)}/me/messages?access_token=${encodeURIComponent(config.pageAccessToken)}`;
+  const businessId = metaBusinessIdFromItem(item);
+  if (!businessId) throw new Error('这条客户记录缺少 Meta Page / Instagram Business ID，请等待客户重新发一条消息后再回复');
+  const endpoint = `${config.graphBaseUrl}/${encodeURIComponent(config.graphVersion)}/${encodeURIComponent(businessId)}/messages?access_token=${encodeURIComponent(config.pageAccessToken)}`;
   const response = await fetch(endpoint, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -4734,7 +4749,11 @@ async function sendMetaMessengerReply(db, item, text) {
     })
   });
   const body = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(body?.error?.message || `Meta 私信发送失败 (${response.status})`);
+  if (!response.ok) {
+    const code = String(body?.error?.code || '').trim();
+    console.warn('Meta outbound message rejected', { status: response.status, code, type: String(body?.error?.type || '') });
+    throw new Error(`${body?.error?.message || `Meta 私信发送失败 (${response.status})`}${code ? ` [错误码 ${code}]` : ''}`);
+  }
   return {
     recipientId: String(body.recipient_id || psid),
     messageId: String(body.message_id || ''),
@@ -4747,13 +4766,19 @@ async function sendMetaMessengerImage(db, item, imageUrl) {
   if (!config.pageAccessToken) throw new Error('Meta Page Access Token 尚未配置，请先在设置里填写');
   const psid = metaPsidFromItem(item);
   if (!psid) throw new Error('这条客户记录没有 Meta PSID，不能通过 Meta 私信回复');
-  const endpoint = `https://graph.facebook.com/${encodeURIComponent(config.graphVersion)}/me/messages?access_token=${encodeURIComponent(config.pageAccessToken)}`;
+  const businessId = metaBusinessIdFromItem(item);
+  if (!businessId) throw new Error('这条客户记录缺少 Meta Page / Instagram Business ID，请等待客户重新发一条消息后再回复');
+  const endpoint = `${config.graphBaseUrl}/${encodeURIComponent(config.graphVersion)}/${encodeURIComponent(businessId)}/messages?access_token=${encodeURIComponent(config.pageAccessToken)}`;
   const response = await fetch(endpoint, {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ recipient: { id: psid }, messaging_type: 'RESPONSE', message: { attachment: { type: 'image', payload: { url: imageUrl, is_reusable: false } } } })
   });
   const body = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(body?.error?.message || `Meta 图片发送失败 (${response.status})`);
+  if (!response.ok) {
+    const code = String(body?.error?.code || '').trim();
+    console.warn('Meta outbound image rejected', { status: response.status, code, type: String(body?.error?.type || '') });
+    throw new Error(`${body?.error?.message || `Meta 图片发送失败 (${response.status})`}${code ? ` [错误码 ${code}]` : ''}`);
+  }
   return { messageId: String(body.message_id || ''), status: 'sent' };
 }
 
