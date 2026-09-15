@@ -5500,21 +5500,42 @@ function startTwilioReconciliationWorker() {
 async function sendTwilioSms({ to, body, mediaUrl, statusCallback }) {
   const config = twilioConfig();
   if (!twilioConfigured()) throw new Error('Twilio 尚未配置，请先设置 Railway 环境变量');
-  const form = new URLSearchParams({ To: to, Body: body });
+  // MMS is more reliable when Twilio receives the exact MMS-capable sender.
+  // Plain SMS keeps using the Messaging Service for its existing routing and
+  // compliance configuration.
+  const sender = mediaUrl && config.fromNumber
+    ? { From: config.fromNumber }
+    : config.messagingServiceSid
+      ? { MessagingServiceSid: config.messagingServiceSid }
+      : { From: config.fromNumber };
+  const form = new URLSearchParams({ To: to, Body: body, ...sender });
   if (mediaUrl) form.append('MediaUrl', mediaUrl);
-  if (config.messagingServiceSid) form.set('MessagingServiceSid', config.messagingServiceSid);
-  else form.set('From', config.fromNumber);
   if (statusCallback) form.set('StatusCallback', statusCallback);
-  const response = await fetch(`${config.apiBaseUrl}/2010-04-01/Accounts/${encodeURIComponent(config.accountSid)}/Messages.json`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Basic ${Buffer.from(`${config.accountSid}:${config.authToken}`).toString('base64')}`,
-      'Content-Type': 'application/x-www-form-urlencoded'
-    },
-    body: form.toString()
-  });
+  let response;
+  try {
+    response = await fetch(`${config.apiBaseUrl}/2010-04-01/Accounts/${encodeURIComponent(config.accountSid)}/Messages.json`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Basic ${Buffer.from(`${config.accountSid}:${config.authToken}`).toString('base64')}`,
+        'Content-Type': 'application/x-www-form-urlencoded'
+      },
+      body: form.toString()
+    });
+  } catch (cause) {
+    const error = new Error('Twilio 网络连接失败，请稍后重试');
+    error.cause = cause;
+    error.twilioTransportError = true;
+    throw error;
+  }
   const result = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(result.message || `Twilio 发送失败 (${response.status})`);
+  if (!response.ok) {
+    const code = String(result.code || '').trim();
+    const error = new Error(`${result.message || `Twilio 发送失败 (${response.status})`}${code ? ` [错误码 ${code}]` : ''}`);
+    error.twilioCode = code;
+    error.twilioHttpStatus = response.status;
+    error.twilioMoreInfo = String(result.more_info || '').trim();
+    throw error;
+  }
   return result;
 }
 
@@ -9786,12 +9807,44 @@ async function api(req, res) {
     if (twilioMedia.linkText) text = [text, twilioMedia.linkText].filter(Boolean).join('\n');
     if (text.length > 1600) return send(res, 400, { error: '短信内容不能超过 1600 个字符' });
     const to = `+1${phoneDigits}`;
-    const sent = await sendTwilioSms({
-      to,
-      body: text,
-      mediaUrl: twilioMedia.mediaUrl,
-      statusCallback: `${requestPublicBaseUrl(req)}/api/twilio/status`
-    });
+    let sent;
+    let mmsFallback = false;
+    let mmsErrorCode = '';
+    try {
+      sent = await sendTwilioSms({
+        to,
+        body: text,
+        mediaUrl: twilioMedia.mediaUrl,
+        statusCallback: `${requestPublicBaseUrl(req)}/api/twilio/status`
+      });
+    } catch (err) {
+      console.warn('Twilio outbound message rejected', {
+        kind: twilioMedia.mediaUrl ? 'mms' : 'sms',
+        httpStatus: Number(err.twilioHttpStatus || 0),
+        code: String(err.twilioCode || ''),
+        transportError: Boolean(err.twilioTransportError)
+      });
+      if (!twilioMedia.mediaUrl || !attachment?.url || err.twilioTransportError) throw err;
+      mmsErrorCode = String(err.twilioCode || '');
+      const fallbackText = [text, `${attachmentKind === 'image' ? '图片' : '附件'}：${String(attachment.name || '查看附件')} ${String(attachment.url)}`].filter(Boolean).join('\n');
+      if (fallbackText.length > 1600) throw err;
+      try {
+        sent = await sendTwilioSms({
+          to,
+          body: fallbackText,
+          statusCallback: `${requestPublicBaseUrl(req)}/api/twilio/status`
+        });
+        text = fallbackText;
+        mmsFallback = true;
+      } catch (fallbackError) {
+        console.warn('Twilio MMS link fallback rejected', {
+          httpStatus: Number(fallbackError.twilioHttpStatus || 0),
+          code: String(fallbackError.twilioCode || ''),
+          transportError: Boolean(fallbackError.twilioTransportError)
+        });
+        throw fallbackError;
+      }
+    }
     const now = new Date().toISOString();
     appendSmsMessage(item, {
       id: `twilio-${sent.sid || id()}`,
@@ -9811,6 +9864,9 @@ async function api(req, res) {
       provider: 'twilio',
       providerSid: String(sent.sid || ''),
       status: String(sent.status || 'queued'),
+      deliveryMode: mmsFallback ? 'link-fallback' : twilioMedia.mediaUrl ? 'mms' : 'sms',
+      mmsFallback,
+      mmsErrorCode,
       from: String(sent.from || twilioConfig().fromNumber),
       to,
       aiExperienceIds: Array.isArray(item.agentReplyDraft?.experienceIds) ? item.agentReplyDraft.experienceIds : []
@@ -9831,7 +9887,9 @@ async function api(req, res) {
       collection,
       recordId: item.id,
       recordLabel: item.customer || item.phone,
-      detail: `通过 Twilio 向 ${to} 发送短信，状态 ${sent.status || 'queued'}`
+      detail: mmsFallback
+        ? `Twilio MMS 被拒绝后已自动补发图片链接，错误码 ${mmsErrorCode || '未知'}，状态 ${sent.status || 'queued'}`
+        : `通过 Twilio 向 ${to} 发送${twilioMedia.mediaUrl ? ' MMS' : '短信'}，状态 ${sent.status || 'queued'}`
     });
     writeDb(db);
     notifyDataChanged('send-customer-sms', item.id);
@@ -9839,6 +9897,8 @@ async function api(req, res) {
       ok: true,
       sid: String(sent.sid || ''),
       status: String(sent.status || 'queued'),
+      deliveryMode: mmsFallback ? 'link-fallback' : twilioMedia.mediaUrl ? 'mms' : 'sms',
+      fallbackMessage: mmsFallback ? 'Twilio 未接受这张图片的 MMS，系统已自动改为可点击图片链接发送。' : '',
       to,
       data: sanitizeDbForUser(db, user)
     });
