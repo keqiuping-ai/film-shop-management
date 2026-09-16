@@ -11,6 +11,7 @@
   "scripts": {
     "start": "node server.js",
     "audit:data": "node scripts/audit-data-integrity.js",
+    "test:catalog-search": "node scripts/test-customer-cross-catalog-inventory-search.js",
     "test:portal-safety": "node scripts/test-portal-customer-safety.js",
     "test:portal-links": "node scripts/test-portal-customer-link-reconciliation.js"
   },
