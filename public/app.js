@@ -106,6 +106,7 @@ let replyTemplateLibraryType = 'text';
 let replyTemplateCategoryFilter = 'all';
 let preserveProspectWorkspaceRender = false;
 let prospectReplyRevision = 0;
+let customerReplyAiBusy = false;
 let customerCenterSearch = '';
 let customerCenterPendingOnly = false;
 let customerCenterShowInvalid = false;
@@ -8008,19 +8009,42 @@ function insertProspectReplyText(text) {
   input.focus();
 }
 
+function setCustomerReplyAiBusy(busy, mode = '') {
+  customerReplyAiBusy = Boolean(busy);
+  const translateButton = document.getElementById('customerReplyTranslateButton');
+  const draftButton = document.getElementById('customerAiDraftButton');
+  const inlineButton = document.getElementById('customerAiDraftInlineButton');
+  if (translateButton) {
+    translateButton.disabled = customerReplyAiBusy || !hasPerm('prospectsEdit');
+    translateButton.textContent = customerReplyAiBusy && mode === 'translate'
+      ? (lang === 'zh' ? '正在翻译…' : 'Translating…')
+      : (lang === 'zh' ? '🌐 中英AI翻译' : '🌐 Chinese → English');
+  }
+  if (draftButton) {
+    draftButton.disabled = customerReplyAiBusy || !hasPerm('prospectsEdit');
+    draftButton.textContent = customerReplyAiBusy && mode === 'draft'
+      ? (lang === 'zh' ? 'AI生成中...' : 'AI drafting...')
+      : `AI ${lang === 'zh' ? '生成回复' : 'Draft reply'}`;
+  }
+  if (inlineButton) {
+    inlineButton.disabled = customerReplyAiBusy || !hasPerm('prospectsEdit');
+    inlineButton.textContent = customerReplyAiBusy && mode === 'draft'
+      ? (lang === 'zh' ? '正在生成...' : 'Generating...')
+      : (lang === 'zh' ? '生成客服建议回复' : 'Generate suggested reply');
+  }
+}
+
 async function translateCustomerReplyChineseToEnglish() {
   const input = document.getElementById('prospectReplyInput');
-  const button = document.getElementById('customerReplyTranslateButton');
   const sourceText = String(input?.value || '').trim();
   if (!sourceText) return alert(lang === 'zh' ? '请先在下面的回复框输入中文。' : 'Enter the Chinese reply first.');
-  if (button) {
-    button.disabled = true;
-    button.textContent = lang === 'zh' ? '正在翻译…' : 'Translating…';
-  }
+  if (customerReplyAiBusy) return alert(lang === 'zh' ? 'AI 正在处理上一项请求，请稍候。' : 'AI is still processing the previous request.');
+  setCustomerReplyAiBusy(true, 'translate');
   try {
     const result = await api('/api/customer-ai/translate-reply', {
       method: 'POST',
-      body: JSON.stringify({ text: sourceText })
+      body: JSON.stringify({ text: sourceText }),
+      timeoutMs: 80_000
     });
     const preview = document.getElementById('prospectManualTranslation');
     if (preview) {
@@ -8033,10 +8057,7 @@ async function translateCustomerReplyChineseToEnglish() {
   } catch (error) {
     alert(error.message);
   } finally {
-    if (button) {
-      button.disabled = false;
-      button.textContent = lang === 'zh' ? '🌐 中英AI翻译' : '🌐 Chinese → English';
-    }
+    setCustomerReplyAiBusy(false);
   }
 }
 
@@ -8050,23 +8071,16 @@ function clearCustomerReplyTranslation() {
 async function generateCustomerAiReplyDraft() {
   const { collection, item } = activeCustomerWorkspaceItem();
   if (!collection || !item) return;
-  const button = document.getElementById('customerAiDraftButton');
-  const inlineButton = document.getElementById('customerAiDraftInlineButton');
+  if (customerReplyAiBusy) return alert(lang === 'zh' ? 'AI 正在处理上一项请求，请稍候。' : 'AI is still processing the previous request.');
   const input = document.getElementById('prospectReplyInput');
   const channel = document.getElementById('prospectReplyChannel')?.value || requiredProspectReplyChannel(item) || '';
   const previousText = input?.value || '';
-  if (button) {
-    button.disabled = true;
-    button.textContent = lang === 'zh' ? 'AI生成中...' : 'AI drafting...';
-  }
-  if (inlineButton) {
-    inlineButton.disabled = true;
-    inlineButton.textContent = lang === 'zh' ? '正在生成...' : 'Generating...';
-  }
+  setCustomerReplyAiBusy(true, 'draft');
   try {
     const result = await api('/api/customer-ai/reply-draft', {
       method: 'POST',
-      body: JSON.stringify({ collection, id: item.id, channel })
+      body: JSON.stringify({ collection, id: item.id, channel }),
+      timeoutMs: 150_000
     });
     state = result.data;
     broadcastDataChange();
@@ -8085,14 +8099,8 @@ async function generateCustomerAiReplyDraft() {
     }
   } catch (err) {
     alert(err.message);
-    if (button) {
-      button.disabled = false;
-      button.textContent = `AI ${lang === 'zh' ? '生成回复' : 'Draft reply'}`;
-    }
-    if (inlineButton) {
-      inlineButton.disabled = false;
-      inlineButton.textContent = lang === 'zh' ? '生成客服建议回复' : 'Generate suggested reply';
-    }
+  } finally {
+    setCustomerReplyAiBusy(false);
   }
 }
 
