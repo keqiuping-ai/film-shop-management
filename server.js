@@ -253,8 +253,123 @@ function defaultPortalPriceTiers() {
   ];
 }
 
+function normalizedPortalIdentityName(value) {
+  return String(value || '')
+    .normalize('NFKC')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9\u00c0-\u024f\u4e00-\u9fff]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function isFormalPortalCustomer(customer) {
+  return Boolean(
+    customer
+    && customer.active !== false
+    && customer.referenceOnly !== true
+    && String(customer.account || '').trim()
+    && !String(customer.account || '').trim().toLowerCase().startsWith('order-')
+    && customer.passwordHash
+  );
+}
+
+function uniqueFormalPortalCustomer(db, predicate) {
+  const matches = (db.portalCustomers || []).filter(customer => isFormalPortalCustomer(customer) && predicate(customer));
+  return matches.length === 1 ? matches[0] : null;
+}
+
+function canonicalPortalCustomerForOrder(db, order) {
+  const customers = db.portalCustomers || [];
+  const current = customers.find(customer => customer.id === order.portalCustomerId);
+  if (isFormalPortalCustomer(current)) return { customer: current, reason: 'existing-formal-account' };
+
+  const reservationCustomerIds = [...new Set((db.inventoryReservations || [])
+    .filter(row => row.orderId === order.id && row.portalCustomerId)
+    .map(row => String(row.portalCustomerId)))];
+  if (reservationCustomerIds.length === 1) {
+    const reservedFor = customers.find(customer => customer.id === reservationCustomerIds[0]);
+    if (isFormalPortalCustomer(reservedFor)) return { customer: reservedFor, reason: 'inventory-reservation' };
+  }
+
+  const contact = String(order.customerContact || '');
+  const email = String(order.customerEmail || contact.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i)?.[0] || '').trim().toLowerCase();
+  if (email) {
+    const match = uniqueFormalPortalCustomer(db, customer => String(customer.email || '').trim().toLowerCase() === email);
+    if (match) return { customer: match, reason: 'email' };
+  }
+
+  const explicitPhone = String(order.customerPhone || '').trim();
+  const phoneText = explicitPhone || contact;
+  const phoneKey = normalizedPhone(phoneText);
+  if (phoneKey.length >= 7) {
+    const match = uniqueFormalPortalCustomer(db, customer => normalizedPhone(customer.phone) === phoneKey);
+    if (match) return { customer: match, reason: 'phone' };
+  }
+
+  const nameKeys = new Set([
+    normalizedPortalIdentityName(order.customer),
+    normalizedPortalIdentityName(current?.businessName),
+    normalizedPortalIdentityName(current?.contactName)
+  ].filter(Boolean));
+  for (const nameKey of nameKeys) {
+    const match = uniqueFormalPortalCustomer(db, customer => [customer.businessName, customer.contactName]
+      .some(value => normalizedPortalIdentityName(value) === nameKey));
+    if (match) return { customer: match, reason: 'unique-name' };
+  }
+  return null;
+}
+
+function reconcilePortalCustomerLinks(db, { apply = false, onlyCustomerId = '' } = {}) {
+  const changes = [];
+  let reservationsRelinked = 0;
+  let paymentTransactionsPreserved = 0;
+  for (const order of db.salesOrders || []) {
+    const match = canonicalPortalCustomerForOrder(db, order);
+    if (!match || (onlyCustomerId && match.customer.id !== onlyCustomerId)) continue;
+    const previousCustomerId = String(order.portalCustomerId || '');
+    const reservations = (db.inventoryReservations || []).filter(row => row.orderId === order.id);
+    const reservationChanges = reservations.filter(row => String(row.portalCustomerId || '') !== match.customer.id);
+    if (previousCustomerId === match.customer.id && !reservationChanges.length) continue;
+    const current = (db.portalCustomers || []).find(customer => customer.id === previousCustomerId);
+    if (previousCustomerId && isFormalPortalCustomer(current) && previousCustomerId !== match.customer.id) continue;
+    const change = {
+      orderId: order.id,
+      date: order.date || '',
+      customer: order.customer || '',
+      paid: Number(order.paid || 0),
+      fromCustomerId: previousCustomerId,
+      toCustomerId: match.customer.id,
+      toCustomerName: match.customer.businessName || match.customer.contactName || match.customer.account,
+      reason: match.reason,
+      reservationCount: reservationChanges.length,
+      paymentTransactionCount: Array.isArray(order.paymentTransactions) ? order.paymentTransactions.length : 0
+    };
+    changes.push(change);
+    if (!apply) continue;
+    order.portalCustomerId = match.customer.id;
+    order.portalCustomerRelinkedAt = new Date().toISOString();
+    order.portalCustomerRelinkedFrom = previousCustomerId;
+    order.portalCustomerRelinkReason = match.reason;
+    reservationChanges.forEach(row => {
+      row.portalCustomerId = match.customer.id;
+      row.updatedAt = new Date().toISOString();
+      reservationsRelinked += 1;
+    });
+    paymentTransactionsPreserved += change.paymentTransactionCount;
+  }
+  return {
+    applied: apply,
+    ordersRelinked: changes.length,
+    reservationsRelinked: apply ? reservationsRelinked : changes.reduce((sum, row) => sum + row.reservationCount, 0),
+    paymentTransactionsPreserved: apply ? paymentTransactionsPreserved : changes.reduce((sum, row) => sum + row.paymentTransactionCount, 0),
+    changes
+  };
+}
+
 function syncSalesOrderCustomer(db, order) {
-  let customer = (db.portalCustomers || []).find(item => item.id === order.portalCustomerId);
+  let customer = canonicalPortalCustomerForOrder(db, order)?.customer
+    || (db.portalCustomers || []).find(item => item.id === order.portalCustomerId);
   const businessName = String(order.customer || customer?.businessName || customer?.contactName || '').trim().slice(0, 160);
   if (!businessName) return null;
   const contact = String(order.customerContact || '').trim().slice(0, 500);
@@ -264,9 +379,12 @@ function syncSalesOrderCustomer(db, order) {
   const phone = explicitPhone || (normalizePhone(phoneText).length >= 7 ? phoneText.slice(0, 80) : '');
   const phoneKey = normalizedPhone(phone);
   const nameKey = businessName.toLowerCase();
-  if (!customer && email) customer = db.portalCustomers.find(item => String(item.email || '').trim().toLowerCase() === email);
-  if (!customer && phoneKey) customer = db.portalCustomers.find(item => normalizedPhone(item.phone) === phoneKey);
-  if (!customer) customer = db.portalCustomers.find(item => String(item.businessName || '').trim().toLowerCase() === nameKey);
+  if (!customer && email) customer = db.portalCustomers.find(item => item.active !== false && item.referenceOnly !== true && String(item.email || '').trim().toLowerCase() === email)
+    || db.portalCustomers.find(item => String(item.email || '').trim().toLowerCase() === email);
+  if (!customer && phoneKey) customer = db.portalCustomers.find(item => item.active !== false && item.referenceOnly !== true && normalizedPhone(item.phone) === phoneKey)
+    || db.portalCustomers.find(item => normalizedPhone(item.phone) === phoneKey);
+  if (!customer) customer = db.portalCustomers.find(item => item.active !== false && item.referenceOnly !== true && String(item.businessName || '').trim().toLowerCase() === nameKey)
+    || db.portalCustomers.find(item => String(item.businessName || '').trim().toLowerCase() === nameKey);
   const now = new Date().toISOString();
   if (!customer) {
     customer = {
@@ -8052,6 +8170,28 @@ async function api(req, res) {
     return send(res, 200, { item: tier, data: sanitizeDbForUser(db, user) });
   }
 
+  if (url.pathname === '/api/portal-customer-links/reconcile') {
+    if (!canAccess(user, 'portalCustomersEdit')) return send(res, 403, { error: '没有B端客户账号管理权限' });
+    if (req.method === 'GET') return send(res, 200, reconcilePortalCustomerLinks(db));
+    if (req.method === 'POST') {
+      const preview = reconcilePortalCustomerLinks(db);
+      if (!preview.ordersRelinked) return send(res, 200, { ...preview, backupFileName: '', data: sanitizeDbForUser(db, user) });
+      const backup = createDatabaseBackup(db, 'manual', user);
+      const result = reconcilePortalCustomerLinks(db, { apply: true });
+      audit(db, user, 'reconcile-portal-customer-links', {
+        collection: 'salesOrders',
+        recordId: '',
+        recordLabel: 'B端客户订单关联',
+        detail: `修复 ${result.ordersRelinked} 张订单与 ${result.reservationsRelinked} 条库存预留的客户关联；保留 ${result.paymentTransactionsPreserved} 条付款流水；备份 ${backup.fileName}`,
+        changes: result.changes
+      });
+      writeDb(db);
+      notifyDataChanged('reconcile-portal-customer-links', `${result.ordersRelinked} orders`);
+      return send(res, 200, { ...result, backupFileName: backup.fileName, data: sanitizeDbForUser(db, user) });
+    }
+    return send(res, 405, { error: '不支持的请求方法' });
+  }
+
   const portalCustomerMatch = url.pathname.match(/^\/api\/portal-customers(?:\/([^/]+))?$/);
   if (portalCustomerMatch) {
     if (req.method === 'GET' ? !['portalCustomersView','portalCustomersEdit','portalPricingEdit'].some(permission => canAccess(user, permission)) : !canAccess(user, 'portalCustomersEdit')) return send(res, 403, { error: '没有B端客户管理权限' });
@@ -8078,9 +8218,17 @@ async function api(req, res) {
     const item = { ...before, id: customerId || id(), businessName: String(body.businessName ?? before.businessName ?? '').trim().slice(0, 160), contactName: String(body.contactName ?? before.contactName ?? '').trim().slice(0, 120), account: account.toLowerCase(), email, phone, address: String(body.address ?? before.address ?? '').trim().slice(0, 500), salesRep: String(body.salesRep ?? before.salesRep ?? '').trim().slice(0, 120), status: requestedStatus, note: String(body.note ?? before.note ?? '').trim().slice(0, 2000), active: body.active !== false, priceTier: allowedPriceTiers.has(requestedPriceTier) ? requestedPriceTier : 'standard', prices, createdAt: before.createdAt || new Date().toISOString(), updatedAt: new Date().toISOString() };
     item.passwordHash = body.password ? hashPassword(body.password) : before.passwordHash;
     if (existingIndex >= 0) db.portalCustomers[existingIndex] = item; else db.portalCustomers.push(item);
+    const relinked = isFormalPortalCustomer(item)
+      ? reconcilePortalCustomerLinks(db, { apply: true, onlyCustomerId: item.id })
+      : { ordersRelinked: 0, reservationsRelinked: 0, paymentTransactionsPreserved: 0, changes: [] };
     audit(db, user, existingIndex >= 0 ? 'update-portal-customer' : 'create-portal-customer', { collection: 'portalCustomers', recordId: item.id, recordLabel: item.businessName, detail: `${existingIndex >= 0 ? '修改' : '新增'}客户账号 ${item.businessName}` });
+    if (relinked.ordersRelinked) audit(db, user, 'reconcile-portal-customer-links', {
+      collection: 'salesOrders', recordId: '', recordLabel: item.businessName,
+      detail: `保存客户账号时自动关联 ${relinked.ordersRelinked} 张历史订单与 ${relinked.reservationsRelinked} 条库存预留`,
+      changes: relinked.changes
+    });
     writeDb(db); notifyDataChanged('portal-customer', item.id);
-    return send(res, existingIndex >= 0 ? 200 : 201, { item: safePortalCustomer(item), data: sanitizeDbForUser(db, user) });
+    return send(res, existingIndex >= 0 ? 200 : 201, { item: safePortalCustomer(item), relinked, data: sanitizeDbForUser(db, user) });
   }
 
   const portalOrderReadMatch = url.pathname.match(/^\/api\/portal-orders\/([^/]+)\/read$/);
@@ -11258,6 +11406,9 @@ async function api(req, res) {
       const previousStatus = String(db[collection][idx].status || '').trim();
       const previousOrder = db[collection][idx];
       next.portalCustomerId = String(next.portalCustomerId || '').trim().slice(0, 160);
+      if (previousOrder.portalSource === true && !next.portalCustomerId && previousOrder.portalCustomerId) {
+        next.portalCustomerId = String(previousOrder.portalCustomerId).trim().slice(0, 160);
+      }
       next.salesRep = String(next.salesRep || '').trim();
       next.recipientName = String(next.recipientName || '').trim().slice(0, 160);
       next.customerPhone = String(next.customerPhone || '').trim().slice(0, 80);

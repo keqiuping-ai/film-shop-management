@@ -5236,7 +5236,7 @@ const views = {
     return panel(t('orders'), hasPerm('ordersEdit') ? `<button class="btn primary" onclick="openSalesOrder()">${t('addNew')}</button>` : '', `${search}<div id="salesOrderTableContainer">${salesOrderTable()}</div>`);
   },
   portalCustomers() {
-    const actions = hasPerm('portalCustomersEdit') ? `<div class="mini-actions"><button class="btn" onclick="document.getElementById('portalReferenceImportFile')?.click()">${lang === 'zh' ? '导入UPS客户资料' : 'Import UPS customers'}</button><button class="btn primary" onclick="openPortalCustomer()">${lang === 'zh' ? '新增客户账号' : 'New customer'}</button></div>` : '';
+    const actions = hasPerm('portalCustomersEdit') ? `<div class="mini-actions"><button class="btn" onclick="reconcilePortalCustomerLinks()">${lang === 'zh' ? '检查/修复订单关联' : 'Check / Repair Order Links'}</button><button class="btn" onclick="document.getElementById('portalReferenceImportFile')?.click()">${lang === 'zh' ? '导入UPS客户资料' : 'Import UPS customers'}</button><button class="btn primary" onclick="openPortalCustomer()">${lang === 'zh' ? '新增客户账号' : 'New customer'}</button></div>` : '';
     const importInput = hasPerm('portalCustomersEdit') ? `<input id="portalReferenceImportFile" class="hidden" type="file" accept="application/json,.json" onchange="importPortalReferenceCustomers(this.files?.[0]); this.value=''" />` : '';
     const tabs = [['customers','客户资料','Customer profiles'],['pricing','价格方案','Pricing plans'],['orders','订单与应收','Orders & receivables'],['warranty','质保与往来','Warranty & history']];
     const tabBar = `<div class="portal-customer-tabs">${tabs.map(([id,zh,en])=>`<button class="btn ${portalCustomerTab===id?'primary':''}" onclick="setPortalCustomerTab('${id}')">${lang==='zh'?zh:en}</button>`).join('')}</div>`;
@@ -6232,6 +6232,28 @@ function portalCustomerTable() {
 }
 
 function setPortalCustomerTab(tab) { portalCustomerTab = tab; render(); }
+
+async function reconcilePortalCustomerLinks() {
+  try {
+    const preview = await api('/api/portal-customer-links/reconcile');
+    if (!Number(preview.ordersRelinked || 0)) {
+      return alert(lang === 'zh' ? '检查完成：没有发现需要修复的客户订单关联。' : 'Check complete: no customer order links need repair.');
+    }
+    const message = lang === 'zh'
+      ? `发现 ${preview.ordersRelinked} 张订单需要关联到当前有效客户账号，涉及 ${preview.reservationsRelinked} 条库存预留和 ${preview.paymentTransactionsPreserved} 条付款流水。系统会先创建数据库备份，再修复关联；不会改变订单金额、付款状态或库存数量。是否继续？`
+      : `${preview.ordersRelinked} orders need to be linked to current active customer accounts, covering ${preview.reservationsRelinked} inventory reservations and ${preview.paymentTransactionsPreserved} payment transactions. A database backup will be created first. Amounts, payment status, and stock quantities will not change. Continue?`;
+    if (!confirm(message)) return;
+    const result = await api('/api/portal-customer-links/reconcile', { method: 'POST', body: '{}' });
+    state = result.data;
+    render();
+    broadcastDataChange();
+    alert(lang === 'zh'
+      ? `修复完成：${result.ordersRelinked} 张订单、${result.reservationsRelinked} 条库存预留已统一关联；${result.paymentTransactionsPreserved} 条付款流水保持不变。备份：${result.backupFileName || '已存在'}`
+      : `Repair complete: ${result.ordersRelinked} orders and ${result.reservationsRelinked} reservations were relinked; ${result.paymentTransactionsPreserved} payment transactions were preserved. Backup: ${result.backupFileName || 'existing'}`);
+  } catch (err) {
+    alert(err.message || String(err));
+  }
+}
 
 function portalPriceTierView() {
   const tiers = state.portalPriceTiers || [];
