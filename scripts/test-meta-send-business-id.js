@@ -43,9 +43,14 @@ async function run() {
     req.setEncoding('utf8');
     req.on('data', chunk => { raw += chunk; });
     req.on('end', () => {
-      graphRequests.push({ method: req.method, url: req.url, body: raw ? JSON.parse(raw) : null });
+      const request = { method: req.method, url: req.url, body: raw ? JSON.parse(raw) : null };
+      graphRequests.push(request);
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ recipient_id: 'meta-customer-1', message_id: 'meta-message-1' }));
+      if (req.method === 'GET') {
+        res.end(JSON.stringify({ id: 'page-business-123', access_token: 'resolved-page-access-token' }));
+      } else {
+        res.end(JSON.stringify({ recipient_id: 'meta-customer-1', message_id: 'meta-message-1' }));
+      }
     });
   });
   await listen(fakeGraph, graphPort);
@@ -99,10 +104,12 @@ async function run() {
       body: JSON.stringify({ collection: 'customerConversations', id: recordId, text: 'Meta Page ID route test' })
     });
     assert.equal(sent.response.status, 200, `Meta send failed: ${JSON.stringify(sent.body)}`);
-    assert.equal(graphRequests.length, 1);
-    assert.match(graphRequests[0].url, /^\/v23\.0\/page-business-123\/messages\?access_token=/);
-    assert(!graphRequests[0].url.includes('/me/messages'), 'Meta send must never fall back to /me/messages');
-    assert.deepEqual(graphRequests[0].body, {
+    assert.equal(graphRequests.length, 2);
+    assert.match(graphRequests[0].url, /^\/v23\.0\/page-business-123\?fields=id%2Caccess_token&access_token=/);
+    assert.equal(graphRequests[0].method, 'GET', 'The long-lived business token must resolve a Page access token first');
+    assert.match(graphRequests[1].url, /^\/v23\.0\/page-business-123\/messages\?access_token=resolved-page-access-token/);
+    assert(!graphRequests[1].url.includes('/me/messages'), 'Meta send must use the explicit Page ID');
+    assert.deepEqual(graphRequests[1].body, {
       recipient: { id: 'meta-customer-1' },
       messaging_type: 'RESPONSE',
       message: { text: 'Meta Page ID route test' }

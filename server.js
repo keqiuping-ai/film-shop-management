@@ -4468,6 +4468,52 @@ function metaMessengerConfig(db = null) {
   };
 }
 
+const metaPageTokenCache = new Map();
+
+function metaAppSecretProof(token, appSecret) {
+  if (!token || !appSecret) return '';
+  return crypto.createHmac('sha256', appSecret).update(token).digest('hex');
+}
+
+async function resolveMetaPageAccessToken(config, businessId) {
+  const configuredToken = String(config.pageAccessToken || '').trim();
+  const pageId = String(businessId || '').trim();
+  if (!configuredToken || !pageId) return configuredToken;
+  const cacheKey = crypto.createHash('sha256').update(`${pageId}:${configuredToken}`).digest('hex');
+  const cached = metaPageTokenCache.get(cacheKey);
+  if (cached && cached.expiresAt > Date.now()) return cached.token;
+
+  const params = new URLSearchParams({ fields: 'id,access_token', access_token: configuredToken });
+  const proof = metaAppSecretProof(configuredToken, config.appSecret);
+  if (proof) params.set('appsecret_proof', proof);
+  const endpoint = `${config.graphBaseUrl}/${encodeURIComponent(config.graphVersion)}/${encodeURIComponent(pageId)}?${params.toString()}`;
+  try {
+    const response = await fetch(endpoint);
+    const body = await response.json().catch(() => ({}));
+    const resolvedToken = String(body?.access_token || '').trim();
+    if (response.ok && resolvedToken) {
+      metaPageTokenCache.set(cacheKey, { token: resolvedToken, expiresAt: Date.now() + (30 * 60 * 1000) });
+      return resolvedToken;
+    }
+    console.warn('Meta Page token resolution unavailable', {
+      status: response.status,
+      code: String(body?.error?.code || ''),
+      subcode: String(body?.error?.error_subcode || ''),
+      type: String(body?.error?.type || '')
+    });
+  } catch (error) {
+    console.warn('Meta Page token resolution failed', { error: String(error?.message || error || '').slice(0, 200) });
+  }
+  return configuredToken;
+}
+
+function metaGraphAccessParams(config, accessToken) {
+  const params = new URLSearchParams({ access_token: accessToken });
+  const proof = metaAppSecretProof(accessToken, config.appSecret);
+  if (proof) params.set('appsecret_proof', proof);
+  return params;
+}
+
 function verifyMetaWebhookSignature(req, rawBody, appSecret) {
   if (!appSecret) return true;
   const signature = String(req.headers['x-hub-signature-256'] || '').trim();
@@ -4770,7 +4816,9 @@ async function sendMetaMessengerReply(db, item, text) {
   if (!psid) throw new Error('这条客户记录没有 Meta PSID，不能通过 Meta 私信回复');
   const businessId = metaBusinessIdFromItem(item);
   if (!businessId) throw new Error('这条客户记录缺少 Meta Page / Instagram Business ID，请等待客户重新发一条消息后再回复');
-  const endpoint = `${config.graphBaseUrl}/${encodeURIComponent(config.graphVersion)}/${encodeURIComponent(businessId)}/messages?access_token=${encodeURIComponent(config.pageAccessToken)}`;
+  const pageAccessToken = await resolveMetaPageAccessToken(config, businessId);
+  const params = metaGraphAccessParams(config, pageAccessToken);
+  const endpoint = `${config.graphBaseUrl}/${encodeURIComponent(config.graphVersion)}/${encodeURIComponent(businessId)}/messages?${params.toString()}`;
   const response = await fetch(endpoint, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -4783,8 +4831,13 @@ async function sendMetaMessengerReply(db, item, text) {
   const body = await response.json().catch(() => ({}));
   if (!response.ok) {
     const code = String(body?.error?.code || '').trim();
-    console.warn('Meta outbound message rejected', { status: response.status, code, type: String(body?.error?.type || '') });
-    throw new Error(`${body?.error?.message || `Meta 私信发送失败 (${response.status})`}${code ? ` [错误码 ${code}]` : ''}`);
+    const subcode = String(body?.error?.error_subcode || '').trim();
+    console.warn('Meta outbound message rejected', { status: response.status, code, subcode, type: String(body?.error?.type || '') });
+    const rawMessage = String(body?.error?.message || `Meta 私信发送失败 (${response.status})`);
+    const message = code === '1'
+      ? 'Meta 无法使用当前正式口令代表这个公共主页发送消息，请在 Meta 重新生成包含 pages_messaging 的主页访问口令'
+      : rawMessage;
+    throw new Error(`${message}${code ? ` [错误码 ${code}${subcode ? `/${subcode}` : ''}]` : ''}`);
   }
   return {
     recipientId: String(body.recipient_id || psid),
@@ -4800,7 +4853,9 @@ async function sendMetaMessengerImage(db, item, imageUrl) {
   if (!psid) throw new Error('这条客户记录没有 Meta PSID，不能通过 Meta 私信回复');
   const businessId = metaBusinessIdFromItem(item);
   if (!businessId) throw new Error('这条客户记录缺少 Meta Page / Instagram Business ID，请等待客户重新发一条消息后再回复');
-  const endpoint = `${config.graphBaseUrl}/${encodeURIComponent(config.graphVersion)}/${encodeURIComponent(businessId)}/messages?access_token=${encodeURIComponent(config.pageAccessToken)}`;
+  const pageAccessToken = await resolveMetaPageAccessToken(config, businessId);
+  const params = metaGraphAccessParams(config, pageAccessToken);
+  const endpoint = `${config.graphBaseUrl}/${encodeURIComponent(config.graphVersion)}/${encodeURIComponent(businessId)}/messages?${params.toString()}`;
   const response = await fetch(endpoint, {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ recipient: { id: psid }, messaging_type: 'RESPONSE', message: { attachment: { type: 'image', payload: { url: imageUrl, is_reusable: false } } } })
@@ -4808,8 +4863,13 @@ async function sendMetaMessengerImage(db, item, imageUrl) {
   const body = await response.json().catch(() => ({}));
   if (!response.ok) {
     const code = String(body?.error?.code || '').trim();
-    console.warn('Meta outbound image rejected', { status: response.status, code, type: String(body?.error?.type || '') });
-    throw new Error(`${body?.error?.message || `Meta 图片发送失败 (${response.status})`}${code ? ` [错误码 ${code}]` : ''}`);
+    const subcode = String(body?.error?.error_subcode || '').trim();
+    console.warn('Meta outbound image rejected', { status: response.status, code, subcode, type: String(body?.error?.type || '') });
+    const rawMessage = String(body?.error?.message || `Meta 图片发送失败 (${response.status})`);
+    const message = code === '1'
+      ? 'Meta 无法使用当前正式口令代表这个公共主页发送图片，请在 Meta 重新生成包含 pages_messaging 的主页访问口令'
+      : rawMessage;
+    throw new Error(`${message}${code ? ` [错误码 ${code}${subcode ? `/${subcode}` : ''}]` : ''}`);
   }
   return { messageId: String(body.message_id || ''), status: 'sent' };
 }
