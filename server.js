@@ -2232,6 +2232,9 @@ async function fetchAiJson(url, options, timeoutMs = 45_000) {
     try { value = text ? JSON.parse(text) : {}; } catch { value = { error: { message: text.slice(0, 300) } }; }
     if (!response.ok) throw new Error(value?.error?.message || `AI service returned ${response.status}`);
     return value;
+  } catch (error) {
+    if (controller.signal.aborted) throw new Error('AI 服务响应超时，请稍后重试');
+    throw error;
   } finally {
     clearTimeout(timer);
   }
@@ -2945,50 +2948,32 @@ function enforceCustomerAiBilingualParity(draft) {
   return draft;
 }
 
-async function translateCustomerAiReplyToChinese({ apiKey, openAiBaseUrl, model, englishReplyText }) {
-  const requestBody = {
-    model,
+async function translateCustomerAiReplyToChinese(db, englishReplyText) {
+  const completion = await fetchCustomerAiCompletion(db, {
+    feature: 'customer-reply-chinese-review',
     messages: [{
       role: 'user',
       content: `Translate the exact English customer reply below into natural Simplified Chinese for an employee review screen. This is a literal meaning-preserving translation, not a second sales reply. Do not add, remove, soften, expand, summarize, or change any sentence, question, address, phone number, price, date, percentage, appointment invitation, promise, or business fact. Preserve every number exactly. Return JSON only with one field: chineseReplyText.\n\nEnglish reply:\n${englishReplyText}`
     }],
-    response_format: { type: 'json_object' },
-    max_completion_tokens: 500
-  };
-  if (/^gpt-5(?:\.|-|$)/i.test(model)) requestBody.reasoning_effort = 'minimal';
-  const value = await fetchAiJson(`${openAiBaseUrl}/chat/completions`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
-    body: JSON.stringify(requestBody)
+    maxCompletionTokens: 500
   });
-  return String(parseAiBossDraft(value?.choices?.[0]?.message?.content)?.chineseReplyText || '').trim().slice(0, 1600);
+  return String(parseAiBossDraft(completion.content)?.chineseReplyText || '').trim().slice(0, 1600);
 }
 
 async function translateCustomerReplyChineseToEnglish(db, chineseText) {
-  const apiKey = openAiCustomerReplyKey(db);
-  if (!apiKey) throw new Error('OpenAI API Key 尚未配置，暂时不能使用中英 AI 翻译');
   const sourceText = String(chineseText || '').trim().slice(0, 3000);
   if (!sourceText) throw new Error('请先在回复框输入中文内容');
-  const model = customerAiReplyModel(db);
-  const openAiBaseUrl = String(process.env.OPENAI_API_BASE_URL || 'https://api.openai.com/v1').replace(/\/+$/, '');
-  const requestBody = {
-    model,
+  const completion = await fetchCustomerAiCompletion(db, {
+    feature: 'customer-reply-translation',
     messages: [{
       role: 'user',
       content: `Translate the Chinese message below into natural, concise, professional American English that can be sent directly to a customer. Preserve the exact meaning, questions, names, numbers, prices, dates, phone numbers, addresses, links, promises, and uncertainty. Do not add any new business fact, offer, address, appointment, guarantee, or sales claim. Return JSON only with one field: englishText.\n\nChinese message:\n${sourceText}`
     }],
-    response_format: { type: 'json_object' },
-    max_completion_tokens: 700
-  };
-  if (/^gpt-5(?:\.|-|$)/i.test(model)) requestBody.reasoning_effort = 'minimal';
-  const value = await fetchAiJson(`${openAiBaseUrl}/chat/completions`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
-    body: JSON.stringify(requestBody)
+    maxCompletionTokens: 700
   });
-  const englishText = String(parseAiBossDraft(value?.choices?.[0]?.message?.content)?.englishText || '').trim().slice(0, 3000);
+  const englishText = String(parseAiBossDraft(completion.content)?.englishText || '').trim().slice(0, 3000);
   if (!englishText) throw new Error('AI 没有生成英文，请稍后重试');
-  return { chineseText: sourceText, englishText, model };
+  return { chineseText: sourceText, englishText, model: completion.model, provider: completion.provider };
 }
 
 async function translateInternalMessageWithAi(db, messageText) {
@@ -3072,6 +3057,64 @@ function customerAiReplyModel(db) {
 
 function openAiCustomerReplyKey(db) {
   return String(process.env.OPENAI_API_KEY || decryptSecret(db?.settings?.openAiCustomerReplyKeyEncrypted) || '').trim();
+}
+
+function customerAiRequestTimeoutMs() {
+  return Math.max(5_000, Math.min(60_000, Number(process.env.CUSTOMER_AI_REQUEST_TIMEOUT_MS || 35_000)));
+}
+
+async function fetchCustomerAiCompletion(db, { feature = 'customer-ai', messages = [], maxCompletionTokens = 700 } = {}) {
+  const providers = [];
+  const openAiKey = openAiCustomerReplyKey(db);
+  if (openAiKey) {
+    providers.push({
+      provider: 'openai',
+      key: openAiKey,
+      url: `${String(process.env.OPENAI_API_BASE_URL || 'https://api.openai.com/v1').replace(/\/+$/, '')}/chat/completions`,
+      model: customerAiReplyModel(db)
+    });
+  }
+  const deepSeekKey = String(process.env.DEEPSEEK_API_KEY || '').trim();
+  if (deepSeekKey) {
+    providers.push({
+      provider: 'deepseek',
+      key: deepSeekKey,
+      url: `${String(process.env.DEEPSEEK_API_BASE_URL || 'https://api.deepseek.com').replace(/\/+$/, '')}/chat/completions`,
+      model: String(process.env.DEEPSEEK_MODEL || 'deepseek-v4-flash').trim()
+    });
+  }
+  if (!providers.length) throw new Error('AI API Key 尚未配置，暂时不能使用此功能');
+
+  const failures = [];
+  for (const candidate of providers) {
+    const requestBody = {
+      model: candidate.model,
+      messages,
+      response_format: { type: 'json_object' }
+    };
+    if (candidate.provider === 'openai') {
+      requestBody.max_completion_tokens = maxCompletionTokens;
+      if (/^gpt-5(?:\.|-|$)/i.test(candidate.model)) requestBody.reasoning_effort = 'minimal';
+    } else {
+      requestBody.max_tokens = maxCompletionTokens;
+      requestBody.temperature = 0.2;
+    }
+    try {
+      const value = await fetchAiJson(candidate.url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${candidate.key}` },
+        body: JSON.stringify(requestBody)
+      }, customerAiRequestTimeoutMs());
+      const content = String(value?.choices?.[0]?.message?.content || '').trim();
+      if (!content) throw new Error('AI 没有返回内容');
+      return { content, provider: candidate.provider, model: candidate.model };
+    } catch (error) {
+      const message = String(error?.message || error || 'unknown error').slice(0, 300);
+      failures.push(`${candidate.provider}: ${message}`);
+      console.warn('Customer AI provider failed', JSON.stringify({ feature, provider: candidate.provider, model: candidate.model, error: message }));
+    }
+  }
+  throw new Error(`AI 服务暂时不可用，请稍后重试（${failures.join('；')}）`);
 }
 
 function customerAiSettingsStatus(db) {
@@ -3176,8 +3219,6 @@ function metaSettingsStatus(db, req = null) {
 }
 
 async function createCustomerAiReplyDraft(db, row, requestedChannel = '') {
-  const apiKey = openAiCustomerReplyKey(db);
-  if (!apiKey) throw new Error('OpenAI API Key 尚未配置，暂时不能生成系统内 AI 客服回复');
   const task = safeCustomerServiceTask(row);
   const branch = customerBranchForItem(db, row.item);
   task.city = String(row.item?.city || '');
@@ -3185,31 +3226,22 @@ async function createCustomerAiReplyDraft(db, row, requestedChannel = '') {
   const knowledgeEntries = relevantCustomerAiKnowledge(db, row.item, branch);
   const experiences = relevantCustomerAiExperiences(db, row.item, branch);
   const prompt = customerAiReplyPrompt(task, requestedChannel, knowledgeEntries, branch, applicableCustomerAiPlaybook(db, task), experiences);
-  const openAiBaseUrl = String(process.env.OPENAI_API_BASE_URL || 'https://api.openai.com/v1').replace(/\/+$/, '');
-  const model = customerAiReplyModel(db);
-  const requestBody = {
-    model,
-    messages: [{ role: 'user', content: prompt }],
-    response_format: { type: 'json_object' },
-    max_completion_tokens: 650
-  };
-  if (/^gpt-5(?:\.|-|$)/i.test(model)) requestBody.reasoning_effort = 'minimal';
   const startedAt = Date.now();
-  const value = await fetchAiJson(`${openAiBaseUrl}/chat/completions`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
-    body: JSON.stringify(requestBody)
+  const completion = await fetchCustomerAiCompletion(db, {
+    feature: 'customer-reply-draft',
+    messages: [{ role: 'user', content: prompt }],
+    maxCompletionTokens: 650
   });
-  const rawDraft = parseAiBossDraft(value?.choices?.[0]?.message?.content);
+  const rawDraft = parseAiBossDraft(completion.content);
   const englishReplyText = String(rawDraft?.englishReplyText || rawDraft?.replyText || '').trim().slice(0, 1600);
   rawDraft.englishReplyText = englishReplyText;
   rawDraft.chineseReplyText = englishReplyText
-    ? await translateCustomerAiReplyToChinese({ apiKey, openAiBaseUrl, model, englishReplyText })
+    ? await translateCustomerAiReplyToChinese(db, englishReplyText)
     : '';
   const draft = enforceCustomerAiBilingualParity(normalizeCustomerAiDraft(rawDraft));
   return {
-    provider: 'openai',
-    model,
+    provider: completion.provider,
+    model: completion.model,
     durationMs: Date.now() - startedAt,
     draft,
     knowledgeEntryIds: knowledgeEntries.map(entry => entry.id),
