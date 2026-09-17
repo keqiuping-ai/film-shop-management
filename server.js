@@ -5318,6 +5318,16 @@ function normalizedPhone(value) {
   return digits.length > 10 ? digits.slice(-10) : digits;
 }
 
+function containsChineseCharacters(value) {
+  return /[\u3400-\u4DBF\u4E00-\u9FFF\uF900-\uFAFF]/u.test(String(value || ''));
+}
+
+function customerOutboundLanguageError(text) {
+  return containsChineseCharacters(text)
+    ? '检测到中文，系统已阻止发送。请先使用“中英AI翻译”，确认发送内容为英文后再试。'
+    : '';
+}
+
 function normalizeForwardingPhone(value) {
   let digits = String(value || '').replace(/\D/g, '');
   if (digits.length === 10) digits = `1${digits}`;
@@ -6198,7 +6208,7 @@ async function twilioMediaForAttachment(attachment, publicBaseUrl) {
   const type = String(attachment?.type || '');
   const name = String(attachment?.name || '附件');
   const kind = type.startsWith('video/') ? 'video' : type.startsWith('image/') ? 'image' : 'file';
-  const linkText = `${kind === 'video' ? '视频' : kind === 'image' ? '图片' : '文件'}：${name} ${url}`;
+  const linkText = `${kind === 'video' ? 'Video' : kind === 'image' ? 'Image' : 'File'}: ${name} ${url}`;
   if (!url.startsWith(`${publicBaseUrl}/customer-media/`)) return { mediaUrl: '', linkText };
   if (kind === 'image') {
     return Number(attachment?.size || 0) <= MAX_TWILIO_IMAGE_BYTES
@@ -7543,6 +7553,8 @@ async function api(req, res) {
         if (!claimActive || item.taskClaimedByUserId !== agent.id) return send(res, 409, { error: '发送前必须先由当前客服助手领取任务' });
         if (!availableChannels.includes(channel)) return send(res, 400, { error: `这条客户记录不能使用 ${channel || '所选'} 渠道；可用渠道：${availableChannels.join(', ') || '无'}` });
         if (!text) return send(res, 400, { error: '回复内容不能为空' });
+        const languageError = customerOutboundLanguageError(text);
+        if (languageError) return send(res, 400, { error: languageError });
         if (text.length > 1600) return send(res, 400, { error: '回复内容不能超过 1600 个字符' });
         const sentAt = now.toISOString();
         let sendRecord;
@@ -10191,11 +10203,15 @@ async function api(req, res) {
       return send(res, 400, { error: '图片链接不正确，请重新选择回复图片' });
     }
     if (!text && !attachment?.url) return send(res, 400, { error: 'Yelp 回复文字或图片不能为空' });
+    const languageError = customerOutboundLanguageError(text);
+    if (languageError) return send(res, 400, { error: languageError });
     const attachmentType = String(attachment?.type || '');
     const attachmentKind = attachmentType.startsWith('video/') ? 'video' : attachmentType.startsWith('image/') ? 'image' : 'file';
-    const attachmentLabel = attachmentKind === 'image' ? '图片' : attachmentKind === 'video' ? '视频' : '文件';
-    const attachmentLine = attachment?.url ? `${attachmentLabel}：${String(attachment.url)}` : '';
+    const attachmentLabel = attachmentKind === 'image' ? 'Image' : attachmentKind === 'video' ? 'Video' : 'File';
+    const attachmentLine = attachment?.url ? `${attachmentLabel}: ${String(attachment.url)}` : '';
     const deliveryText = [text, attachmentLine].filter(Boolean).join('\n');
+    const deliveryLanguageError = customerOutboundLanguageError(deliveryText);
+    if (deliveryLanguageError) return send(res, 400, { error: deliveryLanguageError });
     if (deliveryText.length > 5000) return send(res, 400, { error: 'Yelp 回复内容和图片链接合计不能超过 5000 个字符' });
     const requestId = `quad-yelp-${id()}`;
     await sendYelpReply({
@@ -10257,6 +10273,8 @@ async function api(req, res) {
     if (requiredChannel && requiredChannel !== 'meta') return send(res, 409, { error: `客户最后通过 ${requiredChannel === 'sms' ? '手机短信' : 'Yelp'} 联系，请继续使用原通道回复` });
     if (!metaPsidFromItem(item)) return send(res, 400, { error: '这条客户记录没有 Meta PSID，不能通过 Meta 私信回复' });
     if (!text) return send(res, 400, { error: 'Meta 私信内容不能为空' });
+    const languageError = customerOutboundLanguageError(text);
+    if (languageError) return send(res, 400, { error: languageError });
     if (text.length > 1600) return send(res, 400, { error: 'Meta 私信内容不能超过 1600 个字符' });
     const sent = await sendMetaMessengerReply(db, item, text);
     const now = new Date().toISOString();
@@ -10308,6 +10326,8 @@ async function api(req, res) {
     const phoneDigits = normalizedPhone(item.phone);
     if (phoneDigits.length !== 10) return send(res, 400, { error: '客户电话格式不正确，请先填写美国 10 位手机号码' });
     if (!text && !attachment?.url) return send(res, 400, { error: '短信内容或附件不能为空' });
+    const languageError = customerOutboundLanguageError(text);
+    if (languageError) return send(res, 400, { error: languageError });
     if (attachment?.url && !String(attachment.url).startsWith(`${requestPublicBaseUrl(req)}/customer-media/`)) {
       return send(res, 400, { error: '附件链接不正确，请重新选择文件' });
     }
@@ -10315,6 +10335,8 @@ async function api(req, res) {
     const attachmentKind = attachmentType.startsWith('video/') ? 'video' : attachmentType.startsWith('image/') ? 'image' : 'file';
     const twilioMedia = attachment?.url ? await twilioMediaForAttachment(attachment, requestPublicBaseUrl(req)) : { mediaUrl: '', linkText: '' };
     if (twilioMedia.linkText) text = [text, twilioMedia.linkText].filter(Boolean).join('\n');
+    const deliveryLanguageError = customerOutboundLanguageError(text);
+    if (deliveryLanguageError) return send(res, 400, { error: deliveryLanguageError });
     if (text.length > 1600) return send(res, 400, { error: '短信内容不能超过 1600 个字符' });
     const to = `+1${phoneDigits}`;
     let sent;
@@ -10336,7 +10358,7 @@ async function api(req, res) {
       });
       if (!twilioMedia.mediaUrl || !attachment?.url || err.twilioTransportError) throw err;
       mmsErrorCode = String(err.twilioCode || '');
-      const fallbackText = [text, `${attachmentKind === 'image' ? '图片' : '附件'}：${String(attachment.name || '查看附件')} ${String(attachment.url)}`].filter(Boolean).join('\n');
+      const fallbackText = [text, `${attachmentKind === 'image' ? 'Image' : 'Attachment'}: ${String(attachment.name || 'View attachment')} ${String(attachment.url)}`].filter(Boolean).join('\n');
       if (fallbackText.length > 1600) throw err;
       try {
         sent = await sendTwilioSms({

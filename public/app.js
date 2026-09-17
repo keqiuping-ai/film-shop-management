@@ -7856,9 +7856,10 @@ function renderProspectWorkspace() {
           </div>
           ${prospectPendingAttachment ? prospectPendingAttachmentPreviewHtml(prospectPendingAttachment, defaultReplyChannel) : ''}
           <div class="prospect-compose-row">
-            <textarea id="prospectReplyInput" oninput="prospectReplyRevision += 1" onpaste="handleProspectReplyPaste(event)" placeholder="${lang === 'zh' ? '输入或粘贴文字、截图、图片…' : 'Write or paste text, screenshots, or images…'}"></textarea>
+            <textarea id="prospectReplyInput" oninput="prospectReplyRevision += 1; updateCustomerReplyLanguageGuard()" onpaste="handleProspectReplyPaste(event)" placeholder="${lang === 'zh' ? '输入或粘贴文字、截图、图片…' : 'Write or paste text, screenshots, or images…'}"></textarea>
             <button id="prospectSendSmsButton" class="btn primary" onclick="sendProspectMessage()" ${hasPerm('prospectsEdit') ? '' : 'disabled'}>${defaultReplyChannel === 'yelp' ? (lang === 'zh' ? '通过 Yelp 发送' : 'Send via Yelp') : defaultReplyChannel === 'meta' ? (lang === 'zh' ? '通过 Meta 发送' : 'Send via Meta') : (lang === 'zh' ? '发送短信' : 'Send SMS')}</button>
           </div>
+          <div id="prospectReplyLanguageWarning" class="prospect-reply-language-warning hidden" role="alert"></div>
         </footer>
       </section>
     </div>`;
@@ -8062,6 +8063,26 @@ function insertProspectReplyText(text) {
   input.focus();
 }
 
+function customerReplyContainsChinese(value) {
+  return /[\u3400-\u4DBF\u4E00-\u9FFF\uF900-\uFAFF]/u.test(String(value || ''));
+}
+
+function updateCustomerReplyLanguageGuard() {
+  const input = document.getElementById('prospectReplyInput');
+  const button = document.getElementById('prospectSendSmsButton');
+  const warning = document.getElementById('prospectReplyLanguageWarning');
+  const blocked = customerReplyContainsChinese(input?.value || '');
+  if (button) button.disabled = blocked || !hasPerm('prospectsEdit');
+  if (input) input.setAttribute('aria-invalid', blocked ? 'true' : 'false');
+  if (warning) {
+    warning.classList.toggle('hidden', !blocked);
+    warning.textContent = lang === 'zh'
+      ? '检测到中文：为防止误发，当前不能发送。请先点击“中英AI翻译”，确认输入框已变成英文。'
+      : 'Chinese text detected. Sending is blocked until the reply is translated to English.';
+  }
+  return blocked;
+}
+
 function setCustomerReplyAiBusy(busy, mode = '') {
   customerReplyAiBusy = Boolean(busy);
   const translateButton = document.getElementById('customerReplyTranslateButton');
@@ -8146,6 +8167,7 @@ async function generateCustomerAiReplyDraft() {
       nextInput.focus();
     } else if (nextInput && previousText) {
       nextInput.value = previousText;
+      nextInput.dispatchEvent(new Event('input', { bubbles: true }));
     }
     if (result.draft?.disposition === 'needs_human') {
       alert(result.draft.note || (lang === 'zh' ? 'AI 判断这条客户消息需要人工处理。' : 'AI marked this as needing human review.'));
@@ -8636,6 +8658,7 @@ function updateProspectReplyChannel() {
       ? (lang === 'zh' ? '这条回复会通过 Zapier 发回 Yelp；图片会转换成可点击的云端链接' : 'This reply goes to Yelp through Zapier; images are sent as clickable cloud links.')
       : (lang === 'zh' ? '通过 Twilio 发送和接收短信 · 发送号码：+1 725-241-2586' : 'Send and receive SMS through Twilio · Sender: +1 725-241-2586'));
   attachmentButtons.forEach(control => { control.disabled = channel === 'meta'; });
+  updateCustomerReplyLanguageGuard();
 }
 
 async function sendProspectMessage() {
@@ -8644,6 +8667,13 @@ async function sendProspectMessage() {
   const button = document.getElementById('prospectSendSmsButton');
   const channel = document.getElementById('prospectReplyChannel')?.value || 'sms';
   const text = String(input?.value || '').trim();
+  if (customerReplyContainsChinese(text)) {
+    updateCustomerReplyLanguageGuard();
+    input?.focus();
+    return alert(lang === 'zh'
+      ? '检测到中文，系统已阻止发送。请先点击“中英AI翻译”，确认输入框里只剩英文后再发送。'
+      : 'Chinese text detected. Translate the reply to English before sending.');
+  }
   const originalAiDraft = customerAiCustomerFacingText(item?.agentReplyDraft?.text);
   const editedAiDraftExperience = originalAiDraft && text && originalAiDraft !== text && text.length >= 12 ? {
     wrongReply: originalAiDraft,

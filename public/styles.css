@@ -1365,6 +1365,8 @@ body.modal-lock .prospect-workspace { pointer-events: none; }
 .prospect-compose-row { min-height:104px; display:grid; grid-template-columns:minmax(0,1fr) auto; gap:8px; align-items:stretch; }
 .prospect-compose-row textarea { width:100%; min-height:104px; max-height:none; box-sizing:border-box; padding:11px 13px; font-size:15px; line-height:1.45; resize:vertical; }
 .prospect-compose-row .btn { min-width:104px; min-height:48px; align-self:stretch; font-size:14px; }
+.prospect-reply-language-warning { margin: 6px 0 0; padding: 8px 10px; border: 1px solid #f1aeb5; border-radius: 8px; color: #a61b29; background: #fff1f2; font-size: 12px; font-weight: 700; line-height: 1.4; }
+.prospect-compose-row textarea[aria-invalid="true"] { border-color: #d9363e; box-shadow: 0 0 0 2px rgba(217, 54, 62, .12); }
 .prospect-chat-media { display: block; max-width: min(420px, 100%); max-height: 300px; margin-top: 8px; border-radius: 12px; object-fit: contain; background: rgba(0,0,0,.08); }
 .prospect-chat-video-placeholder { display: flex; width: min(420px, 100%); min-height: 150px; margin-top: 8px; padding: 20px; flex-direction: column; align-items: center; justify-content: center; gap: 10px; border: 0; border-radius: 12px; background: #173c47; color: #fff; cursor: pointer; }
 .prospect-chat-video-placeholder span { display: grid; width: 54px; height: 54px; place-items: center; padding-left: 4px; border-radius: 50%; background: rgba(255,255,255,.16); font-size: 24px; }
