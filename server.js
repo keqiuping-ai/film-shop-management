@@ -4725,6 +4725,84 @@ function metaGraphAccessParams(config, accessToken) {
   return params;
 }
 
+const META_PAGE_SUBSCRIPTION_FIELDS = new Set(['messages', 'messaging_postbacks', 'leadgen']);
+
+function normalizedMetaSubscriptionFields(value) {
+  const requested = Array.isArray(value) ? value : [];
+  const fields = [...new Set(requested.map(item => String(item || '').trim()).filter(item => META_PAGE_SUBSCRIPTION_FIELDS.has(item)))];
+  return fields.length ? fields : ['messages', 'messaging_postbacks', 'leadgen'];
+}
+
+function assertMetaPageId(value) {
+  const pageId = String(value || '').trim();
+  if (!/^\d{5,30}$/.test(pageId)) {
+    const error = new Error('Meta Page ID 格式不正确');
+    error.statusCode = 400;
+    throw error;
+  }
+  return pageId;
+}
+
+async function subscribeMetaPageToApp(config, businessId, requestedFields) {
+  const pageId = assertMetaPageId(businessId);
+  if (!config.pageAccessToken) {
+    const error = new Error('Meta 正式访问口令尚未配置');
+    error.statusCode = 400;
+    throw error;
+  }
+  const subscribedFields = normalizedMetaSubscriptionFields(requestedFields);
+  const pageAccessToken = await resolveMetaPageAccessToken(config, pageId);
+  const params = metaGraphAccessParams(config, pageAccessToken);
+  params.set('subscribed_fields', subscribedFields.join(','));
+  const endpoint = `${config.graphBaseUrl}/${encodeURIComponent(config.graphVersion)}/${encodeURIComponent(pageId)}/subscribed_apps?${params.toString()}`;
+  const response = await fetch(endpoint, { method: 'POST' });
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok || body?.success !== true) {
+    const error = new Error(String(body?.error?.message || `Meta Page 订阅失败 (${response.status})`));
+    error.statusCode = 502;
+    error.meta = {
+      status: response.status,
+      code: String(body?.error?.code || ''),
+      subcode: String(body?.error?.error_subcode || ''),
+      type: String(body?.error?.type || '')
+    };
+    throw error;
+  }
+  return { success: true, businessId: pageId, subscribedFields };
+}
+
+async function metaPageSubscriptionStatus(config, businessId) {
+  const pageId = assertMetaPageId(businessId);
+  if (!config.pageAccessToken) {
+    const error = new Error('Meta 正式访问口令尚未配置');
+    error.statusCode = 400;
+    throw error;
+  }
+  const pageAccessToken = await resolveMetaPageAccessToken(config, pageId);
+  const params = metaGraphAccessParams(config, pageAccessToken);
+  params.set('fields', 'id,name,subscribed_fields');
+  const endpoint = `${config.graphBaseUrl}/${encodeURIComponent(config.graphVersion)}/${encodeURIComponent(pageId)}/subscribed_apps?${params.toString()}`;
+  const response = await fetch(endpoint);
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const error = new Error(String(body?.error?.message || `Meta Page 订阅状态读取失败 (${response.status})`));
+    error.statusCode = 502;
+    error.meta = {
+      status: response.status,
+      code: String(body?.error?.code || ''),
+      subcode: String(body?.error?.error_subcode || ''),
+      type: String(body?.error?.type || '')
+    };
+    throw error;
+  }
+  const apps = Array.isArray(body?.data) ? body.data.map(app => ({
+    id: String(app?.id || ''),
+    name: String(app?.name || ''),
+    subscribedFields: Array.isArray(app?.subscribed_fields) ? app.subscribed_fields.map(String) : []
+  })) : [];
+  return { success: true, businessId: pageId, apps };
+}
+
 function verifyMetaWebhookSignature(req, rawBody, appSecret) {
   if (!appSecret) return true;
   const signature = String(req.headers['x-hub-signature-256'] || '').trim();
@@ -9657,6 +9735,48 @@ async function api(req, res) {
     writeDb(db);
     notifyDataChanged('update-meta-settings', 'meta-messenger');
     return send(res, 200, after);
+  }
+
+  if (req.method === 'POST' && url.pathname === '/api/meta/subscriptions') {
+    if (!canAccess(user, 'settingsEdit')) return send(res, 403, { error: '没有管理 Meta 订阅的权限' });
+    const body = await readBody(req);
+    try {
+      const result = await subscribeMetaPageToApp(metaMessengerConfig(db), body.businessId, body.subscribedFields);
+      audit(db, user, 'subscribe-meta-page', {
+        collection: 'settings',
+        recordId: result.businessId,
+        recordLabel: 'Meta Page Webhook',
+        detail: `订阅 ${result.subscribedFields.join(', ')}`
+      });
+      writeDb(db);
+      return send(res, 200, result);
+    } catch (error) {
+      console.warn('Meta Page subscription failed', {
+        businessId: String(body.businessId || '').slice(0, 40),
+        status: Number(error?.meta?.status || 0),
+        code: String(error?.meta?.code || ''),
+        subcode: String(error?.meta?.subcode || ''),
+        type: String(error?.meta?.type || '')
+      });
+      return send(res, Number(error?.statusCode || 500), { error: String(error?.message || 'Meta Page 订阅失败') });
+    }
+  }
+
+  if (req.method === 'GET' && url.pathname === '/api/meta/subscriptions') {
+    if (!canAccess(user, 'settingsEdit')) return send(res, 403, { error: '没有查看 Meta 订阅的权限' });
+    try {
+      const result = await metaPageSubscriptionStatus(metaMessengerConfig(db), url.searchParams.get('businessId'));
+      return send(res, 200, result);
+    } catch (error) {
+      console.warn('Meta Page subscription status failed', {
+        businessId: String(url.searchParams.get('businessId') || '').slice(0, 40),
+        status: Number(error?.meta?.status || 0),
+        code: String(error?.meta?.code || ''),
+        subcode: String(error?.meta?.subcode || ''),
+        type: String(error?.meta?.type || '')
+      });
+      return send(res, Number(error?.statusCode || 500), { error: String(error?.message || 'Meta Page 订阅状态读取失败') });
+    }
   }
 
   if (req.method === 'GET' && url.pathname === '/api/system/check-update') {
