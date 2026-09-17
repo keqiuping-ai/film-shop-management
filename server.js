@@ -12027,6 +12027,45 @@ function startDailyBackupWorker() {
   setInterval(run, 6 * 60 * 60 * 1000);
 }
 
+function startMetaPageSubscriptionWorker() {
+  const pageIds = [...new Set(String(process.env.META_AUTO_SUBSCRIBE_PAGE_IDS || '')
+    .split(',')
+    .map(value => value.trim())
+    .filter(value => /^\d{5,30}$/.test(value)))];
+  if (!pageIds.length) {
+    console.log('Automatic Meta Page subscriptions are disabled until META_AUTO_SUBSCRIBE_PAGE_IDS is configured.');
+    return;
+  }
+  let running = false;
+  const run = async () => {
+    if (running) return;
+    running = true;
+    try {
+      const db = readDb();
+      const config = metaMessengerConfig(db);
+      for (const pageId of pageIds) {
+        try {
+          const result = await subscribeMetaPageToApp(config, pageId, ['messages', 'messaging_postbacks', 'leadgen']);
+          console.log(`Meta Page subscription confirmed for ${result.businessId}: ${result.subscribedFields.join(', ')}.`);
+        } catch (error) {
+          console.warn('Automatic Meta Page subscription failed', {
+            businessId: pageId,
+            status: Number(error?.meta?.status || 0),
+            code: String(error?.meta?.code || ''),
+            subcode: String(error?.meta?.subcode || ''),
+            type: String(error?.meta?.type || ''),
+            error: String(error?.message || error || '').slice(0, 200)
+          });
+        }
+      }
+    } finally {
+      running = false;
+    }
+  };
+  setTimeout(run, 15 * 1000);
+  setInterval(run, 24 * 60 * 60 * 1000);
+}
+
 ensureDb();
 applyStartupPasswordReset();
 applyProvisionedManager();
@@ -12075,6 +12114,7 @@ http.createServer((req, res) => {
   console.log('Default login: admin@filmshop.local / admin123');
   startDailyBackupWorker();
   startScheduleReminderWorker();
+  startMetaPageSubscriptionWorker();
   startTwilioReconciliationWorker();
   startCustomerAiAutoReplyWorker();
   startCustomerNurtureWorker();
