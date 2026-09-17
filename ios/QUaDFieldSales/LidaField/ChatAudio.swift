@@ -103,9 +103,14 @@ final class ChatSpeechInput: ObservableObject {
     private let audioEngine = AVAudioEngine()
     private var recognitionRequest: SFSpeechAudioBufferRecognitionRequest?
     private var recognitionTask: SFSpeechRecognitionTask?
+    private var isStarting = false
+    private var hasInputTap = false
 
     func start(localeIdentifier: String, existingText: String) async throws {
-        guard !isListening else { return }
+        guard !isListening, !isStarting else { return }
+        isStarting = true
+        defer { isStarting = false }
+
         let speechStatus = await chatSpeechAuthorization()
         guard speechStatus == .authorized else {
             throw APIError.message("未授权语音识别，请在系统设置中允许")
@@ -124,39 +129,62 @@ final class ChatSpeechInput: ObservableObject {
         recognitionRequest = request
         transcript = existingText
 
-        let inputNode = audioEngine.inputNode
-        let format = inputNode.outputFormat(forBus: 0)
-        inputNode.removeTap(onBus: 0)
-        inputNode.installTap(onBus: 0, bufferSize: 1_024, format: format) { buffer, _ in
-            request.append(buffer)
-        }
+        do {
+            // Activate the recording session before reading the hardware format.
+            // A route change can otherwise expose a 0 Hz / 0-channel format, and
+            // AVAudioEngine terminates the process when installTap receives it.
+            let session = AVAudioSession.sharedInstance()
+            try session.setCategory(.record, mode: .measurement, options: [.duckOthers])
+            try session.setActive(true, options: .notifyOthersOnDeactivation)
 
-        let prefix = existingText.trimmingCharacters(in: .whitespacesAndNewlines)
-        recognitionTask = recognizer.recognitionTask(with: request) { [weak self] result, error in
-            Task { @MainActor in
-                guard let self else { return }
-                if let result {
-                    let recognized = result.bestTranscription.formattedString
-                    self.transcript = prefix.isEmpty ? recognized : prefix + " " + recognized
-                    if result.isFinal { self.stop() }
-                } else if error != nil {
-                    self.stop()
+            let inputNode = audioEngine.inputNode
+            let format = inputNode.outputFormat(forBus: 0)
+            guard format.sampleRate > 0, format.channelCount > 0 else {
+                throw RecorderError.invalidInputFormat
+            }
+            if hasInputTap {
+                inputNode.removeTap(onBus: 0)
+                hasInputTap = false
+            }
+            inputNode.installTap(onBus: 0, bufferSize: 1_024, format: format) { buffer, _ in
+                request.append(buffer)
+            }
+            hasInputTap = true
+
+            let prefix = existingText.trimmingCharacters(in: .whitespacesAndNewlines)
+            recognitionTask = recognizer.recognitionTask(with: request) { [weak self] result, error in
+                Task { @MainActor in
+                    guard let self else { return }
+                    if let result {
+                        let recognized = result.bestTranscription.formattedString
+                        self.transcript = prefix.isEmpty ? recognized : prefix + " " + recognized
+                        if result.isFinal { self.stop() }
+                    } else if error != nil {
+                        self.stop()
+                    }
                 }
             }
-        }
 
-        let session = AVAudioSession.sharedInstance()
-        try session.setCategory(.record, mode: .measurement, options: [.duckOthers])
-        try session.setActive(true, options: .notifyOthersOnDeactivation)
-        audioEngine.prepare()
-        try audioEngine.start()
-        isListening = true
+            audioEngine.prepare()
+            try audioEngine.start()
+            isListening = true
+        } catch {
+            resetAudioCapture()
+            throw error
+        }
     }
 
     func stop() {
-        guard isListening || recognitionRequest != nil else { return }
+        guard isListening || recognitionRequest != nil || hasInputTap else { return }
+        resetAudioCapture()
+    }
+
+    private func resetAudioCapture() {
         audioEngine.stop()
-        audioEngine.inputNode.removeTap(onBus: 0)
+        if hasInputTap {
+            audioEngine.inputNode.removeTap(onBus: 0)
+            hasInputTap = false
+        }
         recognitionRequest?.endAudio()
         recognitionTask?.cancel()
         recognitionTask = nil

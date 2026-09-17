@@ -28,7 +28,8 @@ targets:
       properties:
         CFBundleDisplayName: QUaD Field Sales
         CFBundleShortVersionString: 2.2.2
-        CFBundleVersion: "9"
+        CFBundleVersion: "50"
+        ITSAppUsesNonExemptEncryption: false
         UILaunchScreen: {}
         NSMicrophoneUsageDescription: 用于将现场沟通语音转换为会议纪要；语音会分段安全保存并同步至公司系统。
         NSSpeechRecognitionUsageDescription: 用于把客户洽谈内容转为文字并生成会议纪要。
@@ -43,3 +44,8 @@ targets:
           - com.quadfilm.field.upload
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
+        UISupportedInterfaceOrientations~ipad:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationPortraitUpsideDown
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
