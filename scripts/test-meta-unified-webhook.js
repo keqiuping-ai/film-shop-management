@@ -130,6 +130,9 @@ async function run() {
     assert(facebookRow, 'Facebook message must be stored');
     assert(instagramRow, 'Instagram message must be stored');
     assert.equal(instagramRow.source, 'Meta / Instagram');
+    assert.equal(instagramRow.metaPlatform, 'instagram');
+    assert.equal(instagramRow.externalId, 'meta-instagram:instagram-user-1');
+    assert.equal(instagramRow.externalBusinessId, 'instagram-business-1');
     assert.equal(facebookRow.conversationMessages.length, 2, 'Postback must be added once and duplicate message ignored');
 
     console.log('Meta unified webhook tests passed.');

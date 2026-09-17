@@ -4977,6 +4977,7 @@ function metaMessagingEventMessage(event = {}) {
 function appendMetaMessengerMessage(item, message, pageId, psid, direction = 'inbound', speakerName = '', platform = 'facebook') {
   const normalizedPlatform = platform === 'instagram' ? 'instagram' : 'facebook';
   const provider = normalizedPlatform === 'instagram' ? 'meta-instagram' : 'meta-messenger';
+  const canonicalSource = normalizedPlatform === 'instagram' ? 'Meta / Instagram' : 'Meta / Facebook';
   const mid = String(message.mid || message.message_id || message.id || '').trim();
   const timestamp = message.timestamp
     ? new Date(Number(message.timestamp)).toISOString()
@@ -5005,9 +5006,13 @@ function appendMetaMessengerMessage(item, message, pageId, psid, direction = 'in
   item.conversationMessages = after;
   item.metaPsid = psid || item.metaPsid || '';
   item.metaPlatform = normalizedPlatform;
-  item.externalId = item.externalId || (psid ? `meta-${normalizedPlatform === 'instagram' ? 'instagram' : 'messenger'}:${psid}` : '');
-  item.externalBusinessId = item.externalBusinessId || pageId || '';
-  item.source = item.source || 'Meta / Facebook';
+  // A returning Meta user can match an older conversation whose source was
+  // edited manually or imported before Instagram was distinguished from Yelp.
+  // The live webhook is authoritative for the channel identity: keeping the
+  // stale source hides the Meta reply option and makes the UI try Yelp instead.
+  if (psid) item.externalId = `meta-${normalizedPlatform === 'instagram' ? 'instagram' : 'messenger'}:${psid}`;
+  if (pageId) item.externalBusinessId = pageId;
+  item.source = canonicalSource;
   item.updatedAt = timestamp;
   item.sourceUpdatedAt = timestamp;
   item.lastMetaAt = timestamp;
