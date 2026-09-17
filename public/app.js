@@ -11451,7 +11451,7 @@ function salesOrderMovementOptions(sku = '') {
     `${order.date} · ${order.customer || ''} · ${line.item} · ${Number(line.qty || 0)}`
   ])];
 }
-function leadSourceOptions() { return ['Yelp','Google Maps','Meta / Facebook','Instagram','Website','Phone Call','Walk-in','Referral','Other']; }
+function leadSourceOptions() { return ['Yelp','Google Maps','Meta / Facebook','Meta / Instagram','Instagram','Website','Phone Call','Walk-in','Referral','Other']; }
 function prospectStatusOptions(includeConverted = true) {
   const options = lang === 'zh'
     ? ['新意向','已邀约','暂时无需回复','已预约','已到店','未接通','无效']

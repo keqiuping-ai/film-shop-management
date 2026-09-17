@@ -4683,6 +4683,14 @@ function metaMessengerConfig(db = null) {
 }
 
 const metaPageTokenCache = new Map();
+const metaInstagramPageCache = new Map();
+
+function configuredMetaPageIds() {
+  return [...new Set(String(process.env.META_AUTO_SUBSCRIBE_PAGE_IDS || '')
+    .split(',')
+    .map(value => value.trim())
+    .filter(value => /^\d{5,30}$/.test(value)))];
+}
 
 function metaAppSecretProof(token, appSecret) {
   if (!token || !appSecret) return '';
@@ -4719,6 +4727,50 @@ async function resolveMetaPageAccessToken(config, businessId) {
     console.warn('Meta Page token resolution failed', { error: String(error?.message || error || '').slice(0, 200) });
   }
   return configuredToken;
+}
+
+async function resolveMetaMessageTarget(config, item) {
+  const businessId = metaBusinessIdFromItem(item);
+  if (!businessId) return { businessId: '', accessToken: String(config.pageAccessToken || '').trim() };
+  const platform = String(item?.metaPlatform || '').toLowerCase();
+  if (platform !== 'instagram') {
+    return { businessId, accessToken: await resolveMetaPageAccessToken(config, businessId) };
+  }
+
+  const cacheKey = `${businessId}:${crypto.createHash('sha256').update(String(config.pageAccessToken || '')).digest('hex')}`;
+  const cached = metaInstagramPageCache.get(cacheKey);
+  if (cached && cached.expiresAt > Date.now()) return cached;
+
+  for (const pageId of configuredMetaPageIds()) {
+    const params = new URLSearchParams({
+      fields: 'id,access_token,instagram_business_account',
+      access_token: String(config.pageAccessToken || '').trim()
+    });
+    const proof = metaAppSecretProof(config.pageAccessToken, config.appSecret);
+    if (proof) params.set('appsecret_proof', proof);
+    const endpoint = `${config.graphBaseUrl}/${encodeURIComponent(config.graphVersion)}/${encodeURIComponent(pageId)}?${params.toString()}`;
+    try {
+      const response = await fetch(endpoint);
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) continue;
+      if (String(body?.instagram_business_account?.id || '').trim() !== businessId) continue;
+      const target = {
+        businessId: pageId,
+        accessToken: String(body?.access_token || config.pageAccessToken || '').trim(),
+        expiresAt: Date.now() + (30 * 60 * 1000)
+      };
+      metaInstagramPageCache.set(cacheKey, target);
+      return target;
+    } catch (error) {
+      console.warn('Meta Instagram Page mapping failed', {
+        businessId,
+        pageId,
+        error: String(error?.message || error || '').slice(0, 200)
+      });
+    }
+  }
+
+  return { businessId, accessToken: await resolveMetaPageAccessToken(config, businessId) };
 }
 
 function metaGraphAccessParams(config, accessToken) {
@@ -5111,11 +5163,10 @@ async function sendMetaMessengerReply(db, item, text) {
   if (!config.pageAccessToken) throw new Error('Meta Page Access Token 尚未配置，请先在设置里填写');
   const psid = metaPsidFromItem(item);
   if (!psid) throw new Error('这条客户记录没有 Meta PSID，不能通过 Meta 私信回复');
-  const businessId = metaBusinessIdFromItem(item);
-  if (!businessId) throw new Error('这条客户记录缺少 Meta Page / Instagram Business ID，请等待客户重新发一条消息后再回复');
-  const pageAccessToken = await resolveMetaPageAccessToken(config, businessId);
-  const params = metaGraphAccessParams(config, pageAccessToken);
-  const endpoint = `${config.graphBaseUrl}/${encodeURIComponent(config.graphVersion)}/${encodeURIComponent(businessId)}/messages?${params.toString()}`;
+  const target = await resolveMetaMessageTarget(config, item);
+  if (!target.businessId) throw new Error('这条客户记录缺少 Meta Page / Instagram Business ID，请等待客户重新发一条消息后再回复');
+  const params = metaGraphAccessParams(config, target.accessToken);
+  const endpoint = `${config.graphBaseUrl}/${encodeURIComponent(config.graphVersion)}/${encodeURIComponent(target.businessId)}/messages?${params.toString()}`;
   const response = await fetch(endpoint, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -5148,11 +5199,10 @@ async function sendMetaMessengerImage(db, item, imageUrl) {
   if (!config.pageAccessToken) throw new Error('Meta Page Access Token 尚未配置，请先在设置里填写');
   const psid = metaPsidFromItem(item);
   if (!psid) throw new Error('这条客户记录没有 Meta PSID，不能通过 Meta 私信回复');
-  const businessId = metaBusinessIdFromItem(item);
-  if (!businessId) throw new Error('这条客户记录缺少 Meta Page / Instagram Business ID，请等待客户重新发一条消息后再回复');
-  const pageAccessToken = await resolveMetaPageAccessToken(config, businessId);
-  const params = metaGraphAccessParams(config, pageAccessToken);
-  const endpoint = `${config.graphBaseUrl}/${encodeURIComponent(config.graphVersion)}/${encodeURIComponent(businessId)}/messages?${params.toString()}`;
+  const target = await resolveMetaMessageTarget(config, item);
+  if (!target.businessId) throw new Error('这条客户记录缺少 Meta Page / Instagram Business ID，请等待客户重新发一条消息后再回复');
+  const params = metaGraphAccessParams(config, target.accessToken);
+  const endpoint = `${config.graphBaseUrl}/${encodeURIComponent(config.graphVersion)}/${encodeURIComponent(target.businessId)}/messages?${params.toString()}`;
   const response = await fetch(endpoint, {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ recipient: { id: psid }, messaging_type: 'RESPONSE', message: { attachment: { type: 'image', payload: { url: imageUrl, is_reusable: false } } } })
@@ -12094,10 +12144,7 @@ function startDailyBackupWorker() {
 }
 
 function startMetaPageSubscriptionWorker() {
-  const pageIds = [...new Set(String(process.env.META_AUTO_SUBSCRIBE_PAGE_IDS || '')
-    .split(',')
-    .map(value => value.trim())
-    .filter(value => /^\d{5,30}$/.test(value)))];
+  const pageIds = configuredMetaPageIds();
   if (!pageIds.length) {
     console.log('Automatic Meta Page subscriptions are disabled until META_AUTO_SUBSCRIBE_PAGE_IDS is configured.');
     return;
