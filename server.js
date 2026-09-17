@@ -5026,8 +5026,10 @@ function metaMessagingEventMessage(event = {}) {
   };
 }
 
-function appendMetaMessengerMessage(item, message, pageId, psid, direction = 'inbound', speakerName = '', platform = 'facebook') {
-  const normalizedPlatform = platform === 'instagram' ? 'instagram' : 'facebook';
+function appendMetaMessengerMessage(item, message, pageId, psid, direction = 'inbound', speakerName = '', platform = '') {
+  const inferredPlatform = String(platform || item?.metaPlatform || '').toLowerCase()
+    || (String(item?.externalId || '').startsWith('meta-instagram:') ? 'instagram' : 'facebook');
+  const normalizedPlatform = inferredPlatform === 'instagram' ? 'instagram' : 'facebook';
   const provider = normalizedPlatform === 'instagram' ? 'meta-instagram' : 'meta-messenger';
   const canonicalSource = normalizedPlatform === 'instagram' ? 'Meta / Instagram' : 'Meta / Facebook';
   const mid = String(message.mid || message.message_id || message.id || '').trim();

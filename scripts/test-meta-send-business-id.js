@@ -157,6 +157,10 @@ async function run() {
       messaging_type: 'RESPONSE',
       message: { text: 'Instagram Page mapping test' }
     });
+    const storedInstagram = instagramSent.body.data.customerConversations.find(item => item.id === instagramRecordId);
+    assert.equal(storedInstagram.source, 'Meta / Instagram', 'Sending must not relabel an Instagram conversation as Facebook');
+    assert.equal(storedInstagram.metaPlatform, 'instagram');
+    assert.equal(storedInstagram.conversationMessages.at(-1).provider, 'meta-instagram');
     console.log('Meta business ID send tests passed.');
   } finally {
     child.kill('SIGTERM');
