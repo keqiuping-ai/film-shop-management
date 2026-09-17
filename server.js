@@ -6,6 +6,7 @@ const zlib = require('zlib');
 const { execFile } = require('child_process');
 const { promisify } = require('util');
 const { AccessToken } = require('livekit-server-sdk');
+const recruiting = require('./lib/recruiting');
 const execFileAsync = promisify(execFile);
 
 const ROOT = __dirname;
@@ -1496,6 +1497,8 @@ function defaultPermissions(role) {
     leadsEdit: false,
     prospectsView: false,
     prospectsEdit: false,
+    recruitingView: false,
+    recruitingEdit: false,
     commissionView: false,
     commissionEdit: false,
     expensesView: false,
@@ -1665,7 +1668,7 @@ function sanitizeDbForUser(db, user, options = {}) {
     branchInventory: p.inventoryView ? branchInventorySnapshot(db, user) : [],
     branchTransfers: p.inventoryView ? branchTransferVisibleRecords(db, user, db.branchTransfers || []) : [],
     branchTransferExceptions: p.inventoryView ? branchTransferVisibleRecords(db, user, db.branchTransferExceptions || []) : [],
-    auditLogs: !fastLogin && (p.usersManage || p.reportsView) ? db.auditLogs : [],
+    auditLogs: !fastLogin && (p.usersManage || p.reportsView) ? db.auditLogs.filter(row => p.recruitingView || !String(row.action || '').includes('recruiting')) : [],
     employeeActivity: !fastLogin && (p.usersManage || p.reportsView) ? (db.employeeActivity || []) : [],
     deferredBootstrapData: fastLogin,
     permissions: p
@@ -5293,7 +5296,8 @@ function requestPublicBaseUrl(req) {
 }
 
 function requestPublicUrl(req) {
-  return `${requestPublicBaseUrl(req)}${new URL(req.url, 'http://local').pathname}`;
+  const url = new URL(req.url, 'http://local');
+  return `${requestPublicBaseUrl(req)}${url.pathname}${url.search}`;
 }
 
 function validateTwilioSignature(req, params) {
@@ -5599,6 +5603,13 @@ async function reconcileRecentTwilioInboundMessages() {
   for (const message of (payload.messages || [])) {
     if (message.direction !== 'inbound' || normalizedPhone(message.to) !== normalizedPhone(config.fromNumber)) continue;
     scanned += 1;
+    const candidateResult = recruiting.ingestInbound(db, message);
+    if (candidateResult.handled) {
+      matched += 1;
+      if (candidateResult.added) added += 1;
+      else skipped += 1;
+      continue;
+    }
     const match = findConversationByPhone(db, message.from);
     if (!match) {
       unmatched += 1;
@@ -5903,9 +5914,10 @@ function startTwilioReconciliationWorker() {
   setInterval(run, 30 * 1000);
 }
 
-async function sendTwilioSms({ to, body, mediaUrl, statusCallback }) {
+async function sendTwilioSms({ to, body, mediaUrl, statusCallback, purpose }) {
   const config = twilioConfig();
   if (!twilioConfigured()) throw new Error('Twilio 尚未配置，请先设置 Railway 环境变量');
+  if (purpose !== 'recruiting' && recruiting.hasCandidatePhone(readDb(), to)) throw new Error('此号码有应聘者档案，请在招聘与面试中心核实并联系');
   // MMS is more reliable when Twilio receives the exact MMS-capable sender.
   // Plain SMS keeps using the Messaging Service for its existing routing and
   // compliance configuration.
@@ -5925,7 +5937,8 @@ async function sendTwilioSms({ to, body, mediaUrl, statusCallback }) {
         Authorization: `Basic ${Buffer.from(`${config.accountSid}:${config.authToken}`).toString('base64')}`,
         'Content-Type': 'application/x-www-form-urlencoded'
       },
-      body: form.toString()
+      body: form.toString(),
+      signal: AbortSignal.timeout(20000)
     });
   } catch (cause) {
     const error = new Error('Twilio 网络连接失败，请稍后重试');
@@ -5940,10 +5953,18 @@ async function sendTwilioSms({ to, body, mediaUrl, statusCallback }) {
     error.twilioCode = code;
     error.twilioHttpStatus = response.status;
     error.twilioMoreInfo = String(result.more_info || '').trim();
+    error.providerRejected = response.status >= 400 && response.status < 500;
+    error.providerCode = result.code || response.status;
     throw error;
   }
   return result;
 }
+
+const recruitingService = recruiting.createRecruitingService({
+  readDb, writeDb, canAccess, readBody, send,
+  sendSms:sendTwilioSms, smsConfigured:twilioConfigured,
+  publicBaseUrl:requestPublicBaseUrl, dataDir:DATA_DIR, notify:notifyDataChanged
+});
 
 function customerAiAutoReplyInBusinessHours(settings, now = new Date()) {
   if (settings.schedule !== 'business') return true;
@@ -7982,6 +8003,11 @@ async function api(req, res) {
     const body = String(params.Body || '').trim();
     const mediaCount = Number(params.NumMedia || 0);
     const messageSid = String(params.MessageSid || params.SmsMessageSid || '').trim();
+    const recruitingResult = recruiting.ingestInbound(db, params);
+    if (recruitingResult.handled) {
+      if (recruitingResult.added) writeDb(db);
+      return send(res, 200, '<?xml version="1.0" encoding="UTF-8"?><Response></Response>', 'text/xml; charset=utf-8');
+    }
     if (from && (body || mediaCount > 0)) {
       let match = findConversationByPhone(db, from);
       if (!match) {
@@ -8049,6 +8075,10 @@ async function api(req, res) {
     const raw = await readRawBody(req);
     const params = Object.fromEntries(new URLSearchParams(raw));
     if (!validateTwilioSignature(req, params)) return send(res, 403, { error: 'Twilio signature verification failed' });
+    if (recruiting.ingestStatus(db, params, url.searchParams)) {
+      writeDb(db);
+      return send(res, 200, '<?xml version="1.0" encoding="UTF-8"?><Response></Response>', 'text/xml; charset=utf-8');
+    }
     const messageSid = String(params.MessageSid || '').trim();
     const status = String(params.MessageStatus || params.SmsStatus || '').trim();
     let changedItem = null;
@@ -8116,6 +8146,8 @@ async function api(req, res) {
     return openEventStream(req, res, eventUser);
   }
   if (!user) return send(res, 401, { error: '请先登录' });
+
+  if (await recruitingService.handle(req, res, url, user)) return;
 
   if (req.method === 'GET' && url.pathname === '/api/events') {
     return openEventStream(req, res, user);
@@ -10397,6 +10429,13 @@ async function api(req, res) {
     const fileName = path.basename(decodeURIComponent(url.pathname.replace('/api/backups/', '')));
     const filePath = backupPath(fileName);
     if (!fileName.endsWith('.json') || !fs.existsSync(filePath)) return send(res, 404, { error: '备份文件不存在' });
+    if (!canAccess(user, 'recruitingView')) {
+      const backup = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+      for (const key of Object.keys(backup)) if (key.startsWith('recruiting')) delete backup[key];
+      res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+      res.setHeader('Cache-Control', 'no-store');
+      return send(res, 200, backup);
+    }
     res.writeHead(200, {
       'Content-Type': 'application/json; charset=utf-8',
       'Content-Disposition': `attachment; filename="${fileName}"`,
@@ -12118,6 +12157,7 @@ http.createServer((req, res) => {
   startTwilioReconciliationWorker();
   startCustomerAiAutoReplyWorker();
   startCustomerNurtureWorker();
+  recruitingService.startReminderWorker();
   setInterval(expireInternalMessageVideos, 6 * 60 * 60 * 1000);
   setInterval(cleanupStaleMediaUploadParts, 6 * 60 * 60 * 1000);
 });

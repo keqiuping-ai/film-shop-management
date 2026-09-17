@@ -707,6 +707,10 @@ const dict = {
   }
 };
 
+dict.zh.recruiting = '招聘与面试中心';
+dict.zh.recruitingSub = '应聘者档案 · 短信沟通 · 面试预约与评分';
+dict.en.recruiting = 'Recruiting & Interviews';
+dict.en.recruitingSub = 'Candidates · SMS conversations · Interviews & scorecards';
 const t = key => dict[lang]?.[key] || dict.zh[key] || key;
 const serviceNames = new Proxy({}, { get: (_, key) => t(key) });
 const roleNames = new Proxy({}, { get: (_, key) => t(key) });
@@ -726,6 +730,7 @@ const pages = [
   ['aiBoss', 'aiBoss', 'aiBossSub'],
   ['fieldSales', 'fieldSales', 'fieldSalesSub'],
   ['customerCenter', 'customerCenter', 'customerCenterSub'],
+  ['recruiting', 'recruiting', 'recruitingSub'],
   ['customerNurture', 'customerNurture', 'customerNurtureSub'],
   ['replyLibrary', 'replyLibrary', 'replyLibrarySub'],
   ['prospects', 'prospects', 'prospectsSub'],
@@ -760,6 +765,7 @@ const pagePermissions = {
   aiBoss: null,
   fieldSales: 'fieldSalesManage',
   customerCenter: 'prospectsView',
+  recruiting: 'recruitingView',
   customerNurture: 'prospectsView',
   replyLibrary: 'prospectsView',
   prospects: 'prospectsView',
@@ -789,6 +795,7 @@ const writePermissions = {
   fieldSales: 'fieldSalesManage',
   customerTasks: 'prospectsEdit',
   customerCenter: 'prospectsEdit',
+  recruiting: 'recruitingEdit',
   customerNurture: 'prospectsEdit',
   replyLibrary: 'prospectsEdit',
   prospects: 'prospectsEdit',
@@ -825,6 +832,8 @@ const permissionLabels = [
   ['schedulesEdit', '录入/编辑员工调休表/发送提醒', 'Create / edit staff schedule / send reminders'],
   ['prospectsView', '查看预约到店客户', 'View appointment / arrival customers'],
   ['prospectsEdit', '录入/编辑预约到店客户', 'Create / edit appointment / arrival customers'],
+  ['recruitingView', '查看应聘者、简历和面试日程', 'View candidates, resumes and interviews'],
+  ['recruitingEdit', '管理招聘、预约和应聘者短信', 'Manage recruiting, interviews and candidate SMS'],
   ['leadsView', '查看客资', 'View leads'],
   ['leadsEdit', '录入/编辑客资', 'Create / edit leads'],
   ['commissionView', '查看客服提成', 'View customer service commissions'],
@@ -1241,7 +1250,7 @@ function setPage(page) {
   uiNavigationRevision += 1;
   current = page;
   const url = new URL(window.location.href);
-  if (page === 'customerTasks') url.searchParams.set('page', 'customerTasks');
+  if (page === 'customerTasks' || page === 'recruiting') url.searchParams.set('page', page);
   else url.searchParams.delete('page');
   window.history.replaceState({}, '', url);
   render();
@@ -1249,7 +1258,7 @@ function setPage(page) {
 
 const COMPANY_SCOPE_PAGES = new Set([
   'modules', 'clock', 'leave', 'warranties', 'pricing', 'customerTasks', 'aiRules', 'aiBoss',
-  'fieldSales', 'customerCenter', 'customerNurture', 'replyLibrary', 'shipments', 'portalCustomers',
+  'fieldSales', 'customerCenter', 'recruiting', 'customerNurture', 'replyLibrary', 'shipments', 'portalCustomers',
   'personalNotes', 'audit', 'settings'
 ]);
 
@@ -1687,6 +1696,7 @@ function jobPersonOptions() {
 
 function render(options = {}) {
   if (!state) return;
+  window.Recruiting?.onAuthChanged?.();
   // Reuse the customer-center sort/search projection only within the current
   // rendered state. Any navigation, sync, mutation, branch switch, or language
   // repaint rebuilds it from current data.
@@ -2571,6 +2581,7 @@ function updateVoiceButton(recording, label = '') {
 }
 
 function navIcon(id) {
+  if (id === 'recruiting') return '♧';
   return { modules:'▦', clock:'📍', leave:'🗓️', dashboard:'⌂', jobs:'▣', warranties:'◆', installers:'◉', pricing:'$', inventory:'▤', workshopInventory:'▥', inventoryAlerts:'!', customerTasks:'🎧', aiRules:'🤖', aiBoss:'🧠', fieldSales:'🧭', customerCenter:'💬', customerNurture:'📣', replyLibrary:'☁', prospects:'★', leads:'☎', orders:'⇄', portalCustomers:'👤', shipments:'✈', schedules:'◫', workTime:'◴', expenses:'◇', reimbursements:'🧾', reports:'◌', audit:'◷', users:'◎', personalNotes:'📝', settings:'⚙' }[id] || '□';
 }
 
@@ -5133,6 +5144,7 @@ function customerNurtureView() {
 }
 
 const views = {
+  recruiting() { return window.Recruiting ? window.Recruiting.render() : '<p class="note">Loading recruiting…</p>'; },
   clock() { return desktopClockView(); },
   leave() { return desktopLeaveView(); },
   aiBoss() { return aiBossView(); },
@@ -8999,6 +9011,7 @@ function collectionPermission(collection, action) {
 }
 
 function openQuickAdd() {
+  if (current === 'recruiting' && hasPerm('recruitingEdit')) return window.Recruiting?.openCandidate();
   if ((current === 'jobs' || current === 'dashboard') && hasPerm('jobsCreate')) return openJob();
   if (current === 'installers' && hasPerm('installerEdit')) return openInstaller();
   if (current === 'pricing' && hasPerm('pricingEdit')) return openPriceRule();
@@ -11670,7 +11683,7 @@ function escapeJs(value) {
 }
 
 document.documentElement.lang = lang === 'en' ? 'en' : 'zh-CN';
-if (new URLSearchParams(window.location.search).get('page') === 'customerTasks') current = 'customerTasks';
+if (['customerTasks', 'recruiting'].includes(new URLSearchParams(window.location.search).get('page'))) current = new URLSearchParams(window.location.search).get('page');
 document.getElementById('email').value = localStorage.getItem('filmShopCloud.lastEmail') || document.getElementById('email').value;
 applyStaticTranslations();
 startSidebarTimeZones();

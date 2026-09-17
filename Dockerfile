@@ -8,6 +8,7 @@ COPY package*.json ./
 RUN npm ci --omit=dev
 
 COPY server.js ./
+COPY lib ./lib
 COPY server-config.json ./
 COPY version.json ./
 COPY public ./public
