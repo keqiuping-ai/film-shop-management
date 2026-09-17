@@ -3988,6 +3988,42 @@ function isYelpSystemNotificationMessage(message, source = '') {
   return /^\s*automatic message\s*:/i.test(text);
 }
 
+function isYelpUnknownCity(value) {
+  const key = prospectTextKey(value).replace(/\s+/g, ' ');
+  return [
+    'las vegas / los angeles',
+    'las vegas/los angeles',
+    'los angeles / las vegas',
+    'los angeles/las vegas',
+    'unknown',
+    'not provided',
+    'n/a'
+  ].includes(key);
+}
+
+function yelpImportDiagnostic(candidate) {
+  if (!prospectTextKey(candidate?.source).includes('yelp')) return null;
+  const messages = normalizeProspectMessages(candidate.conversationMessages);
+  const materialMessages = messages.filter(message => !isYelpSystemNotificationMessage(message, candidate.source));
+  const missingFields = [];
+  if (!String(candidate.externalId || '').trim()) missingFields.push('externalId');
+  if (!String(candidate.city || '').trim()) missingFields.push('city');
+  if (!String(candidate.vehicle || '').trim()) missingFields.push('vehicle');
+  if (!String(candidate.need || '').trim()) missingFields.push('need');
+  if (!materialMessages.length) missingFields.push('customerConversation');
+  const systemNotificationOnly = Boolean(messages.length && !materialMessages.length);
+  if (!systemNotificationOnly && String(candidate.externalId || '').trim() && (candidate.need || materialMessages.length)) return null;
+  return {
+    code: 'partial-yelp-import',
+    missingFields: [...new Set(missingFields)],
+    systemNotificationOnly
+  };
+}
+
+function yelpNotificationIndicatesClosed(value) {
+  return /\b(no longer pursuing|not pursuing|not interested|declined|cancelled|canceled)\b/i.test(String(value || ''));
+}
+
 function prospectMessagesToText(messages) {
   return normalizeProspectMessages(messages).map(item => {
     const label = item.speaker === 'shop' ? '我们' : item.speaker === 'system' ? '系统' : '客户';
@@ -4133,6 +4169,7 @@ function normalizeProspectInput(input, fallback = {}) {
     input.sourceDevice ? `采集电脑: ${String(input.sourceDevice).trim()}` : '',
     input.profileUrl ? `客户链接: ${String(input.profileUrl).trim()}` : ''
   ].filter(Boolean);
+  let yelpClosedNotification = false;
   const base = {
     date: String(input.date || fallback.date || dateInTimezone('America/Los_Angeles')).slice(0, 10),
     source,
@@ -4187,6 +4224,38 @@ function normalizeProspectInput(input, fallback = {}) {
       return message;
     });
     base.conversationMessages = mergeProspectMessages([], base.conversationMessages);
+
+    // Yelp sometimes sends a terminal status such as "Automatic message: ..."
+    // without the original lead form. Keep that text as a system event; it is not
+    // the customer's service request and must not overwrite a previously captured
+    // vehicle, need, or real city.
+    if (isYelpSystemNotificationMessage({ channel: source, text: base.need }, source)) {
+      const notificationText = base.need;
+      yelpClosedNotification = yelpNotificationIndicatesClosed(notificationText);
+      const alreadyPresent = base.conversationMessages.some(message =>
+        prospectTextKey(message.text) === prospectTextKey(notificationText)
+      );
+      if (!alreadyPresent) {
+        base.conversationMessages = mergeProspectMessages(base.conversationMessages, [{
+          id: base.externalEventId,
+          externalEventId: base.externalEventId,
+          speaker: 'system',
+          speakerName: 'Yelp 系统通知',
+          direction: '',
+          channel: 'yelp',
+          timestamp: base.sourceUpdatedAt || base.importedAt,
+          text: notificationText,
+          provider: 'Yelp',
+          messageType: 'system-notification'
+        }]);
+      }
+      const previousNeed = cleanImportedConversationText(fallback.need || '');
+      base.need = isYelpSystemNotificationMessage({ channel: source, text: previousNeed }, source) ? '' : previousNeed;
+    }
+    if (isYelpUnknownCity(base.city)) {
+      const previousCity = cleanImportedText(fallback.city || '');
+      base.city = isYelpUnknownCity(previousCity) ? '' : previousCity;
+    }
   }
   base.processedExternalEventIds = Array.from(new Set([
     ...(Array.isArray(fallback.processedExternalEventIds) ? fallback.processedExternalEventIds : []),
@@ -4195,6 +4264,11 @@ function normalizeProspectInput(input, fallback = {}) {
   base.status = base.status || (base.appointmentDate || base.appointmentTime ? '已预约' : '新意向');
   base.intentLevel = inferProspectIntent(base, input.intentLevel || fallback.intentLevel || '');
   base.intentReason = String(input.intentReason || fallback.intentReason || inferProspectIntentReason(base, base.conversationMessages, base.intentLevel)).trim();
+  if (yelpClosedNotification && !String(input.status || '').trim()) {
+    base.status = '暂时无需回复';
+    if (!String(input.intentLevel || '').trim()) base.intentLevel = '低';
+    if (!String(input.intentReason || '').trim()) base.intentReason = 'Yelp 系统通知：客户已表示不再继续该项目。';
+  }
   return base;
 }
 
@@ -4203,7 +4277,23 @@ function findProspectDuplicate(prospects, candidate) {
   const exact = candidateKey ? (prospects || []).find(item => prospectIdentityKey(item) === candidateKey) : null;
   if (exact) return exact;
   const safeKey = customerConversationSafeDuplicateKey(candidate);
-  return safeKey ? (prospects || []).find(item => customerConversationSafeDuplicateKey(item) === safeKey) || null : null;
+  const safeMatch = safeKey ? (prospects || []).find(item => customerConversationSafeDuplicateKey(item) === safeKey) || null : null;
+  if (safeMatch) return safeMatch;
+
+  // A Yelp status-only event may omit the stable lead ID and slightly alter the
+  // display name. If exactly one Yelp record has the same phone, it is safe to
+  // append the notification there. Do not use this fallback when Yelp supplied a
+  // different lead ID, because that can represent a genuinely new request.
+  if (prospectTextKey(candidate?.source).includes('yelp') && !String(candidate?.externalId || '').trim()) {
+    const phone = normalizedPhone(candidate?.phone);
+    if (phone.length >= 7) {
+      const matches = (prospects || []).filter(item =>
+        prospectTextKey(item?.source).includes('yelp') && normalizedPhone(item?.phone) === phone
+      );
+      if (matches.length === 1) return matches[0];
+    }
+  }
+  return null;
 }
 
 function customerConversationSafeDuplicateKey(item) {
@@ -4384,12 +4474,15 @@ function importCustomerRecords(db, user, body, collection = 'prospects') {
     updated: 0,
     skipped: 0,
     duplicateCount: 0,
+    warnings: [],
     skippedItems: [],
     items: []
   };
   db[collection] = Array.isArray(db[collection]) ? db[collection] : [];
   rows.forEach((row, index) => {
     const candidate = normalizeProspectInput(row, fallback);
+    const yelpDiagnostic = yelpImportDiagnostic(candidate);
+    if (yelpDiagnostic?.missingFields.length) result.warnings.push({ index, ...yelpDiagnostic });
     enrichCustomerIdentity(db, candidate);
     const hasUsefulIdentity = candidate.customer || candidate.phone || candidate.externalId || candidate.chatContext || candidate.conversationMessages?.length;
     if (!candidate.source || !hasUsefulIdentity) {
@@ -10502,6 +10595,18 @@ async function api(req, res) {
       else if (body && typeof body === 'object') body = { ...body, source: user.importPlatform };
     }
     const result = importCustomerConversations(db, user, body);
+    if (result.warnings?.length) {
+      const missingFieldCounts = {};
+      result.warnings.forEach(warning => {
+        (warning.missingFields || []).forEach(field => { missingFieldCounts[field] = (missingFieldCounts[field] || 0) + 1; });
+      });
+      console.warn('Customer conversation import quality warning', {
+        platform: user.importPlatform || String(body?.source || 'unknown'),
+        warningCount: result.warnings.length,
+        systemNotificationOnlyCount: result.warnings.filter(warning => warning.systemNotificationOnly).length,
+        missingFieldCounts
+      });
+    }
     if (!result.imported && !result.updated && !result.skipped) {
       return send(res, 400, { error: '没有收到可导入的客户交流数据' });
     }

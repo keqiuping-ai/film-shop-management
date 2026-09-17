@@ -6696,6 +6696,25 @@ function prospectIsYelpSystemNotificationMessage(message, source = '') {
   return channel.includes('yelp') && /^\s*automatic message\s*:/i.test(text);
 }
 
+function prospectEditableNeed(item = {}) {
+  const need = cleanConversationText(item.need || '');
+  return prospectIsYelpSystemNotificationMessage({ channel: item.source, text: need }, item.source) ? '' : need;
+}
+
+function prospectEditableCity(item = {}) {
+  const city = cleanConversationText(item.city || '');
+  const key = city.toLowerCase().replace(/\s+/g, ' ');
+  return String(item.source || '').toLowerCase().includes('yelp') && [
+    'las vegas / los angeles',
+    'las vegas/los angeles',
+    'los angeles / las vegas',
+    'los angeles/las vegas',
+    'unknown',
+    'not provided',
+    'n/a'
+  ].includes(key) ? '' : city;
+}
+
 function structuredProspectMessages(item) {
   const rows = Array.isArray(item?.conversationMessages) ? item.conversationMessages : [];
   const localMessages = prospectPendingLocalMessages.get(activeProspectWorkspaceId) || [];
@@ -7548,7 +7567,7 @@ function customerCenterTable(rows = searchedCustomerCenterRows()) {
       const pendingBadge = replyState.pending ? `<span class="customer-pending-badge" title="${escapeHtml(latestText)}"><i></i>${lang === 'zh' ? '待回复' : 'Reply'}${replyState.count > 1 ? ` ${replyState.count}` : ''}</span>` : '';
       const isNew = Boolean(item.newCustomer) && String(item.status || '') !== '暂时无需回复';
       const newBadge = isNew ? `<span class="customer-new-badge"><i></i>${lang === 'zh' ? '新客户' : 'New'}</span>` : '';
-      return `<tr class="click-row ${replyState.pending ? 'customer-pending-row' : ''} ${isNew ? 'customer-new-row' : ''}" onclick="openProspectWorkspace('${item._collection}','${item.id}')"><td class="prospect-nowrap">${escapeHtml(item.date || '')}</td><td class="prospect-time">${prospectTimeCell(item)}</td><td><div class="prospect-clamp prospect-clamp-2">${escapeHtml(item.source || '')}</div>${newBadge}</td><td><div class="customer-name-with-alert"><div class="prospect-clamp prospect-clamp-2">${escapeHtml(item.customer || (lang === 'zh' ? '未命名客户' : 'Unnamed'))}</div>${pendingBadge}</div><span class="note prospect-nowrap">${escapeHtml(item.phone || '')}</span>${replyState.pending && latestText ? `<div class="customer-pending-preview" title="${escapeHtml(latestText)}">${escapeHtml(shortText(latestText, 28))}</div>` : ''}</td><td><div class="prospect-clamp prospect-clamp-2">${escapeHtml(item.vehicle || '')}</div><div class="note prospect-clamp prospect-clamp-2">${escapeHtml(item.need || '')}</div></td><td class="prospect-time">${appointment}</td><td><div class="prospect-clamp prospect-clamp-2">${rep ? escapeHtml(rep.name) : escapeHtml(item.ownerName || '') || t('unassigned')}</div></td><td class="customer-center-status-col">${prospectStatusPill(item.status)}</td><td class="customer-center-intent-col">${prospectIntentPill(item.intentLevel)}</td></tr>`;
+      return `<tr class="click-row ${replyState.pending ? 'customer-pending-row' : ''} ${isNew ? 'customer-new-row' : ''}" onclick="openProspectWorkspace('${item._collection}','${item.id}')"><td class="prospect-nowrap">${escapeHtml(item.date || '')}</td><td class="prospect-time">${prospectTimeCell(item)}</td><td><div class="prospect-clamp prospect-clamp-2">${escapeHtml(item.source || '')}</div>${newBadge}</td><td><div class="customer-name-with-alert"><div class="prospect-clamp prospect-clamp-2">${escapeHtml(item.customer || (lang === 'zh' ? '未命名客户' : 'Unnamed'))}</div>${pendingBadge}</div><span class="note prospect-nowrap">${escapeHtml(item.phone || '')}</span>${replyState.pending && latestText ? `<div class="customer-pending-preview" title="${escapeHtml(latestText)}">${escapeHtml(shortText(latestText, 28))}</div>` : ''}</td><td><div class="prospect-clamp prospect-clamp-2">${escapeHtml(item.vehicle || '')}</div><div class="note prospect-clamp prospect-clamp-2">${escapeHtml(prospectEditableNeed(item))}</div></td><td class="prospect-time">${appointment}</td><td><div class="prospect-clamp prospect-clamp-2">${rep ? escapeHtml(rep.name) : escapeHtml(item.ownerName || '') || t('unassigned')}</div></td><td class="customer-center-status-col">${prospectStatusPill(item.status)}</td><td class="customer-center-intent-col">${prospectIntentPill(item.intentLevel)}</td></tr>`;
     }).join('')}
     ${rows.length ? '' : `<tr><td colspan="9" class="note">${lang === 'zh' ? (customerCenterShowInvalid ? '目前没有无效客户。' : '目前没有需要继续跟进的客户。') : (customerCenterShowInvalid ? 'No invalid customers.' : 'No customers need follow-up.')}</td></tr>`}
   </tbody></table></div>${visibleRows.length < rows.length ? `<div class="customer-center-load-more"><span class="note">${lang === 'zh' ? `当前显示 ${visibleRows.length} / ${rows.length} 位客户` : `Showing ${visibleRows.length} / ${rows.length} customers`}</span><button class="btn" onclick="showMoreCustomerCenterRows()">${lang === 'zh' ? '继续显示200位' : 'Show 200 more'}</button></div>` : ''}`;
@@ -7750,11 +7769,11 @@ function renderProspectWorkspace() {
         ${field(t('customer'), `<input id="workspaceCustomer" value="${escapeHtml(item.customer || '')}" ${hasPerm('prospectsEdit') ? '' : 'disabled'}>`)}
         ${field(lang === 'zh' ? '电话' : 'Phone', `<input id="workspacePhone" value="${escapeHtml(item.phone || '')}" ${hasPerm('prospectsEdit') ? '' : 'disabled'}>`)}
         <div class="prospect-sidebar-pair">
-          ${field(lang === 'zh' ? '城市' : 'City', `<input id="workspaceCity" value="${escapeHtml(item.city || '')}" placeholder="Las Vegas / Los Angeles" ${hasPerm('prospectsEdit') ? '' : 'disabled'}>`)}
+          ${field(lang === 'zh' ? '城市' : 'City', `<input id="workspaceCity" value="${escapeHtml(prospectEditableCity(item))}" placeholder="Las Vegas / Los Angeles" ${hasPerm('prospectsEdit') ? '' : 'disabled'}>`)}
           ${field(lang === 'zh' ? '所属分店' : 'Branch', select('workspaceBranchId', item.branchId || '', branchOptions))}
         </div>
         ${field(t('vehicle'), `<input id="workspaceVehicle" value="${escapeHtml(item.vehicle || '')}" ${hasPerm('prospectsEdit') ? '' : 'disabled'}>`)}
-        ${field(t('vehicleNeed'), `<textarea id="workspaceNeed" ${hasPerm('prospectsEdit') ? '' : 'disabled'}>${escapeHtml(item.need || '')}</textarea>`)}
+        ${field(t('vehicleNeed'), `<textarea id="workspaceNeed" ${hasPerm('prospectsEdit') ? '' : 'disabled'}>${escapeHtml(prospectEditableNeed(item))}</textarea>`)}
         ${field(t('service'), select('workspaceService', item.service || 'tint', services))}
         <div class="prospect-sidebar-pair">
           ${field(t('appointmentDate'), `<input id="workspaceAppointmentDate" type="date" value="${escapeHtml(item.appointmentDate || '')}" ${hasPerm('prospectsEdit') ? '' : 'disabled'}>`)}
