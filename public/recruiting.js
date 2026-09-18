@@ -212,7 +212,8 @@
 
   function needsReply(candidate) {
     const messages = orderedMessages(candidate);
-    return messages.length ? messages[messages.length - 1].direction === 'inbound' : false;
+    if (!messages.length || messages[messages.length - 1].direction !== 'inbound') return false;
+    return !(messages[messages.length - 1].readByUserIds || []).includes(user?.id);
   }
 
   function orderedMessages(candidate) {
@@ -310,7 +311,7 @@
     const today = localParts(Date.now()).date;
     const counts = [
       ['today', tr('今日面试', 'Today’s interviews'), interviews().filter(item => localParts(item.startsAt).date === today && item.status !== 'cancelled').length, tr('洛杉矶当地时间', 'Los Angeles local time')],
-      ['reply', tr('待回复消息', 'Replies to review'), candidates().filter(needsReply).length, tr('候选人最后一条为回复', 'Latest message from candidate')],
+      ['reply', tr('未读回复', 'Unread replies'), candidates().filter(needsReply).length, tr('最新候选人回复尚未查看', 'Latest candidate reply not yet viewed')],
       ['upcoming', tr('即将到来的面试', 'Upcoming interviews'), interviews().filter(item => ['scheduled', 'confirmed'].includes(item.status) && Date.parse(item.startsAt) >= Date.now()).length, tr('含等待确认的预约', 'Includes proposed appointments')],
       ['no_show', tr('未到场待跟进', 'No-show follow-up'), interviews().filter(item => item.status === 'no_show').length, tr('已人工标记未到场', 'Marked as no-show')]
     ];
@@ -581,6 +582,24 @@
     composeContext = { dialog: document.querySelector('[data-rec-dialog="messages"]'), id, identity, recipientPhone: person.phone || '', version: 0, pending: false, ready: false, sourceText: '', previewText: '', requestId: '', requestText: '' };
     updateComposeControls();
     const thread = el('recThreads'); thread.dataset.rendered = threadHtml(person); thread.scrollTop = thread.scrollHeight;
+    markMessagesRead(id);
+  }
+
+  async function markMessagesRead(id) {
+    if (!checkIdentity()) return;
+    const person = findCandidate(id);
+    if (!person || !needsReply(person)) return;
+    const requestedIdentity = identity;
+    try {
+      const result = await api(`/api/recruiting/candidates/${encodeURIComponent(id)}/messages-read`, { method:'POST', body:'{}', timeoutMs:20000 });
+      if (!checkIdentity() || identity !== requestedIdentity || !result.candidate) return;
+      const index = candidates().findIndex(item => item.id === id);
+      if (index >= 0) data.candidates[index] = result.candidate;
+      if (el('recResults')) el('recResults').innerHTML = candidateTable();
+      updateOpenMessageThread();
+    } catch (err) {
+      if (document.querySelector(`[data-rec-dialog="messages"][data-rec-id="${CSS.escape(id)}"]`)) dialogError(err.message);
+    }
   }
 
   function activeComposer(context = composeContext) {
@@ -647,6 +666,7 @@
     if (!dialog?.isConnected || identity !== requestedIdentity || dialog.dataset.recId !== id) return;
     if (error) { dialogError(error); return; }
     const person = findCandidate(id); if (!person) return;
+    await markMessagesRead(id);
     updateOpenMessageThread();
     el('recThreads').scrollTop = el('recThreads').scrollHeight;
     if (person.smsOptedOut && el('recSendSms')) { el('recSendSms').disabled = true; dialogError(tr('候选人已退订，短信发送已停止。', 'Candidate opted out; SMS sending is blocked.')); }
