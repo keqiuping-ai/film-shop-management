@@ -56,3 +56,15 @@ Node 22 下 4 项测试通过，涵盖真实 LiveKit SDK 音频专用凭证、�
 使用本地 LiveKit 1.13.7 与两个隔离浏览器账号实际接通，合成音频经 WebRTC 双向传输，双方远端音频 readyState=4、track=live、非静音信号 RMS 约 0.702；静音/恢复/挂断均通过。按住说话自动上传并由另一账号解码成功，上滑取消未发送，文字草稿保留，390 像素手机视口无水平溢出。该验证不等同真实 iPhone 麦克风、锁屏或后台唤醒验证。
 
 网页仍运行时使用 SSE、轮询及通知权限提供来电；关闭网页或系统冻结后台时不能承诺电话级唤醒。未开通新的通信服务或服务器，正式服务继续使用原 LIVEKIT_URL / LIVEKIT_API_KEY / LIVEKIT_API_SECRET；不在客户端或文档存放密钥。
+
+## 删除消息与安装到桌面
+
+自己发送的每条消息下方提供“删除”。确认后删除整个会话中的该消息和附件，支持私聊和群聊；别人不能删除你的消息。服务端校验成员身份及发送者，重复删除幂等；SSE 同步清除对方页面上的内容、翻译和媒体，断线重连后重新核对已加载历史页，不保留已删除消息。下载和截图的外部副本不受影响。
+
+登录页、消息列表顶部及“我的”提供“安装到桌面”。支持 beforeinstallprompt 的浏览器显示原生安装窗口；其他浏览器显示设备对应步骤，包括 iPhone Safari 分享→添加到主屏幕、Android 浏览器菜单、Mac Safari 添加到程序坞。提供不含邀请码的固定入口复制。已在独立窗口运行时显示已安装。
+
+清单补齐独立应用 ID、192/512 PNG 图标和 Apple 180 图标。安装不缓存聊天、不注册离线 Service Worker，保持 24 小时规则。
+
+验证：Node 22 下原测试全通过，新增文本及四种附件删除、无权删除、跨站拒绝、重复删除、磁盘文件清除、SSE、未读和预览刷新检查。两个本地浏览器账号实际验证取消后保留、确认后双方文字/语音消失；iPhone 390×844 引导无横向溢出。浏览器安装检查仅报告测试环境 incognito 限制；未替用户实际安装应用。
+
+安装机制参考：[MDN](https://developer.mozilla.org/en-US/docs/Web/Progressive_web_apps/How_to/Trigger_install_prompt)、[Apple](https://support.apple.com/guide/iphone/open-as-web-app-iphea86e5236/ios)。

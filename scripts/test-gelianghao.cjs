@@ -38,6 +38,23 @@ test('friends chat: invitation, membership, protected files, persistence, retent
  const range=await call('b',`/files/${up.data.id}`,'GET',undefined,{Range:'bytes=0-6'});assert.equal(range.status,206);assert.equal(range.data,'PRIVATE');
  assert.equal((await call('a',`/rooms/${privateRoom}/messages`,'POST',{text:'csrf',clientId:crypto.randomUUID()},{Origin:'https://evil.example'})).status,403);
  const group=(await call('a','/rooms','POST',{name:'二人群',kind:'group',members:[bid]})).data.id;assert.equal((await call('c',`/rooms/${group}/messages`)).status,404);
+
+ // Sender-only deletion removes every attachment kind for the whole room.
+ const deleteAbort=new AbortController();const deleteStream=await fetch(base+'/events',{headers:{Cookie:clients.b},signal:deleteAbort.signal});const deleteReader=deleteStream.body.getReader();await deleteReader.read();
+ for(const mime of ['image/png','video/mp4','audio/webm','application/octet-stream']){
+  const upload=await call('a',`/rooms/${group}/upload`,'POST',Buffer.from('DELETE_THIS_ATTACHMENT'),{'Content-Type':mime,'X-File-Name':'delete-test'});assert.equal(upload.status,201);
+  const sentDelete=await call('a',`/rooms/${group}/messages`,'POST',{text:'wrong message',fileId:upload.data.id,clientId:crypto.randomUUID()});const mid=sentDelete.data.id,url=`/rooms/${group}/messages/${mid}`;
+  assert.equal((await call('anon',url,'DELETE')).status,401);assert.equal((await call('c',url,'DELETE')).status,404);assert.equal((await call('b',url,'DELETE')).status,403);
+  assert.equal((await call('a',url,'DELETE',undefined,{Origin:'https://evil.example'})).status,403);
+  assert.equal((await call('b',`/files/${upload.data.id}`)).status,200);
+  assert.equal((await call('a',url,'DELETE')).status,200);assert.equal((await call('a',url,'DELETE')).status,200);
+  assert.equal((await call('b',`/rooms/${group}/messages`)).data.messages.some(m=>m.id===mid),false);
+  assert.equal((await call('b',`/files/${upload.data.id}`)).status,404);assert.equal(fs.existsSync(path.join(dir,'gelianghao/files',upload.data.id)),false);
+ }
+ let deleteEvents='';while(!deleteEvents.includes('event: message-deleted')){const event=await deleteReader.read();deleteEvents+=Buffer.from(event.value).toString();}deleteAbort.abort();
+ assert.equal((await call('b','/rooms')).data.rooms.find(r=>r.id===group).unread,0);
+ assert.equal((await call('a','/rooms')).data.rooms.find(r=>r.id===group).last_text,null);
+ const directDelete=await call('a',`/rooms/${privateRoom}/messages`,'POST',{text:'remove direct message',clientId:crypto.randomUUID()});assert.equal((await call('a',`/rooms/${privateRoom}/messages/${directDelete.data.id}`,'DELETE')).status,200);
  mod.close();mod=factory(dir);assert.equal((await call('b',`/rooms/${privateRoom}/messages`)).data.messages.length,2);
  const db=new DatabaseSync(path.join(dir,'gelianghao/chat.sqlite'));db.prepare('UPDATE messages SET created=? WHERE room_id=?').run(Date.now()-86400000-1,privateRoom);db.close();
  assert.equal((await call('b',`/rooms/${privateRoom}/messages`)).data.messages.length,0);assert.equal((await call('a',`/rooms/${privateRoom}/messages`)).data.messages.length,0);assert.equal((await call('b',`/files/${up.data.id}`)).status,404);assert.equal(fs.existsSync(path.join(dir,'gelianghao/files',up.data.id)),false);
