@@ -153,6 +153,13 @@
 .rec-kit-record input { text-align:center; font-weight:700; }
 .modal:has(.rec-interview-kit) > .dialog { width:min(1440px,calc(100vw - 36px)); }
 .rec-video-invite{margin-top:16px;padding:16px;border:1px solid #bcdadd;border-radius:14px;background:#f2fbfa}.rec-video-invite-result{margin-top:12px}.rec-video-invite-result label{display:grid;gap:6px}.rec-video-invite-result input{width:100%;font-size:13px}
+.rec-interview-control { display:grid; gap:12px; padding:16px; border:1px solid #9fcfca; border-radius:14px; background:linear-gradient(135deg,#eef9f6,#f8fcfb); }
+.rec-interview-control > div:first-child { display:grid; gap:4px; }
+.rec-interview-control > div:first-child > strong { color:#165e5a; font-size:16px; }
+.rec-interview-control .rec-note { margin:0; }
+.rec-interview-control-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px; }
+.rec-interview-control-grid .btn { min-height:48px; justify-content:center; white-space:normal; line-height:1.35; }
+.rec-interview-control #recInterviewSaveState.rec-ok { margin:0; padding:9px 11px; }
 .rec-bilingual-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:22px; }
 .rec-bilingual-grid > div { min-width:0; }
 .rec-bilingual-grid h4 { margin:0 0 10px; color:#587871; font-size:12px; }
@@ -183,3 +190,4 @@
 @media(max-width:680px) { .rec-profile-facts,.rec-bilingual-grid{grid-template-columns:1fr}.rec-profile-facts > div,.rec-profile-facts > div:nth-child(2n),.rec-profile-facts > div:nth-child(4n){border-right:0}.rec-profile-facts > div:nth-last-child(-n+2){border-bottom:1px solid #e4ece9}.rec-profile-facts > div:last-child{border-bottom:0}.rec-bilingual-grid > div + div{border-left:0;border-top:1px solid #dfe9e5;padding-left:0;padding-top:15px}.rec-profile-section,.rec-compose-step{padding:13px}.rec-bubble{max-width:100%;width:100%}.rec-threads{padding:12px}.rec-resume-original{max-height:420px} }
 @media(max-width:680px) { .rec-application-dates dl,.rec-profile .rec-application-dates dl{grid-template-columns:1fr}.rec-profile .rec-application-dates .rec-wide{grid-column:auto}.rec-resume-pair .rec-readable-text{min-height:220px;max-height:65vh;padding:12px;font-size:16px}.rec-filters #recCandidateSort{width:100%;min-width:0}.rec-order-note{padding:10px 14px} }
 @media(max-width:800px) { .rec-kit-layout{grid-template-columns:1fr}.rec-kit-sidebar{position:static}.rec-kit-summary{grid-template-columns:1fr}.rec-kit-evidence,.rec-kit-record{grid-template-columns:1fr}.rec-kit-question{padding:12px}.rec-kit-question-head{grid-template-columns:28px minmax(0,1fr)}.rec-kit-question-head em{grid-column:2}.modal:has(.rec-interview-kit) > .dialog{width:100%} }
+@media(max-width:800px) { .rec-interview-control-grid{grid-template-columns:1fr}.rec-interview-control{padding:13px}.rec-interview-control-grid .btn{width:100%} }

@@ -487,21 +487,68 @@
     const meeting = interviewId ? interviews().find(item => item.id === interviewId) : null;
     const person = findCandidate(meeting?.candidateId || candidateId); if (!person) return;
     const initial = meeting?.startsAt ? localParts(meeting.startsAt) : { date: localParts(Date.now()).date, time: '10:00' };
-    const html = `<div class="rec-dialog" data-rec-dialog="interview" data-rec-id="${h(person.id)}"><div id="recDialogError" class="rec-alert" role="alert"></div><div class="rec-person-summary"><strong>${h(person.name)}</strong>${pill(person.status)}</div><p class="rec-note">${tr('所有预约均使用洛杉矶时间（PST / PDT），与本机时区无关。保存后，请到短信窗口预览并发送邀请。', 'All appointments use Los Angeles time (PST / PDT), regardless of this computer’s time zone. After saving, preview and send the invitation from Messages.')}</p><div class="rec-form-grid">${input('recInterviewDate', tr('面试日期 *', 'Interview date *'), initial.date, 'date', 'required')}${input('recInterviewTime', tr('面试时间 *', 'Interview time *'), initial.time, 'time', 'required')}<div id="recTimeAmbiguity" class="rec-wide"></div>${input('recDuration', tr('时长（分钟）', 'Duration (minutes)'), meeting?.durationMinutes || 30, 'number', 'min="15" max="180" step="5"')}${input('recInterviewer', tr('面试官', 'Interviewer'), meeting?.interviewerName || user?.name || '', 'text', 'maxlength="160" list="recInterviewers"')}<datalist id="recInterviewers">${(data?.interviewers || []).map(person => `<option>${h(person.name)}</option>`).join('')}</datalist>${input('recInterviewAddress', tr('面试地址 *', 'Interview address *'), meeting?.address || data?.settings?.address || DEFAULT_ADDRESS, 'text', 'maxlength="500" required')}${select('recInterviewStatus', tr('预约状态', 'Appointment status'), interviewStates, meeting?.status || 'scheduled')}${textarea('recInterviewNotes', tr('面试备注', 'Interview notes'), meeting?.notes)}</div><label class="rec-check"><input type="checkbox" id="recCandidateConfirmed" ${['confirmed', 'arrived', 'completed'].includes(meeting?.status) ? 'checked' : ''}>${tr('我已收到候选人对这个日期、时间和地址的明确确认', 'I have the candidate’s explicit confirmation of this date, time and address')}</label><label class="rec-check"><input type="checkbox" id="recAutoReminders" ${meeting?.automaticReminders ? 'checked' : ''} ${data?.settings?.remindersEnabled === false ? 'disabled' : ''}>${tr('开启本次面试的自动短信提醒（24 小时 / 2 小时前）', 'Enable automatic SMS reminders for this interview (24 hours / 2 hours before)')}</label><p class="rec-note">${data?.settings?.remindersEnabled === false ? tr('本地环境已关闭自动发送。', 'Automatic sending is disabled in this environment.') : tr('自动提醒需要短信同意且预约已确认；取消或改期后按最新安排处理。', 'Automatic reminders require SMS consent and a confirmed appointment. Cancellation or rescheduling uses the latest appointment.')}</p>${meeting ? `<section class="rec-video-invite"><strong>${tr('QUAD 视频面试室', 'QUAD video interview room')}</strong><p class="rec-note">${tr('一次性候选人链接不会显示候选人的电话或邮箱；重新生成会立即作废旧链接。', 'The one-time candidate link exposes no phone or email. Regenerating it immediately revokes the old link.')}</p><div class="rec-actions">${action('create-video-invite', meeting.id, tr('生成一次性链接', 'Create one-time link'), true)}${action('join-video-interview', meeting.id, tr('进入视频面试', 'Join video interview'))}</div><div id="recVideoInviteResult" class="rec-video-invite-result"></div></section>` : `<p class="rec-note">${tr('先保存面试安排，然后即可生成一次性视频链接。', 'Save the interview first to create a one-time video link.')}</p>`}</div>`;
-    openRecruitingModal(meeting ? tr('查看 / 修改面试安排', 'Review / reschedule interview') : tr('安排面试', 'Schedule interview'), html, async () => {
-      const valid = localToInstants(value('recInterviewDate'), value('recInterviewTime'));
-      if (!valid.length) { dialogError(tr('该洛杉矶日期或时间无效（可能处于夏令时跳转空档）。请重新选择。', 'That Los Angeles date/time is invalid or falls in a daylight-saving gap. Choose another time.')); return; }
-      const startsAt = valid.length === 1 ? valid[0] : value('recTimeFold');
-      if (!startsAt || !valid.includes(startsAt)) { dialogError(tr('请选择夏令时回拨时段中的具体时间。', 'Choose which repeated daylight-saving time you mean.')); return; }
-      const nextStatus = value('recInterviewStatus');
-      if (['confirmed', 'arrived', 'completed'].includes(nextStatus) && !el('recCandidateConfirmed').checked) { dialogError(tr('请先确认候选人明确同意此预约；否则保留“拟定时间”。', 'Confirm the candidate agreed to this appointment, or leave it proposed.')); return; }
-      const durationMinutes = Number(value('recDuration'));
-      if (!Number.isInteger(durationMinutes) || durationMinutes < 15 || durationMinutes > 180 || !value('recInterviewAddress')) { dialogError(tr('请填写地址，并将面试时长设为 15–180 分钟。', 'Enter an address and a duration of 15–180 minutes.')); return; }
-      if (el('recAutoReminders').checked && (!person.smsConsent || person.smsOptedOut)) { dialogError(tr('自动短信提醒需要有效的短信同意，且候选人没有退订。', 'Automatic SMS requires valid consent and no opt-out.')); return; }
-      if (el('recAutoReminders').checked && nextStatus !== 'confirmed') { dialogError(tr('请将预约标记为“对方已确认”，再开启自动提醒。', 'Mark the appointment Candidate confirmed before enabling reminders.')); return; }
-      await saveMutation(`/api/recruiting/interviews${interviewId ? `/${encodeURIComponent(interviewId)}` : ''}`, { candidateId: person.id, startsAt, durationMinutes, timeZone: TZ, address: value('recInterviewAddress'), interviewerName: value('recInterviewer'), interviewerId: (data?.interviewers || []).find(person => person.name === value('recInterviewer'))?.id || (value('recInterviewer') === meeting?.interviewerName ? meeting?.interviewerId || '' : ''), status: nextStatus, notes: value('recInterviewNotes'), automaticReminders: el('recAutoReminders').checked });
-    });
+    const controls = `<section class="rec-interview-control"><div><strong>${tr('QUAD 一站式面试控制台', 'QUAD one-stop interview console')}</strong><p class="rec-note">${tr('下面三个入口始终在这里。首次使用会自动保存当前安排，然后直接继续，不需要关闭窗口再回来找。', 'These three actions always stay here. The first use automatically saves this schedule and continues without closing or reopening the window.')}</p></div><div class="rec-interview-control-grid">${action('save-open-interview-kit', person.id, tr('AI 面试题库 / 评分', 'AI interview kit / scoring'), true)}${action('save-create-video-invite', meeting?.id || '', tr('生成候选人一次性链接', 'Create one-time candidate link'))}${action('save-join-video-interview', meeting?.id || '', tr('进入视频面试室', 'Enter video interview room'))}</div><p id="recInterviewSaveState" class="rec-note" role="status">${meeting ? tr('当前预约已保存；修改表单后点击任一入口会先保存最新内容。', 'This appointment is saved. Any action saves current changes first.') : tr('尚未保存；点击任一入口会自动创建预约。', 'Not saved yet. Any action automatically creates the appointment.')}</p><div id="recVideoInviteResult" class="rec-video-invite-result"></div></section>`;
+    const html = `<div class="rec-dialog" data-rec-dialog="interview" data-rec-id="${h(person.id)}" data-rec-interview-id="${h(meeting?.id || '')}"><div id="recDialogError" class="rec-alert" role="alert"></div><div class="rec-person-summary"><strong>${h(person.name)}</strong>${pill(person.status)}</div>${controls}<p class="rec-note">${tr('所有预约均使用洛杉矶时间（PST / PDT），与本机时区无关。短信邀请仍须在短信窗口预览后发送。', 'All appointments use Los Angeles time (PST / PDT), regardless of this computer’s time zone. SMS invitations still require previewing and sending from Messages.')}</p><div class="rec-form-grid">${input('recInterviewDate', tr('面试日期 *', 'Interview date *'), initial.date, 'date', 'required')}${input('recInterviewTime', tr('面试时间 *', 'Interview time *'), initial.time, 'time', 'required')}<div id="recTimeAmbiguity" class="rec-wide"></div>${input('recDuration', tr('时长（分钟）', 'Duration (minutes)'), meeting?.durationMinutes || 30, 'number', 'min="15" max="180" step="5"')}${input('recInterviewer', tr('面试官', 'Interviewer'), meeting?.interviewerName || user?.name || '', 'text', 'maxlength="160" list="recInterviewers"')}<datalist id="recInterviewers">${(data?.interviewers || []).map(person => `<option>${h(person.name)}</option>`).join('')}</datalist>${input('recInterviewAddress', tr('面试地址 *', 'Interview address *'), meeting?.address || data?.settings?.address || DEFAULT_ADDRESS, 'text', 'maxlength="500" required')}${select('recInterviewStatus', tr('预约状态', 'Appointment status'), interviewStates, meeting?.status || 'scheduled')}${textarea('recInterviewNotes', tr('面试备注', 'Interview notes'), meeting?.notes)}</div><label class="rec-check"><input type="checkbox" id="recCandidateConfirmed" ${['confirmed', 'arrived', 'completed'].includes(meeting?.status) ? 'checked' : ''}>${tr('我已收到候选人对这个日期、时间和地址的明确确认', 'I have the candidate’s explicit confirmation of this date, time and address')}</label><label class="rec-check"><input type="checkbox" id="recAutoReminders" ${meeting?.automaticReminders ? 'checked' : ''} ${data?.settings?.remindersEnabled === false ? 'disabled' : ''}>${tr('开启本次面试的自动短信提醒（24 小时 / 2 小时前）', 'Enable automatic SMS reminders for this interview (24 hours / 2 hours before)')}</label><p class="rec-note">${data?.settings?.remindersEnabled === false ? tr('本地环境已关闭自动发送。', 'Automatic sending is disabled in this environment.') : tr('自动提醒需要短信同意且预约已确认；取消或改期后按最新安排处理。', 'Automatic reminders require SMS consent and a confirmed appointment. Cancellation or rescheduling uses the latest appointment.')}</p></div>`;
+    openRecruitingModal(meeting ? tr('查看 / 修改面试安排', 'Review / reschedule interview') : tr('安排面试', 'Schedule interview'), html, async () => { await saveOpenInterview(true); });
     updateAmbiguity(meeting?.startsAt);
+  }
+
+  function interviewSubmission() {
+    const dialog = document.querySelector('[data-rec-dialog="interview"]'); if (!dialog) return null;
+    const person = findCandidate(dialog.dataset.recId); if (!person) return null;
+    const interviewId = dialog.dataset.recInterviewId || '';
+    const meeting = interviewId ? interviews().find(item => item.id === interviewId) : null;
+    const valid = localToInstants(value('recInterviewDate'), value('recInterviewTime'));
+    if (!valid.length) { dialogError(tr('该洛杉矶日期或时间无效（可能处于夏令时跳转空档）。请重新选择。', 'That Los Angeles date/time is invalid or falls in a daylight-saving gap. Choose another time.')); return null; }
+    const startsAt = valid.length === 1 ? valid[0] : value('recTimeFold');
+    if (!startsAt || !valid.includes(startsAt)) { dialogError(tr('请选择夏令时回拨时段中的具体时间。', 'Choose which repeated daylight-saving time you mean.')); return null; }
+    const nextStatus = value('recInterviewStatus');
+    if (['confirmed', 'arrived', 'completed'].includes(nextStatus) && !el('recCandidateConfirmed').checked) { dialogError(tr('请先确认候选人明确同意此预约；否则保留“拟定时间”。', 'Confirm the candidate agreed to this appointment, or leave it proposed.')); return null; }
+    const durationMinutes = Number(value('recDuration'));
+    if (!Number.isInteger(durationMinutes) || durationMinutes < 15 || durationMinutes > 180 || !value('recInterviewAddress')) { dialogError(tr('请填写地址，并将面试时长设为 15–180 分钟。', 'Enter an address and a duration of 15–180 minutes.')); return null; }
+    if (el('recAutoReminders').checked && (!person.smsConsent || person.smsOptedOut)) { dialogError(tr('自动短信提醒需要有效的短信同意，且候选人没有退订。', 'Automatic SMS requires valid consent and no opt-out.')); return null; }
+    if (el('recAutoReminders').checked && nextStatus !== 'confirmed') { dialogError(tr('请将预约标记为“对方已确认”，再开启自动提醒。', 'Mark the appointment Candidate confirmed before enabling reminders.')); return null; }
+    const interviewerName = value('recInterviewer');
+    return { dialog, person, interviewId, body:{ candidateId:person.id, startsAt, durationMinutes, timeZone:TZ, address:value('recInterviewAddress'), interviewerName, interviewerId:(data?.interviewers || []).find(item => item.name === interviewerName)?.id || (interviewerName === meeting?.interviewerName ? meeting?.interviewerId || '' : ''), status:nextStatus, notes:value('recInterviewNotes'), automaticReminders:el('recAutoReminders').checked } };
+  }
+
+  async function saveOpenInterview(closeAfter = false) {
+    if (busy) return null;
+    const submission = interviewSubmission(); if (!submission) return null;
+    const { dialog, interviewId, body } = submission;
+    busy = true; dialogError('');
+    const saveButton = el('modalSave'); if (saveButton) saveButton.disabled = true;
+    const controls = [...document.querySelectorAll('.rec-interview-control [data-rec-action]')]; controls.forEach(button => { button.disabled = true; });
+    const state = el('recInterviewSaveState'); if (state) state.textContent = tr('正在保存当前安排…', 'Saving the current schedule…');
+    try {
+      const path = `/api/recruiting/interviews${interviewId ? `/${encodeURIComponent(interviewId)}` : ''}`;
+      const result = await api(path, { method:interviewId ? 'PATCH' : 'POST', body:JSON.stringify(body), timeoutMs:20000 });
+      const saved = result.interview; if (!saved?.id) throw new Error(tr('预约已返回异常结果，请刷新后重试。', 'The saved appointment returned an invalid result. Refresh and retry.'));
+      const index = interviews().findIndex(item => item.id === saved.id);
+      if (index >= 0) interviews()[index] = saved; else interviews().unshift(saved);
+      dialog.dataset.recInterviewId = saved.id;
+      if (state) { state.textContent = tr('已保存最新安排。可直接继续生成链接、进入视频室或打开面试题库。', 'Latest schedule saved. Continue with the link, video room, or interview kit.'); state.className = 'rec-ok'; }
+      if (closeAfter) { if (dialog.isConnected) closeModal(); await load(true); }
+      return saved;
+    } catch (err) { if (dialog.isConnected) dialogError(err.message); if (state) state.textContent = tr('保存失败，尚未执行下一步。', 'Save failed; the next action was not performed.'); return null; }
+    finally { busy = false; if (saveButton && dialog.isConnected) saveButton.disabled = false; controls.forEach(button => { if (button.isConnected) button.disabled = false; }); }
+  }
+
+  async function saveAndOpenInterviewKit() {
+    const saved = await saveOpenInterview(false); if (saved) openInterviewKit(saved.candidateId);
+  }
+
+  async function saveAndCreateVideoInvite() {
+    const saved = await saveOpenInterview(false); if (saved) await createVideoInvite(saved.id);
+  }
+
+  async function saveAndJoinVideoInterview() {
+    const popup = window.open('about:blank', '_blank');
+    if (popup) popup.opener = null;
+    const saved = await saveOpenInterview(false);
+    if (!saved) { popup?.close(); return; }
+    const url = `/recruiting-interview.html?interview=${encodeURIComponent(saved.id)}`;
+    if (popup) popup.location.href = url; else window.open(url, '_blank', 'noopener');
   }
 
   async function createVideoInvite(interviewId) {
@@ -770,6 +817,9 @@
       case 'copy-interview-kit-en': copyInterviewKit(button, 'en'); break;
       case 'schedule': openInterview(id); break;
       case 'edit-interview': openInterview('', id); break;
+      case 'save-open-interview-kit': saveAndOpenInterviewKit(); break;
+      case 'save-create-video-invite': saveAndCreateVideoInvite(); break;
+      case 'save-join-video-interview': saveAndJoinVideoInterview(); break;
       case 'create-video-invite': createVideoInvite(id); break;
       case 'copy-video-invite': copyVideoInvite(); break;
       case 'join-video-interview': joinVideoInterview(id); break;

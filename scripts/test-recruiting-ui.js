@@ -25,7 +25,7 @@ const testHooks = `
       candidateSort = controls.sort || 'applied';
       translationCache.clear(); translationPending.clear();
     },
-    filteredCandidates, candidateTable, bilingualBlock, openCandidateProfile, openInterviewKit,
+    filteredCandidates, candidateTable, bilingualBlock, openCandidateProfile, openInterviewKit, openInterview,
     interviewKitCopyText, scorecardAverage,
     parseApplicationDate, applicationInfo, applicationWhen, recordedWhen,
     applicationDatesHtml, renderPage,
@@ -100,6 +100,32 @@ function candidate(id, fields = {}) {
 function verified(id, appliedAt, fields = {}) {
   return candidate(id, { appliedAt, applicationDateNote: 'Synthetic original application timestamp', ...fields });
 }
+
+test('new and existing interview dialogs expose every interview action without a save-and-reopen step', () => {
+  const env = harness();
+  const person = candidate('one-stop');
+  env.fixture([person]);
+  env.ui.openInterview(person.id);
+  const fresh = env.modals.at(-1)?.html || '';
+  assert.match(fresh, /QUAD 一站式面试控制台/);
+  assert.match(fresh, /data-rec-action="save-open-interview-kit"/);
+  assert.match(fresh, /data-rec-action="save-create-video-invite"/);
+  assert.match(fresh, /data-rec-action="save-join-video-interview"/);
+  assert.match(fresh, /尚未保存；点击任一入口会自动创建预约/);
+  assert.doesNotMatch(fresh, /先保存面试安排，然后即可生成/);
+
+  env.fixture([person], {}, [{
+    id:'saved-interview', candidateId:person.id, startsAt:'2026-09-18T17:00:00Z',
+    durationMinutes:30, address:'3212 Santa Monica Blvd, Santa Monica, CA 90404', status:'scheduled'
+  }]);
+  env.ui.openInterview('', 'saved-interview');
+  const existing = env.modals.at(-1)?.html || '';
+  assert.match(existing, /data-rec-interview-id="saved-interview"/);
+  assert.match(existing, /当前预约已保存；修改表单后点击任一入口会先保存最新内容/);
+  assert.match(existing, /AI 面试题库 \/ 评分/);
+  assert.match(existing, /生成候选人一次性链接/);
+  assert.match(existing, /进入视频面试室/);
+});
 
 test('default application order puts verified recent dates first and unknowns last by entry time', () => {
   const env = harness();
