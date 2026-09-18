@@ -116,6 +116,19 @@ async function main() {
   await allowed.service.sendCandidateMessage('candidate-test', { text:'Hi José, please confirm your interview.', clientMessageId:'unit-english-message' }, actor);
   check(allowed.stats().smsCalls, 1, 'English with accented name remains usable');
 
+  for (const message of ['A', 'Hi', 'OK', 'x'.repeat(190), 'x'.repeat(1600)]) {
+    const shortSms = fixture();
+    const result = await shortSms.service.sendCandidateMessage('candidate-test', { text:message, clientMessageId:'unit-any-length-message', expectedPhone:'+15005550009' }, actor);
+    check(shortSms.stats().smsCalls, 1, `${message.length}-character message reaches only the mocked provider`);
+    check(result.message.text, message, 'Short SMS is not padded or replaced with a longer template');
+    check(result.message.status, 'queued', 'Mocked provider response is preserved');
+  }
+  for (const message of ['', ' \n\t ', 'x'.repeat(1601)]) {
+    const invalidLength = fixture();
+    await rejects(() => invalidLength.service.sendCandidateMessage('candidate-test', { text:message, clientMessageId:'unit-invalid-length' }, actor), 400, 'RECRUITING_VALIDATION');
+    check(invalidLength.stats().reads + invalidLength.stats().writes + invalidLength.stats().smsCalls, 0, 'Empty or excessive content rejected before reading/writing data or contacting provider');
+  }
+
   for (const expectedPhone of ['+15005550008', '', 'not-a-phone']) {
     const changedRecipient = fixture();
     const before = JSON.stringify(changedRecipient.db);

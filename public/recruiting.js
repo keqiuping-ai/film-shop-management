@@ -462,11 +462,21 @@
     return pair ? tr(pair[0], pair[1]) : value || '';
   }
 
+  function smsContactBlockers(person) {
+    const reasons = [];
+    if (!person?.phone?.trim()) reasons.push(tr('未填写手机号，请先在档案中补充；只有邮箱不能发送短信。', 'No phone number. Add it to the profile; an email address cannot receive SMS.'));
+    else if (!/^[+()\d\s.-]+$/.test(person.phone) || !/^1\d{10}$/.test(phoneKey(person.phone))) reasons.push(tr('手机号格式无效，请在档案中核实美国手机号。', 'Invalid phone number. Verify the US phone number in the profile.'));
+    if (person?.smsOptedOut) reasons.push(tr('候选人已退订短信，请改用其他已授权方式联系。', 'Candidate opted out of SMS. Use another authorized contact method.'));
+    else if (!person?.smsConsent || !String(person.smsConsentNote || '').trim()) reasons.push(tr('尚无完整的短信同意记录，请先在档案中记录实际取得的同意及来源。', 'SMS consent is incomplete. Record the consent actually obtained and its source in the profile.'));
+    if (!data?.sms?.configured) reasons.push(tr('当前环境短信通道尚未启用。', 'SMS is not enabled in this environment.'));
+    return reasons;
+  }
+
   function openMessages(id) {
     if (!checkIdentity()) return;
     const person = findCandidate(id); if (!person) return;
-    const blocker = person.smsOptedOut ? tr('此候选人已退订，无法发送短信。', 'Candidate opted out; SMS is blocked.') : !person.smsConsent ? tr('请先在档案中记录候选人的短信同意。', 'Record candidate SMS consent in the profile before sending.') : !person.phone ? tr('请先补充手机号。', 'Add a phone number first.') : !data?.sms?.configured ? tr('当前环境短信通道尚未启用。', 'SMS is not enabled in this environment.') : '';
-    const html = `<div class="rec-dialog" data-rec-dialog="messages" data-rec-id="${h(id)}"><div class="rec-person-summary"><div><strong>${h(person.name)}</strong><p>${h(person.phone || tr('没有手机号', 'No phone number'))}</p></div><div class="rec-actions">${action('refresh-messages', id, tr('刷新回复', 'Refresh replies'))}${action('profile', id, tr('查看档案', 'Profile'))}</div></div><div id="recThreads" class="rec-threads">${threadHtml(person)}</div><div id="recDialogError" class="rec-alert" role="alert"></div>${canEdit() ? `${blocker ? `<p class="rec-banner">${h(blocker)}</p>` : ''}<div class="rec-templates">${[['invitation', '面试邀请', 'Invitation'], ['confirm', '确认时间', 'Confirm time'], ['reminder', '面试提醒', 'Reminder'], ['late', '未到场询问', 'Arrival check']].map(([kind, zh, en]) => `<button type="button" data-rec-action="template" data-rec-id="${kind}">${tr(zh, en)}</button>`).join('')}</div><section class="rec-compose-step"><label for="recSmsDraft">${tr('① 中文起草（也可输入英文）', '① Draft in Chinese or English')}<textarea id="recSmsDraft" class="rec-sms-compose" maxlength="1600" placeholder="${tr('用中文写想说的话，或选择上方英文模板。这里的草稿不会直接发送。', 'Write your message or choose a template. This draft is never sent directly.')}"></textarea></label><div class="rec-actions"><button id="recMakePreview" type="button" class="btn" data-rec-action="preview-sms">${tr('生成英文预览', 'Generate English preview')}</button><span class="rec-note">${tr('中文通过 AI 翻译；纯英文直接生成预览。', 'Chinese uses AI translation; English is previewed directly.')}</span></div><p class="rec-note">${h(translationUnavailable())}</p></section><section class="rec-compose-step"><label for="recSmsBody">${tr('② 核对英文预览（实际发送内容）', '② Review English preview (actual message)')}<textarea id="recSmsBody" class="rec-sms-compose" readonly aria-describedby="recPreviewState" placeholder="${tr('先生成预览。修改上方草稿后需要重新生成。', 'Generate a preview first. Draft edits require a new preview.')}"></textarea></label><p id="recPreviewState" class="rec-note" role="status">${tr('尚未生成英文预览。', 'No English preview yet.')}</p><div class="rec-recipient">${tr('收件人', 'Recipient')}: <strong>${h(person.name)}</strong> · ${h(person.phone || '—')}<span class="rec-muted">${tr('只会发送这里的英文预览。AI 翻译和保存预约均不会发送短信。', 'Only this English preview will be sent. AI translation and saving an appointment do not send SMS.')}</span></div><label class="rec-check"><input id="recSmsReviewed" type="checkbox" disabled>${tr('我已核对收件人、英文内容、日期、时间及地址，并确认发送此内容', 'I checked the recipient, English wording, date, time and address and approve this message')}</label><div class="rec-actions"><button id="recSendSms" class="btn primary" type="button" data-rec-action="send-sms" data-rec-id="${h(id)}" disabled>${tr('③ 确认发送英文短信', '③ Send reviewed English SMS')}</button><span class="rec-note" id="recSmsCount">0 / 1600</span></div></section>` : ''}</div>`;
+    const blocker = smsContactBlockers(person).join(' ');
+    const html = `<div class="rec-dialog" data-rec-dialog="messages" data-rec-id="${h(id)}"><div class="rec-person-summary"><div><strong>${h(person.name)}</strong><p>${h(person.phone || tr('没有手机号', 'No phone number'))}</p></div><div class="rec-actions">${action('refresh-messages', id, tr('刷新回复', 'Refresh replies'))}${action('profile', id, tr('查看档案', 'Profile'))}</div></div><div id="recThreads" class="rec-threads">${threadHtml(person)}</div><div id="recDialogError" class="rec-alert" role="alert"></div>${canEdit() ? `${blocker ? `<p class="rec-banner">${h(blocker)}</p>` : ''}<div class="rec-templates">${[['invitation', '面试邀请', 'Invitation'], ['confirm', '确认时间', 'Confirm time'], ['reminder', '面试提醒', 'Reminder'], ['late', '未到场询问', 'Arrival check']].map(([kind, zh, en]) => `<button type="button" data-rec-action="template" data-rec-id="${kind}">${tr(zh, en)}</button>`).join('')}</div><section class="rec-compose-step"><label for="recSmsDraft">${tr('① 中文起草（也可输入英文）', '① Draft in Chinese or English')}<textarea id="recSmsDraft" class="rec-sms-compose" maxlength="1600" placeholder="${tr('用中文写想说的话，或选择上方英文模板。这里的草稿不会直接发送。', 'Write your message or choose a template. This draft is never sent directly.')}"></textarea></label><div class="rec-actions"><button id="recMakePreview" type="button" class="btn" data-rec-action="preview-sms">${tr('生成英文预览', 'Generate English preview')}</button><span class="rec-note">${tr('内容不为空即可，几个字也可以；中文先翻译成英文，核对后发送。', 'No minimum length beyond a non-empty message. Translate Chinese to English and review before sending.')}</span></div><p class="rec-note">${h(translationUnavailable())}</p></section><section class="rec-compose-step"><label for="recSmsBody">${tr('② 核对英文预览（实际发送内容）', '② Review English preview (actual message)')}<textarea id="recSmsBody" class="rec-sms-compose" readonly aria-describedby="recPreviewState" placeholder="${tr('先生成预览。修改上方草稿后需要重新生成。', 'Generate a preview first. Draft edits require a new preview.')}"></textarea></label><p id="recPreviewState" class="rec-note" role="status">${tr('尚未生成英文预览。', 'No English preview yet.')}</p><div class="rec-recipient">${tr('收件人', 'Recipient')}: <strong>${h(person.name)}</strong> · ${h(person.phone || '—')}<span class="rec-muted">${tr('只会发送这里的英文预览。AI 翻译和保存预约均不会发送短信。', 'Only this English preview will be sent. AI translation and saving an appointment do not send SMS.')}</span></div><label class="rec-check"><input id="recSmsReviewed" type="checkbox" disabled>${tr('我已核对收件人、英文内容、日期、时间及地址，并确认发送此内容', 'I checked the recipient, English wording, date, time and address and approve this message')}</label><div class="rec-actions"><button id="recSendSms" aria-describedby="recSmsCount recSmsSendState" class="btn primary" type="button" data-rec-action="send-sms" data-rec-id="${h(id)}" disabled>${tr('③ 确认发送英文短信', '③ Send reviewed English SMS')}</button><span class="rec-note" id="recSmsCount"></span></div><p id="recSmsSendState" class="rec-note" role="status" aria-live="polite"></p></section>` : ''}</div>`;
     openRecruitingModal(tr('应聘者短信', 'Candidate SMS'), html, null); el('modalSave').hidden = true;
     composeContext = { dialog: document.querySelector('[data-rec-dialog="messages"]'), id, identity, recipientPhone: person.phone || '', version: 0, pending: false, ready: false, sourceText: '', previewText: '', requestId: '', requestText: '' };
     updateComposeControls();
@@ -485,9 +495,20 @@
     const reviewed = el('recSmsReviewed');
     if (reviewed) { reviewed.disabled = !ready || busy; if (!ready) reviewed.checked = false; }
     if (el('recMakePreview')) el('recMakePreview').disabled = busy || context.pending || !value('recSmsDraft');
-    if (el('recSendSms')) el('recSendSms').disabled = busy || context.pending || !ready || !reviewed?.checked || !canEdit() || !sameRecipient || !person?.phone || !person?.smsConsent || person.smsOptedOut || !data?.sms?.configured;
-    if (!sameRecipient) dialogError(tr('收件人的手机号已更新。请关闭并重新打开短信窗口，核对新号码后再发送。', 'The recipient phone number changed. Close and reopen Messages, then review the new number before sending.'));
-    if (el('recSmsCount')) el('recSmsCount').textContent = `${value('recSmsBody').length} / 1600`;
+    const reasons = smsContactBlockers(person);
+    if (!canEdit()) reasons.push(tr('需要招聘编辑权限。', 'Recruiting edit permission is required.'));
+    if (!sameRecipient) reasons.push(tr('收件人的手机号已更新，请重新打开短信窗口并核对新号码。', 'The recipient phone changed. Reopen Messages and review the new number.'));
+    if (busy) reasons.push(tr('正在提交，请勿重复发送。', 'Submitting; do not send again.'));
+    else if (context.pending) reasons.push(tr('正在生成英文预览，请稍候。', 'Generating the English preview; please wait.'));
+    else if (!value('recSmsDraft')) reasons.push(tr('请输入非空内容，几个字也可以。', 'Enter a non-empty message; a few characters are enough.'));
+    else if (!ready) reasons.push(tr('请先生成当前草稿的有效英文预览。', 'Generate a valid English preview of the current draft first.'));
+    else if (!reviewed?.checked) reasons.push(tr('请勾选上方核对确认。', 'Check the review confirmation above.'));
+    if (el('recSendSms')) el('recSendSms').disabled = reasons.length > 0;
+    if (el('recSmsSendState')) {
+      el('recSmsSendState').textContent = reasons.length ? `${tr('暂不能发送：', 'Cannot send yet: ')}${reasons.join(' ')}` : tr('已就绪，短消息也可以发送。点击按钮才会发送。', 'Ready, including short messages. Nothing is sent until you click Send.');
+      el('recSmsSendState').className = reasons.length ? 'rec-banner' : 'rec-note';
+    }
+    if (el('recSmsCount')) el('recSmsCount').textContent = tr(`英文预览 ${value('recSmsBody').length} 个字符；最多 1600 个字符，不用写满。`, `English preview: ${value('recSmsBody').length} characters; maximum 1,600, not a minimum.`);
   }
 
   function invalidatePreview() {
@@ -556,7 +577,8 @@
     if (!context.ready || context.sourceText !== value('recSmsDraft') || context.previewText !== text || !el('recSmsReviewed')?.checked) { dialogError(tr('请重新生成当前草稿的英文预览，并勾选核对确认。', 'Generate an English preview of the current draft and approve it first.')); return; }
     const person = findCandidate(id);
     if (phoneKey(person?.phone) !== phoneKey(context.recipientPhone)) { updateComposeControls(); return; }
-    if (!person?.phone || !person.smsConsent || person.smsOptedOut || !data?.sms?.configured) { updateComposeControls(); dialogError(tr('无法发送：请检查手机号、短信同意、退订状态及短信通道。', 'Sending is blocked. Check the phone number, consent, opt-out status and SMS channel.')); return; }
+    const contactBlockers = smsContactBlockers(person);
+    if (contactBlockers.length) { updateComposeControls(); dialogError(contactBlockers.join(' ')); return; }
     if (!context.requestId || context.requestText !== text) { context.requestId = window.crypto.randomUUID(); context.requestText = text; }
     const requestId = context.requestId, sentVersion = context.version;
     busy = true; updateComposeControls(); dialogError('');
