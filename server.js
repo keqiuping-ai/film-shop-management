@@ -6635,7 +6635,7 @@ function safeCustomerServiceTask(row) {
   };
 }
 
-function openEventStream(req, res, user) {
+function openEventStream(req, res, user, clients = eventClients, isActive = null) {
   res.socket?.setNoDelay?.(true);
   res.socket?.setKeepAlive?.(true, 15000);
   res.writeHead(200, {
@@ -6645,19 +6645,20 @@ function openEventStream(req, res, user) {
     'X-Accel-Buffering': 'no'
   });
   const client = { res, userId: user.id };
-  eventClients.add(client);
+  clients.add(client);
   res.write(`retry: 500\nevent: ready\ndata: ${JSON.stringify({ at: new Date().toISOString() })}\n\n`);
   const heartbeat = setInterval(() => {
     try {
+      if (isActive && !isActive()) { clearInterval(heartbeat); clients.delete(client); res.end(); return; }
       res.write(`event: ping\ndata: ${Date.now()}\n\n`);
     } catch {
       clearInterval(heartbeat);
-      eventClients.delete(client);
+      clients.delete(client);
     }
   }, 25000);
   req.on('close', () => {
     clearInterval(heartbeat);
-    eventClients.delete(client);
+    clients.delete(client);
   });
 }
 
@@ -12219,13 +12220,36 @@ applyLasVegasLegacyBranchMigration();
 applyGmProCanonicalSkuMigration();
 expireInternalMessageVideos();
 cleanupStaleMediaUploadParts();
+let privateChatModule;
+function getPrivateChat() {
+  if (!privateChatModule) {
+    privateChatModule = require('./lib/gelianghao').createPrivateChat({
+      dataDir: DATA_DIR, publicDir: path.join(PUBLIC, 'gelianghao'),
+      hashPassword, verifyPassword, openEventStream,
+      authorizeSetup(request, body) {
+        const owner = readDb().users.find(row => row.active && row.role === 'owner' && String(row.email).toLowerCase() === String(body.ownerEmail || '').toLowerCase());
+        return Boolean(owner && String(body.ownerPassword || '').length <= 128 && verifyPassword(body.ownerPassword, owner.passwordHash));
+      }
+    });
+  }
+  return privateChatModule;
+}
+// Resume the 15-day cleanup on restart, even before the next chat visitor.
+if (fs.existsSync(path.join(DATA_DIR, 'gelianghao', 'chat.sqlite'))) {
+  try { getPrivateChat(); } catch { console.warn('Private chat cleanup unavailable; check Node.js and storage permissions.'); }
+}
+
 http.createServer((req, res) => {
   // Keep the request available to the shared responder so every sufficiently
   // large JSON/text response can honor Accept-Encoding.  Previously only a
   // handful of endpoints passed req explicitly, leaving large snapshots
   // uncompressed and making slow connections look like an application freeze.
   res._quadRequest = req;
-  if (req.url.startsWith('/customer-media/')) {
+  if (req.url === '/gelianghao' || req.url.startsWith('/gelianghao?')) {
+    res.writeHead(302, { Location: '/gelianghao/' }); res.end();
+  } else if (req.url.startsWith('/gelianghao/')) {
+    Promise.resolve().then(() => getPrivateChat().handle(req, res)).catch(() => send(res, 503, { error: '哥俩好暂时不可用，请检查 Node.js 版本与存储权限' }));
+  } else if (req.url.startsWith('/customer-media/')) {
     serveCustomerMedia(req, res);
   } else if (req.url.startsWith('/api/')) {
     api(req, res).catch(err => send(res, 500, { error: err.message }));
