@@ -1,4 +1,4 @@
-const CACHE_NAME = 'film-shop-v120-ppf-clean-layout';
+const CACHE_NAME = 'film-shop-v121-customer-address-english';
 const ASSETS = [
     '/mobile.html',
     '/warranty.html',

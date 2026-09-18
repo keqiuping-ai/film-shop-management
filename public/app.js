@@ -8044,11 +8044,22 @@ function clearProspectAttachment() {
   renderProspectWorkspace();
 }
 
+function customerFacingBranchName(branch) {
+  const branchId = String(branch?.id || '').trim().toLowerCase();
+  const city = String(branch?.city || '').trim();
+  if (branchId === 'los-angeles' || /los\s*angeles/i.test(city)) return 'Los Angeles Shop';
+  if (branchId === 'las-vegas' || /las\s*vegas/i.test(city)) return 'Las Vegas Shop';
+  const name = String(branch?.name || '').trim();
+  if (name && !customerReplyContainsChinese(name)) return name;
+  if (city && !customerReplyContainsChinese(city)) return `${city} Shop`;
+  return 'QUAD Film Shop';
+}
+
 function insertProspectAddress(branchId) {
   if (!branchId) return;
   const branch = (state.settings?.customerBranches || []).find(item => item.id === branchId && item.active !== false);
   if (!branch?.address) return alert(lang === 'zh' ? '这个分店还没有配置地址。' : 'This branch does not have an address configured yet.');
-  insertProspectReplyText(`📍 ${branch.name ? `${branch.name}\n` : ''}${branch.address}`);
+  insertProspectReplyText(`📍 ${customerFacingBranchName(branch)}\n${branch.address}`);
 }
 
 function insertProspectWebsite() {
