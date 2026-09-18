@@ -262,6 +262,22 @@ test('profile preserves every character of a 60,000-character resume including i
   assert.equal(env.nodes.get('modalSave').hidden, true);
 });
 
+test('profile keeps short facts in a compact grid while preserving dedicated long-form sections', () => {
+  const env = harness();
+  env.fixture([candidate('compact-profile', {
+    phone: '555-0100', email: '', location: 'Los Angeles, CA', availability: '',
+    employmentType: 'full_time', compensation: '', experience: 'Detailed synthetic work history.'
+  })]);
+  env.ui.openCandidateProfile('compact-profile');
+  const html = env.modals.at(-1).html;
+  assert.equal((html.match(/class="rec-profile-fact"/g) || []).length, 8);
+  assert.equal((html.match(/rec-profile-fact-missing/g) || []).length, 3);
+  assert.match(html, /class="rec-profile-contact-row"/);
+  assert.match(html, /经验与经历概览 \/ Experience overview/);
+  assert.match(html, /Detailed synthetic work history\./);
+  assert.match(html, /class="rec-profile-section"/);
+});
+
 test('PDF-only profiles explicitly say text is not extracted and never offer fake full-resume translation', () => {
   const env = harness();
   env.fixture([candidate('pdf-only', {
