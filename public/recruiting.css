@@ -152,6 +152,7 @@
 .rec-kit-record textarea { min-height:74px; }
 .rec-kit-record input { text-align:center; font-weight:700; }
 .modal:has(.rec-interview-kit) > .dialog { width:min(1440px,calc(100vw - 36px)); }
+.rec-video-invite{margin-top:16px;padding:16px;border:1px solid #bcdadd;border-radius:14px;background:#f2fbfa}.rec-video-invite-result{margin-top:12px}.rec-video-invite-result label{display:grid;gap:6px}.rec-video-invite-result input{width:100%;font-size:13px}
 .rec-bilingual-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:22px; }
 .rec-bilingual-grid > div { min-width:0; }
 .rec-bilingual-grid h4 { margin:0 0 10px; color:#587871; font-size:12px; }

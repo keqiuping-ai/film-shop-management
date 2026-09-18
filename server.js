@@ -7,6 +7,7 @@ const { execFile } = require('child_process');
 const { promisify } = require('util');
 const { AccessToken } = require('livekit-server-sdk');
 const recruiting = require('./lib/recruiting');
+const { createRecruitingVideoService } = require('./lib/recruiting-video');
 const { createRecruitingTranslator } = require('./lib/recruiting-openai');
 const execFileAsync = promisify(execFile);
 
@@ -6042,6 +6043,9 @@ const recruitingService = recruiting.createRecruitingService({
   }),
   publicBaseUrl:requestPublicBaseUrl, dataDir:DATA_DIR, notify:notifyDataChanged
 });
+const recruitingVideoService = createRecruitingVideoService({
+  readDb, writeDb, readBody, send, canAccess, publicBaseUrl:requestPublicBaseUrl, notify:notifyDataChanged
+});
 
 function customerAiAutoReplyInBusinessHours(settings, now = new Date()) {
   if (settings.schedule !== 'business') return true;
@@ -8213,6 +8217,8 @@ async function api(req, res) {
     return send(res, 200, { ok: true });
   }
 
+  if (await recruitingVideoService.handlePublic(req, res, url)) return;
+
   let user = currentUser(req, db);
   if (!user && req.method === 'POST' && url.pathname === '/api/import/prospects') {
     user = prospectImportUser(req);
@@ -8227,6 +8233,7 @@ async function api(req, res) {
   }
   if (!user) return send(res, 401, { error: '请先登录' });
 
+  if (await recruitingVideoService.handleAdmin(req, res, url, user)) return;
   if (await recruitingService.handle(req, res, url, user)) return;
 
   if (req.method === 'GET' && url.pathname === '/api/events') {
@@ -12095,7 +12102,7 @@ function staticFile(req, res) {
     const textAsset = /html|json|javascript|css|svg|manifest/.test(type);
     const headers = {
       'Content-Type': type,
-      'Cache-Control': fileName === 'index.html' || fileName === 'mobile.html' || fileName === 'customer.html' || fileName === 'warranty.html'
+      'Cache-Control': fileName === 'index.html' || fileName === 'mobile.html' || fileName === 'customer.html' || fileName === 'warranty.html' || fileName === 'recruiting-interview.html'
         ? 'no-cache'
         : (textAsset || ['.png', '.icns'].includes(ext) ? 'public, max-age=300' : 'no-store')
     };
