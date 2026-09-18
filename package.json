@@ -15,7 +15,7 @@
     "test:portal-safety": "node scripts/test-portal-customer-safety.js",
     "test:portal-links": "node scripts/test-portal-customer-link-reconciliation.js",
     "test:yelp-import": "node scripts/test-yelp-partial-import.js",
-    "test:recruiting": "node scripts/test-recruiting.js"
+    "test:recruiting": "node --test scripts/test-recruiting-openai.js && node scripts/test-recruiting-translation-unit.js && node scripts/test-recruiting-dates.js && node scripts/test-recruiting-ui.js && node scripts/test-recruiting.js"
   },
   "engines": {
     "node": ">=18"

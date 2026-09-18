@@ -29,6 +29,48 @@ let checks = 0;
 const providerCalls = [];
 let providerMode = 'success';
 let providerMessages = [];
+let aiEnabled = false;
+let aiMode = 'success';
+const aiCalls = [];
+const TEST_AI_KEY = 'synthetic-local-ai-key-not-a-real-credential';
+const DEMO_RESUME_TEXT = `FICTIONAL TEST RESUME - not a real applicant
+Automotive Film Sales Representative
+
+Professional profile
+3 years of dealership sales and business development.
+Comfortable visiting local businesses, explaining products and following up with decision makers.
+
+Relevant experience
+Discussed service packages, maintained prospect notes and followed up on customer questions.
+Used phone calls, visits and referrals to build business relationships.
+All claims in this document are synthetic examples, not verified candidate experience.
+
+First-week proposal
+Visit 2 dealerships, identify decision makers and ask about their installation needs.
+Discuss both referrals to the installation shop and film supply for businesses with installation capacity.
+
+Availability and practical details
+Commute, start date, working hours and compensation require confirmation.
+End of fictional resume.`;
+const DEMO_RESUME_ZH = `虚拟测试简历 - 并非真实应聘者（预设模拟译文）
+汽车膜销售代表
+
+职业简介
+3 年汽车经销商销售和业务开发经验。
+愿意拜访本地商家、介绍产品并跟进决策人。
+
+相关经历
+介绍服务套餐，维护潜在客户记录，跟进客户问题。
+通过电话、拜访和转介绍建立业务关系。
+本文均为虚拟示例，并非已核实的候选人经历。
+
+首周计划
+拜访 2 家汽车经销商，找到决策人并了解施工需求。
+讨论送车到门店施工，以及向有施工能力的商家供应膜材。
+
+到岗和工作安排
+通勤、到岗日期、工时及薪酬均待确认。
+虚拟简历结束。`;
 
 function check(condition, description) {
   assert.ok(condition, description);
@@ -64,6 +106,21 @@ async function startProvider() {
     }
     let raw = '';
     for await (const chunk of req) raw += chunk;
+    if (req.url === '/v1/chat/completions') {
+      const body = JSON.parse(raw);
+      aiCalls.push(body);
+      if (aiMode === 'failure') {
+        res.writeHead(401, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: { message: `Provider echoed ${TEST_AI_KEY}` } }));
+        return;
+      }
+      const source = JSON.parse(body.messages[1].content).sourceText;
+      const en = body.messages[0].content.includes('American English');
+      const translated = en ? 'Please come to 3212 Santa Monica Blvd at 10:00 for your interview.' : source === DEMO_RESUME_TEXT ? DEMO_RESUME_ZH : `中文对照：${source}`;
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ choices: [{ finish_reason: 'stop', message: { content: JSON.stringify({ text: translated }) } }] }));
+      return;
+    }
     const fields = Object.fromEntries(new URLSearchParams(raw));
     const sid = `SM${String(providerCalls.length + 1).padStart(32, '0')}`;
     providerCalls.push({ fields, sid });
@@ -102,6 +159,11 @@ async function startServer() {
     TWILIO_AUTH_TOKEN: AUTH_TOKEN, TWILIO_FROM_NUMBER: FROM_NUMBER,
     TWILIO_API_BASE_URL: providerUrl, TWILIO_WEBHOOK_BASE_URL: baseUrl
   };
+  if (aiEnabled) {
+    env.OPENAI_API_KEY = TEST_AI_KEY;
+    env.OPENAI_API_BASE_URL = `${providerUrl}/v1`;
+    env.OPENAI_CUSTOMER_REPLY_MODEL = 'gpt-5-mini';
+  }
   server = spawn(process.execPath, ['--require', path.join(__dirname, 'recruiting-test-provider.js'), 'server.js'], {
     cwd: ROOT, env, stdio: ['ignore', 'pipe', 'pipe']
   });
@@ -338,6 +400,8 @@ async function run() {
   check(Boolean(snapshot.settings && snapshot.sms), 'Recruiting snapshot settings and SMS capability');
   check(!JSON.stringify(snapshot).includes(AUTH_TOKEN), 'Recruiting settings never expose provider credentials');
   check(snapshot.settings.remindersEnabled === false, 'Automatic reminder worker explicitly disabled in tests');
+  check(snapshot.translation?.configured === false, 'Translation shows missing configuration without exposing secrets');
+  await expectStatus('/api/recruiting/translate', { token: owner, method: 'POST', body: { text: 'Hello', targetLanguage: 'zh' } }, 503, 'Missing translation configuration reported');
   await expectStatus('/api/recruiting', { token: manager }, 200, 'Manager default recruiting access');
   await expectStatus('/api/recruiting', { token: viewer }, 200, 'Explicit viewer access');
   await expectStatus('/api/recruiting/candidates', { token: viewer, method: 'POST', body: { name: 'Denied fixture' } }, 403, 'Viewer cannot create candidates');
@@ -353,27 +417,40 @@ async function run() {
     [{ name: 'Invalid fixture', scores: { sales: 11 } }, 'Scores above ten rejected'],
     [{ name: 'Invalid fixture', scores: { sales: 0 } }, 'Scores below one rejected'],
     [{ name: 'Invalid fixture', scores: { sales: '8' } }, 'Scores require numeric values'],
+    [{ name: 'Invalid fixture', appliedAt: '2026-02-30', applicationDateNote: 'Synthetic evidence' }, 'Application date must exist'],
+    [{ name: 'Invalid fixture', appliedAt: '2026-09-01' }, 'Application date needs source evidence'],
+    [{ name: 'Invalid fixture', appliedAt: '2999-01-01', applicationDateNote: 'Synthetic evidence' }, 'Future application date rejected'],
+    [{ name: 'Invalid fixture', createdAt: '2020-01-01T00:00:00.000Z' }, 'System entry time cannot be forged'],
     [{ name: 'Invalid fixture', scores: { age: 8 } }, 'Score criteria whitelist']
   ]) await expectStatus('/api/recruiting/candidates', { token: owner, method: 'POST', body }, 400, label);
 
   const created = await expectStatus('/api/recruiting/candidates', { token: editor, method: 'POST', body: {
     name: 'DEMO / Alex Sales', phone: '+1 (500) 555-0101', email: 'alex.sales@example.test',
-    status: 'reviewing', resumeText: 'FICTIONAL TEST RESUME: dealership sales and business development.',
+    position: 'Automotive Film Sales Representative', location: 'Santa Monica, CA',
+    experience: 'FICTIONAL ONLY: 3 years of dealership sales and business development.',
+    dealershipResources: 'FICTIONAL ONLY: plans to visit 2 dealerships in the first week.',
+    status: 'reviewing', resumeText: DEMO_RESUME_TEXT,
+    appliedAt: '2026-09-10T18:30:00.000Z', applicationDateNote: 'Synthetic fixture: application received at an exact UTC time.',
     resumeUrl: 'https://example.test/demo-resume.pdf', scoreNotes: 'TEST ONLY: verify dealership prospecting examples.',
     scores: { sales: 8, dealershipNetwork: 7, plan: 6, communication: 8, execution: 7, fit: null }
   } }, 201, 'Editor creates fictional candidate');
   const candidate = created.candidate;
   check(Boolean(candidate?.id), 'Create response contains candidate ID');
   check(candidate.smsConsent === false, 'New candidate SMS consent defaults off');
+  check(candidate.appliedAt === '2026-09-10T18:30:00.000Z' && candidate.createdAt !== candidate.appliedAt, 'Application time is separate from server entry time');
   check(candidate.scores.sales === 8 && candidate.scores.fit === null, 'Six job-related scoring criteria persist with blanks');
   const second = (await expectStatus('/api/recruiting/candidates', { token: owner, method: 'POST', body: {
-    name: 'DEMO / Jordan Installer', phone: '+15005550103', email: 'jordan.installer@example.test', status: 'new'
+    name: 'DEMO / Jordan Installer', phone: '+15005550103', email: 'jordan.installer@example.test', status: 'new',
+    appliedAt: '2026-09-12', applicationDateNote: 'Synthetic fixture: original application shows only the calendar date.'
   } }, 201, 'Second fictional candidate')).candidate;
   const shared = (await expectStatus('/api/recruiting/candidates', { token: owner, method: 'POST', body: {
     name: 'DEMO / Shared Phone Candidate', phone: '+15005550102', email: 'shared@example.test',
     smsConsent: true, smsConsentNote: 'Synthetic fixture: candidate agreed to interview texts.'
   } }, 201, 'Shared-phone candidate can have private recruiting record')).candidate;
   const candidatePath = `/api/recruiting/candidates/${candidate.id}`;
+  check(second.appliedAt === '2026-09-12' && !shared.appliedAt, 'Date-only precision remains date-only; unknown date is not backfilled');
+  await expectStatus(candidatePath, { token: viewer, method: 'PATCH', body: { appliedAt: '2026-09-01', applicationDateNote: 'Synthetic' } }, 403, 'Viewer cannot change application date');
+  await expectStatus(candidatePath, { token: owner, method: 'PATCH', body: { createdAt: '2026-09-01T00:00:00.000Z' } }, 400, 'System entry timestamp stays immutable');
   await expectStatus('/api/recruiting/candidates', { token: owner, method: 'POST', body: {
     name: 'Phone duplicate', phone: '(500) 555-0101'
   } }, 409, 'Normalized US phone duplicate');
@@ -383,6 +460,7 @@ async function run() {
   await expectStatus(candidatePath, { token: viewer, method: 'PATCH', body: { status: 'hired' } }, 403, 'Viewer cannot edit');
   await expectStatus(candidatePath, { token: owner, method: 'PATCH', body: { id: 'replaced-id' } }, 400, 'Candidate ID is immutable');
   await expectStatus(candidatePath, { token: owner, method: 'PATCH', body: { status: 'invited' } }, 200, 'Candidate status update');
+  check(candidateRow(candidate.id).appliedAt === candidate.appliedAt && candidateRow(candidate.id).createdAt === candidate.createdAt, 'Status changes preserve both application and entry times');
   const resumeFixture = Buffer.from('%PDF-1.4\n% fictional integration fixture\n1 0 obj\n<< /Type /Catalog >>\nendobj\n%%EOF\n');
   await expectStatus(`${candidatePath}/resume`, { token: owner, method: 'POST', body: {
     name: 'demo-resume.pdf', type: 'application/pdf', data: Buffer.from('not a PDF').toString('base64')
@@ -450,6 +528,12 @@ async function run() {
   await expectStatus(sendPath, { token: viewer, method: 'POST', body: { text: 'DEMO blocked', clientMessageId: 'viewer-test-001' } }, 403, 'Viewer cannot send SMS');
   await expectStatus(sendPath, { token: owner, method: 'POST', body: { text: 'DEMO missing id' } }, 400, 'Idempotency key required');
   const sendBody = { text: 'DEMO ONLY: please confirm your interview time.', clientMessageId: 'demo-send-0001' };
+  const beforeChinese = JSON.stringify(readDb());
+  const beforeChineseCalls = providerCalls.length;
+  for (const [index, chinese] of ['你好', 'Hello 请 confirm.', 'Hello 𠀀'].entries()) {
+    await expectStatus(sendPath, { token: owner, method: 'POST', body: { text: chinese, clientMessageId: `chinese-block-${index}` } }, 400, 'Chinese and supplementary Han SMS blocked');
+  }
+  check(JSON.stringify(readDb()) === beforeChinese && providerCalls.length === beforeChineseCalls, 'Chinese block occurs before pending record or SMS provider');
   const sent = await expectStatus(sendPath, { token: owner, method: 'POST', body: sendBody }, 201, 'Send via local mock provider');
   check(Boolean(sent.message?.providerSid), 'Sent SMS stores provider SID');
   const callsAfterSend = providerCalls.length;
@@ -531,7 +615,40 @@ async function run() {
   check(persisted.candidates.find(row => row.id === candidate.id).scores.sales === 8, 'Candidate scores persisted');
   check(persisted.interviews.some(row => row.id === interview.id && row.status === 'confirmed'), 'Interview confirmation persisted');
   check(messages(candidate.id).some(row => row.providerSid === 'SMdemo-reconcile-001'), 'Conversation persisted');
+  check(candidateRow(candidate.id).appliedAt === candidate.appliedAt && candidateRow(candidate.id).applicationDateNote === candidate.applicationDateNote, 'Application date and evidence survive server restart');
   check(!/blocked external network/i.test(serverOutput), 'Workers made no external network request');
+  await stopServer();
+  aiEnabled = true;
+  await startServer();
+  const aiOwner = await login('owner');
+  const aiViewer = await login('viewer');
+  const aiSnapshot = await expectStatus('/api/recruiting', { token: aiOwner }, 200, 'Configured translation snapshot');
+  check(aiSnapshot.translation?.configured === true && !JSON.stringify(aiSnapshot).includes(TEST_AI_KEY), 'AI configuration capability only, no secret');
+  const beforeTranslate = JSON.stringify(readDb());
+  const smsBeforeTranslate = providerCalls.length;
+  await expectStatus('/api/recruiting/translate', { method: 'POST', body: { text: 'Hello', targetLanguage: 'zh' } }, 401, 'Anonymous cannot translate');
+  await expectStatus('/api/recruiting/translate', { token: aiViewer, method: 'POST', body: { text: 'Hello', targetLanguage: 'zh' } }, 403, 'Read-only viewer cannot invoke AI');
+  for (const invalid of [
+    { text: 'Hello', targetLanguage: 'fr' }, { text: '', targetLanguage: 'en' },
+    { text: 'x'.repeat(60001), targetLanguage: 'zh' }, { text: 'Hello', targetLanguage: 'zh', apiKey: 'untrusted' }
+  ]) await expectStatus('/api/recruiting/translate', { token: aiOwner, method: 'POST', body: invalid }, 400, 'Translation input contract enforced');
+  const english = await expectStatus('/api/recruiting/translate', { token: aiOwner, method: 'POST', body: {
+    text: '请于 10:00 到 3212 Santa Monica Blvd 面试。', targetLanguage: 'en'
+  } }, 200, 'Chinese draft translated with local AI provider');
+  check(english.text === 'Please come to 3212 Santa Monica Blvd at 10:00 for your interview.' && english.targetLanguage === 'en', 'Translation returns English preview');
+  const chinese = await expectStatus('/api/recruiting/translate', { token: aiOwner, method: 'POST', body: {
+    text: 'FICTIONAL TEST RESUME: dealership sales for 3 years.', targetLanguage: 'zh'
+  } }, 200, 'Resume translated into Chinese review text');
+  check(chinese.text.includes('中文对照') && chinese.targetLanguage === 'zh', 'Chinese review text returned');
+  check(aiCalls.length === 2 && aiCalls.every(call => call.model === 'gpt-5-mini' && call.store === false), 'Existing configured model reused, API storage disabled');
+  check(JSON.stringify(readDb()) === beforeTranslate && providerCalls.length === smsBeforeTranslate, 'Translation does not alter original resume, consent, appointments or send messages');
+  aiMode = 'failure';
+  const failedTranslation = await expectStatus('/api/recruiting/translate', { token: aiOwner, method: 'POST', body: { text: 'Hello', targetLanguage: 'zh' } }, 502, 'Provider failure reported safely');
+  check(!JSON.stringify(failedTranslation).includes(TEST_AI_KEY), 'Provider error cannot expose credentials');
+  check(JSON.stringify(readDb()) === beforeTranslate && providerCalls.length === smsBeforeTranslate, 'Failed translation leaves original data and SMS untouched');
+  aiMode = 'success';
+  await expectStatus(sendPath, { token: aiOwner, method: 'POST', body: { text: english.text, clientMessageId: 'translated-preview-test-001' } }, 201, 'Explicitly send English preview to local SMS provider only');
+  check(providerCalls.at(-1).fields.Body === english.text, 'SMS provider receives exactly the reviewed English preview');
   await testReminderService();
   testSmsOptOutEventOrdering();
   testPacificTimeConversion();

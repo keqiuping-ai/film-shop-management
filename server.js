@@ -7,6 +7,7 @@ const { execFile } = require('child_process');
 const { promisify } = require('util');
 const { AccessToken } = require('livekit-server-sdk');
 const recruiting = require('./lib/recruiting');
+const { createRecruitingTranslator } = require('./lib/recruiting-openai');
 const execFileAsync = promisify(execFile);
 
 const ROOT = __dirname;
@@ -6030,6 +6031,15 @@ async function sendTwilioSms({ to, body, mediaUrl, statusCallback, purpose }) {
 const recruitingService = recruiting.createRecruitingService({
   readDb, writeDb, canAccess, readBody, send,
   sendSms:sendTwilioSms, smsConfigured:twilioConfigured,
+  translationConfigured:() => Boolean(openAiCustomerReplyKey(readDb())),
+  translateText:createRecruitingTranslator({
+    getConfig:() => {
+      const db = readDb();
+      return { apiKey:openAiCustomerReplyKey(db), model:customerAiReplyModel(db),
+        baseUrl:process.env.OPENAI_API_BASE_URL || 'https://api.openai.com/v1' };
+    },
+    requestJson:fetchAiJson
+  }),
   publicBaseUrl:requestPublicBaseUrl, dataDir:DATA_DIR, notify:notifyDataChanged
 });
 
