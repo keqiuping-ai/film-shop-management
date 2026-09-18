@@ -30,7 +30,9 @@
   const canEdit = () => hasPerm('recruitingEdit');
   const candidates = () => data?.candidates || [];
   const interviews = () => data?.interviews || [];
+  const interviewKits = () => data?.interviewKits || [];
   const findCandidate = id => candidates().find(item => item.id === id);
+  const findInterviewKit = id => interviewKits().find(item => item.id === id);
   const el = id => document.getElementById(id);
   const value = id => String(el(id)?.value || '').trim();
   const action = (name, id = '', text = '', primary = false) => `<button type="button" class="btn${primary ? ' primary' : ''}" data-rec-action="${h(name)}" data-rec-id="${h(id)}">${h(text)}</button>`;
@@ -339,12 +341,89 @@
     const dialog = document.querySelector('[data-rec-dialog]');
     const button = el('modalSave'); if (button) button.disabled = true;
     try {
-      await api(path, { method: path.endsWith('/candidates') || path.endsWith('/interviews') ? 'POST' : 'PATCH', body: JSON.stringify(body), timeoutMs: 20000 });
+      await api(path, { method: path.endsWith('/candidates') || path.endsWith('/interviews') || path.endsWith('/scorecard') ? 'POST' : 'PATCH', body: JSON.stringify(body), timeoutMs: 20000 });
       if (dialog?.isConnected) closeModal();
       await load(true);
       return true;
     } catch (err) { if (dialog?.isConnected) dialogError(err.message); return false; }
     finally { busy = false; if (button && dialog?.isConnected) button.disabled = false; }
+  }
+
+  function scorecardAverage(card, kit = findInterviewKit(card?.templateId)) {
+    const values = (kit?.questions || []).map(question => card?.scores?.[question.id]).filter(score => Number.isInteger(score) && score >= 1 && score <= 10);
+    return { completed:values.length, total:kit?.questions?.length || 0, average:values.length ? values.reduce((sum, score) => sum + score, 0) / values.length : null };
+  }
+
+  function interviewScorecardsHtml(candidate) {
+    const cards = (candidate.interviewScorecards || []).map(card => {
+      const kit = findInterviewKit(card.templateId); if (!kit) return '';
+      const summary = scorecardAverage(card, kit);
+      return `<button type="button" class="rec-kit-saved" data-rec-action="interview-kit" data-rec-id="${h(candidate.id)}" data-rec-template-id="${h(kit.id)}"><strong>${h(tr(kit.titleZh, kit.titleEn))}</strong><span>${summary.average === null ? tr('尚未评分', 'Not scored') : `${summary.average.toFixed(1)} / 10`} · ${summary.completed}/${summary.total}</span></button>`;
+    }).join('');
+    return `<section class="rec-profile-section rec-kit-summary"><div class="rec-section-heading"><div><h3>${tr('面试题库与逐题评分', 'Interview kits & question scores')}</h3><p class="rec-note">${tr('可选择快速版或完整版；每套题单独保存，不覆盖原六维评分。', 'Choose a quick or full kit. Each kit is saved separately from the six-dimension scorecard.')}</p></div>${canEdit() ? action('interview-kit', candidate.id, tr('选择题库 / 开始评分', 'Choose kit / start scoring'), true) : ''}</div>${cards || `<p class="rec-missing">${tr('尚未保存逐题面试记录。', 'No question-level interview record has been saved.')}</p>`}</section>`;
+  }
+
+  function suggestedKit(candidate) {
+    const text = `${candidate?.position || ''} ${candidate?.experience || ''}`.toLowerCase();
+    if (/技师|installer|安装|施工/.test(text)) return 'installer_quick_6';
+    if (/4s|经销商|dealer|外跑|地推/.test(text)) return 'dealer_quick_8';
+    if (/网络|remote|客服|online/.test(text)) return 'remote_quick_6';
+    return 'wholesale_quick_6';
+  }
+
+  function interviewKitCopyText(kit, language = 'zh') {
+    if (!kit) return '';
+    const zh = language !== 'en';
+    const title = zh ? kit.titleZh : kit.titleEn;
+    const description = zh ? kit.descriptionZh : kit.descriptionEn;
+    const scoreLine = zh ? '评分：____ / 10    记录：________________' : 'Score: ____ / 10    Notes: ________________';
+    return [`QUAD FILM — ${title}`, description, '', ...kit.questions.flatMap((question, index) => zh ? [
+      `${index + 1}. ${question.zh}`, `观察重点: ${question.focus}`, `高分参考: ${question.strong}`, scoreLine, ''
+    ] : [
+      `${index + 1}. ${question.en}`, scoreLine, ''
+    ])].join('\n').trim();
+  }
+
+  function updateInterviewKitScore() {
+    const dialog = document.querySelector('[data-rec-dialog="interview-kit"]'); if (!dialog) return;
+    const kit = findInterviewKit(dialog.dataset.recTemplateId); if (!kit) return;
+    const values = kit.questions.map(question => Number(el(`recKitScore_${question.id}`)?.value)).filter(score => Number.isInteger(score) && score >= 1 && score <= 10);
+    const average = values.length ? values.reduce((sum, score) => sum + score, 0) / values.length : null;
+    const target = el('recKitTotal');
+    if (target) target.textContent = average === null ? tr(`已评分 0 / ${kit.questions.length}`, `Scored 0 / ${kit.questions.length}`) : tr(`平均 ${average.toFixed(1)} / 10 · 已评分 ${values.length} / ${kit.questions.length}`, `Average ${average.toFixed(1)} / 10 · scored ${values.length} / ${kit.questions.length}`);
+  }
+
+  function openInterviewKit(candidateId, requestedTemplateId = '') {
+    if (!checkIdentity()) return;
+    const candidate = findCandidate(candidateId); if (!candidate) return;
+    const saved = candidate.interviewScorecards || [];
+    const templateId = requestedTemplateId || saved[0]?.templateId || suggestedKit(candidate);
+    const kit = findInterviewKit(templateId) || interviewKits()[0]; if (!kit) return;
+    const card = saved.find(item => item.templateId === kit.id) || { scores:{}, notes:{}, overallNote:'' };
+    const kitOptions = interviewKits().map(item => `<option value="${h(item.id)}" ${item.id === kit.id ? 'selected' : ''}>${h(tr(item.titleZh, item.titleEn))}</option>`).join('');
+    const questions = kit.questions.map((question, index) => `<article class="rec-kit-question" data-rec-question-id="${h(question.id)}"><div class="rec-kit-question-head"><span>${index + 1}</span><div><h3>${h(question.zh)}</h3><p>${h(question.en)}</p></div>${question.critical ? `<em>${tr('关键题', 'Critical')}</em>` : ''}</div><div class="rec-kit-evidence"><p><strong>${tr('观察重点', 'Focus')}</strong>${h(question.focus)}</p><p><strong>${tr('高分参考', 'Strong evidence')}</strong>${h(question.strong)}</p></div><div class="rec-kit-record"><label>${tr('评分 1–10', 'Score 1–10')}<input class="rec-kit-score" id="recKitScore_${h(question.id)}" type="number" min="1" max="10" step="1" value="${h(card.scores?.[question.id] ?? '')}"></label><label>${tr('回答证据 / 面试记录', 'Answer evidence / notes')}<textarea id="recKitNote_${h(question.id)}" maxlength="1200">${h(card.notes?.[question.id] || '')}</textarea></label></div></article>`).join('');
+    const html = `<div class="rec-dialog rec-interview-kit" data-rec-dialog="interview-kit" data-rec-id="${h(candidate.id)}" data-rec-template-id="${h(kit.id)}"><div id="recDialogError" class="rec-alert" role="alert"></div><header class="rec-person-summary"><div><h2>${h(candidate.name)}</h2><p>${h(candidate.position || tr('岗位待确认', 'Position to confirm'))}</p></div><strong id="recKitTotal"></strong></header><div class="rec-kit-layout"><aside class="rec-kit-sidebar"><label>${tr('选择面试模板', 'Choose interview kit')}<select id="recInterviewKitSelect">${kitOptions}</select></label><h3>${h(tr(kit.titleZh, kit.titleEn))}</h3><p>${h(tr(kit.descriptionZh, kit.descriptionEn))}</p><div class="rec-actions"><button type="button" class="btn" data-rec-action="copy-interview-kit-zh" data-rec-id="${h(kit.id)}">${tr('复制中文题单', 'Copy Chinese')}</button><button type="button" class="btn" data-rec-action="copy-interview-kit-en" data-rec-id="${h(kit.id)}">${tr('复制英文题单', 'Copy English')}</button></div><p class="rec-kit-rubric">${tr('统一评分：1–3 无证据；4–6 部分符合；7–8 有清晰案例；9–10 有强证据、量化结果并高度匹配。', 'Rubric: 1–3 no evidence; 4–6 partial; 7–8 clear example; 9–10 strong evidence, measurable result, and excellent fit.')}</p><label>${tr('总体结论 / 下一步', 'Overall conclusion / next step')}<textarea id="recKitOverallNote" maxlength="8000">${h(card.overallNote || '')}</textarea></label></aside><div class="rec-kit-questions">${questions}</div></div></div>`;
+    openRecruitingModal(tr('面试题库与评分', 'Interview kit & scoring'), html, canEdit() ? async () => {
+      const scores = {}, notes = {};
+      for (const question of kit.questions) {
+        const raw = value(`recKitScore_${question.id}`);
+        if (raw && (!/^\d+$/.test(raw) || Number(raw) < 1 || Number(raw) > 10)) { dialogError(tr('每道题评分请填写 1–10 的整数，未提问可留空。', 'Use whole-number scores from 1 to 10, or leave unanswered questions blank.')); return; }
+        scores[question.id] = raw ? Number(raw) : null;
+        notes[question.id] = value(`recKitNote_${question.id}`);
+      }
+      await saveMutation(`/api/recruiting/candidates/${encodeURIComponent(candidate.id)}/scorecard`, { templateId:kit.id, scores, notes, overallNote:value('recKitOverallNote') });
+    } : null);
+    if (!canEdit()) el('modalSave').hidden = true;
+    updateInterviewKitScore();
+  }
+
+  async function copyInterviewKit(button, language) {
+    const text = interviewKitCopyText(findInterviewKit(button.dataset.recId), language); if (!text) return;
+    try {
+      if (navigator.clipboard?.writeText) await navigator.clipboard.writeText(text);
+      else { const area = document.createElement('textarea'); area.value = text; area.style.position = 'fixed'; area.style.opacity = '0'; document.body.appendChild(area); area.select(); document.execCommand('copy'); area.remove(); }
+      dialogError(tr('题单已复制，可直接粘贴使用。', 'Interview questions copied and ready to paste.'), true);
+    } catch { dialogError(tr('浏览器未允许自动复制，请手动选择题目。', 'The browser blocked copying. Select the questions manually.')); }
   }
 
   function openCandidateProfile(id) {
@@ -362,7 +441,7 @@
     const emailLink = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(c.email || '') ? `<a class="btn" href="mailto:${h(encodeURIComponent(c.email))}">${tr('打开邮件客户端', 'Open email app')}</a>` : '';
     let resumeLink = '';
     try { const url = new URL(c.resumeUrl); if (url.protocol === 'https:') resumeLink = `<a class="btn" href="${h(url.href)}" target="_blank" rel="noopener noreferrer">${tr('打开简历 / 作品来源', 'Open resume / portfolio source')}</a>`; } catch {}
-    const html = `<div class="rec-dialog rec-profile" data-rec-dialog="profile" data-rec-id="${h(id)}"><div id="recDialogError" class="rec-alert" role="alert"></div><header class="rec-person-summary"><div><h2>${h(c.name)}</h2><p>${h(c.position || missing)}</p>${pill(c.status)}</div><div class="rec-actions">${action('messages', id, tr('中文起草 / 英文短信', 'Draft / English SMS'), true)}${canEdit() ? action('candidate', id, tr('编辑档案 / 评分', 'Edit profile / scorecard')) : ''}${canEdit() ? action(meeting ? 'edit-interview' : 'schedule', meeting?.id || id, meeting ? tr('查看预约', 'Review interview') : tr('安排面试', 'Schedule interview')) : ''}</div></header><dl class="rec-profile-facts">${facts.map(([name, content]) => `<div class="rec-profile-fact"><dt>${h(name)}</dt><dd class="${content ? '' : 'rec-missing rec-profile-fact-missing'}">${h(content || missing)}</dd></div>`).join('')}</dl>${applicationDatesHtml(c)}<div class="rec-profile-contact-row"><div class="rec-actions">${phoneLink}${emailLink}</div><p class="rec-note">${tr('联系方式按档案原文显示；Indeed 转发邮箱不是候选人的私人邮箱。打开邮件客户端不会自动发信。', 'Contact details are shown as recorded. An Indeed relay address is not a personal email. Opening an email app does not send email.')}</p></div>${meeting ? `<div class="rec-recipient"><strong>${tr('当前面试安排', 'Current interview')}: ${h(when(meeting.startsAt))}</strong><p>${h(meeting.address || DEFAULT_ADDRESS)}</p>${pill(meeting.status, interviewStates)}</div>` : ''}${bilingualBlock(id, '经验与经历概览 / Experience overview', c.experience)}${bilingualBlock(id, '经销商资源与开发计划 / Dealership resources & outreach plan', c.dealershipResources)}${bilingualBlock(id, '跟进备注 / Follow-up notes', c.notes)}<section class="rec-profile-section rec-resume-section">${c.resumeText?.trim() ? `<div class="rec-resume-pair">${bilingualBlock(id, '已保存简历原文与对照 / Saved resume text & translation', c.resumeText, 'zh')}</div>` : `<h3>简历原文 / Original resume</h3><p class="rec-missing">${c.resume ? tr('已上传 PDF，但尚未提取文字，暂不能生成全文对照。可查看 PDF 原件；编辑档案可补充提取后的原文。', 'A PDF is uploaded, but text has not been extracted, so full-text translation is unavailable. View the PDF or add its extracted text through Edit profile.') : tr('尚无简历原文。上方经验摘要不能替代完整简历，请补充原文或附件。', 'Original resume text is missing. The experience summary is not a full resume. Add the original text or an attachment.')}</p>`}<div class="rec-attachment">${c.resume ? `${action('view-resume', id, tr('查看 PDF 原件', 'View original PDF'))}<span class="rec-note">${h(c.resume.name)}</span>` : `<span class="rec-note">${tr('尚无 PDF 附件', 'No PDF attachment')}</span>`}${resumeLink}</div><p class="rec-note">${tr('以上为已保存原文，不使用 AI 补写缺失履历；编辑档案可补充简历与附件。', 'This is the saved original. AI does not fill missing history. Use Edit profile to add resume text or attachments.')}</p></section><p class="rec-note">${tr('短信联系', 'SMS contact')}: ${c.smsOptedOut ? tr('已退订 · 禁止发送', 'Opted out · blocked') : c.smsConsent ? tr('已有同意记录', 'Consent recorded') : tr('尚无同意记录 · 不能发送', 'No consent recorded · cannot send')} ${h(c.smsConsentNote || '')}</p></div>`;
+    const html = `<div class="rec-dialog rec-profile" data-rec-dialog="profile" data-rec-id="${h(id)}"><div id="recDialogError" class="rec-alert" role="alert"></div><header class="rec-person-summary"><div><h2>${h(c.name)}</h2><p>${h(c.position || missing)}</p>${pill(c.status)}</div><div class="rec-actions">${action('messages', id, tr('中文起草 / 英文短信', 'Draft / English SMS'), true)}${canEdit() ? action('interview-kit', id, tr('面试题库 / 评分', 'Interview kit / score')) : ''}${canEdit() ? action('candidate', id, tr('编辑档案 / 六维评分', 'Edit profile / six scores')) : ''}${canEdit() ? action(meeting ? 'edit-interview' : 'schedule', meeting?.id || id, meeting ? tr('查看预约', 'Review interview') : tr('安排面试', 'Schedule interview')) : ''}</div></header><dl class="rec-profile-facts">${facts.map(([name, content]) => `<div class="rec-profile-fact"><dt>${h(name)}</dt><dd class="${content ? '' : 'rec-missing rec-profile-fact-missing'}">${h(content || missing)}</dd></div>`).join('')}</dl>${applicationDatesHtml(c)}<div class="rec-profile-contact-row"><div class="rec-actions">${phoneLink}${emailLink}</div><p class="rec-note">${tr('联系方式按档案原文显示；Indeed 转发邮箱不是候选人的私人邮箱。打开邮件客户端不会自动发信。', 'Contact details are shown as recorded. An Indeed relay address is not a personal email. Opening an email app does not send email.')}</p></div>${meeting ? `<div class="rec-recipient"><strong>${tr('当前面试安排', 'Current interview')}: ${h(when(meeting.startsAt))}</strong><p>${h(meeting.address || DEFAULT_ADDRESS)}</p>${pill(meeting.status, interviewStates)}</div>` : ''}${interviewScorecardsHtml(c)}${bilingualBlock(id, '经验与经历概览 / Experience overview', c.experience)}${bilingualBlock(id, '经销商资源与开发计划 / Dealership resources & outreach plan', c.dealershipResources)}${bilingualBlock(id, '跟进备注 / Follow-up notes', c.notes)}<section class="rec-profile-section rec-resume-section">${c.resumeText?.trim() ? `<div class="rec-resume-pair">${bilingualBlock(id, '已保存简历原文与对照 / Saved resume text & translation', c.resumeText, 'zh')}</div>` : `<h3>简历原文 / Original resume</h3><p class="rec-missing">${c.resume ? tr('已上传 PDF，但尚未提取文字，暂不能生成全文对照。可查看 PDF 原件；编辑档案可补充提取后的原文。', 'A PDF is uploaded, but text has not been extracted, so full-text translation is unavailable. View the PDF or add its extracted text through Edit profile.') : tr('尚无简历原文。上方经验摘要不能替代完整简历，请补充原文或附件。', 'Original resume text is missing. The experience summary is not a full resume. Add the original text or an attachment.')}</p>`}<div class="rec-attachment">${c.resume ? `${action('view-resume', id, tr('查看 PDF 原件', 'View original PDF'))}<span class="rec-note">${h(c.resume.name)}</span>` : `<span class="rec-note">${tr('尚无 PDF 附件', 'No PDF attachment')}</span>`}${resumeLink}</div><p class="rec-note">${tr('以上为已保存原文，不使用 AI 补写缺失履历；编辑档案可补充简历与附件。', 'This is the saved original. AI does not fill missing history. Use Edit profile to add resume text or attachments.')}</p></section><p class="rec-note">${tr('短信联系', 'SMS contact')}: ${c.smsOptedOut ? tr('已退订 · 禁止发送', 'Opted out · blocked') : c.smsConsent ? tr('已有同意记录', 'Consent recorded') : tr('尚无同意记录 · 不能发送', 'No consent recorded · cannot send')} ${h(c.smsConsentNote || '')}</p></div>`;
     openRecruitingModal(tr('应聘者详情', 'Candidate details'), html, null);
     el('modalSave').hidden = true;
   }
@@ -645,6 +724,9 @@
       case 'refresh': load(true); break;
       case 'candidate': openCandidate(id); break;
       case 'profile': openCandidateProfile(id); break;
+      case 'interview-kit': openInterviewKit(id, button.dataset.recTemplateId || ''); break;
+      case 'copy-interview-kit-zh': copyInterviewKit(button, 'zh'); break;
+      case 'copy-interview-kit-en': copyInterviewKit(button, 'en'); break;
       case 'schedule': openInterview(id); break;
       case 'edit-interview': openInterview('', id); break;
       case 'messages': openMessages(id); break;
@@ -669,6 +751,7 @@
     if (event.target.id === 'recSearch') { query = event.target.value; el('recResults').innerHTML = candidateTable(); }
     if (event.target.id === 'recSmsDraft') invalidatePreview();
     if (event.target.id === 'recSmsBody') invalidatePreview();
+    if (event.target.matches('.rec-kit-score')) updateInterviewKitScore();
   });
   document.addEventListener('keydown', event => {
     if (!['Enter', ' '].includes(event.key) || !event.target.matches('.rec-candidate-row')) return;
@@ -678,6 +761,10 @@
   document.addEventListener('change', event => {
     if (event.target.id === 'recStatusFilter') { status = event.target.value; el('recResults').innerHTML = candidateTable(); }
     if (event.target.id === 'recCandidateSort') { candidateSort = event.target.value === 'created' ? 'created' : 'applied'; el('recResults').innerHTML = candidateTable(); }
+    if (event.target.id === 'recInterviewKitSelect') {
+      const candidateId = document.querySelector('[data-rec-dialog="interview-kit"]')?.dataset.recId;
+      if (candidateId) openInterviewKit(candidateId, event.target.value);
+    }
     if (event.target.matches('[data-rec-translation-language]')) changeReadingLanguage(event.target);
     if (['recInterviewDate', 'recInterviewTime', 'recInterviewAddress'].includes(event.target.id)) { if (el('recCandidateConfirmed')) el('recCandidateConfirmed').checked = false; updateAmbiguity(); }
     if (event.target.id === 'recResumeFile') uploadResume(event.target.files?.[0], event.target.dataset.recId);
@@ -690,6 +777,6 @@
   });
   if (el('app')) authObserver.observe(el('app'), { attributes: true, attributeFilter: ['class'] });
   setInterval(() => { if (!document.hidden && !busy && current === 'recruiting' && checkIdentity()) load(true); }, 30000);
-  window.Recruiting = Object.freeze({ render: renderPage, openCandidate, openCandidateProfile, refresh: () => load(true), onAuthChanged: checkIdentity, localToInstants, localParts });
+  window.Recruiting = Object.freeze({ render: renderPage, openCandidate, openCandidateProfile, openInterviewKit, refresh: () => load(true), onAuthChanged: checkIdentity, localToInstants, localParts });
   if (state && current === 'recruiting') render();
 })();

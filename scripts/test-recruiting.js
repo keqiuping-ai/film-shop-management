@@ -397,6 +397,7 @@ async function run() {
   await expectStatus('/api/recruiting', { token: sales }, 403, 'Default sales recruiting access');
   const snapshot = await expectStatus('/api/recruiting', { token: owner }, 200, 'Owner recruiting access');
   check(Array.isArray(snapshot.candidates) && Array.isArray(snapshot.interviews), 'Recruiting snapshot collections');
+  check(snapshot.interviewKits?.length === 8 && snapshot.interviewKits.find(kit => kit.id === 'dealer_full_16')?.questions.length === 16, 'Recruiting snapshot exposes eight exact interview templates');
   check(Boolean(snapshot.settings && snapshot.sms), 'Recruiting snapshot settings and SMS capability');
   check(!JSON.stringify(snapshot).includes(AUTH_TOKEN), 'Recruiting settings never expose provider credentials');
   check(snapshot.settings.remindersEnabled === false, 'Automatic reminder worker explicitly disabled in tests');
@@ -448,6 +449,15 @@ async function run() {
     smsConsent: true, smsConsentNote: 'Synthetic fixture: candidate agreed to interview texts.'
   } }, 201, 'Shared-phone candidate can have private recruiting record')).candidate;
   const candidatePath = `/api/recruiting/candidates/${candidate.id}`;
+  const dealerQuick = snapshot.interviewKits.find(kit => kit.id === 'dealer_quick_8');
+  const firstDealerQuestion = dealerQuick.questions[0].id;
+  await expectStatus(`${candidatePath}/scorecard`, { token: viewer, method:'POST', body:{ templateId:dealerQuick.id, scores:{}, notes:{}, overallNote:'' } }, 403, 'View-only user cannot save interview scores');
+  await expectStatus(`${candidatePath}/scorecard`, { token:owner, method:'POST', body:{ templateId:'unknown', scores:{}, notes:{}, overallNote:'' } }, 400, 'Unknown interview template rejected');
+  await expectStatus(`${candidatePath}/scorecard`, { token:owner, method:'POST', body:{ templateId:dealerQuick.id, scores:{ [firstDealerQuestion]:11 }, notes:{}, overallNote:'' } }, 400, 'Question score above ten rejected');
+  await expectStatus(`${candidatePath}/scorecard`, { token:owner, method:'POST', body:{ templateId:dealerQuick.id, scores:{ [firstDealerQuestion]:9 }, notes:{ [firstDealerQuestion]:'Synthetic dealer evidence.' }, overallNote:'Synthetic next round.' } }, 200, 'Save dealership question-level scorecard');
+  await expectStatus(`${candidatePath}/scorecard`, { token:owner, method:'POST', body:{ templateId:'remote_quick_6', scores:{ intro:8 }, notes:{ intro:'Synthetic remote evidence.' }, overallNote:'Remote screen complete.' } }, 200, 'Save a second independent scorecard');
+  await expectStatus(`${candidatePath}/scorecard`, { token:owner, method:'POST', body:{ templateId:dealerQuick.id, scores:{ [firstDealerQuestion]:10 }, notes:{ [firstDealerQuestion]:'Updated synthetic evidence.' }, overallNote:'Updated conclusion.' } }, 200, 'Update one scorecard without duplicating it');
+  check(candidateRow(candidate.id).interviewScorecards.length === 2 && candidateRow(candidate.id).interviewScorecards.find(card => card.templateId === dealerQuick.id).scores[firstDealerQuestion] === 10, 'Scorecards remain independent and template update is idempotent');
   check(second.appliedAt === '2026-09-12' && !shared.appliedAt, 'Date-only precision remains date-only; unknown date is not backfilled');
   await expectStatus(candidatePath, { token: viewer, method: 'PATCH', body: { appliedAt: '2026-09-01', applicationDateNote: 'Synthetic' } }, 403, 'Viewer cannot change application date');
   await expectStatus(candidatePath, { token: owner, method: 'PATCH', body: { createdAt: '2026-09-01T00:00:00.000Z' } }, 400, 'System entry timestamp stays immutable');
@@ -613,6 +623,7 @@ async function run() {
   const persisted = await expectStatus('/api/recruiting', { token: restartedOwner }, 200, 'Read after server restart');
   check(persisted.candidates.some(row => row.id === candidate.id && row.resumeText.includes('FICTIONAL TEST RESUME')), 'Candidate resume persisted');
   check(persisted.candidates.find(row => row.id === candidate.id).scores.sales === 8, 'Candidate scores persisted');
+  check(persisted.candidates.find(row => row.id === candidate.id).interviewScorecards.length === 2, 'Question-level interview scorecards persisted');
   check(persisted.interviews.some(row => row.id === interview.id && row.status === 'confirmed'), 'Interview confirmation persisted');
   check(messages(candidate.id).some(row => row.providerSid === 'SMdemo-reconcile-001'), 'Conversation persisted');
   check(candidateRow(candidate.id).appliedAt === candidate.appliedAt && candidateRow(candidate.id).applicationDateNote === candidate.applicationDateNote, 'Application date and evidence survive server restart');

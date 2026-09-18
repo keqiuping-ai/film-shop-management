@@ -9,6 +9,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
+const { INTERVIEW_KITS } = require('../lib/recruiting-interview-kits');
 
 const frontendPath = path.join(__dirname, '..', 'public', 'recruiting.js');
 const frontendSource = fs.readFileSync(frontendPath, 'utf8');
@@ -24,7 +25,8 @@ const testHooks = `
       candidateSort = controls.sort || 'applied';
       translationCache.clear(); translationPending.clear();
     },
-    filteredCandidates, candidateTable, bilingualBlock, openCandidateProfile,
+    filteredCandidates, candidateTable, bilingualBlock, openCandidateProfile, openInterviewKit,
+    interviewKitCopyText, scorecardAverage,
     parseApplicationDate, applicationInfo, applicationWhen, recordedWhen,
     applicationDatesHtml, renderPage,
     traceActions(log) {
@@ -80,7 +82,7 @@ function harness(language = 'zh') {
     emit(name, event) { for (const callback of listeners.get(name) || []) callback(event); },
     fixture(people, controls = {}, meetings = []) {
       sandbox.window.__recruitingUiTest.setFixture({
-        candidates: people, interviews: meetings, interviewers: [], quarantine: [],
+        candidates: people, interviews: meetings, interviewKits: plain(INTERVIEW_KITS), interviewers: [], quarantine: [],
         translation: { configured: true }, sms: { configured: false },
         settings: { preview: true, remindersEnabled: false }
       }, controls);
@@ -276,6 +278,31 @@ test('profile keeps short facts in a compact grid while preserving dedicated lon
   assert.match(html, /经验与经历概览 \/ Experience overview/);
   assert.match(html, /Detailed synthetic work history\./);
   assert.match(html, /class="rec-profile-section"/);
+});
+
+test('candidate interview kits expose all role variants, exact questions, copy text and restored scores', () => {
+  const env = harness();
+  const saved = {
+    templateId:'dealer_quick_8', scores:{ street_plan:9, entry:7 },
+    notes:{ street_plan:'Synthetic territory evidence.' }, overallNote:'Synthetic next round.'
+  };
+  env.fixture([candidate('kit-candidate', { position:'Dealership field sales', interviewScorecards:[saved] })]);
+  env.ui.openInterviewKit('kit-candidate', 'dealer_quick_8');
+  const html = env.modals.at(-1).html;
+  assert.equal((html.match(/<option value="[^"]+"/g) || []).length, 8);
+  assert.equal((html.match(/class="rec-kit-question"/g) || []).length, 8);
+  assert.match(html, /value="9"/);
+  assert.match(html, /Synthetic territory evidence\./);
+  assert.match(html, /Synthetic next round\./);
+  const kit = plain(INTERVIEW_KITS.find(item => item.id === 'installer_full_18'));
+  const copied = env.ui.interviewKitCopyText(kit, 'zh');
+  assert.match(copied, /贴膜技师 · 18题完整版/);
+  assert.match(copied, /18\./);
+  assert.match(copied, /评分：____ \/ 10/);
+  const englishCopy = env.ui.interviewKitCopyText(kit, 'en');
+  assert.doesNotMatch(englishCopy, /\p{Script=Han}/u);
+  assert.match(englishCopy, /18\./);
+  assert.deepEqual(plain(env.ui.scorecardAverage(saved, plain(INTERVIEW_KITS.find(item => item.id === 'dealer_quick_8')))), { completed:2, total:8, average:8 });
 });
 
 test('PDF-only profiles explicitly say text is not extracted and never offer fake full-resume translation', () => {
