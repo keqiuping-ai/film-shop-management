@@ -8,6 +8,7 @@ const { promisify } = require('util');
 const { AccessToken } = require('livekit-server-sdk');
 const recruiting = require('./lib/recruiting');
 const { createRecruitingVideoService } = require('./lib/recruiting-video');
+const { createRecruitingInterviewAnalyzer } = require('./lib/recruiting-interview-ai');
 const { createRecruitingTranslator } = require('./lib/recruiting-openai');
 const execFileAsync = promisify(execFile);
 
@@ -6044,7 +6045,15 @@ const recruitingService = recruiting.createRecruitingService({
   publicBaseUrl:requestPublicBaseUrl, dataDir:DATA_DIR, notify:notifyDataChanged
 });
 const recruitingVideoService = createRecruitingVideoService({
-  readDb, writeDb, readBody, send, canAccess, publicBaseUrl:requestPublicBaseUrl, notify:notifyDataChanged
+  readDb, writeDb, readBody, send, canAccess, publicBaseUrl:requestPublicBaseUrl, notify:notifyDataChanged,
+  analyzeInterview:createRecruitingInterviewAnalyzer({
+    getConfig:() => {
+      const db = readDb();
+      return { apiKey:openAiCustomerReplyKey(db), model:customerAiReplyModel(db),
+        baseUrl:process.env.OPENAI_API_BASE_URL || 'https://api.openai.com/v1' };
+    },
+    requestJson:fetchAiJson
+  })
 });
 
 function customerAiAutoReplyInBusinessHours(settings, now = new Date()) {

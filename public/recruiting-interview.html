@@ -1,41 +1,53 @@
 <!doctype html>
-<html lang="zh-CN">
+<html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <meta name="theme-color" content="#073d49">
-  <title>QUAD FILM 视频面试</title>
+  <title>QUAD FILM Video Interview</title>
   <link rel="icon" href="/quad-film-icon-192.png">
-  <link rel="stylesheet" href="/recruiting-interview.css?v=20260918-1">
+  <link rel="stylesheet" href="/recruiting-interview.css?v=20260918-2">
   <script defer src="/livekit-client.umd.js?v=1"></script>
-  <script defer src="/recruiting-interview.js?v=20260918-1"></script>
+  <script defer src="/recruiting-interview.js?v=20260918-2"></script>
 </head>
 <body>
   <main class="interview-shell">
-    <header class="brand"><img src="/quad-film-icon-192.png" alt=""><div><strong>QUAD FILM</strong><span>Secure video interview</span></div><span id="connectionBadge" class="badge">准备中</span></header>
+    <header class="brand"><img src="/quad-film-icon-192.png" alt=""><div><strong>QUAD FILM</strong><span data-i18n="secureInterview">Secure video interview</span></div><div class="header-actions"><label class="language-picker"><span data-i18n="language">Language</span><select id="language" aria-label="Language"><option value="en">English</option><option value="es">Español</option><option value="pt">Português</option><option value="zh">中文</option></select></label><span id="connectionBadge" class="badge" data-i18n="preparing">Preparing</span></div></header>
     <section id="welcome" class="welcome card">
-      <p class="eyebrow">VIDEO INTERVIEW · 视频面试</p>
-      <h1 id="welcomeTitle">正在检查面试链接…</h1>
+      <p class="eyebrow" data-i18n="videoInterview">VIDEO INTERVIEW</p>
+      <h1 id="welcomeTitle" data-i18n="checkingLink">Checking your interview link…</h1>
       <p id="welcomeMeta" class="muted"></p>
-      <div class="device-check"><span>🎥 摄像头</span><span>🎙️ 麦克风</span><span>🔒 一次性安全链接</span></div>
-      <label id="consentRow" class="consent"><input id="consent" type="checkbox">我了解本次面试将使用音频、视频及实时文字转写辅助记录；AI评分仅供招聘负责人参考，最终决定由人工完成。</label>
+      <div class="device-check"><span data-i18n="cameraCheck">🎥 Camera</span><span data-i18n="micCheck">🎙️ Microphone</span><span data-i18n="secureLink">🔒 One-time secure link</span></div>
+      <label id="consentRow" class="consent"><input id="consent" type="checkbox"><span data-i18n="consent">I understand that this interview uses audio, video, and live transcription to assist with notes. AI scoring is advisory only; a person makes the final decision.</span></label>
       <p id="error" class="error" role="alert"></p>
-      <button id="join" class="primary" disabled>进入视频面试</button>
-      <p class="privacy">无需注册或下载应用。浏览器只会在你同意后申请摄像头和麦克风权限；页面不会默认录制视频。</p>
+      <button id="join" class="primary" disabled data-i18n="join">Join video interview</button>
+      <p class="privacy" data-i18n="privacy">No account or app download is required. Your browser asks for camera and microphone access only after you consent. Video is not recorded by default.</p>
     </section>
     <section id="roomView" class="room" hidden>
       <div class="stage card">
-        <div id="remoteStage" class="remote-stage"><div class="waiting"><strong>正在等待另一位参与者…</strong><span>保持此页面打开，连接后会自动显示。</span></div></div>
-        <div id="localStage" class="local-stage"><span>我的画面</span></div>
+        <div id="remoteStage" class="remote-stage"><div class="waiting"><strong data-i18n="waiting">Waiting for the other participant…</strong><span data-i18n="keepOpen">Keep this page open. Video will appear automatically after they connect.</span></div></div>
+        <div id="localStage" class="local-stage"><span data-i18n="myVideo">My video</span></div>
         <div id="audioStage" hidden></div>
       </div>
       <aside class="side card">
         <p class="eyebrow">INTERVIEW ASSISTANT</p>
-        <h2>面试进行中</h2>
-        <p id="participantState" class="muted">正在连接安全房间…</p>
-        <div class="notice"><strong>AI辅助边界</strong><p>AI可以协助转写、整理证据和生成评分草稿，但不会根据外貌、口音或其他受保护特征作出判断。</p></div>
+        <h2 data-i18n="inProgress">Interview in progress</h2>
+        <p id="participantState" class="muted" data-i18n="connectingRoom">Connecting to the secure room…</p>
+        <div class="notice"><strong data-i18n="aiBoundary">AI assistance</strong><p data-i18n="aiNotice">AI may assist with transcription, evidence organization, and a draft score. It does not evaluate appearance, accent, or other protected characteristics.</p></div>
+        <section class="transcript-panel">
+          <div class="panel-heading"><strong data-i18n="liveTranscript">Live transcript</strong><button id="transcriptToggle" class="small" data-i18n="startTranscript">Start transcript</button></div>
+          <div id="transcriptStatus" class="panel-status" data-i18n="transcriptOff">Transcription is off.</div>
+          <div id="transcriptList" class="transcript-list" aria-live="polite"></div>
+        </section>
+        <section id="aiPanel" class="ai-panel" hidden>
+          <div class="panel-heading"><strong data-i18n="aiCopilot">AI interview copilot</strong><button id="aiNext" class="small" data-i18n="suggestQuestions">Suggest questions</button></div>
+          <p id="aiStatus" class="panel-status" data-i18n="aiReady">Ready to analyze job-related evidence.</p>
+          <div id="aiQuestions" class="ai-output"></div>
+          <button id="aiFinal" class="small secondary" data-i18n="createSummary">Create summary and score draft</button>
+          <div id="aiSummary" class="ai-output"></div>
+        </section>
         <div class="controls">
-          <button id="mic">🎙️ 麦克风</button><button id="camera">🎥 摄像头</button><button id="leave" class="danger">结束 / 离开</button>
+          <button id="mic" data-i18n="microphone">🎙️ Microphone</button><button id="camera" data-i18n="camera">🎥 Camera</button><button id="leave" class="danger" data-i18n="leave">End / Leave</button>
         </div>
       </aside>
     </section>
