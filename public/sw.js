@@ -1,4 +1,4 @@
-const CACHE_NAME = 'film-shop-v121-customer-address-english';
+const CACHE_NAME = 'film-shop-v122-sales-customer-review-detail';
 const ASSETS = [
     '/mobile.html',
     '/warranty.html',

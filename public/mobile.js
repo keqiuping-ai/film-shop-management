@@ -1822,28 +1822,85 @@ function salesReviewConsignmentHtml(item) {
   return `<section class="sales-consignment-review"><b>${lang === 'en' ? 'Signed consignment receipt' : '客户签收放货单'} · ${escapeHtml(item.receiptNumber || '')}</b><p>${(item.items || []).map(row => `${escapeHtml(row.productSku || row.productName || '')} × ${Number(row.quantity || 0)} · ${money(row.lineTotal)}`).join('<br>')}</p><p><strong>${lang === 'en' ? 'Received by' : '签收人'}：</strong>${escapeHtml(item.signedBy || '')} · <strong>${lang === 'en' ? 'Balance due' : '欠款'}：</strong>${money(item.amountDue)} · ${escapeHtml(formatMobileDateTime(item.paymentDueAt) || '')}</p>${item.signatureUrl ? `<img class="sales-signature-preview" src="${escapeHtml(item.signatureUrl)}" alt="signature">` : ''}</section>`;
 }
 
-function salesReviewVisitHtml(visit, trials, consignments) {
+function salesReviewField(label, value, { wide = false, href = '' } = {}) {
+  const shown = String(value ?? '').trim();
+  const content = shown
+    ? (href ? `<a href="${escapeHtml(href)}">${escapeHtml(shown)}</a>` : `<strong>${escapeHtml(shown)}</strong>`)
+    : `<strong class="sales-review-missing">${lang === 'en' ? 'Not entered' : '未填写'}</strong>`;
+  return `<div class="sales-review-field ${wide ? 'wide' : ''}"><small>${escapeHtml(label)}</small>${content}</div>`;
+}
+
+function salesReviewAttachmentHtml(item) {
+  const type = String(item.contentType || '');
+  const name = item.fileName || (lang === 'en' ? 'Attachment' : '附件');
+  const isImage = type.startsWith('image/');
+  const values = Object.entries(item.artifactValues || {}).filter(([, value]) => String(value ?? '').trim());
+  return `<article class="sales-review-attachment ${isImage ? 'has-image' : 'file-only'}">
+    ${isImage && item.url ? `<a class="sales-review-attachment-image" href="${escapeHtml(item.url)}" target="_blank"><img src="${escapeHtml(item.url)}" alt="${escapeHtml(name)}"></a>` : ''}
+    <div><b>${escapeHtml(name)}</b><small>${escapeHtml(formatMobileDateTime(item.createdAt) || '')}${type ? ` · ${escapeHtml(type)}` : ''}</small>
+      ${!isImage && item.url ? `<a class="sales-review-file-link" href="${escapeHtml(item.url)}" target="_blank">${lang === 'en' ? 'Open attachment' : '打开附件'}</a>` : ''}
+      ${item.transcript ? `<p><strong>${lang === 'en' ? 'Conversation transcript' : '沟通文字记录'}：</strong>${escapeHtml(item.transcript)}</p>` : ''}
+      ${item.analysis ? `<p><strong>${lang === 'en' ? 'Analysis' : '分析'}：</strong>${escapeHtml(item.analysis)}</p>` : ''}
+      ${values.filter(([key]) => !['transcript', 'analysis'].includes(key)).map(([key, value]) => `<p><strong>${escapeHtml(key)}：</strong>${escapeHtml(value)}</p>`).join('')}
+    </div>
+  </article>`;
+}
+
+function salesReviewOrderHtml(item) {
+  const money = value => Number(value || 0).toLocaleString(undefined, { style:'currency', currency:'USD' });
+  return `<article class="sales-review-order"><header><b>${escapeHtml(item.orderNumber || (lang === 'en' ? 'On-site order' : '现场订单'))}</b><span>${escapeHtml(item.status || '')}</span></header><p>${(item.items || []).map(row => `${escapeHtml(row.sku || row.name || '')} × ${Number(row.quantity || 0)} · ${money(row.lineTotal)}`).join('<br>')}</p><p><strong>${lang === 'en' ? 'Total' : '总额'}：</strong>${money(item.total)} · <strong>${lang === 'en' ? 'Paid' : '已收'}：</strong>${money(item.amountPaid)} · <strong>${lang === 'en' ? 'Due' : '欠款'}：</strong>${money(item.amountDue)}</p>${item.note ? `<p><strong>${lang === 'en' ? 'Notes' : '订单备注'}：</strong>${escapeHtml(item.note)}</p>` : ''}</article>`;
+}
+
+function salesReviewFollowUpHtml(item) {
+  return `<article class="sales-review-follow-up"><header><b>${escapeHtml(item.type || (lang === 'en' ? 'Follow-up' : '客户回访'))}</b><span>${escapeHtml(item.status || '')}</span></header><p><strong>${lang === 'en' ? 'Due' : '跟进时间'}：</strong>${escapeHtml(formatMobileDateTime(item.dueAt) || '—')} · <strong>${lang === 'en' ? 'Method' : '方式'}：</strong>${escapeHtml(item.method || '—')}</p><p>${escapeHtml(item.reason || (lang === 'en' ? 'No reason entered.' : '未填写跟进原因。'))}</p>${item.assignedUserName ? `<p><strong>${lang === 'en' ? 'Assigned to' : '负责人'}：</strong>${escapeHtml(item.assignedUserName)}</p>` : ''}</article>`;
+}
+
+function salesReviewPhotoGallery(urls, label) {
+  const photos = [...new Set((urls || []).filter(Boolean))];
+  if (!photos.length) return '';
+  return `<section><b>${escapeHtml(label)}</b><div class="sales-evidence-grid">${photos.map((url, index) => `<a href="${escapeHtml(url)}" target="_blank"><img src="${escapeHtml(url)}" alt="${escapeHtml(label)} ${index + 1}"></a>`).join('')}</div></section>`;
+}
+
+function salesReviewVisitHtml(visit, trials, consignments, attachments = [], orders = [], followUps = []) {
   const analysis = visit.aiAnalysis || {};
   const summary = lang === 'en' ? analysis.summaryEn : analysis.summaryZh;
   const needs = lang === 'en' ? analysis.customerNeedsEn : analysis.customerNeedsZh;
   const advice = lang === 'en' ? analysis.managerAdviceEn : analysis.managerAdviceZh;
   const checkIn = visit.checkIn || {};
   const matched = checkIn.locationMatched;
+  const photoUrls = [
+    checkIn.photoUrl,
+    visit.ownerPhotoUrl,
+    ...(visit.evidencePhotoUrls || []),
+    ...consignments.flatMap(item => item.proofPhotoUrls || []),
+    ...attachments.filter(item => String(item.contentType || '').startsWith('image/')).map(item => item.url)
+  ];
   return `<article class="sales-review-visit">
     <header><div><small>${escapeHtml(visit.outcome || visit.status || '')}</small><h4>${escapeHtml(formatMobileDateTime(visit.completedAt || visit.startedAt) || '—')}</h4></div><span>${escapeHtml(visit.userName || '')}</span></header>
+    <div class="sales-review-visit-times">
+      ${salesReviewField(lang === 'en' ? 'Started' : '开始时间', formatMobileDateTime(visit.startedAt) || '')}
+      ${salesReviewField(lang === 'en' ? 'Completed' : '完成时间', formatMobileDateTime(visit.completedAt) || '')}
+      ${salesReviewField(lang === 'en' ? 'Sales representative' : '拜访业务员', visit.userName || '')}
+      ${salesReviewField(lang === 'en' ? 'Person met' : '现场联系人', visit.contactMet || '')}
+    </div>
     <div class="sales-review-facts">
-      ${visit.contactMet ? `<span>👤 ${lang === 'en' ? 'Met' : '见到'}：${escapeHtml(visit.contactMet)}</span>` : ''}
       <span>📍 ${matched === true ? (lang === 'en' ? 'Location verified' : '定位已核验') : matched === false ? (lang === 'en' ? 'Outside location range' : '超出门店定位范围') : (lang === 'en' ? 'No location result' : '无定位结果')}</span>
       ${Number.isFinite(Number(checkIn.distanceToAccountMeters)) ? `<span>${lang === 'en' ? 'Distance' : '距离门店'}：${Math.round(Number(checkIn.distanceToAccountMeters))}m</span>` : ''}
       ${visit.travel ? `<span>🚗 ${lang === 'en' ? 'Travel' : '行程用时'}：${Number(visit.travel.actualMinutes || 0)} / ${Number(visit.travel.estimatedMinutes || 0)} ${lang === 'en' ? 'min' : '分钟'}</span><span class="${visit.travel.routeStatus === '用时异常待说明' ? 'bad-text' : ''}">${escapeHtml(visit.travel.routeStatus || '')}</span>` : ''}
     </div>
-    ${checkIn.photoUrl ? `<button type="button" class="sales-review-photo" onclick="openSalesVisitPhoto('${visit.accountId}','${visit.id}')"><img src="${escapeHtml(checkIn.photoUrl)}" alt="${lang === 'en' ? 'Storefront check-in' : '到店打卡照片'}"><span>${lang === 'en' ? 'Photo & location details' : '查看照片和定位地址'}</span></button>` : ''}
-    <section><b>${lang === 'en' ? 'Visit report' : '当时拜访情况'}</b><p>${escapeHtml(visit.reportText || (lang === 'en' ? 'No report.' : '没有填写拜访内容。'))}</p></section>
+    <section class="sales-review-location"><b>${lang === 'en' ? 'Check-in and location' : '到店与定位明细'}</b><p><strong>${lang === 'en' ? 'Customer address' : '客户登记地址'}：</strong>${escapeHtml(visit.customerAddress || '—')}</p><p><strong>${lang === 'en' ? 'Check-in address' : '现场定位地址'}：</strong>${escapeHtml(checkIn.address || '—')}</p>${checkIn.accuracy ? `<p><strong>GPS ${lang === 'en' ? 'accuracy' : '精度'}：</strong>${Math.round(Number(checkIn.accuracy))}m</p>` : ''}${checkIn.mapUrl ? `<a href="${escapeHtml(checkIn.mapUrl)}" target="_blank">${lang === 'en' ? 'Open check-in map' : '打开现场定位地图'}</a>` : ''}</section>
+    ${checkIn.photoUrl ? `<button type="button" class="sales-review-photo" onclick="openSalesVisitPhoto('${visit.accountId}','${visit.id}')"><img src="${escapeHtml(checkIn.photoUrl)}" alt="${lang === 'en' ? 'Storefront check-in' : '到店打卡照片'}"><span>${lang === 'en' ? 'Open full check-in photo and location details' : '打开完整门头照片和定位凭证'}</span></button>` : ''}
+    <section><b>${lang === 'en' ? 'Visit report and full conversation' : '当时拜访情况／完整沟通记录'}</b><p>${escapeHtml(visit.reportText || (lang === 'en' ? 'No report.' : '没有填写拜访内容。'))}</p></section>
+    ${visit.customerNeeds ? `<section><b>${lang === 'en' ? 'Customer needs' : '客户需求'}</b><p>${escapeHtml(visit.customerNeeds)}</p></section>` : ''}
+    ${visit.objections ? `<section><b>${lang === 'en' ? 'Customer questions and objections' : '客户关注和异议'}</b><p>${escapeHtml(visit.objections)}</p></section>` : ''}
     ${visit.nextAction ? `<section><b>${lang === 'en' ? 'Next action' : '下一步动作'}</b><p>${escapeHtml(visit.nextAction)}</p></section>` : ''}
     ${visit.nextVisitAt ? `<p class="sales-review-next">⏰ ${lang === 'en' ? 'Next visit' : '下次回访'}：${escapeHtml(formatMobileDateTime(visit.nextVisitAt))}</p>` : ''}
     ${trials.length ? `<section><b>${lang === 'en' ? 'Products delivered' : '送出的试用产品'}</b><div class="sales-review-trials">${trials.map(salesReviewTrialHtml).join('')}</div></section>` : ''}
     ${consignments.length ? consignments.map(salesReviewConsignmentHtml).join('') : ''}
-    ${(visit.evidencePhotoUrls || []).length ? `<section><b>${lang === 'en' ? 'Visit photos' : '现场拜访照片'}</b><div class="sales-evidence-grid">${visit.evidencePhotoUrls.map(url => `<img src="${escapeHtml(url)}" alt="visit evidence">`).join('')}</div></section>` : ''}
+    ${salesReviewPhotoGallery(photoUrls, lang === 'en' ? 'All visit photos' : '本次拜访全部照片')}
+    ${attachments.length ? `<section><b>${lang === 'en' ? 'Visit attachments and transcripts' : '本次拜访附件与沟通记录'}</b><div class="sales-review-attachments">${attachments.map(salesReviewAttachmentHtml).join('')}</div></section>` : ''}
+    ${orders.length ? `<section><b>${lang === 'en' ? 'On-site orders' : '本次现场订单'}</b><div class="sales-review-orders">${orders.map(salesReviewOrderHtml).join('')}</div></section>` : ''}
+    ${followUps.length ? `<section><b>${lang === 'en' ? 'Follow-up tasks' : '后续跟进任务'}</b><div class="sales-review-follow-ups">${followUps.map(salesReviewFollowUpHtml).join('')}</div></section>` : ''}
     ${summary || needs || advice ? `<section class="sales-review-ai"><b>AI ${lang === 'en' ? 'review' : '复盘分析'} · ${escapeHtml(visit.aiStatus || '')}</b>${summary ? `<p>${escapeHtml(summary)}</p>` : ''}${needs ? `<p><strong>${lang === 'en' ? 'Needs' : '客户需求'}：</strong>${escapeHtml(needs)}</p>` : ''}${advice ? `<p><strong>${lang === 'en' ? 'Advice' : '跟进建议'}：</strong>${escapeHtml(advice)}</p>` : ''}</section>` : `<p class="hint">AI：${escapeHtml(visit.aiStatus || (lang === 'en' ? 'Not analyzed' : '未分析'))}</p>`}
   </article>`;
 }
@@ -1882,22 +1939,50 @@ function openSalesReviewDialog(accountId) {
   const account = (sales.accounts || []).find(item => item.id === accountId);
   if (!account) return;
   const visits = (sales.visits || [])
-    .filter(item => item.accountId === accountId && item.status === '已完成')
+    .filter(item => item.accountId === accountId)
     .sort((a, b) => String(b.completedAt || b.startedAt || '').localeCompare(String(a.completedAt || a.startedAt || '')));
   const trials = sales.trialRolls || [];
   const consignments = sales.consignments || [];
+  const attachments = (sales.attachments || []).filter(item => item.accountId === accountId);
+  const orders = (sales.fieldOrders || []).filter(item => item.accountId === accountId);
+  const followUps = (sales.followUps || []).filter(item => item.accountId === accountId);
+  const accountAttachments = attachments.filter(item => !item.visitId);
+  const assignedUser = (state.users || []).find(item => item.id === account.assignedUserId);
+  const createdByUser = (state.users || []).find(item => item.id === account.createdByUserId);
+  const mapUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(account.address || '')}`;
   const overlay = document.createElement('div'); overlay.className = 'mobile-modal sales-review-modal';
   overlay.innerHTML = `<div class="mobile-dialog sales-review-dialog">
-    <div class="dialog-head"><div><small>${lang === 'en' ? 'Customer visit review' : '客户拜访复盘'}</small><strong>${escapeHtml(account.businessName)}</strong></div><button onclick="this.closest('.mobile-modal').remove()">×</button></div>
-    <div class="sales-review-account">
-      <p>📍 ${escapeHtml(account.address || '—')}</p>
-      ${account.contactName || account.phone || account.email ? `<p>👤 ${escapeHtml(account.contactName || '')} ${escapeHtml(account.phone || '')}${account.email ? ` · ${escapeHtml(account.email)}` : ''}</p>` : ''}
-      ${account.note ? `<p>📝 ${escapeHtml(account.note)}</p>` : ''}
-      <p>⏰ ${lang === 'en' ? 'Current next visit' : '当前下次回访'}：${escapeHtml(formatMobileDateTime(account.nextVisitAt) || '—')}</p>
+    <div class="dialog-head sales-review-head"><div><small>${lang === 'en' ? 'Complete customer profile and visit review' : '完整客户资料与拜访复盘'}</small><strong>${escapeHtml(account.businessName)}</strong><span>${escapeHtml(account.stage || (lang === 'en' ? 'No stage' : '未设置阶段'))}</span></div><button aria-label="${lang === 'en' ? 'Close' : '关闭'}" onclick="this.closest('.mobile-modal').remove()">×</button></div>
+    <div class="sales-review-scroll">
+      <section class="sales-review-profile">
+        <div class="sales-review-section-heading"><div><small>${lang === 'en' ? 'CUSTOMER PROFILE' : '客户档案'}</small><h3>${lang === 'en' ? 'Customer details' : '客户详细资料'}</h3></div><a href="${escapeHtml(mapUrl)}" target="_blank">${lang === 'en' ? 'Open map' : '打开地图'}</a></div>
+        <div class="sales-review-profile-grid">
+          ${salesReviewField(lang === 'en' ? 'Customer / store name' : '客户／门店名称', account.businessName, { wide:true })}
+          ${salesReviewField(lang === 'en' ? 'Contact name' : '联系人姓名', account.contactName)}
+          ${salesReviewField(lang === 'en' ? 'Phone' : '联系电话', account.phone, { href:account.phone ? `tel:${account.phone}` : '' })}
+          ${salesReviewField(lang === 'en' ? 'Email' : '电子邮箱', account.email, { href:account.email ? `mailto:${account.email}` : '' })}
+          ${salesReviewField(lang === 'en' ? 'Street address' : '详细地址', account.address, { wide:true })}
+          ${salesReviewField(lang === 'en' ? 'City' : '城市／地区', account.city)}
+          ${salesReviewField(lang === 'en' ? 'Customer type' : '客户类型', account.customerType)}
+          ${salesReviewField(lang === 'en' ? 'Lead source' : '客户来源', account.source)}
+          ${salesReviewField(lang === 'en' ? 'Stage' : '当前阶段', account.stage)}
+          ${salesReviewField(lang === 'en' ? 'Assigned sales representative' : '负责业务员', account.assignedUserName || assignedUser?.name || assignedUser?.email)}
+          ${salesReviewField(lang === 'en' ? 'Created by' : '建档人员', account.createdByName || createdByUser?.name || createdByUser?.email)}
+          ${salesReviewField(lang === 'en' ? 'Created at' : '建档时间', formatMobileDateTime(account.createdAt) || '')}
+          ${salesReviewField(lang === 'en' ? 'Last visit' : '最近拜访', formatMobileDateTime(account.lastVisitAt) || '')}
+          ${salesReviewField(lang === 'en' ? 'Next visit' : '下次回访', formatMobileDateTime(account.nextVisitAt) || '')}
+          ${salesReviewField(lang === 'en' ? 'Follow-up cycle' : '回访周期', `${Number(account.cadenceDays || 7)} ${lang === 'en' ? 'days' : '天'}`)}
+          ${salesReviewField(lang === 'en' ? 'Customer notes' : '客户备注', account.note, { wide:true })}
+        </div>
+        ${accountAttachments.length ? `<div class="sales-review-account-files"><h4>${lang === 'en' ? 'Customer files and photos' : '客户档案附件与照片'}</h4><div class="sales-review-attachments">${accountAttachments.map(salesReviewAttachmentHtml).join('')}</div></div>` : ''}
+        ${followUps.length ? `<div class="sales-review-account-files"><h4>${lang === 'en' ? 'All follow-up tasks' : '全部后续跟进任务'}</h4><div class="sales-review-follow-ups">${followUps.map(salesReviewFollowUpHtml).join('')}</div></div>` : ''}
+        ${orders.filter(item => !item.visitId).length ? `<div class="sales-review-account-files"><h4>${lang === 'en' ? 'Customer orders not linked to a visit' : '未关联具体拜访的客户订单'}</h4><div class="sales-review-orders">${orders.filter(item => !item.visitId).map(salesReviewOrderHtml).join('')}</div></div>` : ''}
+      </section>
+      <div class="sales-review-title"><strong>${lang === 'en' ? 'Complete visit history' : '完整拜访记录'}</strong><span>${visits.length} ${lang === 'en' ? 'records' : '条记录'}</span></div>
+      <div class="sales-review-list">${visits.length ? visits.map(visit => salesReviewVisitHtml(visit, trials.filter(item => item.visitId === visit.id), consignments.filter(item => item.visitId === visit.id), attachments.filter(item => item.visitId === visit.id), orders.filter(item => item.visitId === visit.id), followUps.filter(item => item.visitId === visit.id))).join('') : `<div class="sales-review-empty">${lang === 'en' ? 'No visit records yet. Completed reports, conversations, photos, and attachments will appear here.' : '还没有拜访记录。提交后的沟通内容、照片、附件和复盘会完整显示在这里。'}</div>`}</div>
     </div>
-    <div class="sales-review-title"><strong>${lang === 'en' ? 'Visit history' : '历次拜访记录'}</strong><span>${visits.length} ${lang === 'en' ? 'visits' : '次'}</span></div>
-    <div class="sales-review-list">${visits.length ? visits.map(visit => salesReviewVisitHtml(visit, trials.filter(item => item.visitId === visit.id), consignments.filter(item => item.visitId === visit.id))).join('') : `<div class="sales-review-empty">${lang === 'en' ? 'No completed visits yet. The submitted report will appear here.' : '还没有已完成的拜访。业务员提交拜访结果后，会自动保存在这里。'}</div>`}</div>
   </div>`;
+  overlay.addEventListener('click', event => { if (event.target === overlay) overlay.remove(); });
   document.body.appendChild(overlay);
 }
 
