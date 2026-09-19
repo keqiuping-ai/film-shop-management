@@ -35,7 +35,7 @@ body { margin: 0; min-height: 100vh; background: radial-gradient(circle at top l
 .room { display: grid; grid-template-columns: minmax(0, 1fr) 390px; gap: 18px; height: calc(100vh - 104px); }
 .stage { position: relative; overflow: hidden; background: #0d2429; }
 .remote-stage { width: 100%; height: 100%; display: grid; place-items: center; }
-.remote-stage video { width: 100%; height: 100%; object-fit: contain; background: #0d2429; }
+.remote-stage video { width: 68%; height: 68%; object-fit: contain; background: #0d2429; border-radius: 18px; }
 .waiting { display: grid; gap: 8px; text-align: center; color: #e7f5f5; }
 .local-stage { position: absolute; right: 18px; bottom: 18px; width: min(260px, 30%); aspect-ratio: 16/10; border: 2px solid rgba(255, 255, 255, .75); border-radius: 15px; overflow: hidden; background: #1d4148; color: #fff; display: grid; place-items: center; }
 .local-stage video { width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
@@ -68,6 +68,7 @@ body { margin: 0; min-height: 100vh; background: radial-gradient(circle at top l
   .welcome { margin-top: 3vh; padding: 25px; }
   .room { grid-template-columns: 1fr; height: auto; }
   .stage { min-height: 58vh; }
+  .remote-stage video { width: 94%; height: 82%; border-radius: 12px; }
   .side { min-height: 250px; }
   .local-stage { width: 32%; right: 10px; bottom: 10px; }
 }

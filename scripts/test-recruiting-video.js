@@ -44,7 +44,7 @@ test('candidate page defaults to English and exposes all four requested language
 
 test('remote video shows the complete camera frame while the local preview may stay cropped', () => {
   const css = fs.readFileSync(require.resolve('../public/recruiting-interview.css'), 'utf8');
-  assert.match(css, /\.remote-stage video\s*\{[^}]*object-fit:\s*contain/);
+  assert.match(css, /\.remote-stage video\s*\{[^}]*width:\s*68%[^}]*height:\s*68%[^}]*object-fit:\s*contain/);
   assert.match(css, /\.local-stage video\s*\{[^}]*object-fit:\s*cover/);
   assert.doesNotMatch(css, /\.remote-stage video\s*\{[^}]*object-fit:\s*cover/);
 });
