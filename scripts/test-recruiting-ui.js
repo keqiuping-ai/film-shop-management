@@ -26,7 +26,9 @@ const testHooks = `
       translationCache.clear(); translationPending.clear();
     },
     filteredCandidates, candidateTable, bilingualBlock, openCandidateProfile, openInterviewKit, openInterview,
-    interviewKitCopyText, scorecardAverage,
+    interviewKitCopyText, scorecardAverage, onlineWorkflowHtml, interviewMode,
+    interviewSubmission, updateInterviewMode, createVideoInvite, composeVideoInvite, saveOpenInterview,
+    saveAndCreateVideoInvite, saveAndJoinVideoInterview,
     parseApplicationDate, applicationInfo, applicationWhen, recordedWhen,
     applicationDatesHtml, renderPage,
     traceActions(log) {
@@ -70,6 +72,7 @@ function harness(language = 'zh') {
       hidden: false,
       getElementById: id => nodes.get(id) || null,
       querySelector: () => null,
+      querySelectorAll: () => [],
       addEventListener(name, callback) {
         if (!listeners.has(name)) listeners.set(name, []);
         listeners.get(name).push(callback);
@@ -122,9 +125,259 @@ test('new and existing interview dialogs expose every interview action without a
   const existing = env.modals.at(-1)?.html || '';
   assert.match(existing, /data-rec-interview-id="saved-interview"/);
   assert.match(existing, /当前预约已保存；修改表单后点击任一入口会先保存最新内容/);
-  assert.match(existing, /AI 面试题库 \/ 评分/);
-  assert.match(existing, /生成候选人一次性链接/);
-  assert.match(existing, /进入视频面试室/);
+  assert.match(existing, /面试问题 \/ 记录评分/);
+  assert.match(existing, /保存并生成面试链接/);
+  assert.match(existing, /进入线上面试室/);
+});
+
+test('profile puts four online-first steps before preserved compact candidate details', () => {
+  for (const language of ['zh', 'en']) {
+    const env = harness(language);
+    const person = candidate('online-first', { experience:'Synthetic full experience', resumeText:'Synthetic full resume' });
+    env.fixture([person]);
+    const original = plain(person);
+    env.ui.openCandidateProfile(person.id);
+    const html = env.modals.at(-1).html;
+    const workflowStart = html.indexOf('class="rec-online-workflow"');
+    assert.ok(workflowStart >= 0 && workflowStart < html.indexOf('class="rec-profile-facts"'));
+    assert.deepEqual([...html.matchAll(/class="rec-step-number">(\d+)</g)].map(match => match[1]), ['01','02','03','04']);
+    const titles = language === 'zh' ? ['短信邀请','确认时间','线上面试','记录与评分'] : ['Invite by SMS','Confirm a time','Meet online','Notes &amp; scores'];
+    let previous = workflowStart;
+    for (const title of titles) { const index = html.indexOf(`<h4>${title}</h4>`); assert.ok(index > previous, title); previous = index; }
+    assert.match(html, /data-rec-action="invite-online" data-rec-id="online-first"/);
+    assert.match(html, /data-rec-action="interview-kit" data-rec-id="online-first"/);
+    assert.match(html, /<details class="rec-secondary-interview">/);
+    assert.match(html, /Synthetic full experience/);
+    assert.match(html, /Synthetic full resume/);
+    assert.deepEqual(person, original, 'Opening workflow cannot mutate a candidate or schedule');
+  }
+});
+
+test('workflow lists contact blockers and keeps historical in-person appointments separate', () => {
+  const env = harness();
+  const person = candidate('legacy');
+  const meetings = [{ id:'legacy-appointment', candidateId:person.id, startsAt:'2026-09-18T17:00:00Z', status:'confirmed', address:'123 Synthetic Store Ave' }];
+  env.fixture([person], {}, meetings);
+  const original = plain(meetings);
+  const html = env.ui.onlineWorkflowHtml(person);
+  const [primary, alternative] = html.split('<details class="rec-secondary-interview">');
+  assert.match(primary, /未填写手机号/);
+  assert.match(primary, /同意记录/);
+  assert.match(primary, /data-rec-action="schedule" data-rec-id="legacy"/);
+  assert.doesNotMatch(primary, /legacy-appointment|123 Synthetic Store Ave/);
+  assert.match(alternative, /data-rec-action="edit-interview" data-rec-id="legacy-appointment"/);
+  assert.match(alternative, /123 Synthetic Store Ave/);
+  assert.equal(env.ui.interviewMode(meetings[0]), 'in_person');
+  assert.deepEqual(meetings, original);
+});
+
+test('workflow respects read-only permissions and displays actual outbound status', () => {
+  const env = harness('en');
+  const person = candidate('readonly', { messages:[{ direction:'outbound', status:'failed', text:'Synthetic invitation', timestamp:'2026-09-17T17:00:00Z' }] });
+  env.fixture([person]);
+  env.sandbox.hasPerm = permission => permission !== 'recruitingEdit';
+  const html = env.ui.onlineWorkflowHtml(person);
+  assert.match(html, /Latest SMS: Sending failed/);
+  assert.match(html, /data-rec-action="messages"/);
+  assert.doesNotMatch(html, /data-rec-action="(?:invite-online|schedule|schedule-in-person|candidate|interview-kit)"/);
+});
+
+test('new appointments default online and proposed while old appointments retain their in-person format', () => {
+  const env = harness();
+  const person = candidate('mode-default');
+  env.fixture([person]);
+  env.ui.openInterview(person.id);
+  const fresh = env.modals.at(-1).html;
+  assert.match(fresh, /<option value="online" selected>/);
+  assert.match(fresh, /<option value="scheduled" selected>/);
+  assert.match(fresh, /id="recInterviewAddressField" hidden/);
+  assert.doesNotMatch(fresh, /id="recCandidateConfirmed" checked/);
+  assert.doesNotMatch(fresh, /id="recAutoReminders" checked/);
+  env.ui.openInterview(person.id, '', 'in_person');
+  assert.match(env.modals.at(-1).html, /<option value="in_person" selected>/);
+  const legacy = { id:'legacy-mode', candidateId:person.id, startsAt:'2026-09-18T17:00:00Z', status:'confirmed', address:'456 Synthetic Store Ave' };
+  env.fixture([person], {}, [legacy]);
+  env.ui.openInterview('', legacy.id);
+  const existing = env.modals.at(-1).html;
+  assert.match(existing, /<option value="in_person" selected>/);
+  assert.doesNotMatch(existing, /id="recInterviewAddressField" hidden/);
+  assert.match(existing, /456 Synthetic Store Ave/);
+  assert.equal(legacy.mode, undefined, 'Rendering a historical record does not rewrite it');
+});
+
+function interviewForm(env, person, overrides = {}) {
+  const values = {
+    recInterviewMode:'online', recInterviewDate:'2026-09-18', recInterviewTime:'10:00',
+    recDuration:'30', recInterviewAddress:'', recInterviewStatus:'scheduled',
+    recInterviewer:'Fixture Owner', recInterviewNotes:'', recTimeFold:'', ...overrides
+  };
+  for (const [id, value] of Object.entries(values)) env.nodes.set(id, { id, value, disabled:false, isConnected:true, matches:() => false });
+  for (const id of ['recCandidateConfirmed','recAutoReminders']) env.nodes.set(id, { id, checked:false, disabled:false, isConnected:true });
+  for (const id of ['recInterviewAddressField','recOnlineControls','recDialogError','recVideoInviteResult','recInterviewSaveState']) env.nodes.set(id, { id, hidden:false, textContent:'', innerHTML:'', className:'' });
+  const formFields = [...Object.keys(values), 'recCandidateConfirmed', 'recAutoReminders'].map(id => env.nodes.get(id));
+  const dialog = { dataset:{ recId:person.id, recInterviewId:'' }, isConnected:true, querySelectorAll:() => formFields };
+  env.sandbox.document.querySelector = selector => selector === '[data-rec-dialog="interview"]' ? dialog : null;
+  return dialog;
+}
+
+test('online submission saves no store address and never infers candidate confirmation', () => {
+  const env = harness();
+  const person = candidate('submission');
+  env.fixture([person]);
+  interviewForm(env, person, { recInterviewAddress:'456 Synthetic Store Ave' });
+  const submitted = env.ui.interviewSubmission();
+  assert.equal(submitted.body.mode, 'online');
+  assert.equal(submitted.body.address, '');
+  assert.equal(submitted.body.status, 'scheduled');
+  assert.equal(submitted.body.automaticReminders, false);
+  env.nodes.get('recInterviewStatus').value = 'confirmed';
+  assert.equal(env.ui.interviewSubmission(), null);
+  assert.match(env.nodes.get('recDialogError').textContent, /明确同意/);
+  env.nodes.get('recCandidateConfirmed').checked = true;
+  assert.equal(env.ui.interviewSubmission().body.status, 'confirmed');
+  env.nodes.get('recInterviewMode').value = 'invalid';
+  assert.equal(env.ui.interviewSubmission(), null);
+  env.nodes.get('recInterviewMode').value = 'in_person';
+  env.nodes.get('recInterviewAddress').value = '';
+  assert.equal(env.ui.interviewSubmission(), null, 'In-person address remains mandatory');
+  env.nodes.get('recInterviewAddress').value = '456 Synthetic Store Ave';
+  assert.equal(env.ui.interviewSubmission().body.address, '456 Synthetic Store Ave');
+});
+
+test('changing mode or schedule clears prior confirmation, reminders and unshared link display', () => {
+  for (const [eventName, field] of [['change','recInterviewMode'],['change','recInterviewDate'],['change','recInterviewTime'],['change','recTimeFold'],['input','recInterviewAddress'],['input','recDuration']]) {
+    const env = harness();
+    const person = candidate('changed-schedule');
+    env.fixture([person]);
+    interviewForm(env, person, { recInterviewStatus:'confirmed' });
+    env.nodes.get('recCandidateConfirmed').checked = true;
+    env.nodes.get('recAutoReminders').checked = true;
+    env.nodes.get('recVideoInviteResult').textContent = 'Synthetic old unshared link';
+    env.emit(eventName, { target:env.nodes.get(field) });
+    assert.equal(env.nodes.get('recCandidateConfirmed').checked, false, field);
+    assert.equal(env.nodes.get('recInterviewStatus').value, 'scheduled', field);
+    assert.equal(env.nodes.get('recAutoReminders').checked, false, field);
+    assert.equal(env.nodes.get('recVideoInviteResult').textContent, '', field);
+    assert.match(env.nodes.get('recInterviewSaveState').textContent, /重新取得候选人确认/, field);
+  }
+});
+
+test('mode switching hides online actions for in-person and only requires an in-person address', () => {
+  const env = harness();
+  const person = candidate('mode-fields');
+  env.fixture([person]);
+  interviewForm(env, person);
+  env.ui.updateInterviewMode();
+  assert.equal(env.nodes.get('recInterviewAddressField').hidden, true);
+  assert.equal(env.nodes.get('recInterviewAddress').required, false);
+  assert.equal(env.nodes.get('recOnlineControls').hidden, false);
+  env.nodes.get('recInterviewMode').value = 'in_person';
+  env.ui.updateInterviewMode();
+  assert.equal(env.nodes.get('recInterviewAddressField').hidden, false);
+  assert.equal(env.nodes.get('recInterviewAddress').required, true);
+  assert.equal(env.nodes.get('recOnlineControls').hidden, true);
+});
+
+test('in-person mode also blocks direct online-link and online-room handlers without saving', async () => {
+  const env = harness();
+  const person = candidate('in-person-guards');
+  env.fixture([person]);
+  const dialog = interviewForm(env, person, { recInterviewMode:'in_person' });
+  dialog.dataset.recInterviewId = 'existing-in-person';
+  await env.ui.saveAndCreateVideoInvite();
+  assert.match(env.nodes.get('recDialogError').textContent, /先选择线上视频面试/);
+  await env.ui.saveAndJoinVideoInterview();
+  assert.match(env.nodes.get('recDialogError').textContent, /先选择线上视频面试/);
+  await env.ui.createVideoInvite(dialog.dataset.recInterviewId);
+  assert.equal(env.nodes.get('recVideoInviteResult').innerHTML, '');
+});
+
+test('asynchronous link creation only displays results for the same account, dialog and unchanged schedule', async () => {
+  for (const change of ['none','mode','date','time','duration','account','dialog']) {
+    const env = harness();
+    const person = candidate('link-race');
+    const meeting = { id:'existing-online', candidateId:person.id, mode:'online', startsAt:'2026-09-18T17:00:00Z', status:'scheduled' };
+    env.fixture([person], {}, [meeting]);
+    const dialog = interviewForm(env, person);
+    dialog.dataset.recInterviewId = meeting.id;
+    const box = env.nodes.get('recVideoInviteResult'); box.isConnected = true;
+    let finish, calls = 0;
+    env.sandbox.api = (path, options) => {
+      calls++;
+      assert.equal(path, `/api/recruiting/interviews/${meeting.id}/video-invite`);
+      assert.equal(options.method, 'POST');
+      return new Promise(resolve => { finish = resolve; });
+    };
+    const pending = env.ui.createVideoInvite(meeting.id);
+    assert.equal(calls, 1);
+    if (change === 'mode') env.nodes.get('recInterviewMode').value = 'in_person';
+    if (change === 'date') env.nodes.get('recInterviewDate').value = '2026-09-19';
+    if (change === 'time') env.nodes.get('recInterviewTime').value = '11:00';
+    if (change === 'duration') env.nodes.get('recDuration').value = '60';
+    if (change === 'account') env.sandbox.token = 'different-synthetic-token';
+    if (change === 'dialog') dialog.isConnected = false;
+    finish({ joinUrl:'https://example.test/synthetic-link', expiresAt:'2026-09-18T18:00:00Z' });
+    await pending;
+    if (change === 'none') {
+      assert.match(box.innerHTML, /data-rec-action="compose-video-invite"/);
+      assert.match(box.innerHTML, /https:\/\/example.test\/synthetic-link/);
+    } else assert.equal(box.innerHTML, '', `Must discard stale link after ${change} changes`);
+    assert.equal(meeting.status, 'scheduled');
+    assert.equal(calls, 1, 'Link generation never calls a message-sending endpoint');
+  }
+});
+
+test('saving locks all appointment fields and restores their previous disabled state on success or failure', async () => {
+  for (const failure of [false, true]) {
+    const env = harness();
+    const person = candidate('save-lock');
+    env.fixture([person]);
+    const dialog = interviewForm(env, person);
+    env.nodes.get('recAutoReminders').disabled = true;
+    const fields = dialog.querySelectorAll();
+    const originalDisabled = fields.map(field => field.disabled);
+    let resolve, reject, submitted;
+    env.sandbox.api = (path, options) => {
+      assert.equal(path, '/api/recruiting/interviews');
+      assert.equal(options.method, 'POST');
+      submitted = JSON.parse(options.body);
+      return new Promise((done, fail) => { resolve = done; reject = fail; });
+    };
+    const pending = env.ui.saveOpenInterview();
+    assert.equal(fields.every(field => field.disabled), true, 'Mode, time, status and confirmation cannot change during save');
+    assert.equal(env.nodes.get('modalSave').disabled, true);
+    if (failure) reject(new Error('Synthetic save failure'));
+    else resolve({ interview:{ id:'synthetic-saved', ...submitted } });
+    const saved = await pending;
+    assert.deepEqual(fields.map(field => field.disabled), originalDisabled);
+    assert.equal(env.nodes.get('modalSave').disabled, false);
+    assert.equal(saved?.id || null, failure ? null : 'synthetic-saved');
+    if (failure) assert.match(env.nodes.get('recDialogError').textContent, /Synthetic save failure/);
+  }
+});
+
+test('regenerating a private link removes its old display and blocks composing while replacement is pending', async () => {
+  const env = harness();
+  const person = candidate('replace-link');
+  const meeting = { id:'replacement-meeting', candidateId:person.id, mode:'online', startsAt:'2026-09-18T17:00:00Z', status:'scheduled' };
+  env.fixture([person], {}, [meeting]);
+  const dialog = interviewForm(env, person);
+  dialog.dataset.recInterviewId = meeting.id;
+  const box = env.nodes.get('recVideoInviteResult'); box.isConnected = true;
+  // Keep a stale synthetic node even after clearing the display to independently
+  // exercise the busy guard as well as the DOM-removal behavior.
+  env.nodes.set('recVideoInviteUrl', { value:'https://example.test/old-synthetic-link' });
+  let finish;
+  env.sandbox.api = () => new Promise(resolve => { finish = resolve; });
+  const actions = []; env.ui.traceActions(actions);
+  const pending = env.ui.createVideoInvite(meeting.id);
+  assert.match(box.textContent, /旧链接不可再从此处发送/);
+  env.ui.composeVideoInvite(meeting.id);
+  assert.deepEqual(actions, [], 'Old link cannot become a sendable draft while being revoked');
+  finish({ joinUrl:'https://example.test/new-synthetic-link', expiresAt:'2026-09-18T18:00:00Z' });
+  await pending;
+  assert.match(box.innerHTML, /https:\/\/example.test\/new-synthetic-link/);
+  assert.deepEqual(actions, [], 'Successful regeneration still never sends or opens a draft automatically');
 });
 
 test('recruiter video-room navigation cannot leave Safari on an about:blank popup', () => {

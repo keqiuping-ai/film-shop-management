@@ -260,6 +260,44 @@ async function seedFixture() {
   await startServer();
 }
 
+function testInterviewModeContract() {
+  const { normalizeInterview, createRecruitingService, ADDRESS } = require('../lib/recruiting');
+  const actor = { id:'mode-fixture-owner', name:'Synthetic Mode Owner' };
+  const db = { users:[actor], recruitingCandidates:[{ id:'mode-fixture-person', name:'Synthetic Mode Candidate' }], recruitingInterviews:[] };
+  const base = { candidateId:'mode-fixture-person', startsAt:new Date(Date.now() + 7 * 86400000).toISOString(), automaticReminders:false };
+  const defaultInterview = normalizeInterview(db, base, actor);
+  check(defaultInterview.mode === 'in_person' && defaultInterview.address === ADDRESS, 'Omitted mode preserves legacy in-person defaults');
+  const online = normalizeInterview(db, { ...base, mode:'online' }, actor);
+  check(online.mode === 'online' && online.address === '', 'New online interview may omit the physical address');
+  const emptyOnline = normalizeInterview(db, { ...base, mode:'online', address:'' }, actor);
+  check(emptyOnline.address === '', 'Online mode explicitly accepts an empty address');
+  const retainedAddress = normalizeInterview(db, { ...base, mode:'online', address:'Synthetic optional location note' }, actor);
+  check(retainedAddress.address === 'Synthetic optional location note', 'Online mode preserves explicitly supplied address notes');
+  const onlineEdit = normalizeInterview(db, { notes:'Synthetic unrelated edit' }, actor, online);
+  check(onlineEdit.mode === 'online' && onlineEdit.address === '', 'An online edit without mode preserves online mode and empty address');
+  const legacy = { ...defaultInterview, address:'Synthetic legacy location' }; delete legacy.mode;
+  const legacyBefore = JSON.stringify(legacy);
+  const legacyEdit = normalizeInterview(db, { notes:'Synthetic legacy edit' }, actor, legacy);
+  check(legacyEdit.mode === 'in_person' && legacyEdit.address === legacy.address, 'Editing a legacy record without mode preserves its in-person meaning');
+  check(JSON.stringify(legacy) === legacyBefore, 'Normalizing a legacy interview does not mutate the original record');
+  for (const mode of ['', 'virtual', 'ONLINE', 'online ', null, undefined, false, 123, [], {}]) {
+    assert.throws(() => normalizeInterview(db, { ...base, mode }, actor), error => error.code === 'INTERVIEW_MODE_INVALID'); checks++;
+  }
+  for (const body of [{ ...base, mode:'in_person', address:'' }, { ...base, address:'' }]) {
+    assert.throws(() => normalizeInterview(db, body, actor), error => error.statusCode === 400); checks++;
+  }
+  assert.throws(() => normalizeInterview(db, { mode:'in_person' }, actor, online), error => error.statusCode === 400); checks++;
+  const inPersonEdit = normalizeInterview(db, { mode:'in_person', address:ADDRESS }, actor, online);
+  check(inPersonEdit.mode === 'in_person' && inPersonEdit.address === ADDRESS, 'Switching online to in-person requires and preserves a valid address');
+  db.recruitingInterviews = [legacy];
+  const service = createRecruitingService({ readDb:() => db, writeDb:() => { throw new Error('Mode snapshot must be read-only'); },
+    canAccess:() => true, readBody:async () => ({}), send:() => {}, smsConfigured:() => false, dataDir:DATA_DIR,
+    sendSms:async () => { throw new Error('Mode validation must not send SMS'); }, notify:() => {} });
+  const snapshot = service.snapshot(db);
+  check(snapshot.interviews[0].mode === 'in_person', 'Legacy snapshot explicitly exposes in-person mode');
+  check(JSON.stringify(legacy) === legacyBefore && !db.recruitingVideoInvites, 'Reading modes neither rewrites legacy records nor creates video links');
+}
+
 async function testReminderService() {
   const { createRecruitingService } = require('../lib/recruiting');
   const savedReminderFlag = process.env.RECRUITING_REMINDERS_ENABLED;
@@ -312,7 +350,22 @@ async function testReminderService() {
     check(disabled.sent === 0, 'Global reminder disable flag prevents sends');
     process.env.RECRUITING_REMINDERS_ENABLED = 'true';
 
-    for (const modification of ['cancelled', 'rescheduled']) {
+    db = { users: [], recruitingCandidates: [], recruitingInterviews: [], customerConversations: [], prospects: [] };
+    sms.length = 0;
+    addAppointment('online-empty', 24, { mode:'online', address:'' });
+    addAppointment('online-address', 24, { mode:'online', address:'SYNTHETIC ADDRESS MUST NOT APPEAR ONLINE' });
+    addAppointment('in-person', 24, { mode:'in_person', address:'SYNTHETIC IN-PERSON ADDRESS' });
+    addAppointment('legacy', 24, { address:'SYNTHETIC LEGACY ADDRESS' });
+    const modeResult = await service.processReminders(now);
+    check(modeResult.sent === 4 && sms.length === 4, 'Online, in-person, and legacy reminders retain ordinary consent and confirmation eligibility');
+    const onlineMessages = sms.slice(0, 2).map(row => row.body);
+    check(onlineMessages.every(message => message.includes('online video interview') && message.includes('interview link sent separately')), 'Online reminder identifies video interview and separately supplied link');
+    check(onlineMessages.every(message => !message.includes('ADDRESS') && !message.includes('Santa Monica') && !message.includes('http')), 'Online reminder does not leak a store address or invent a video link');
+    check(sms[2].body.includes('at SYNTHETIC IN-PERSON ADDRESS') && sms[3].body.includes('at SYNTHETIC LEGACY ADDRESS'), 'Explicit and legacy in-person reminders retain the saved physical address');
+    check(sms.every(row => row.body.includes('Reply STOP to opt out.')) && !db.recruitingVideoInvites, 'Mode reminders retain opt-out wording and never create video invitations');
+    check((await service.processReminders(now)).sent === 0, 'All interview modes retain reminder idempotency');
+
+    for (const modification of ['cancelled', 'rescheduled', 'mode-changed', 'address-changed']) {
       db = { users: [], recruitingCandidates: [], recruitingInterviews: [], customerConversations: [], prospects: [] };
       sms.length = 0;
       addAppointment(`first-${modification}`, 24);
@@ -320,9 +373,10 @@ async function testReminderService() {
       duringSend = () => {
         if (sms.length !== 1) return;
         const index = db.recruitingInterviews.findIndex(row => row.id === next.id);
-        db.recruitingInterviews[index] = modification === 'cancelled'
-          ? { ...next, status: 'cancelled' }
-          : { ...next, startsAt: new Date(now + 48 * 3600000).toISOString() };
+        const patch = modification === 'cancelled' ? { status:'cancelled' }
+          : modification === 'rescheduled' ? { startsAt:new Date(now + 48 * 3600000).toISOString() }
+          : modification === 'mode-changed' ? { mode:'online' } : { address:'Synthetic changed location' };
+        db.recruitingInterviews[index] = { ...next, ...patch };
       };
       await service.processReminders(now);
       check(sms.length === 1, `Appointment ${modification} during a previous await cannot receive a stale reminder`);
@@ -505,17 +559,25 @@ async function run() {
   };
   const interview = (await expectStatus('/api/recruiting/interviews', { token: owner, method: 'POST', body: interviewBody }, 201, 'Create interview')).interview;
   check(interview.startsAt === startsAt && interview.automaticReminders === false, 'Store exact instant and disabled reminder choice');
+  check(interview.mode === 'in_person', 'Existing API callers without mode still create an in-person interview');
   await expectStatus(`/api/recruiting/interviews/${interview.id}`, { token: owner, method: 'PATCH', body: { automaticReminders: true } }, 400, 'Proposed time cannot enable reminders before candidate confirmation');
   await expectStatus('/api/recruiting/interviews', { token: viewer, method: 'POST', body: interviewBody }, 403, 'Viewer cannot schedule');
   await expectStatus('/api/recruiting/interviews', { token: owner, method: 'POST', body: { ...interviewBody, candidateId: second.id } }, 409, 'Interviewer double-booking prevented');
   await expectStatus('/api/recruiting/interviews', { token: owner, method: 'POST', body: { ...interviewBody, interviewerId: 'manager', interviewerName: 'DEMO manager' } }, 409, 'Candidate double-booking prevented');
   const nextSlot = new Date(Date.parse(startsAt) + 30 * 60000).toISOString();
   await expectStatus('/api/recruiting/interviews', { token: owner, method: 'POST', body: { ...interviewBody, candidateId: second.id, startsAt: nextSlot } }, 201, 'Adjacent appointments accepted');
+  const onlineInterview = (await expectStatus('/api/recruiting/interviews', { token:owner, method:'POST', body:{ ...interviewBody,
+    startsAt:new Date(Date.parse(startsAt) + 86400000).toISOString(), mode:'online', address:''
+  } }, 201, 'Create online interview without physical address')).interview;
+  check(onlineInterview.mode === 'online' && onlineInterview.address === '', 'Online mode is persisted through the real API');
+  const onlineEdited = (await expectStatus(`/api/recruiting/interviews/${onlineInterview.id}`, { token:owner, method:'PATCH', body:{ notes:'Synthetic online follow-up' } }, 200, 'Edit online interview without repeating mode')).interview;
+  check(onlineEdited.mode === 'online' && onlineEdited.address === '', 'Online partial API edit retains its mode');
   for (const [patch, label] of [
     [{ startsAt: '2020-01-01T12:00:00.000Z' }, 'Past appointment rejected'],
     [{ durationMinutes: 0 }, 'Invalid interview duration rejected'],
     [{ timeZone: 'Imaginary/Timezone' }, 'Invalid timezone rejected'],
     [{ status: 'automatically_hired' }, 'Interview status allowlist'],
+    [{ mode: 'video_call' }, 'Interview mode allowlist'],
     [{ startsAt: '2027-02-30T12:00:00.000Z' }, 'Nonexistent calendar dates rejected'],
     [{ startsAt: '2027-03-14T02:30:00' }, 'Unresolved local DST gap rejected'],
     [{ startsAt: '2027-11-07T01:30:00' }, 'Unresolved local DST duplicate rejected']
@@ -660,6 +722,7 @@ async function run() {
   aiMode = 'success';
   await expectStatus(sendPath, { token: aiOwner, method: 'POST', body: { text: english.text, clientMessageId: 'translated-preview-test-001' } }, 201, 'Explicitly send English preview to local SMS provider only');
   check(providerCalls.at(-1).fields.Body === english.text, 'SMS provider receives exactly the reviewed English preview');
+  testInterviewModeContract();
   await testReminderService();
   testSmsOptOutEventOrdering();
   testPacificTimeConversion();

@@ -21,7 +21,7 @@ const hooks = `
       data = snapshot; loadedAt = 0; loading = null; error = ''; busy = false;
     },
     openMessages, makeSmsPreview, updateComposeControls, sendSms,
-    invalidatePreview, smsContactBlockers,
+    invalidatePreview, smsContactBlockers, template, composeVideoInvite,
     setBusy(value) { busy = value; },
     setPending(value) { composeContext.pending = value; }
   };
@@ -30,6 +30,11 @@ const hooks = `
 const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, char => ({
   '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
 }[char]));
+const fixedNow = Date.parse('2026-09-19T18:00:00Z');
+class FixtureDate extends Date {
+  constructor(...args) { super(...(args.length ? args : [fixedNow])); }
+  static now() { return fixedNow; }
+}
 const node = (fields = {}) => ({
   value: '', textContent: '', innerHTML: '', className: '', checked: false,
   disabled: false, hidden: false, isConnected: true, dataset: {},
@@ -64,7 +69,7 @@ function harness({ fields = {}, configured = true, language = 'zh' } = {}) {
   const sandbox = {
     window: { crypto: { randomUUID: () => `synthetic-client-message-${++uuid}` } },
     lang: language, user: { id: 'synthetic-owner', name: 'Synthetic Owner' },
-    token: 'synthetic-token', state: null, current: '', Date, Intl, URL,
+    token: 'synthetic-token', state: null, current: '', Date:FixtureDate, Intl, URL,
     escapeHtml, hasPerm: permission => permission === 'recruitingEdit' ? editAllowed : viewAllowed,
     api: async (apiPath, options = {}) => {
       assert.ok(apiPath.startsWith('/api/recruiting'), 'Only local synthetic API routes are permitted');
@@ -112,6 +117,10 @@ function harness({ fields = {}, configured = true, language = 'zh' } = {}) {
     setSendResponse: response => { sendResponse = response; },
     setEdit: allowed => { editAllowed = allowed; },
     setView: allowed => { viewAllowed = allowed; },
+    setInterviewDialog(interviewId) {
+      if (dialog) dialog.isConnected = false;
+      dialog = node({ dataset:{ recId:person.id, recInterviewId:interviewId } });
+    },
     emit(name, target) { for (const listener of listeners.get(name) || []) listener({ target }); },
     async preview(text) {
       nodes.get('recSmsDraft').value = text;
@@ -125,6 +134,135 @@ function harness({ fields = {}, configured = true, language = 'zh' } = {}) {
   };
   return env;
 }
+
+test('online invitation action only opens an English draft, never sends or confirms a time', async () => {
+  const env = harness();
+  const before = JSON.stringify(env.snapshot);
+  const button = node({ dataset:{ recAction:'invite-online', recId:env.person.id }, closest:() => null });
+  env.emit('click', { closest:() => button });
+  const draft = env.get('recSmsDraft').value;
+  assert.match(draft, /online video interview/);
+  assert.match(draft, /Which dates and times would work/);
+  assert.match(draft, /private interview link separately once the time is agreed/);
+  assert.match(draft, /Reply STOP to opt out/);
+  assert.doesNotMatch(draft, /\p{Script=Han}|3212|Santa Monica Blvd/u);
+  assert.equal(env.get('recSmsBody').value, '');
+  assert.equal(env.get('recSmsReviewed').checked, false);
+  assert.equal(env.get('recSendSms').disabled, true);
+  await env.ui.sendSms(env.person.id);
+  assert.equal(env.calls.length, 0, 'Opening a draft neither sends SMS nor saves an appointment');
+  assert.equal(JSON.stringify(env.snapshot), before);
+});
+
+for (const [label, fields, blocker] of [
+  ['missing phone', { phone:'' }, /未填写手机号/],
+  ['missing consent', { smsConsent:false }, /同意记录/],
+  ['missing consent source', { smsConsentNote:'' }, /同意记录/]
+]) {
+  test(`online invitation still cannot send with ${label}`, async () => {
+    const env = harness({ fields });
+    const draft = env.ui.template(env.person, 'online-invitation');
+    env.ui.openMessages(env.person.id, draft);
+    assert.equal(env.get('recSmsDraft').value, draft);
+    await env.ui.makeSmsPreview();
+    env.review();
+    assert.equal(env.get('recSendSms').disabled, true);
+    assert.match(env.ui.smsContactBlockers(env.person).join(' '), blocker);
+    await env.ui.sendSms(env.person.id);
+    assert.equal(env.sent().length, 0);
+    assert.equal(env.calls.length, 0, 'Blocked draft must not trigger a provider or appointment API');
+  });
+}
+
+test('online templates use only English remote instructions while legacy in-person templates keep the address', () => {
+  const env = harness();
+  const remote = { id:'remote', candidateId:env.person.id, mode:'online', startsAt:'2026-09-20T17:00:00Z', status:'scheduled', address:'123 Synthetic Store Ave' };
+  const legacy = { id:'legacy', candidateId:env.person.id, startsAt:'2026-09-20T16:00:00Z', status:'confirmed', address:'123 Synthetic Store Ave' };
+  env.snapshot.interviews.push(legacy, remote);
+  const before = JSON.stringify(env.snapshot);
+  for (const kind of ['online-invitation','online-link','confirm','reminder','late']) {
+    const text = env.ui.template(env.person, kind, remote, 'https://example.test/recruiting-interview.html?invite=synthetic');
+    assert.match(text, /online video interview/, kind);
+    assert.match(text, /PDT/, kind);
+    assert.match(text, /Reply STOP to opt out/, kind);
+    assert.doesNotMatch(text, /\p{Script=Han}|123 Synthetic Store Ave|3212|Santa Monica Blvd|estimated arrival|on your way/u, kind);
+  }
+  const invitation = env.ui.template(env.person, 'online-invitation');
+  assert.match(invitation, /10:00/);
+  assert.doesNotMatch(invitation, /\b9:00 AM\b/, 'Online invitation must not silently use the earlier in-person appointment');
+  const inPersonInvitation = env.ui.template(env.person, 'invitation');
+  assert.match(inPersonInvitation, /in-person interview at 123 Synthetic Store Ave/);
+  assert.match(inPersonInvitation, /\b9:00 AM\b/);
+  for (const kind of ['confirm','reminder']) assert.match(env.ui.template(env.person, kind, legacy), /The location is 123 Synthetic Store Ave/);
+  assert.match(env.ui.template(env.person, 'late', legacy), /estimated arrival time/);
+  assert.match(env.ui.template(env.person, 'online-link', remote, 'https://example.test/invite'), /We would like to propose/);
+  assert.doesNotMatch(env.ui.template(env.person, 'online-link', remote, 'https://example.test/invite'), /is scheduled/);
+  assert.equal(env.ui.template(env.person, 'online-link', remote), '', 'A link draft cannot invent a missing URL');
+  assert.equal(JSON.stringify(env.snapshot), before, 'Draft templates never confirm or alter appointments');
+});
+
+test('preparing a private online link opens an unreviewed draft without sending or confirming', async () => {
+  const env = harness();
+  const meeting = { id:'remote-link', candidateId:env.person.id, mode:'online', startsAt:'2026-09-20T17:00:00Z', status:'scheduled' };
+  env.snapshot.interviews.push(meeting);
+  env.setInterviewDialog(meeting.id);
+  env.nodes.set('recVideoInviteUrl', node({ value:'https://example.test/recruiting-interview.html?invite=synthetic-only' }));
+  env.ui.composeVideoInvite(meeting.id);
+  assert.match(env.get('recSmsDraft').value, /https:\/\/example\.test\/recruiting-interview\.html\?invite=synthetic-only/);
+  assert.match(env.get('recSmsDraft').value, /We would like to propose an online video interview/);
+  assert.doesNotMatch(env.get('recSmsDraft').value, /\p{Script=Han}|3212|Santa Monica Blvd/u);
+  assert.equal(env.get('recSmsBody').value, '');
+  assert.equal(env.get('recSmsReviewed').checked, false);
+  assert.equal(env.get('recSendSms').disabled, true);
+  assert.equal(meeting.status, 'scheduled');
+  await env.ui.sendSms(env.person.id);
+  assert.equal(env.calls.length, 0);
+});
+
+test('private-link drafting rejects old in-person appointments, wrong dialogs and missing URLs', () => {
+  for (const kind of ['legacy','wrong-dialog','missing-url','read-only']) {
+    const env = harness();
+    const meeting = { id:'restricted-link', candidateId:env.person.id, startsAt:'2026-09-20T17:00:00Z', status:'scheduled' };
+    if (kind !== 'legacy') meeting.mode = 'online';
+    env.snapshot.interviews.push(meeting);
+    env.setInterviewDialog(kind === 'wrong-dialog' ? 'different-interview' : meeting.id);
+    if (kind !== 'missing-url') env.nodes.set('recVideoInviteUrl', node({ value:'https://example.test/invite' }));
+    if (kind === 'read-only') env.setEdit(false);
+    const count = env.modals.length;
+    env.ui.composeVideoInvite(meeting.id);
+    assert.equal(env.modals.length, count, kind);
+    assert.equal(env.calls.length, 0, kind);
+  }
+});
+
+test('a new online invitation asks for fresh availability when only past online appointments exist', () => {
+  const env = harness();
+  env.snapshot.interviews.push({ id:'past-online', candidateId:env.person.id, mode:'online', startsAt:'2026-09-18T17:00:00Z', status:'scheduled' });
+  const draft = env.ui.template(env.person, 'online-invitation');
+  assert.match(draft, /Which dates and times would work/);
+  assert.doesNotMatch(draft, /Sep 18|10:00/);
+  assert.equal(env.calls.length, 0);
+});
+
+test('online composer follow-up templates cannot switch to an earlier in-person appointment', () => {
+  const env = harness();
+  env.snapshot.interviews.push(
+    { id:'in-person-first', candidateId:env.person.id, startsAt:'2026-09-20T16:00:00Z', status:'confirmed', address:'123 Synthetic Store Ave' },
+    { id:'online-second', candidateId:env.person.id, mode:'online', startsAt:'2026-09-20T17:00:00Z', status:'scheduled' }
+  );
+  const button = node({ dataset:{ recAction:'invite-online', recId:env.person.id }, closest:() => null });
+  env.emit('click', { closest:() => button });
+  for (const kind of ['confirm','reminder','late']) {
+    const followUp = node({ dataset:{ recAction:'template', recId:kind }, closest:() => null });
+    env.emit('click', { closest:() => followUp });
+    assert.match(env.get('recSmsDraft').value, /online video interview/);
+    assert.match(env.get('recSmsDraft').value, /10:00 AM/);
+    assert.doesNotMatch(env.get('recSmsDraft').value, /123 Synthetic Store Ave|\b9:00 AM\b/);
+    assert.equal(env.get('recSmsReviewed').checked, false);
+    assert.equal(env.get('recSendSms').disabled, true);
+  }
+  assert.equal(env.calls.length, 0);
+});
 
 for (const text of ['A', 'Hi', 'OK', 'a'.repeat(190), 'a'.repeat(1600)]) {
   test(`${text.length}-character English message can be previewed and explicitly sent`, async () => {
