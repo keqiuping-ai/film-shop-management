@@ -42,11 +42,15 @@ test('candidate page defaults to English and exposes all four requested language
   assert.match(html, /id="transcriptToggle"/); assert.match(html, /id="aiNext"/); assert.match(html, /id="aiFinal"/);
 });
 
-test('question-first room keeps video near twenty percent and exposes recruiter question controls', () => {
+test('question-first room uses the full screen and adapts remote video orientation', () => {
   const html = fs.readFileSync(require.resolve('../public/recruiting-interview.html'), 'utf8');
   const script = fs.readFileSync(require.resolve('../public/recruiting-interview.js'), 'utf8');
   const css = fs.readFileSync(require.resolve('../public/recruiting-interview.css'), 'utf8');
-  assert.match(css, /\.room\s*\{[^}]*grid-template-columns:\s*minmax\(220px, 20%\) minmax\(0, 1fr\)/);
+  assert.match(css, /\.interview-shell\s*\{[^}]*width:\s*100%/);
+  assert.match(css, /\.room\s*\{[^}]*grid-template-columns:\s*clamp\(280px, 24vw, 420px\) minmax\(0, 1fr\)/);
+  assert.match(css, /\.remote-stage\s*\{[^}]*aspect-ratio:\s*16\/9/);
+  assert.match(css, /\.remote-stage\.portrait-video\s*\{[^}]*aspect-ratio:\s*9\/16/);
+  assert.match(css, /\.local-stage\.portrait-video\s*\{[^}]*aspect-ratio:\s*9\/16/);
   assert.match(css, /\.stage\s*\{[^}]*background:\s*transparent/);
   assert.match(css, /\.remote-stage video\s*\{[^}]*width:\s*100%[^}]*height:\s*100%[^}]*object-fit:\s*contain/);
   assert.match(css, /\.local-stage video\s*\{[^}]*object-fit:\s*cover/);
@@ -54,6 +58,9 @@ test('question-first room keeps video near twenty percent and exposes recruiter 
   for (const id of ['questionBankPanel', 'questionKitSelect', 'questionBankList']) assert.match(html, new RegExp(`id="${id}"`));
   assert.match(script, /function renderQuestionBank\(\)/);
   assert.match(script, /displayValue\(value\)/);
+  assert.match(script, /function updateVideoAspect\(element, container\)/);
+  assert.match(script, /element\.videoHeight > element\.videoWidth \* 1\.08/);
+  assert.match(script, /updateVideoAspect\(video, \$\('localStage'\)\)/);
 });
 
 test('AI analysis normalization never fabricates unsupported scores', () => {

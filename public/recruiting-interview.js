@@ -153,9 +153,18 @@
     $('aiSummary').appendChild(scores);
     if (analysis.resumeDraft) { const resume = document.createElement('section'); const resumeTitle = document.createElement('strong'); resumeTitle.textContent = t('resumeDraft'); const pre = document.createElement('p'); pre.textContent = analysis.resumeDraft; resume.append(resumeTitle, pre); $('aiSummary').appendChild(resume); }
   }
+  function updateVideoAspect(element, container) {
+    const apply = () => {
+      if (!element.videoWidth || !element.videoHeight) return;
+      container.classList.toggle('portrait-video', element.videoHeight > element.videoWidth * 1.08);
+    };
+    element.addEventListener('loadedmetadata', apply);
+    element.addEventListener('resize', apply);
+    if (element.readyState >= 1) apply();
+  }
   function attachRemote(track, participant) {
     const element = track.attach();
-    if (track.kind === LivekitClient.Track.Kind.Video) { $('remoteStage').querySelector('.waiting')?.remove(); element.autoplay = true; element.playsInline = true; $('remoteStage').appendChild(element); $('participantState').textContent = t('joined', { name:participant?.name || t('other') }); }
+    if (track.kind === LivekitClient.Track.Kind.Video) { $('remoteStage').querySelector('.waiting')?.remove(); element.autoplay = true; element.playsInline = true; updateVideoAspect(element, $('remoteStage')); $('remoteStage').appendChild(element); $('participantState').textContent = t('joined', { name:participant?.name || t('other') }); }
     else if (track.kind === LivekitClient.Track.Kind.Audio) { element.autoplay = true; $('audioStage').appendChild(element); element.play().catch(() => {}); }
   }
   async function tokenForJoin() {
@@ -173,14 +182,14 @@
       const access = await tokenForJoin(); info = { ...info, ...access };
       room = new LivekitClient.Room({ adaptiveStream:true, dynacast:true, disconnectOnPageLeave:true });
       room.on(LivekitClient.RoomEvent.TrackSubscribed, attachRemote);
-      room.on(LivekitClient.RoomEvent.TrackUnsubscribed, track => track.detach().forEach(node => node.remove()));
+      room.on(LivekitClient.RoomEvent.TrackUnsubscribed, track => { track.detach().forEach(node => node.remove()); if (!$('remoteStage').querySelector('video')) $('remoteStage').classList.remove('portrait-video'); });
       room.on(LivekitClient.RoomEvent.ParticipantConnected, participant => { $('participantState').textContent = t('joined', { name:participant.name || t('other') }); });
       room.on(LivekitClient.RoomEvent.DataReceived, payload => { try { const value = JSON.parse(new TextDecoder().decode(payload)); if (value.type === 'transcript') { appendTranscript(value.row); queueRealtimeAnalysis(); } } catch {} });
       room.on(LivekitClient.RoomEvent.Reconnecting, () => { $('connectionBadge').textContent = t('reconnecting'); $('connectionBadge').className = 'badge warn'; });
       room.on(LivekitClient.RoomEvent.Reconnected, () => { $('connectionBadge').textContent = t('connected'); $('connectionBadge').className = 'badge live'; });
       await room.connect(access.url, access.token); await room.localParticipant.setCameraEnabled(true); await room.localParticipant.setMicrophoneEnabled(true, { echoCancellation:true, noiseSuppression:true, autoGainControl:true });
       const local = room.localParticipant.getTrackPublication(LivekitClient.Track.Source.Camera)?.track;
-      if (local) { const video = local.attach(); video.muted = true; video.playsInline = true; $('localStage').appendChild(video); }
+      if (local) { const video = local.attach(); video.muted = true; video.playsInline = true; updateVideoAspect(video, $('localStage')); $('localStage').appendChild(video); }
       $('welcome').hidden = true; $('roomView').hidden = false; $('connectionBadge').textContent = t('connected'); $('connectionBadge').className = 'badge live'; renderTranscripts(access.aiState?.transcript || []); renderAnalysis(access.aiState?.analysis || null);
     } catch (cause) { error(cause.message); $('join').disabled = false; $('join').textContent = t('retry'); }
     finally { joining = false; }
