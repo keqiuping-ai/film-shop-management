@@ -43,6 +43,9 @@ test('candidate page defaults to English and exposes all four requested language
   assert.match(html, /id="aiBoundaryNotice"/); assert.match(html, /id="candidateResumePanel"/);
   assert.match(script, /function renderCandidateResume\(\)/);
   assert.match(script, /\$\('aiBoundaryNotice'\)\.hidden = recruiter/);
+  assert.match(script, /function leaveInterview\(\)/);
+  assert.match(script, /window\.location\.assign\('\/\?page=recruiting'\)/);
+  assert.doesNotMatch(script, /\$\('leave'\).*location\.reload\(\)/);
 });
 
 test('question-first room uses the full screen and adapts remote video orientation', () => {
@@ -50,6 +53,7 @@ test('question-first room uses the full screen and adapts remote video orientati
   const script = fs.readFileSync(require.resolve('../public/recruiting-interview.js'), 'utf8');
   const css = fs.readFileSync(require.resolve('../public/recruiting-interview.css'), 'utf8');
   assert.match(css, /\.interview-shell\s*\{[^}]*width:\s*100%/);
+  assert.match(css, /\[hidden\]\s*\{[^}]*display:\s*none\s*!important/);
   assert.match(css, /\.room\s*\{[^}]*grid-template-columns:\s*clamp\(280px, 24vw, 420px\) minmax\(0, 1fr\)/);
   assert.match(css, /\.remote-stage\s*\{[^}]*aspect-ratio:\s*16\/9/);
   assert.match(css, /\.remote-stage\.portrait-video\s*\{[^}]*aspect-ratio:\s*9\/16/);
@@ -140,6 +144,9 @@ test('one-time candidate link exchanges once and reconnects only with the browse
 
     const transcript = await call('handlePublic', '/api/public/recruiting-video/transcript', 'POST', { interviewId:'interview-1', sessionSecret:joined.body.sessionSecret, id:'candidate-line-1', text:'I installed PPF for three years.', language:'en' });
     assert.equal(transcript.status, 201); assert.equal(db.recruitingInterviews[0].aiInterview.transcript[0].speaker, 'candidate');
+    delete process.env.LIVEKIT_URL; delete process.env.LIVEKIT_API_KEY; delete process.env.LIVEKIT_API_SECRET;
+    const ended = await call('handleAdmin', '/api/recruiting/interviews/interview-1/video-end');
+    assert.equal(ended.status, 200); assert.equal(db.recruitingVideoInvites[0].status, 'ended');
   } finally {
     for (const [name, value] of [['LIVEKIT_URL', previous.url], ['LIVEKIT_API_KEY', previous.key], ['LIVEKIT_API_SECRET', previous.secret]]) value === undefined ? delete process.env[name] : process.env[name] = value;
   }
