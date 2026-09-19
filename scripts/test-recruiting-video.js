@@ -61,6 +61,8 @@ test('question-first room uses the full screen and adapts remote video orientati
   assert.match(script, /function updateVideoAspect\(element, container\)/);
   assert.match(script, /element\.videoHeight > element\.videoWidth \* 1\.08/);
   assert.match(script, /updateVideoAspect\(video, \$\('localStage'\)\)/);
+  assert.match(script, /if \(!transcriptActive\) startTranscript\(\);/);
+  assert.match(script, /transcriptActive = false; recognition = null;/);
 });
 
 test('AI analysis normalization never fabricates unsupported scores', () => {

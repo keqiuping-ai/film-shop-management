@@ -19,6 +19,12 @@
     pt:{ title:'Banco de perguntas', kit:'Conjunto de perguntas', questions:'perguntas', critical:'Essencial', focus:'O que avaliar', strong:'Evidência de uma resposta forte', bilingual:'Referência em chinês' },
     zh:{ title:'面试题库（点击题目查看评分要点）', kit:'选择题目模板', questions:'道题', critical:'重点', focus:'考察重点', strong:'优秀回答证据', bilingual:'英文提问' }
   };
+  const transcriptBlocked = {
+    en:'Automatic transcription could not start. Check browser microphone and speech-recognition permissions.',
+    es:'No se pudo iniciar la transcripción automática. Revise los permisos del micrófono y reconocimiento de voz.',
+    pt:'Não foi possível iniciar a transcrição automática. Verifique as permissões do microfone e reconhecimento de voz.',
+    zh:'自动转写未能启动，请检查浏览器的麦克风和语音识别权限。'
+  };
   let language = localStorage.getItem('quadInterview.language') || 'en';
   if (!copy[language]) language = 'en';
   let info = null, room = null, joining = false, sessionSecret = '', recognition = null, transcriptActive = false, micEnabled = true, cameraEnabled = true;
@@ -191,6 +197,7 @@
       const local = room.localParticipant.getTrackPublication(LivekitClient.Track.Source.Camera)?.track;
       if (local) { const video = local.attach(); video.muted = true; video.playsInline = true; updateVideoAspect(video, $('localStage')); $('localStage').appendChild(video); }
       $('welcome').hidden = true; $('roomView').hidden = false; $('connectionBadge').textContent = t('connected'); $('connectionBadge').className = 'badge live'; renderTranscripts(access.aiState?.transcript || []); renderAnalysis(access.aiState?.analysis || null);
+      if (!transcriptActive) startTranscript();
     } catch (cause) { error(cause.message); $('join').disabled = false; $('join').textContent = t('retry'); }
     finally { joining = false; }
   }
@@ -208,8 +215,16 @@
     recognition = new SpeechRecognition(); recognition.continuous = true; recognition.interimResults = true; recognition.lang = localeCodes[language]; transcriptActive = true;
     recognition.onresult = event => { for (let index = event.resultIndex; index < event.results.length; index++) if (event.results[index].isFinal) saveTranscript(event.results[index][0].transcript.trim()).catch(cause => { $('transcriptStatus').textContent = cause.message; }); };
     recognition.onend = () => { if (transcriptActive) try { recognition.start(); } catch {} };
-    recognition.onerror = event => { if (!['no-speech', 'aborted'].includes(event.error)) $('transcriptStatus').textContent = event.error; };
-    recognition.start(); $('transcriptToggle').textContent = t('stopTranscript'); $('transcriptStatus').textContent = t('transcriptOn');
+    recognition.onerror = event => {
+      if (['not-allowed', 'service-not-allowed'].includes(event.error)) {
+        transcriptActive = false; $('transcriptToggle').textContent = t('startTranscript'); $('transcriptStatus').textContent = transcriptBlocked[language] || transcriptBlocked.en;
+      } else if (!['no-speech', 'aborted'].includes(event.error)) $('transcriptStatus').textContent = event.error;
+    };
+    try {
+      recognition.start(); $('transcriptToggle').textContent = t('stopTranscript'); $('transcriptStatus').textContent = t('transcriptOn');
+    } catch {
+      transcriptActive = false; recognition = null; $('transcriptToggle').textContent = t('startTranscript'); $('transcriptStatus').textContent = t('transcriptUnavailable');
+    }
   }
   async function analyze(mode, automatic = false) {
     if (analysisBusy) return;
