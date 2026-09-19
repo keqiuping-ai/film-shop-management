@@ -5,6 +5,7 @@
   const invite = params.get('invite') || '';
   const interviewId = params.get('interview') || '';
   const recruiter = Boolean(interviewId && !invite);
+  document.body.classList.add(recruiter ? 'recruiter-view' : 'candidate-view');
   const authToken = localStorage.getItem('filmShopCloud.token') || '';
   const localeCodes = { en:'en-US', es:'es-US', pt:'pt-BR', zh:'zh-CN' };
   const copy = {

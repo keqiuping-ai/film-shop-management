@@ -36,6 +36,7 @@ test('helpers create isolated room names and bounded expiry', () => {
 test('candidate page defaults to English and exposes all four requested languages and AI controls', () => {
   const html = fs.readFileSync(require.resolve('../public/recruiting-interview.html'), 'utf8');
   const script = fs.readFileSync(require.resolve('../public/recruiting-interview.js'), 'utf8');
+  const css = fs.readFileSync(require.resolve('../public/recruiting-interview.css'), 'utf8');
   assert.match(html, /<html lang="en">/);
   for (const option of ['English', 'Español', 'Português', '中文']) assert.match(html, new RegExp(`>${option}<`));
   for (const locale of ["en:{", "es:{", "pt:{", "zh:{"]) assert.match(script, new RegExp(locale.replace('{', '\\{')));
@@ -46,6 +47,8 @@ test('candidate page defaults to English and exposes all four requested language
   assert.match(script, /function leaveInterview\(\)/);
   assert.match(script, /window\.location\.assign\('\/\?page=recruiting'\)/);
   assert.doesNotMatch(script, /\$\('leave'\).*location\.reload\(\)/);
+  assert.match(script, /document\.body\.classList\.add\(recruiter \? 'recruiter-view' : 'candidate-view'\)/);
+  assert.match(css, /\.candidate-view #aiBoundaryNotice,[\s\S]*?\.candidate-view \.transcript-panel\s*\{[^}]*display:\s*none\s*!important/);
 });
 
 test('question-first room uses the full screen and adapts remote video orientation', () => {
