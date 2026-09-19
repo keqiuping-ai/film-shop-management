@@ -126,10 +126,6 @@ function harness({ fields = {}, configured = true, language = 'zh' } = {}) {
       nodes.get('recSmsDraft').value = text;
       ui.invalidatePreview();
       await ui.makeSmsPreview();
-    },
-    review() {
-      nodes.get('recSmsReviewed').checked = true;
-      ui.updateComposeControls();
     }
   };
   return env;
@@ -147,7 +143,6 @@ test('online invitation action only opens an English draft, never sends or confi
   assert.match(draft, /Reply STOP to opt out/);
   assert.doesNotMatch(draft, /\p{Script=Han}|3212|Santa Monica Blvd/u);
   assert.equal(env.get('recSmsBody').value, '');
-  assert.equal(env.get('recSmsReviewed').checked, false);
   assert.equal(env.get('recSendSms').disabled, true);
   await env.ui.sendSms(env.person.id);
   assert.equal(env.calls.length, 0, 'Opening a draft neither sends SMS nor saves an appointment');
@@ -165,7 +160,6 @@ for (const [label, fields, blocker] of [
     env.ui.openMessages(env.person.id, draft);
     assert.equal(env.get('recSmsDraft').value, draft);
     await env.ui.makeSmsPreview();
-    env.review();
     assert.equal(env.get('recSendSms').disabled, true);
     assert.match(env.ui.smsContactBlockers(env.person).join(' '), blocker);
     await env.ui.sendSms(env.person.id);
@@ -201,7 +195,7 @@ test('online templates use only English remote instructions while legacy in-pers
   assert.equal(JSON.stringify(env.snapshot), before, 'Draft templates never confirm or alter appointments');
 });
 
-test('preparing a private online link opens an unreviewed draft without sending or confirming', async () => {
+test('preparing a private online link opens a draft without previewing, sending or confirming', async () => {
   const env = harness();
   const meeting = { id:'remote-link', candidateId:env.person.id, mode:'online', startsAt:'2026-09-20T17:00:00Z', status:'scheduled' };
   env.snapshot.interviews.push(meeting);
@@ -212,7 +206,6 @@ test('preparing a private online link opens an unreviewed draft without sending 
   assert.match(env.get('recSmsDraft').value, /We would like to propose an online video interview/);
   assert.doesNotMatch(env.get('recSmsDraft').value, /\p{Script=Han}|3212|Santa Monica Blvd/u);
   assert.equal(env.get('recSmsBody').value, '');
-  assert.equal(env.get('recSmsReviewed').checked, false);
   assert.equal(env.get('recSendSms').disabled, true);
   assert.equal(meeting.status, 'scheduled');
   await env.ui.sendSms(env.person.id);
@@ -258,37 +251,63 @@ test('online composer follow-up templates cannot switch to an earlier in-person 
     assert.match(env.get('recSmsDraft').value, /online video interview/);
     assert.match(env.get('recSmsDraft').value, /10:00 AM/);
     assert.doesNotMatch(env.get('recSmsDraft').value, /123 Synthetic Store Ave|\b9:00 AM\b/);
-    assert.equal(env.get('recSmsReviewed').checked, false);
     assert.equal(env.get('recSendSms').disabled, true);
   }
   assert.equal(env.calls.length, 0);
 });
 
 for (const text of ['A', 'Hi', 'OK', 'a'.repeat(190), 'a'.repeat(1600)]) {
-  test(`${text.length}-character English message can be previewed and explicitly sent`, async () => {
+  test(`${text.length}-character English preview is send-ready without an extra confirmation checkbox`, async () => {
     const env = harness();
     await env.preview(text);
     assert.equal(env.get('recSmsBody').value, text);
-    assert.equal(env.get('recSmsReviewed').disabled, false);
-    assert.equal(env.get('recSendSms').disabled, true, 'Preview must still require explicit review');
+    assert.equal(env.get('recSendSms').disabled, false, 'A valid preview enables the final Send button without a checkbox');
     assert.equal(env.calls.length, 0, 'English preview does not call AI or send SMS');
     assert.match(env.get('recSmsCount').textContent, new RegExp(`${text.length} 个字符`));
     assert.match(env.get('recSmsCount').textContent, /最多 1600.*不用写满/);
-    await env.ui.sendSms(env.person.id);
-    assert.equal(env.sent().length, 0, 'Unchecked preview cannot be sent even by direct handler call');
-    env.review();
-    assert.equal(env.get('recSendSms').disabled, false);
-    assert.match(env.get('recSmsSendState').textContent, /已就绪.*短消息/);
-    assert.equal(env.sent().length, 0, 'Review itself does not send');
+    assert.match(env.get('recSmsSendState').textContent, /已就绪.*确认发送英文短信.*无需勾选/);
+    assert.equal(env.sent().length, 0, 'Generating the preview never submits a message');
     await env.ui.sendSms(env.person.id);
     assert.equal(env.sent().length, 1);
     assert.equal(env.sent()[0].body.text, text);
     assert.equal(env.sent()[0].body.expectedPhone, env.person.phone);
     assert.match(env.sent()[0].body.clientMessageId, /^synthetic-client-message-/);
     assert.equal(env.get('recSmsDraft').value, '', 'Successful submission clears the submitted draft');
-    assert.equal(env.get('recSmsReviewed').checked, false);
+    assert.equal(env.get('recSendSms').disabled, true, 'Another message needs a new preview');
   });
 }
+
+test('composer has no duplicate review checkbox or checkbox-dependent send requirement', () => {
+  assert.doesNotMatch(source, /recSmsReviewed/, 'Production rendering and handlers must not depend on the removed checkbox');
+  for (const language of ['zh', 'en']) {
+    const env = harness({ language });
+    assert.doesNotMatch(env.modals[0].html, /type="checkbox"|我已核对|I checked the recipient/);
+    assert.match(env.modals[0].html, /id="recSmsConfirmationNote"/);
+    assert.equal(env.get('recSendSms').disabled, true, 'Opening Messages does not prepare or send anything');
+  }
+});
+
+test('the final Send button itself submits a valid preview without any other confirmation control', async () => {
+  const env = harness();
+  await env.preview('Hi');
+  assert.equal(env.sent().length, 0);
+  assert.equal(env.get('recSendSms').disabled, false);
+  const button = node({ dataset:{ recAction:'send-sms', recId:env.person.id }, closest:() => null });
+  env.emit('click', { closest:() => button });
+  assert.equal(env.sent().length, 1);
+  assert.equal(env.sent()[0].body.text, 'Hi');
+  await Promise.resolve(); await Promise.resolve();
+});
+
+test('typing an English draft alone never generates a preview or enables sending', async () => {
+  const env = harness();
+  env.get('recSmsDraft').value = 'Hi';
+  env.emit('input', env.get('recSmsDraft'));
+  assert.equal(env.get('recSmsBody').value, '');
+  assert.equal(env.get('recSendSms').disabled, true);
+  await env.ui.sendSms(env.person.id);
+  assert.equal(env.calls.length, 0);
+});
 
 test('composer explains that a short message is allowed in Chinese and English', () => {
   for (const language of ['zh', 'en']) {
@@ -304,8 +323,6 @@ for (const text of ['', '   \n\t', 'a'.repeat(1601)]) {
     const env = harness();
     await env.preview(text);
     assert.equal(env.get('recSmsBody').value, '');
-    assert.equal(env.get('recSmsReviewed').disabled, true);
-    env.review();
     assert.equal(env.get('recSendSms').disabled, true);
     await env.ui.sendSms(env.person.id);
     assert.equal(env.sent().length, 0);
@@ -313,7 +330,7 @@ for (const text of ['', '   \n\t', 'a'.repeat(1601)]) {
   });
 }
 
-test('Chinese short draft must translate, then sends exactly the reviewed English text', async () => {
+test('Chinese short draft must translate, then the final button sends exactly the English preview', async () => {
   const env = harness();
   env.setTranslation({ text: 'Hi', targetLanguage: 'en' });
   await env.preview('你好');
@@ -322,7 +339,7 @@ test('Chinese short draft must translate, then sends exactly the reviewed Englis
   assert.deepEqual(env.calls[0].body, { text: '你好', targetLanguage: 'en' });
   assert.equal(env.get('recSmsBody').value, 'Hi');
   assert.equal(env.sent().length, 0);
-  env.review();
+  assert.equal(env.get('recSendSms').disabled, false, 'Translated valid English needs no extra checkbox');
   await env.ui.sendSms(env.person.id);
   assert.equal(env.sent()[0].body.text, 'Hi');
 });
@@ -333,21 +350,22 @@ for (const translated of ['你好', 'Hello 请 confirm', 'Hello 𠀀', '', 'a'.r
     env.setTranslation({ text: translated, targetLanguage: 'en' });
     await env.preview('请确认');
     assert.equal(env.get('recSmsBody').value, '');
-    env.review();
     assert.equal(env.get('recSendSms').disabled, true);
     await env.ui.sendSms(env.person.id);
     assert.equal(env.sent().length, 0);
   });
 }
 
-for (const body of ['你好', 'Hello 𠀀', 'a'.repeat(1601)]) {
+for (const [body, reason] of [['你好', /中文/], ['Hello 𠀀', /中文/], ['a'.repeat(1601), /1600/], ['Different English', /当前草稿/], ['', /填写短信内容/], ['   ', /填写短信内容/]]) {
   test(`direct handler rejects tampered preview (${body.slice(0, 20)})`, async () => {
     const env = harness();
-    await env.preview('Hi'); env.review();
+    await env.preview('Hi');
     env.get('recSmsBody').value = body;
+    env.ui.updateComposeControls();
+    assert.equal(env.get('recSendSms').disabled, true);
     await env.ui.sendSms(env.person.id);
     assert.equal(env.sent().length, 0);
-    assert.match(env.get('recDialogError').textContent, /中文|1600/);
+    assert.match(env.get('recDialogError').textContent, reason);
   });
 }
 
@@ -367,7 +385,7 @@ for (const [name, fields, configured, reason] of contactCases) {
   test(`SMS blocker is visible and enforced: ${name}`, async () => {
     const env = harness({ fields, configured });
     assert.match(env.ui.smsContactBlockers(env.person).join(' '), reason);
-    await env.preview('OK'); env.review();
+    await env.preview('OK');
     assert.equal(env.get('recSendSms').disabled, true);
     assert.match(env.get('recSmsSendState').textContent, reason);
     await env.ui.sendSms(env.person.id);
@@ -385,7 +403,7 @@ test('all contact problems are shown together rather than hidden by the first bl
 test('valid US phone formatting is accepted without relaxing recipient binding', async () => {
   for (const phone of ['5005550101', '(500) 555-0101', '1-500-555-0101', '+1 500 555 0101']) {
     const env = harness({ fields: { phone } });
-    await env.preview('Hi'); env.review();
+    await env.preview('Hi');
     assert.equal(env.ui.smsContactBlockers(env.person).length, 0);
     assert.equal(env.get('recSendSms').disabled, false);
     env.person.phone = '+1 (500) 555-0101';
@@ -394,9 +412,9 @@ test('valid US phone formatting is accepted without relaxing recipient binding',
   }
 });
 
-test('changed recipient blocks short text until a new composer is reviewed', async () => {
+test('changed recipient blocks short text until a new composer generates a fresh preview', async () => {
   const env = harness();
-  await env.preview('Hi'); env.review();
+  await env.preview('Hi');
   env.person.phone = '+15005550102';
   env.ui.updateComposeControls();
   assert.equal(env.get('recSendSms').disabled, true);
@@ -404,28 +422,46 @@ test('changed recipient blocks short text until a new composer is reviewed', asy
   await env.ui.sendSms(env.person.id);
   assert.equal(env.sent().length, 0);
   env.ui.openMessages(env.person.id);
-  await env.preview('Hi'); env.review();
+  await env.preview('Hi');
   assert.equal(env.get('recSendSms').disabled, false);
 });
 
-test('editing a reviewed draft invalidates the old preview and confirmation', async () => {
+test('a valid preview cannot be submitted for a different candidate id', async () => {
   const env = harness();
-  await env.preview('Hi'); env.review();
+  await env.preview('Hi');
+  await env.ui.sendSms('other-synthetic-candidate');
+  assert.equal(env.sent().length, 0);
+});
+
+test('consent withdrawn or opt-out after preview still blocks the final Send button and handler', async () => {
+  for (const update of [{ smsConsent:false }, { smsConsentNote:'' }, { smsOptedOut:true }]) {
+    const env = harness();
+    await env.preview('Hi');
+    assert.equal(env.get('recSendSms').disabled, false);
+    Object.assign(env.person, update);
+    env.ui.updateComposeControls();
+    assert.equal(env.get('recSendSms').disabled, true);
+    await env.ui.sendSms(env.person.id);
+    assert.equal(env.sent().length, 0);
+  }
+});
+
+test('editing a previewed draft invalidates the old preview and send readiness', async () => {
+  const env = harness();
+  await env.preview('Hi');
   env.get('recSmsDraft').value = 'OK';
   env.emit('input', env.get('recSmsDraft'));
   assert.equal(env.get('recSmsBody').value, '');
-  assert.equal(env.get('recSmsReviewed').checked, false);
-  assert.equal(env.get('recSmsReviewed').disabled, true);
   assert.equal(env.get('recSendSms').disabled, true);
   await env.ui.sendSms(env.person.id);
   assert.equal(env.sent().length, 0);
-  await env.ui.makeSmsPreview(); env.review();
+  await env.ui.makeSmsPreview();
   assert.equal(env.get('recSendSms').disabled, false);
 });
 
 test('unobserved draft or preview mutation cannot bypass the send handler checks', async () => {
   const env = harness();
-  await env.preview('Hi'); env.review();
+  await env.preview('Hi');
   env.get('recSmsDraft').value = 'Changed';
   await env.ui.sendSms(env.person.id);
   assert.equal(env.sent().length, 0);
@@ -435,7 +471,7 @@ test('unobserved draft or preview mutation cannot bypass the send handler checks
 for (const flag of ['busy', 'pending']) {
   test(`${flag} blocks preview generation and duplicate sending`, async () => {
     const env = harness();
-    await env.preview('Hi'); env.review();
+    await env.preview('Hi');
     env.ui[flag === 'busy' ? 'setBusy' : 'setPending'](true);
     env.ui.updateComposeControls();
     assert.equal(env.get('recMakePreview').disabled, true);
@@ -449,7 +485,7 @@ for (const flag of ['busy', 'pending']) {
 
 test('loss of editing permission blocks sending with an explicit reason', async () => {
   const env = harness();
-  await env.preview('Hi'); env.review();
+  await env.preview('Hi');
   env.setEdit(false); env.ui.updateComposeControls();
   assert.equal(env.get('recSendSms').disabled, true);
   assert.match(env.get('recSmsSendState').textContent, /招聘编辑权限/);
@@ -460,7 +496,7 @@ test('loss of editing permission blocks sending with an explicit reason', async 
 
 test('loss of view permission closes the composer and prevents stale send', async () => {
   const env = harness();
-  await env.preview('Hi'); env.review();
+  await env.preview('Hi');
   env.setView(false);
   await env.ui.sendSms(env.person.id);
   assert.equal(env.calls.length, 0);
@@ -477,14 +513,13 @@ test('asynchronous translation of an edited draft cannot restore its stale previ
   waiting.resolve({ text: 'Hi', targetLanguage: 'en' });
   await preview;
   assert.equal(env.get('recSmsBody').value, '');
-  assert.equal(env.get('recSmsReviewed').checked, false);
   assert.equal(env.get('recSendSms').disabled, true);
   assert.equal(env.sent().length, 0);
 });
 
-test('rapid double invocation submits the reviewed message only once', async () => {
+test('rapid double invocation of the final send button submits the previewed message only once', async () => {
   const env = harness(), waiting = deferred();
-  await env.preview('Hi'); env.review();
+  await env.preview('Hi');
   env.setSendResponse(waiting.promise);
   const first = env.ui.sendSms(env.person.id);
   const second = env.ui.sendSms(env.person.id);
@@ -497,7 +532,7 @@ test('rapid double invocation submits the reviewed message only once', async () 
 
 test('uncertain submission preserves draft and reuses its idempotency key on manual retry', async () => {
   const env = harness();
-  await env.preview('Hi'); env.review();
+  await env.preview('Hi');
   env.setSendResponse({ message: { status: 'send_unknown' } });
   await env.ui.sendSms(env.person.id);
   assert.equal(env.get('recSmsDraft').value, 'Hi');
