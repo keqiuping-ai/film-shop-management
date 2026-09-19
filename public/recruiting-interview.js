@@ -19,6 +19,12 @@
     pt:{ title:'Banco de perguntas', kit:'Conjunto de perguntas', questions:'perguntas', critical:'Essencial', focus:'O que avaliar', strong:'Evidência de uma resposta forte', bilingual:'Referência em chinês' },
     zh:{ title:'面试题库（点击题目查看评分要点）', kit:'选择题目模板', questions:'道题', critical:'重点', focus:'考察重点', strong:'优秀回答证据', bilingual:'英文提问' }
   };
+  const resumeCopy = {
+    en:{ title:'Candidate resume', position:'Position', location:'Location', source:'Source', availability:'Availability', employment:'Employment', compensation:'Compensation', experience:'Work experience', resources:'Customer / dealership resources', resume:'Resume', notes:'Recruiting notes', missing:'No resume text has been entered yet.', attachment:'Resume attached: {name}' },
+    es:{ title:'Currículum del candidato', position:'Puesto', location:'Ubicación', source:'Origen', availability:'Disponibilidad', employment:'Tipo de empleo', compensation:'Compensación', experience:'Experiencia laboral', resources:'Recursos de clientes / concesionarios', resume:'Currículum', notes:'Notas de contratación', missing:'Aún no se ha ingresado el texto del currículum.', attachment:'Currículum adjunto: {name}' },
+    pt:{ title:'Currículo do candidato', position:'Cargo', location:'Localização', source:'Origem', availability:'Disponibilidade', employment:'Tipo de trabalho', compensation:'Remuneração', experience:'Experiência profissional', resources:'Recursos de clientes / concessionárias', resume:'Currículo', notes:'Notas de recrutamento', missing:'O texto do currículo ainda não foi inserido.', attachment:'Currículo anexado: {name}' },
+    zh:{ title:'应聘者简历', position:'应聘岗位', location:'所在地', source:'来源', availability:'最早到岗', employment:'工作意愿', compensation:'薪酬匹配', experience:'工作经历', resources:'客户 / 经销商资源', resume:'简历正文', notes:'招聘备注', missing:'尚未录入简历正文。', attachment:'已附简历：{name}' }
+  };
   const transcriptBlocked = {
     en:'Automatic transcription could not start. Check browser microphone and speech-recognition permissions.',
     es:'No se pudo iniciar la transcripción automática. Revise los permisos del micrófono y reconocimiento de voz.',
@@ -31,6 +37,7 @@
   let analysisBusy = false, newEvidenceCount = 0, lastAutoAnalysisAt = 0, selectedKitId = '', selectedQuestionId = '';
   const t = (key, vars = {}) => Object.entries(vars).reduce((value, [name, replacement]) => value.replace(`{${name}}`, replacement), copy[language][key] || copy.en[key] || key);
   const qt = key => questionCopy[language]?.[key] || questionCopy.en[key] || key;
+  const rt = (key, vars = {}) => Object.entries(vars).reduce((value, [name, replacement]) => value.replace(`{${name}}`, replacement), resumeCopy[language]?.[key] || resumeCopy.en[key] || key);
   const request = async (url, options = {}) => {
     const headers = { 'Content-Type':'application/json', ...(options.headers || {}) };
     if (options.auth) headers.Authorization = `Bearer ${authToken}`;
@@ -56,9 +63,14 @@
     $('join').disabled = recruiter ? false : !$('consent').checked;
     $('join').textContent = recruiter ? t('recruiterJoin') : info.status === 'joined' ? t('reconnect') : t('join');
     $('connectionBadge').textContent = t('linkValid');
-    renderQuestionBank(); renderTranscripts(info.aiState?.transcript || []); renderAnalysis(info.aiState?.analysis || null);
+    renderCandidateResume(); renderQuestionBank(); renderTranscripts(info.aiState?.transcript || []); renderAnalysis(info.aiState?.analysis || null);
   }
-  function ready(data) { info = data; $('aiPanel').hidden = !recruiter; $('questionBankPanel').hidden = !recruiter; renderReady(); }
+  function ready(data) {
+    info = data;
+    $('aiPanel').hidden = !recruiter; $('questionBankPanel').hidden = !recruiter;
+    $('aiBoundaryNotice').hidden = recruiter; $('candidateResumePanel').hidden = !recruiter;
+    renderReady();
+  }
   async function boot() {
     try {
       if (invite) return ready(await request(`/api/public/recruiting-video/invite/${encodeURIComponent(invite)}`));
@@ -92,6 +104,32 @@
     if (/(installer|technician|技师|施工|贴膜)/.test(value)) return kits.find(item => item.id === 'installer_quick_6')?.id;
     if (/(wholesale|b2b|sales|销售|业务)/.test(value)) return kits.find(item => item.id === 'wholesale_quick_6')?.id;
     return kits.find(item => item.id === 'remote_quick_6')?.id || kits[0]?.id || '';
+  }
+  function renderCandidateResume() {
+    const panel = $('candidateResumePanel');
+    const profile = recruiter ? info?.candidateProfile : null;
+    panel.hidden = !profile;
+    if (!profile) return;
+    $('candidateResumeLabel').textContent = rt('title');
+    $('candidateResumeName').textContent = profile.name || info.candidateName || '';
+    const file = $('candidateResumeFile');
+    file.hidden = !profile.resume?.name;
+    file.textContent = profile.resume?.name ? rt('attachment', { name:profile.resume.name }) : '';
+    const facts = $('candidateResumeFacts'); facts.replaceChildren();
+    for (const [label, value] of [[rt('position'), profile.position], [rt('location'), profile.location], [rt('source'), profile.source], [rt('availability'), profile.availability], [rt('employment'), profile.employmentType], [rt('compensation'), profile.compensation]]) {
+      if (!String(value || '').trim()) continue;
+      const item = document.createElement('span'); const title = document.createElement('strong');
+      title.textContent = `${label}: `; item.append(title, document.createTextNode(String(value))); facts.appendChild(item);
+    }
+    const content = $('candidateResumeContent'); content.replaceChildren();
+    const sections = [[rt('experience'), profile.experience], [rt('resources'), profile.dealershipResources], [rt('resume'), profile.resumeText], [rt('notes'), profile.notes]];
+    let visible = 0;
+    for (const [label, value] of sections) {
+      if (!String(value || '').trim()) continue;
+      visible += 1; const section = document.createElement('section'); const title = document.createElement('strong'); const text = document.createElement('p');
+      title.textContent = label; text.textContent = String(value); section.append(title, text); content.appendChild(section);
+    }
+    if (!visible) { const empty = document.createElement('p'); empty.className = 'candidate-resume-empty'; empty.textContent = rt('missing'); content.appendChild(empty); }
   }
   function renderQuestionBank() {
     const panel = $('questionBankPanel');

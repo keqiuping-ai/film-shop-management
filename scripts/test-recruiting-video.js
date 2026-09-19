@@ -8,7 +8,7 @@ const { createRecruitingInterviewAnalyzer, normalize } = require('../lib/recruit
 
 function fixture(analyzeInterview) {
   const db = {
-    recruitingCandidates:[{ id:'candidate-1', name:'Synthetic Candidate', phone:'+15005550006', email:'candidate@example.invalid', position:'PPF Installer' }],
+    recruitingCandidates:[{ id:'candidate-1', name:'Synthetic Candidate', phone:'+15005550006', email:'candidate@example.invalid', position:'PPF Installer', location:'Los Angeles, CA', source:'Indeed', experience:'Three years installing PPF.', resumeText:'Synthetic resume body.', notes:'Verify installation portfolio.', resume:{ name:'synthetic-resume.pdf', size:1234, uploadedAt:'2026-09-18T00:00:00.000Z', file:'/private/path.pdf' } }],
     recruitingInterviews:[{ id:'interview-1', candidateId:'candidate-1', startsAt:new Date(Date.now() + 86400000).toISOString(), durationMinutes:45, interviewerName:'Fixture Owner' }],
     recruitingVideoInvites:[]
   };
@@ -40,6 +40,9 @@ test('candidate page defaults to English and exposes all four requested language
   for (const option of ['English', 'Español', 'Português', '中文']) assert.match(html, new RegExp(`>${option}<`));
   for (const locale of ["en:{", "es:{", "pt:{", "zh:{"]) assert.match(script, new RegExp(locale.replace('{', '\\{')));
   assert.match(html, /id="transcriptToggle"/); assert.match(html, /id="aiNext"/); assert.match(html, /id="aiFinal"/);
+  assert.match(html, /id="aiBoundaryNotice"/); assert.match(html, /id="candidateResumePanel"/);
+  assert.match(script, /function renderCandidateResume\(\)/);
+  assert.match(script, /\$\('aiBoundaryNotice'\)\.hidden = recruiter/);
 });
 
 test('question-first room uses the full screen and adapts remote video orientation', () => {
@@ -110,16 +113,21 @@ test('one-time candidate link exchanges once and reconnects only with the browse
     assert.equal(recruiterToken.status, 200);
     assert.equal(recruiterToken.body.candidatePosition, 'PPF Installer');
     assert.equal(recruiterToken.body.interviewKits.length, 8);
+    assert.equal(recruiterToken.body.candidateProfile.resumeText, 'Synthetic resume body.');
+    assert.equal(recruiterToken.body.candidateProfile.resume.name, 'synthetic-resume.pdf');
+    assert.equal(Object.hasOwn(recruiterToken.body.candidateProfile.resume, 'file'), false);
     assert.equal(Object.hasOwn(recruiterToken.body, 'phone'), false); assert.equal(Object.hasOwn(recruiterToken.body, 'email'), false);
 
     const details = await call('handlePublic', `/api/public/recruiting-video/invite/${raw}`, 'GET');
     assert.equal(details.status, 200); assert.equal(details.body.candidateName, 'Synthetic Candidate');
+    assert.equal(Object.hasOwn(details.body, 'candidateProfile'), false);
     assert.equal(Object.hasOwn(details.body, 'phone'), false); assert.equal(Object.hasOwn(details.body, 'email'), false);
 
     const noConsent = await call('handlePublic', `/api/public/recruiting-video/invite/${raw}/exchange`, 'POST', { consent:false });
     assert.equal(noConsent.status, 400);
     const joined = await call('handlePublic', `/api/public/recruiting-video/invite/${raw}/exchange`, 'POST', { consent:true });
     assert.equal(joined.status, 200); assert.ok(joined.body.token); assert.ok(joined.body.sessionSecret);
+    assert.equal(Object.hasOwn(joined.body, 'candidateProfile'), false);
     assert.equal(db.recruitingVideoInvites[0].status, 'joined');
 
     const reused = await call('handlePublic', `/api/public/recruiting-video/invite/${raw}/exchange`, 'POST', { consent:true });
@@ -128,6 +136,7 @@ test('one-time candidate link exchanges once and reconnects only with the browse
     assert.equal(wrongSession.status, 401);
     const rejoined = await call('handlePublic', '/api/public/recruiting-video/session', 'POST', { interviewId:'interview-1', sessionSecret:joined.body.sessionSecret });
     assert.equal(rejoined.status, 200); assert.ok(rejoined.body.token);
+    assert.equal(Object.hasOwn(rejoined.body, 'candidateProfile'), false);
 
     const transcript = await call('handlePublic', '/api/public/recruiting-video/transcript', 'POST', { interviewId:'interview-1', sessionSecret:joined.body.sessionSecret, id:'candidate-line-1', text:'I installed PPF for three years.', language:'en' });
     assert.equal(transcript.status, 201); assert.equal(db.recruitingInterviews[0].aiInterview.transcript[0].speaker, 'candidate');

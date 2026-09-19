@@ -46,6 +46,20 @@ body { margin: 0; min-height: 100vh; background: radial-gradient(circle at top l
 .side h2 { margin: 0; }
 .notice { margin-top: 22px; padding: 15px; border-radius: 14px; background: #edf8f7; line-height: 1.45; }
 .notice p { margin: 7px 0 0; color: #47646b; font-size: 14px; }
+.candidate-resume-panel { margin-top: 18px; padding: 14px; border: 1px solid #bcdadd; border-radius: 14px; background: #f1f9f8; }
+.candidate-resume-heading { display: flex; align-items: start; justify-content: space-between; gap: 12px; }
+.candidate-resume-heading > div { display: grid; gap: 3px; min-width: 0; }
+.candidate-resume-label { color: #087d8f; font-size: 12px; font-weight: 850; letter-spacing: .05em; text-transform: uppercase; }
+.candidate-resume-heading strong { font-size: 20px; line-height: 1.2; overflow-wrap: anywhere; }
+.candidate-resume-file { flex: 0 1 auto; max-width: 40%; padding: 5px 8px; border-radius: 8px; background: #e2f1f0; color: #47646b; font-size: 11px; overflow-wrap: anywhere; }
+.candidate-resume-facts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.candidate-resume-facts span { padding: 6px 8px; border-radius: 8px; background: #fff; color: #47646b; font-size: 12px; line-height: 1.35; }
+.candidate-resume-facts strong { color: #173a42; }
+.candidate-resume-content { max-height: 230px; margin-top: 10px; overflow: auto; display: grid; gap: 8px; padding-right: 4px; }
+.candidate-resume-content section { padding: 9px 10px; border-radius: 10px; background: #fff; }
+.candidate-resume-content section > strong { display: block; margin-bottom: 4px; color: #087d8f; font-size: 12px; }
+.candidate-resume-content p { margin: 0; color: #294b53; font-size: 13px; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; }
+.candidate-resume-empty { padding: 10px; border-radius: 10px; background: #fff; color: #617981; }
 .question-bank-panel, .transcript-panel, .ai-panel { margin-top: 14px; border: 1px solid #d7e4e6; border-radius: 14px; padding: 12px; background: #fbfefe; }
 .panel-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .question-count { padding: 4px 8px; border-radius: 999px; background: #e6f3f3; color: #087d8f; font-size: 12px; font-weight: 800; }

@@ -6,9 +6,9 @@
   <meta name="theme-color" content="#073d49">
   <title>QUAD FILM Video Interview</title>
   <link rel="icon" href="/quad-film-icon-192.png">
-  <link rel="stylesheet" href="/recruiting-interview.css?v=20260919-adaptive-video-1">
+  <link rel="stylesheet" href="/recruiting-interview.css?v=20260919-candidate-resume-1">
   <script defer src="/livekit-client.umd.js?v=1"></script>
-  <script defer src="/recruiting-interview.js?v=20260919-auto-transcript-1"></script>
+  <script defer src="/recruiting-interview.js?v=20260919-candidate-resume-1"></script>
 </head>
 <body>
   <main class="interview-shell">
@@ -33,7 +33,12 @@
         <p class="eyebrow">INTERVIEW ASSISTANT</p>
         <h2 data-i18n="inProgress">Interview in progress</h2>
         <p id="participantState" class="muted" data-i18n="connectingRoom">Connecting to the secure room…</p>
-        <div class="notice"><strong data-i18n="aiBoundary">AI assistance</strong><p data-i18n="aiNotice">AI may assist with transcription, evidence organization, and a draft score. It does not evaluate appearance, accent, or other protected characteristics.</p></div>
+        <div id="aiBoundaryNotice" class="notice"><strong data-i18n="aiBoundary">AI assistance</strong><p data-i18n="aiNotice">AI may assist with transcription, evidence organization, and a draft score. It does not evaluate appearance, accent, or other protected characteristics.</p></div>
+        <section id="candidateResumePanel" class="candidate-resume-panel" hidden>
+          <div class="candidate-resume-heading"><div><span id="candidateResumeLabel" class="candidate-resume-label">Candidate resume</span><strong id="candidateResumeName"></strong></div><span id="candidateResumeFile" class="candidate-resume-file" hidden></span></div>
+          <div id="candidateResumeFacts" class="candidate-resume-facts"></div>
+          <div id="candidateResumeContent" class="candidate-resume-content"></div>
+        </section>
         <section id="questionBankPanel" class="question-bank-panel" hidden>
           <div class="panel-heading"><strong id="questionBankTitle">Interview question bank</strong><span id="questionCount" class="question-count"></span></div>
           <label class="question-kit-picker"><span id="questionKitLabel">Question set</span><select id="questionKitSelect"></select></label>
