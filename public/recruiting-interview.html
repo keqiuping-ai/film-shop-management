@@ -6,9 +6,9 @@
   <meta name="theme-color" content="#073d49">
   <title>QUAD FILM Video Interview</title>
   <link rel="icon" href="/quad-film-icon-192.png">
-  <link rel="stylesheet" href="/recruiting-interview.css?v=20260919-4">
+  <link rel="stylesheet" href="/recruiting-interview.css?v=20260919-question-first-1">
   <script defer src="/livekit-client.umd.js?v=1"></script>
-  <script defer src="/recruiting-interview.js?v=20260918-2"></script>
+  <script defer src="/recruiting-interview.js?v=20260919-question-first-1"></script>
 </head>
 <body>
   <main class="interview-shell">
@@ -34,6 +34,12 @@
         <h2 data-i18n="inProgress">Interview in progress</h2>
         <p id="participantState" class="muted" data-i18n="connectingRoom">Connecting to the secure room…</p>
         <div class="notice"><strong data-i18n="aiBoundary">AI assistance</strong><p data-i18n="aiNotice">AI may assist with transcription, evidence organization, and a draft score. It does not evaluate appearance, accent, or other protected characteristics.</p></div>
+        <section id="questionBankPanel" class="question-bank-panel" hidden>
+          <div class="panel-heading"><strong id="questionBankTitle">Interview question bank</strong><span id="questionCount" class="question-count"></span></div>
+          <label class="question-kit-picker"><span id="questionKitLabel">Question set</span><select id="questionKitSelect"></select></label>
+          <p id="questionKitDescription" class="panel-status"></p>
+          <div id="questionBankList" class="question-bank-list"></div>
+        </section>
         <section class="transcript-panel">
           <div class="panel-heading"><strong data-i18n="liveTranscript">Live transcript</strong><button id="transcriptToggle" class="small" data-i18n="startTranscript">Start transcript</button></div>
           <div id="transcriptStatus" class="panel-status" data-i18n="transcriptOff">Transcription is off.</div>

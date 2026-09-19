@@ -8,7 +8,7 @@ const { createRecruitingInterviewAnalyzer, normalize } = require('../lib/recruit
 
 function fixture(analyzeInterview) {
   const db = {
-    recruitingCandidates:[{ id:'candidate-1', name:'Synthetic Candidate', phone:'+15005550006', email:'candidate@example.invalid' }],
+    recruitingCandidates:[{ id:'candidate-1', name:'Synthetic Candidate', phone:'+15005550006', email:'candidate@example.invalid', position:'PPF Installer' }],
     recruitingInterviews:[{ id:'interview-1', candidateId:'candidate-1', startsAt:new Date(Date.now() + 86400000).toISOString(), durationMinutes:45, interviewerName:'Fixture Owner' }],
     recruitingVideoInvites:[]
   };
@@ -42,11 +42,18 @@ test('candidate page defaults to English and exposes all four requested language
   assert.match(html, /id="transcriptToggle"/); assert.match(html, /id="aiNext"/); assert.match(html, /id="aiFinal"/);
 });
 
-test('remote video shows the complete camera frame while the local preview may stay cropped', () => {
+test('question-first room keeps video near twenty percent and exposes recruiter question controls', () => {
+  const html = fs.readFileSync(require.resolve('../public/recruiting-interview.html'), 'utf8');
+  const script = fs.readFileSync(require.resolve('../public/recruiting-interview.js'), 'utf8');
   const css = fs.readFileSync(require.resolve('../public/recruiting-interview.css'), 'utf8');
-  assert.match(css, /\.remote-stage video\s*\{[^}]*width:\s*68%[^}]*height:\s*68%[^}]*object-fit:\s*contain/);
+  assert.match(css, /\.room\s*\{[^}]*grid-template-columns:\s*minmax\(220px, 20%\) minmax\(0, 1fr\)/);
+  assert.match(css, /\.stage\s*\{[^}]*background:\s*transparent/);
+  assert.match(css, /\.remote-stage video\s*\{[^}]*width:\s*100%[^}]*height:\s*100%[^}]*object-fit:\s*contain/);
   assert.match(css, /\.local-stage video\s*\{[^}]*object-fit:\s*cover/);
   assert.doesNotMatch(css, /\.remote-stage video\s*\{[^}]*object-fit:\s*cover/);
+  for (const id of ['questionBankPanel', 'questionKitSelect', 'questionBankList']) assert.match(html, new RegExp(`id="${id}"`));
+  assert.match(script, /function renderQuestionBank\(\)/);
+  assert.match(script, /displayValue\(value\)/);
 });
 
 test('AI analysis normalization never fabricates unsupported scores', () => {
@@ -89,6 +96,12 @@ test('one-time candidate link exchanges once and reconnects only with the browse
     const raw = new URL(created.body.joinUrl).searchParams.get('invite');
     assert.ok(raw.length >= 40);
     assert.notEqual(db.recruitingVideoInvites[0].tokenHash, raw);
+
+    const recruiterToken = await call('handleAdmin', '/api/recruiting/interviews/interview-1/video-token');
+    assert.equal(recruiterToken.status, 200);
+    assert.equal(recruiterToken.body.candidatePosition, 'PPF Installer');
+    assert.equal(recruiterToken.body.interviewKits.length, 8);
+    assert.equal(Object.hasOwn(recruiterToken.body, 'phone'), false); assert.equal(Object.hasOwn(recruiterToken.body, 'email'), false);
 
     const details = await call('handlePublic', `/api/public/recruiting-video/invite/${raw}`, 'GET');
     assert.equal(details.status, 200); assert.equal(details.body.candidateName, 'Synthetic Candidate');
