@@ -42,12 +42,15 @@ test('candidate page defaults to English and exposes all four requested language
   for (const locale of ["en:{", "es:{", "pt:{", "zh:{"]) assert.match(script, new RegExp(locale.replace('{', '\\{')));
   assert.match(html, /id="transcriptToggle"/); assert.match(html, /id="aiNext"/); assert.match(html, /id="aiFinal"/);
   assert.match(html, /id="aiBoundaryNotice"/); assert.match(html, /id="candidateResumePanel"/);
+  assert.match(html, /id="backToRecruiting"[^>]*hidden/);
   assert.match(script, /function renderCandidateResume\(\)/);
   assert.match(script, /\$\('aiBoundaryNotice'\)\.hidden = recruiter/);
   assert.match(script, /function leaveInterview\(\)/);
   assert.match(script, /window\.location\.assign\('\/\?page=recruiting'\)/);
   assert.doesNotMatch(script, /\$\('leave'\).*location\.reload\(\)/);
   assert.match(script, /document\.body\.classList\.add\(recruiter \? 'recruiter-view' : 'candidate-view'\)/);
+  assert.match(script, /\$\('backToRecruiting'\)\.hidden = !recruiter/);
+  assert.match(script, /\$\('backToRecruiting'\)\.addEventListener\('click', \(\) => window\.location\.assign\('\/\?page=recruiting'\)\)/);
   assert.match(css, /\.candidate-view #aiBoundaryNotice,[\s\S]*?\.candidate-view \.transcript-panel\s*\{[^}]*display:\s*none\s*!important/);
 });
 

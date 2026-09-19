@@ -32,6 +32,7 @@
     pt:'Não foi possível iniciar a transcrição automática. Verifique as permissões do microfone e reconhecimento de voz.',
     zh:'自动转写未能启动，请检查浏览器的麦克风和语音识别权限。'
   };
+  const backCopy = { en:'← Back to recruiting', es:'← Volver a contratación', pt:'← Voltar ao recrutamento', zh:'← 返回招聘中心' };
   let language = localStorage.getItem('quadInterview.language') || 'en';
   if (!copy[language]) language = 'en';
   let info = null, room = null, joining = false, leaving = false, sessionSecret = '', recognition = null, transcriptActive = false, micEnabled = true, cameraEnabled = true;
@@ -52,6 +53,7 @@
     document.documentElement.lang = localeCodes[language]; $('language').value = language;
     localStorage.setItem('quadInterview.language', language);
     document.querySelectorAll('[data-i18n]').forEach(node => { node.textContent = t(node.dataset.i18n); });
+    $('backToRecruiting').textContent = backCopy[language] || backCopy.en;
     if (info) renderReady();
     $('transcriptToggle').textContent = t(transcriptActive ? 'stopTranscript' : 'startTranscript');
     document.title = `QUAD FILM · ${t('videoInterview')}`;
@@ -291,6 +293,8 @@
     document.querySelector('.device-check').hidden = true; document.querySelector('.privacy').hidden = true; history.replaceState(null, '', '/recruiting-interview.html?ended=1');
   }
   $('language').addEventListener('change', event => { language = event.target.value; applyLanguage(); if (recognition && transcriptActive) { recognition.stop(); recognition.lang = localeCodes[language]; } });
+  $('backToRecruiting').hidden = !recruiter;
+  $('backToRecruiting').addEventListener('click', () => window.location.assign('/?page=recruiting'));
   $('consent').addEventListener('change', () => { if (invite) $('join').disabled = !$('consent').checked || !info; });
   $('join').addEventListener('click', join); $('transcriptToggle').addEventListener('click', startTranscript); $('aiNext').addEventListener('click', () => analyze('next')); $('aiFinal').addEventListener('click', () => analyze('final'));
   $('mic').addEventListener('click', async () => { if (!room) return; micEnabled = !room.localParticipant.isMicrophoneEnabled; await room.localParticipant.setMicrophoneEnabled(micEnabled); $('mic').textContent = t(micEnabled ? 'micOn' : 'micOff'); });
