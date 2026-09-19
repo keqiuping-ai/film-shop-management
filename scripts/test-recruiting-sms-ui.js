@@ -22,6 +22,8 @@ const hooks = `
     },
     openMessages, makeSmsPreview, updateComposeControls, sendSms,
     invalidatePreview, smsContactBlockers, template, composeVideoInvite,
+    sharedPhoneTestActive, sharedPhoneTestHtml, openSharedPhoneTest, saveSharedPhoneTest, returnFromSharedPhoneTest,
+    composer: () => composeContext,
     setBusy(value) { busy = value; },
     setPending(value) { composeContext.pending = value; }
   };
@@ -39,7 +41,18 @@ const node = (fields = {}) => ({
   value: '', textContent: '', innerHTML: '', className: '', checked: false,
   disabled: false, hidden: false, isConnected: true, dataset: {},
   scrollTop: 0, scrollHeight: 100, clientHeight: 100,
-  setAttribute() {}, focus() {}, matches: () => false, ...fields
+  setAttribute() {}, focus() {}, matches: () => false,
+  querySelectorAll(selector) {
+    if (selector !== 'button') return [];
+    if (this.buttonHtml !== this.innerHTML) {
+      this.buttonHtml = this.innerHTML;
+      this.buttons = [...this.innerHTML.matchAll(/<button\b([^>]*)>/g)].map(match => node({ dataset:{
+        recAction:match[1].match(/data-rec-action="([^"]+)"/)?.[1],
+        recId:match[1].match(/data-rec-id="([^"]*)"/)?.[1]
+      } }));
+    }
+    return this.buttons || [];
+  }, ...fields
 });
 function deferred() {
   let resolve;
@@ -56,7 +69,7 @@ function harness({ fields = {}, configured = true, language = 'zh' } = {}) {
   const snapshot = {
     candidates: [person], interviews: [], interviewers: [], quarantine: [],
     translation: { configured: true }, sms: { configured },
-    settings: { preview: true, remindersEnabled: false }
+    settings: { preview: true, remindersEnabled: false, smsSharedPhoneTestHours:24 }
   };
   const nodes = new Map([
     ['modalSave', node()], ['modalBody', node()],
@@ -66,9 +79,11 @@ function harness({ fields = {}, configured = true, language = 'zh' } = {}) {
   let dialog = null, editAllowed = true, viewAllowed = true, uuid = 0;
   let translationResponse = { text: 'Hi', targetLanguage: 'en' };
   let sendResponse = { message: { status: 'queued' } };
+  let testResponse = null;
+  const modalNodeIds = new Set();
   const sandbox = {
     window: { crypto: { randomUUID: () => `synthetic-client-message-${++uuid}` } },
-    lang: language, user: { id: 'synthetic-owner', name: 'Synthetic Owner' },
+    lang: language, user: { id: 'synthetic-owner', name: 'Synthetic Owner', role:'owner' },
     token: 'synthetic-token', state: null, current: '', Date:FixtureDate, Intl, URL,
     escapeHtml, hasPerm: permission => permission === 'recruitingEdit' ? editAllowed : viewAllowed,
     api: async (apiPath, options = {}) => {
@@ -78,27 +93,41 @@ function harness({ fields = {}, configured = true, language = 'zh' } = {}) {
       if (apiPath === '/api/recruiting') return snapshot;
       if (apiPath === '/api/recruiting/translate') return translationResponse;
       if (apiPath === `/api/recruiting/candidates/${person.id}/messages`) return sendResponse;
+      if (apiPath === `/api/recruiting/candidates/${person.id}/test-sms`) {
+        if (testResponse) return testResponse;
+        Object.assign(person, { smsSharedPhoneTestActive:body.enabled, smsSharedPhoneTest:{ candidateId:person.id,
+          phoneKey:person.phone.replace(/\D/g, '').slice(-10), enabled:body.enabled, reason:body.reason,
+          approvedByUserId:'synthetic-owner', approvedAt:new FixtureDate().toISOString(), expiresAt:new FixtureDate(fixedNow + 86400000).toISOString() } });
+        return { candidate:person };
+      }
       throw new Error(`Unexpected synthetic API request: ${apiPath}`);
     },
     fetch: () => { throw new Error('Network calls are forbidden in SMS UI tests'); },
     render() {}, requestAnimationFrame() {}, setTimeout: () => 0, setInterval: () => 0,
     MutationObserver: class { observe() {} },
-    openModal: (title, html) => {
+    openModal: (title, html, onSave) => {
       modals.push({ title, html });
       if (dialog) dialog.isConnected = false;
-      const candidateId = html.match(/data-rec-dialog="messages" data-rec-id="([^"]+)"/)?.[1];
-      dialog = node({ dataset: { recId: candidateId } });
+      for (const id of modalNodeIds) nodes.delete(id);
+      modalNodeIds.clear();
+      const matchDialog = html.match(/data-rec-dialog="([^"]+)" data-rec-id="([^"]+)"/);
+      dialog = node({ dataset: { recDialog:matchDialog?.[1], recId:matchDialog?.[2] },
+        querySelectorAll: () => [...modalNodeIds].map(id => nodes.get(id)).filter(Boolean) });
       for (const match of html.matchAll(/<(?:div|textarea|input|button|span|p)\b([^>]*\sid="([^"]+)"[^>]*)>/g)) {
+        modalNodeIds.add(match[2]);
         nodes.set(match[2], node({
           id: match[2], disabled: /\bdisabled\b/.test(match[1]),
-          checked: /\bchecked\b/.test(match[1])
+          checked: /\bchecked\b/.test(match[1]),
+          value:html.match(new RegExp(`<textarea\\b[^>]*id="${match[2]}"[^>]*>([\\s\\S]*?)</textarea>`))?.[1] || ''
         }));
       }
+      nodes.get('modalSave').onclick = onSave;
+      nodes.get('modalSave').disabled = false;
     },
     closeModal: () => { if (dialog) dialog.isConnected = false; dialog = null; },
     document: {
       hidden: false, getElementById: id => nodes.get(id) || null,
-      querySelector: selector => selector.startsWith('[data-rec-dialog') ? dialog : null,
+      querySelector: selector => selector.includes(' > ') ? null : selector.startsWith('[data-rec-dialog') ? dialog : null,
       addEventListener: (name, callback) => {
         if (!listeners.has(name)) listeners.set(name, []);
         listeners.get(name).push(callback);
@@ -115,6 +144,7 @@ function harness({ fields = {}, configured = true, language = 'zh' } = {}) {
     sent: () => calls.filter(call => call.path.endsWith('/messages')),
     setTranslation: response => { translationResponse = response; },
     setSendResponse: response => { sendResponse = response; },
+    setTestResponse: response => { testResponse = response; },
     setEdit: allowed => { editAllowed = allowed; },
     setView: allowed => { viewAllowed = allowed; },
     setInterviewDialog(interviewId) {
@@ -540,4 +570,153 @@ test('uncertain submission preserves draft and reuses its idempotency key on man
   await env.ui.sendSms(env.person.id);
   assert.equal(env.sent().length, 2, 'Two explicit attempts may occur, each with the same server deduplication key');
   assert.equal(env.sent()[0].body.clientMessageId, env.sent()[1].body.clientMessageId);
+});
+
+function ownNumberTest(person, overrides = {}) {
+  return { candidateId:person.id, phoneKey:person.phone.replace(/\D/g, '').slice(-10), enabled:true,
+    reason:'Synthetic owner-number test', approvedByUserId:'synthetic-owner', approvedAt:new FixtureDate().toISOString(),
+    expiresAt:new FixtureDate(fixedNow + 86400000).toISOString(), ...overrides };
+}
+
+test('owner approves and revokes a shared-number test in app dialogs without sending or losing the preview', async () => {
+  const env = harness({ fields:{ smsCustomerPhoneConflict:true } });
+  await env.preview('Hi');
+  assert.equal(env.get('recSendSms').disabled, true);
+  assert.match(env.ui.smsContactBlockers(env.person).join(' '), /也关联客户/);
+  await env.ui.sendSms(env.person.id);
+  assert.equal(env.calls.length, 0);
+  env.ui.openSharedPhoneTest(env.person.id, true);
+  assert.match(env.modals.at(-1).html, /Synthetic Candidate/);
+  assert.match(env.modals.at(-1).html, /\+15005550101/);
+  assert.match(env.modals.at(-1).html, /24 小时/);
+  assert.match(env.modals.at(-1).html, /仅新回复/);
+  assert.match(env.modals.at(-1).html, /旧短信和待核对短信均不迁移/);
+  assert.match(env.get('modalSave').textContent, /不发短信/);
+  assert.equal(env.calls.length, 0, 'Opening a confirmation never saves or sends');
+  env.get('recSmsTestReason').value = '这是本人的测试号码，仅用于合成测试。';
+  await env.ui.saveSharedPhoneTest();
+  const enabled = env.calls.filter(call => call.path.endsWith('/test-sms'));
+  assert.equal(enabled.length, 1);
+  assert.deepEqual(enabled[0].body, { enabled:true, expectedPhone:'+15005550101', reason:'这是本人的测试号码，仅用于合成测试。' });
+  assert.equal(env.person.smsSharedPhoneTest.phoneKey, '5005550101', 'Backend metadata uses ten digits');
+  assert.equal(env.ui.sharedPhoneTestActive(env.person), true);
+  assert.match(env.get('recSharedPhoneTest').innerHTML, /有效至/);
+  assert.equal(env.get('recSmsDraft').value, 'Hi');
+  assert.equal(env.get('recSmsBody').value, 'Hi');
+  assert.equal(env.get('recSendSms').disabled, false, 'Final Send is still a separate explicit action');
+  assert.equal(env.sent().length, 0);
+  env.ui.openSharedPhoneTest(env.person.id, false);
+  await env.ui.saveSharedPhoneTest();
+  assert.equal(env.ui.sharedPhoneTestActive(env.person), false);
+  assert.equal(env.get('recSmsBody').value, 'Hi');
+  assert.equal(env.get('recSendSms').disabled, true);
+  assert.equal(env.calls.filter(call => call.path.endsWith('/test-sms')).length, 2);
+  assert.equal(env.sent().length, 0, 'Enable and revoke must never call the SMS endpoint');
+});
+
+test('cancelling the test dialog preserves a prior uncertain SMS idempotency key', async () => {
+  const env = harness();
+  await env.preview('Hi'); env.setSendResponse({ message:{ status:'send_unknown' } });
+  await env.ui.sendSms(env.person.id);
+  const requestId = env.ui.composer().requestId;
+  env.person.smsCustomerPhoneConflict = true;
+  env.ui.openSharedPhoneTest(env.person.id, true);
+  env.ui.returnFromSharedPhoneTest();
+  assert.equal(env.ui.composer().requestId, requestId);
+  assert.equal(env.get('recSmsBody').value, 'Hi');
+  assert.equal(env.get('recSendSms').disabled, true);
+  assert.equal(env.calls.filter(call => call.path.endsWith('/test-sms')).length, 0);
+  assert.equal(env.sent().length, 1);
+});
+
+test('only an owner with recruiting edit permission can open shared-number test controls', () => {
+  for (const kind of ['non-owner', 'read-only-owner']) {
+    const env = harness({ fields:{ smsCustomerPhoneConflict:true } });
+    if (kind === 'non-owner') env.sandbox.user.role = 'manager'; else env.setEdit(false);
+    const before = env.modals.length;
+    assert.doesNotMatch(env.ui.sharedPhoneTestHtml(env.person), /data-rec-action="(?:enable|revoke)-shared-phone-test"/);
+    env.ui.openSharedPhoneTest(env.person.id, true);
+    assert.equal(env.modals.length, before, kind);
+    assert.equal(env.calls.length, 0);
+  }
+});
+
+test('active test metadata stays bound to the candidate, normalized phone and unexpired approval', async () => {
+  const env = harness({ fields:{ smsCustomerPhoneConflict:true, smsSharedPhoneTestActive:true } });
+  const valid = ownNumberTest(env.person);
+  for (const phoneKey of ['5005550101', '15005550101', '+1 (500) 555-0101']) {
+    env.person.smsSharedPhoneTest = { ...valid, phoneKey };
+    assert.equal(env.ui.sharedPhoneTestActive(env.person), true, phoneKey);
+  }
+  for (const change of [{ candidateId:'different-candidate' }, { phoneKey:'5005550102' }, { enabled:false }, { expiresAt:new FixtureDate(fixedNow).toISOString() }, { expiresAt:'invalid' }]) {
+    env.person.smsSharedPhoneTest = { ...valid, ...change };
+    assert.equal(env.ui.sharedPhoneTestActive(env.person), false);
+    await env.preview('Hi'); await env.ui.sendSms(env.person.id);
+    assert.equal(env.get('recSendSms').disabled, true);
+    assert.equal(env.sent().length, 0);
+  }
+  env.person.smsSharedPhoneTest = valid; env.person.smsSharedPhoneTestActive = false;
+  assert.equal(env.ui.sharedPhoneTestActive(env.person), false, 'A false server flag cannot be overridden by metadata');
+});
+
+test('shared customer opt-out disables owner enable and still blocks an already-active test', async () => {
+  const env = harness({ fields:{ smsCustomerPhoneConflict:true, smsCustomerOptedOut:true } });
+  env.ui.updateComposeControls();
+  const enable = env.get('recSharedPhoneTest').querySelectorAll('button').find(button => button.dataset.recAction === 'enable-shared-phone-test');
+  assert.equal(enable.disabled, true);
+  const before = env.modals.length;
+  env.ui.openSharedPhoneTest(env.person.id, true);
+  assert.equal(env.modals.length, before);
+  env.person.smsSharedPhoneTest = ownNumberTest(env.person); env.person.smsSharedPhoneTestActive = true;
+  await env.preview('Hi');
+  assert.match(env.get('recSmsSendState').textContent, /同号客户资料存在退订记录/);
+  await env.ui.sendSms(env.person.id);
+  assert.equal(env.calls.length, 0);
+});
+
+test('test enable cannot create consent or override candidate opt-out', async () => {
+  for (const fields of [{ smsConsent:false }, { smsConsentNote:'' }, { smsOptedOut:true }]) {
+    const env = harness({ fields:{ smsCustomerPhoneConflict:true, ...fields } });
+    env.ui.openSharedPhoneTest(env.person.id, true);
+    await env.ui.saveSharedPhoneTest();
+    assert.match(env.get('recDialogError').textContent, /同意/);
+    assert.equal(env.calls.length, 0);
+    env.person.smsSharedPhoneTest = ownNumberTest(env.person); env.person.smsSharedPhoneTestActive = true;
+    env.ui.returnFromSharedPhoneTest(); await env.preview('Hi'); await env.ui.sendSms(env.person.id);
+    assert.equal(env.get('recSendSms').disabled, true);
+    assert.equal(env.sent().length, 0);
+  }
+});
+
+test('test confirmation rechecks phone, consent, owner identity and required reason before saving', async () => {
+  for (const kind of ['phone', 'consent', 'customer-optout', 'identity', 'reason-empty', 'reason-long']) {
+    const env = harness({ fields:{ smsCustomerPhoneConflict:true } });
+    env.ui.openSharedPhoneTest(env.person.id, true);
+    if (kind === 'phone') env.person.phone = '+15005550102';
+    if (kind === 'consent') env.person.smsConsent = false;
+    if (kind === 'customer-optout') env.person.smsCustomerOptedOut = true;
+    if (kind === 'identity') env.sandbox.token = 'new-synthetic-token';
+    if (kind === 'reason-empty') env.get('recSmsTestReason').value = '   ';
+    if (kind === 'reason-long') env.get('recSmsTestReason').value = 'a'.repeat(501);
+    await env.ui.saveSharedPhoneTest();
+    assert.equal(env.calls.length, 0, kind);
+  }
+});
+
+test('test save is single-flight and a late result cannot replace another composer', async () => {
+  const env = harness({ fields:{ smsCustomerPhoneConflict:true } }), waiting = deferred();
+  await env.preview('Hi'); env.ui.openSharedPhoneTest(env.person.id, true);
+  env.setTestResponse(waiting.promise);
+  const first = env.ui.saveSharedPhoneTest(), second = env.ui.saveSharedPhoneTest();
+  assert.equal(env.calls.filter(call => call.path.endsWith('/test-sms')).length, 1);
+  assert.equal(env.get('modalSave').disabled, true);
+  env.ui.openMessages(env.person.id, 'Replacement draft');
+  const dialogs = env.modals.length;
+  waiting.resolve({ candidate:{ ...env.person, smsSharedPhoneTestActive:true, smsSharedPhoneTest:ownNumberTest(env.person) } });
+  await Promise.all([first, second]);
+  assert.equal(env.modals.length, dialogs, 'An outdated settings result must not reopen its composer');
+  assert.equal(env.get('recSmsDraft').value, 'Replacement draft');
+  assert.equal(env.get('recSmsBody').value, '');
+  assert.equal(env.get('recSendSms').disabled, true);
+  assert.equal(env.sent().length, 0);
 });

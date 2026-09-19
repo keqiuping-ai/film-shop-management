@@ -20,6 +20,7 @@
   let data = null, identity = '', loadedAt = 0, loading = null, error = '';
   let query = '', status = '', tab = 'candidates', scope = '', candidateSort = 'applied', busy = false;
   let composeContext = null;
+  let sharedPhoneTestContext = null;
   const translationCache = new Map(), translationPending = new Map();
   let translationQueue = Promise.resolve(), translationCacheSize = 0;
   const hasHan = text => /\p{Script=Han}/u.test(String(text || ''));
@@ -28,6 +29,7 @@
   const h = value => escapeHtml(value);
   const label = (list, value) => { const item = list.find(row => row[0] === value); return item ? tr(item[1], item[2]) : value || '—'; };
   const canEdit = () => hasPerm('recruitingEdit');
+  const canManageSmsTest = () => user?.role === 'owner' && canEdit();
   const candidates = () => data?.candidates || [];
   const interviews = () => data?.interviews || [];
   const interviewKits = () => data?.interviewKits || [];
@@ -247,7 +249,7 @@
     if (identity !== next) {
       if (document.querySelector('[data-rec-dialog]') && identity) closeModal();
       identity = next; data = null; loadedAt = 0; loading = null; error = ''; query = ''; status = ''; scope = ''; candidateSort = 'applied';
-      composeContext = null; translationCache.clear(); translationPending.clear(); translationCacheSize = 0;
+      composeContext = null; sharedPhoneTestContext = null; translationCache.clear(); translationPending.clear(); translationCacheSize = 0;
     }
     return Boolean(next);
   }
@@ -676,12 +678,109 @@
     return pair ? tr(pair[0], pair[1]) : value || '';
   }
 
+  function sharedPhoneTestActive(person) {
+    const saved = person?.smsSharedPhoneTest;
+    return person?.smsSharedPhoneTestActive === true && saved?.enabled === true && saved.candidateId === person.id
+      && phoneKey(saved.phoneKey) === phoneKey(person.phone) && Date.parse(saved.expiresAt) > Date.now();
+  }
+
+  function sharedPhoneTestHtml(person) {
+    const saved = person?.smsSharedPhoneTest, active = sharedPhoneTestActive(person);
+    if (!person?.smsCustomerPhoneConflict && !saved) return '';
+    const heading = active ? tr('自有号码测试已开启 · 仅招聘收件', 'Own-number test active · Recruiting-only replies')
+      : person.smsCustomerPhoneConflict ? tr('此号码也关联客户档案，已启用同号保护', 'This number is also linked to a customer; shared-number protection applies')
+        : tr('自有号码测试记录', 'Own-number test record');
+    const savedStatus = active ? `${tr('有效至', 'Expires')} ${recordedWhen(saved.expiresAt)} · ${tr('洛杉矶时间', 'Los Angeles time')}`
+      : saved ? tr('测试未生效、已关闭或已到期；不会放宽发送保护。', 'The test is inactive, revoked or expired; sending safeguards remain in place.') : '';
+    const controls = canManageSmsTest() ? `${!active && person.smsCustomerPhoneConflict ? action('enable-shared-phone-test', person.id, tr('开启本人号码测试', 'Enable own-number test')) : ''}${saved?.enabled ? action('revoke-shared-phone-test', person.id, tr('关闭测试', 'Revoke test')) : ''}` : '';
+    return `<section class="rec-compose-step"><strong>${h(heading)}</strong><p class="rec-note">${h(person.name)} · ${h(person.phone || '—')}</p>${savedStatus ? `<p class="rec-note" role="status">${h(savedStatus)}</p>` : ''}<p class="rec-note">${tr('仅老板可批准本人自有号码测试。有效期内，仅新的回复进入本应聘者的招聘短信记录，不进入客户交流；既有客户历史和旧短信、待核对短信不会迁移。', 'Only the owner can approve testing with their own number. While active, only new replies go to this candidate’s recruiting messages, not customer communication. Existing customer history, old messages and quarantined messages are not moved.')}</p><p class="rec-note">${tr('这不会自动发送短信，也不会替代真实短信同意。退订、权限、收件人和英文预览校验仍然有效。', 'This never sends SMS automatically or substitutes for actual SMS consent. Opt-out, permissions, recipient and English-preview checks still apply.')}</p>${controls ? `<div class="rec-actions">${controls}</div>` : ''}</section>`;
+  }
+
+  function updateSharedPhoneTestNotice(person) {
+    const box = el('recSharedPhoneTest'); if (!box) return;
+    const html = sharedPhoneTestHtml(person);
+    if (box.dataset.rendered !== html) { box.innerHTML = html; box.dataset.rendered = html; }
+    box.hidden = !html;
+    box.querySelectorAll('button').forEach(button => { button.disabled = busy || Boolean(composeContext?.pending)
+      || (button.dataset.recAction === 'enable-shared-phone-test' && Boolean(person?.smsCustomerOptedOut)); });
+  }
+
+  function openSharedPhoneTest(id, enabled) {
+    if (!checkIdentity() || !canManageSmsTest() || busy || !activeComposer() || composeContext.id !== id || composeContext.pending) return;
+    const person = findCandidate(id), previous = composeContext;
+    if (!person || phoneKey(person.phone) !== phoneKey(previous.recipientPhone)) { dialogError(tr('手机号已变更，请重新打开短信窗口核对。', 'The phone changed. Reopen Messages and verify the number.')); return; }
+    if (enabled && person.smsCustomerOptedOut) { dialogError(tr('同号客户资料存在退订记录，测试开关不能解除退订。', 'The customer record for this number has an opt-out. The test switch cannot override it.')); return; }
+    if (enabled ? !person.smsCustomerPhoneConflict || sharedPhoneTestActive(person) : !person.smsSharedPhoneTest?.enabled) return;
+    const hours = Number(data?.settings?.smsSharedPhoneTestHours) || 24;
+    const reason = enabled ? tr('本人自有号码，用于招聘短信收发测试。', 'This is my own number, used to test recruiting SMS sending and replies.') : tr('结束本人自有号码的招聘短信测试。', 'End the recruiting SMS test with my own number.');
+    const snapshot = { ...previous, draft:value('recSmsDraft'), preview:value('recSmsBody') };
+    const html = `<div class="rec-dialog" data-rec-dialog="shared-phone-test" data-rec-id="${h(id)}"><div class="rec-person-summary"><div><strong>${h(person.name)}</strong><p>${h(person.phone || '—')}</p></div></div><p class="rec-banner">${enabled ? tr(`确认此号码为你本人所有，仅为这位应聘者开启 ${hours} 小时测试。不得用于绕过真实候选人的同意或同号保护。`, `Confirm that you own this number. Enable a ${hours}-hour test for this candidate only, not a bypass for real candidates’ consent or shared-number safeguards.`) : tr('确认关闭此候选人及号码的测试例外，同号发送保护随即恢复。', 'Revoke this candidate/number test exception and restore shared-number sending protection.')}</p><p class="rec-note">${tr('有效期内，仅新回复写入这位应聘者的招聘短信，不写入客户交流。既有客户历史、旧短信和待核对短信均不迁移。', 'During the test, only new replies are written to this candidate’s recruiting messages, not customer communication. Existing customer history, old messages and quarantined messages are not moved.')}</p><p class="rec-note">${tr('此操作不会发送短信。仍需真实短信同意及来源、未退订，并生成和核对英文预览后另行点击发送。', 'This operation sends no SMS. Actual SMS consent and its source, no opt-out, and a reviewed English preview are still required before separately clicking Send.')}</p>${textarea('recSmsTestReason', tr('测试原因 / 关闭原因（必填）', 'Test / revocation reason (required)'), reason, 500)}<div id="recDialogError" class="rec-alert" role="alert"></div><div class="rec-actions">${action('cancel-shared-phone-test', id, tr('取消并返回短信', 'Cancel and return to messages'))}</div></div>`;
+    openRecruitingModal(enabled ? tr('确认开启自有号码测试', 'Confirm own-number test') : tr('确认关闭测试', 'Confirm test revocation'), html, saveSharedPhoneTest);
+    sharedPhoneTestContext = { id, enabled, identity, expectedPhone:person.phone, snapshot, dialog:document.querySelector('[data-rec-dialog="shared-phone-test"]') };
+    el('modalSave').textContent = enabled ? tr('确认开启测试（不发短信）', 'Enable test (no SMS sent)') : tr('确认关闭测试', 'Revoke test');
+  }
+
+  function activeSharedPhoneTest(context = sharedPhoneTestContext) {
+    return Boolean(context && context === sharedPhoneTestContext && user && token && canManageSmsTest()
+      && context.identity === identity && context.identity === `${user.id}:${token}` && context.dialog?.isConnected
+      && el('modal')?.classList.contains('open') && context.dialog.dataset.recId === context.id);
+  }
+
+  function returnFromSharedPhoneTest(context = sharedPhoneTestContext) {
+    if (!activeSharedPhoneTest(context)) return;
+    sharedPhoneTestContext = null;
+    const person = findCandidate(context.id); if (!person) { closeModal(); return; }
+    const previous = context.snapshot;
+    openMessages(context.id, previous.draft, previous.interviewMode);
+    if (!activeComposer() || phoneKey(person.phone) !== phoneKey(previous.recipientPhone)) return;
+    // Preserve a prior request ID so an uncertain SMS cannot become a new send after this settings dialog.
+    Object.assign(composeContext, { requestId:previous.requestId, requestText:previous.requestText, version:previous.version });
+    if (previous.ready && previous.sourceText === previous.draft && previous.previewText === previous.preview && previous.preview && !hasHan(previous.preview) && previous.preview.length <= 1600) {
+      Object.assign(composeContext, { ready:true, sourceText:previous.sourceText, previewText:previous.previewText });
+      el('recSmsBody').value = previous.preview;
+      el('recPreviewState').textContent = tr('原英文预览已保留，尚未因本次设置操作发送；请核对后另行点击发送。', 'Your English preview was preserved. This settings action sent no SMS; review before separately clicking Send.');
+    }
+    updateComposeControls();
+  }
+
+  async function saveSharedPhoneTest() {
+    const context = sharedPhoneTestContext;
+    if (!checkIdentity() || !activeSharedPhoneTest(context) || busy) return;
+    const person = findCandidate(context.id), reason = value('recSmsTestReason');
+    if (!person || phoneKey(person.phone) !== phoneKey(context.expectedPhone)) { dialogError(tr('手机号已改变，未保存。请返回短信窗口并重新核对。', 'The phone changed; nothing was saved. Return to Messages and verify it.')); return; }
+    if (!reason || reason.length > 500) { dialogError(tr('请填写 1–500 字符的真实测试原因。', 'Enter an accurate reason of 1–500 characters.')); return; }
+    if (context.enabled && person.smsCustomerOptedOut) { dialogError(tr('同号客户资料存在退订记录，测试开关不能解除退订。', 'The customer record for this number has an opt-out. The test switch cannot override it.')); return; }
+    if (context.enabled && (person.smsOptedOut || !person.smsConsent || !String(person.smsConsentNote || '').trim())) { dialogError(tr('必须先有实际取得的短信同意及来源，且不能已退订。此测试不会代填或绕过同意。', 'Actual SMS consent and its source are required, with no opt-out. This test does not create or bypass consent.')); return; }
+    busy = true; dialogError('');
+    const controls = [el('modalSave'), ...context.dialog.querySelectorAll('button, textarea')].filter(Boolean);
+    const disabled = controls.map(control => control.disabled); controls.forEach(control => { control.disabled = true; });
+    try {
+      const result = await api(`/api/recruiting/candidates/${encodeURIComponent(context.id)}/test-sms`, { method:'POST', body:JSON.stringify({ enabled:context.enabled, expectedPhone:context.expectedPhone, reason }), timeoutMs:20000 });
+      if (!checkIdentity() || identity !== context.identity) return;
+      if (!result.candidate || result.candidate.id !== context.id) throw new Error(tr('未收到匹配的保存结果，请刷新核实。', 'No matching saved result was returned. Refresh to verify.'));
+      const index = candidates().findIndex(item => item.id === context.id);
+      if (index >= 0) data.candidates[index] = result.candidate;
+      if (activeSharedPhoneTest(context)) {
+        returnFromSharedPhoneTest(context);
+        dialogError(context.enabled ? tr('测试设置已保存，没有发送短信。请核对有效期及英文预览后再决定发送。', 'Test settings saved; no SMS was sent. Check the expiry and English preview before deciding to send.') : tr('测试已关闭，没有发送短信。', 'Test revoked; no SMS was sent.'), true);
+      }
+      repaint();
+    } catch (err) { if (activeSharedPhoneTest(context)) dialogError(`${err.message} ${tr('请刷新核实测试状态；此操作不会发送短信。', 'Refresh to verify test status. This operation does not send SMS.')}`); }
+    finally {
+      busy = false;
+      if (activeSharedPhoneTest(context)) controls.forEach((control, index) => { control.disabled = disabled[index]; });
+      updateComposeControls();
+    }
+  }
+
   function smsContactBlockers(person) {
     const reasons = [];
     if (!person?.phone?.trim()) reasons.push(tr('未填写手机号，请先在档案中补充；只有邮箱不能发送短信。', 'No phone number. Add it to the profile; an email address cannot receive SMS.'));
     else if (!/^[+()\d\s.-]+$/.test(person.phone) || !/^1\d{10}$/.test(phoneKey(person.phone))) reasons.push(tr('手机号格式无效，请在档案中核实美国手机号。', 'Invalid phone number. Verify the US phone number in the profile.'));
     if (person?.smsOptedOut) reasons.push(tr('候选人已退订短信，请改用其他已授权方式联系。', 'Candidate opted out of SMS. Use another authorized contact method.'));
     else if (!person?.smsConsent || !String(person.smsConsentNote || '').trim()) reasons.push(tr('尚无完整的短信同意记录，请先在档案中记录实际取得的同意及来源。', 'SMS consent is incomplete. Record the consent actually obtained and its source in the profile.'));
+    if (person?.smsCustomerOptedOut) reasons.push(tr('同号客户资料存在退订记录，测试开关不能解除退订。', 'The customer record for this number has an opt-out. The test switch cannot override it.'));
+    if (person?.smsCustomerPhoneConflict && !sharedPhoneTestActive(person)) reasons.push(tr('该号码也关联客户档案，招聘短信已拦截；仅老板可为本人自有号码批准限时测试。', 'This number is also linked to a customer. Recruiting SMS is blocked; only the owner may approve a time-limited test with their own number.'));
     if (!data?.sms?.configured) reasons.push(tr('当前环境短信通道尚未启用。', 'SMS is not enabled in this environment.'));
     return reasons;
   }
@@ -691,8 +790,9 @@
     const person = findCandidate(id); if (!person) return;
     const blocker = smsContactBlockers(person).join(' ');
     const templateMeeting = nextInterview(id, preferredMode);
-    const html = `<div class="rec-dialog" data-rec-dialog="messages" data-rec-id="${h(id)}"><div class="rec-person-summary"><div><strong>${h(person.name)}</strong><p>${h(person.phone || tr('没有手机号', 'No phone number'))}</p></div><div class="rec-actions">${action('refresh-messages', id, tr('刷新回复', 'Refresh replies'))}${action('profile', id, tr('查看档案', 'Profile'))}</div></div><div id="recThreads" class="rec-threads">${threadHtml(person)}</div><div id="recDialogError" class="rec-alert" role="alert"></div>${canEdit() ? `${blocker ? `<p class="rec-banner">${h(blocker)}</p>` : ''}<p class="rec-note">${tr('时间类模板依据：', 'Time-based templates use: ')}${templateMeeting ? `${h(interviewPlace(templateMeeting))} · ${h(when(templateMeeting.startsAt))}` : tr('尚未保存本次面试时间；请先询问意愿，再安排预约。', 'No appointment saved for this format. Ask about availability before scheduling.')}</p><div class="rec-templates">${[['online-invitation', '线上面试邀请', 'Online invitation'], ['confirm', '确认时间', 'Confirm time'], ['reminder', '面试提醒', 'Reminder'], ['late', '未加入 / 未到场', 'Joining / arrival check'], ['invitation', '到店邀请（备用）', 'In-person (optional)']].map(([kind, zh, en]) => `<button type="button" data-rec-action="template" data-rec-id="${kind}">${tr(zh, en)}</button>`).join('')}</div><section class="rec-compose-step"><label for="recSmsDraft">${tr('① 中文起草（也可输入英文）', '① Draft in Chinese or English')}<textarea id="recSmsDraft" class="rec-sms-compose" maxlength="1600" placeholder="${tr('用中文写想说的话，或选择上方英文模板。这里的草稿不会直接发送。', 'Write your message or choose a template. This draft is never sent directly.')}"></textarea></label><div class="rec-actions"><button id="recMakePreview" type="button" class="btn" data-rec-action="preview-sms">${tr('生成英文预览', 'Generate English preview')}</button><span class="rec-note">${tr('内容不为空即可，几个字也可以；中文先翻译成英文，核对后发送。', 'No minimum length beyond a non-empty message. Translate Chinese to English and review before sending.')}</span></div><p class="rec-note">${h(translationUnavailable())}</p></section><section class="rec-compose-step"><label for="recSmsBody">${tr('② 核对英文预览（实际发送内容）', '② Review English preview (actual message)')}<textarea id="recSmsBody" class="rec-sms-compose" readonly aria-describedby="recPreviewState" placeholder="${tr('先生成预览。修改上方草稿后需要重新生成。', 'Generate a preview first. Draft edits require a new preview.')}"></textarea></label><p id="recPreviewState" class="rec-note" role="status">${tr('尚未生成英文预览。', 'No English preview yet.')}</p><div class="rec-recipient">${tr('收件人', 'Recipient')}: <strong>${h(person.name)}</strong> · ${h(person.phone || '—')}<span class="rec-muted">${tr('只会发送这里的英文预览。AI 翻译和保存预约均不会发送短信。', 'Only this English preview will be sent. AI translation and saving an appointment do not send SMS.')}</span></div><p id="recSmsConfirmationNote" class="rec-note">${tr('请核对收件人、英文内容、日期、时间及面试链接或地址。点击下方“确认发送英文短信”即确认并发送，无需再次勾选。', 'Check the recipient, English wording, date, time and interview link or address. Clicking Send confirms and sends this preview; no extra checkbox is required.')}</p><div class="rec-actions"><button id="recSendSms" aria-describedby="recSmsConfirmationNote recSmsCount recSmsSendState" class="btn primary" type="button" data-rec-action="send-sms" data-rec-id="${h(id)}" disabled>${tr('③ 确认发送英文短信', '③ Send reviewed English SMS')}</button><span class="rec-note" id="recSmsCount"></span></div><p id="recSmsSendState" class="rec-note" role="status" aria-live="polite"></p></section>` : ''}</div>`;
+    const html = `<div class="rec-dialog" data-rec-dialog="messages" data-rec-id="${h(id)}"><div class="rec-person-summary"><div><strong>${h(person.name)}</strong><p>${h(person.phone || tr('没有手机号', 'No phone number'))}</p></div><div class="rec-actions">${action('refresh-messages', id, tr('刷新回复', 'Refresh replies'))}${action('profile', id, tr('查看档案', 'Profile'))}</div></div><div id="recSharedPhoneTest"></div><div id="recThreads" class="rec-threads">${threadHtml(person)}</div><div id="recDialogError" class="rec-alert" role="alert"></div>${canEdit() ? `${blocker ? `<p class="rec-banner">${h(blocker)}</p>` : ''}<p class="rec-note">${tr('时间类模板依据：', 'Time-based templates use: ')}${templateMeeting ? `${h(interviewPlace(templateMeeting))} · ${h(when(templateMeeting.startsAt))}` : tr('尚未保存本次面试时间；请先询问意愿，再安排预约。', 'No appointment saved for this format. Ask about availability before scheduling.')}</p><div class="rec-templates">${[['online-invitation', '线上面试邀请', 'Online invitation'], ['confirm', '确认时间', 'Confirm time'], ['reminder', '面试提醒', 'Reminder'], ['late', '未加入 / 未到场', 'Joining / arrival check'], ['invitation', '到店邀请（备用）', 'In-person (optional)']].map(([kind, zh, en]) => `<button type="button" data-rec-action="template" data-rec-id="${kind}">${tr(zh, en)}</button>`).join('')}</div><section class="rec-compose-step"><label for="recSmsDraft">${tr('① 中文起草（也可输入英文）', '① Draft in Chinese or English')}<textarea id="recSmsDraft" class="rec-sms-compose" maxlength="1600" placeholder="${tr('用中文写想说的话，或选择上方英文模板。这里的草稿不会直接发送。', 'Write your message or choose a template. This draft is never sent directly.')}"></textarea></label><div class="rec-actions"><button id="recMakePreview" type="button" class="btn" data-rec-action="preview-sms">${tr('生成英文预览', 'Generate English preview')}</button><span class="rec-note">${tr('内容不为空即可，几个字也可以；中文先翻译成英文，核对后发送。', 'No minimum length beyond a non-empty message. Translate Chinese to English and review before sending.')}</span></div><p class="rec-note">${h(translationUnavailable())}</p></section><section class="rec-compose-step"><label for="recSmsBody">${tr('② 核对英文预览（实际发送内容）', '② Review English preview (actual message)')}<textarea id="recSmsBody" class="rec-sms-compose" readonly aria-describedby="recPreviewState" placeholder="${tr('先生成预览。修改上方草稿后需要重新生成。', 'Generate a preview first. Draft edits require a new preview.')}"></textarea></label><p id="recPreviewState" class="rec-note" role="status">${tr('尚未生成英文预览。', 'No English preview yet.')}</p><div class="rec-recipient">${tr('收件人', 'Recipient')}: <strong>${h(person.name)}</strong> · ${h(person.phone || '—')}<span class="rec-muted">${tr('只会发送这里的英文预览。AI 翻译和保存预约均不会发送短信。', 'Only this English preview will be sent. AI translation and saving an appointment do not send SMS.')}</span></div><p id="recSmsConfirmationNote" class="rec-note">${tr('请核对收件人、英文内容、日期、时间及面试链接或地址。点击下方“确认发送英文短信”即确认并发送，无需再次勾选。', 'Check the recipient, English wording, date, time and interview link or address. Clicking Send confirms and sends this preview; no extra checkbox is required.')}</p><div class="rec-actions"><button id="recSendSms" aria-describedby="recSmsConfirmationNote recSmsCount recSmsSendState" class="btn primary" type="button" data-rec-action="send-sms" data-rec-id="${h(id)}" disabled>${tr('③ 确认发送英文短信', '③ Send reviewed English SMS')}</button><span class="rec-note" id="recSmsCount"></span></div><p id="recSmsSendState" class="rec-note" role="status" aria-live="polite"></p></section>` : ''}</div>`;
     openRecruitingModal(tr('应聘者短信', 'Candidate SMS'), html, null); el('modalSave').hidden = true;
+    const initialBlocker = document.querySelector('[data-rec-dialog="messages"] > p.rec-banner'); if (initialBlocker) initialBlocker.id = 'recInitialSmsBlockers';
     composeContext = { dialog: document.querySelector('[data-rec-dialog="messages"]'), id, identity, recipientPhone: person.phone || '', interviewMode: preferredMode, version: 0, pending: false, ready: false, sourceText: '', previewText: '', requestId: '', requestText: '' };
     if (canEdit() && initialDraft && el('recSmsDraft')) el('recSmsDraft').value = initialDraft;
     updateComposeControls();
@@ -724,10 +824,12 @@
   function updateComposeControls() {
     const context = composeContext; if (!activeComposer(context)) return;
     const person = findCandidate(context.id);
+    updateSharedPhoneTestNotice(person);
     const sameRecipient = person && phoneKey(person.phone) === phoneKey(context.recipientPhone);
     const ready = context.ready && context.sourceText === value('recSmsDraft') && context.previewText === value('recSmsBody') && Boolean(context.previewText) && !hasHan(context.previewText) && context.previewText.length <= 1600;
     if (el('recMakePreview')) el('recMakePreview').disabled = busy || context.pending || !value('recSmsDraft');
     const reasons = smsContactBlockers(person);
+    if (el('recInitialSmsBlockers')) { el('recInitialSmsBlockers').textContent = reasons.join(' '); el('recInitialSmsBlockers').hidden = !reasons.length; }
     if (!canEdit()) reasons.push(tr('需要招聘编辑权限。', 'Recruiting edit permission is required.'));
     if (!sameRecipient) reasons.push(tr('收件人的手机号已更新，请重新打开短信窗口并核对新号码。', 'The recipient phone changed. Reopen Messages and review the new number.'));
     if (busy) reasons.push(tr('正在提交，请勿重复发送。', 'Submitting; do not send again.'));
@@ -896,6 +998,9 @@
       case 'view-resume': viewResume(id); break;
       case 'send-sms': sendSms(id); break;
       case 'preview-sms': makeSmsPreview(); break;
+      case 'enable-shared-phone-test': openSharedPhoneTest(id, true); break;
+      case 'revoke-shared-phone-test': openSharedPhoneTest(id, false); break;
+      case 'cancel-shared-phone-test': if (!busy) returnFromSharedPhoneTest(); break;
       case 'translate-reading': translateReading(button); break;
       case 'tab': tab = id; scope = ''; repaint(); break;
       case 'scope': scope = scope === id ? '' : id; tab = id === 'reply' ? 'candidates' : 'interviews'; status = ''; repaint(); break;
