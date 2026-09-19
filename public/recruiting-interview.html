@@ -6,13 +6,19 @@
   <meta name="theme-color" content="#073d49">
   <title>QUAD FILM Video Interview</title>
   <link rel="icon" href="/quad-film-icon-192.png">
-  <link rel="stylesheet" href="/recruiting-interview.css?v=20260919-return-recruiting-1">
+  <link rel="stylesheet" href="/recruiting-interview.css?v=20260919-multi-interviewers-1">
   <script defer src="/livekit-client.umd.js?v=1"></script>
-  <script defer src="/recruiting-interview.js?v=20260919-return-recruiting-1"></script>
+  <script defer src="/recruiting-interview.js?v=20260919-multi-interviewers-1"></script>
 </head>
 <body>
   <main class="interview-shell">
-    <header class="brand"><img src="/quad-film-icon-192.png" alt=""><div><strong>QUAD FILM</strong><span data-i18n="secureInterview">Secure video interview</span></div><div class="header-actions"><button id="backToRecruiting" class="back-to-recruiting" type="button" hidden>← Back to recruiting</button><label class="language-picker"><span data-i18n="language">Language</span><select id="language" aria-label="Language"><option value="en">English</option><option value="es">Español</option><option value="pt">Português</option><option value="zh">中文</option></select></label><span id="connectionBadge" class="badge" data-i18n="preparing">Preparing</span></div></header>
+    <header class="brand"><img src="/quad-film-icon-192.png" alt=""><div><strong>QUAD FILM</strong><span data-i18n="secureInterview">Secure video interview</span></div><div class="header-actions"><button id="backToRecruiting" class="back-to-recruiting" type="button" hidden>← Back to recruiting</button><button id="shareInterviewer" class="back-to-recruiting" type="button" data-i18n="shareInterviewer" hidden>Interviewer link</button><label class="language-picker"><span data-i18n="language">Language</span><select id="language" aria-label="Language"><option value="en">English</option><option value="es">Español</option><option value="pt">Português</option><option value="zh">中文</option></select></label><span id="connectionBadge" class="badge" data-i18n="preparing">Preparing</span></div></header>
+    <section id="interviewerShare" class="share-panel card" hidden>
+      <label><span data-i18n="shareInterviewer">Interviewer link</span><input id="interviewerLink" type="url" readonly></label>
+      <button id="copyInterviewerLink" class="small" type="button" data-i18n="copyLink">Copy interviewer link</button>
+      <p data-i18n="shareNotice">For interviewers only: sign in with an account that has recruiting access before opening this link. This is not the candidate invitation link.</p>
+      <p id="shareStatus" role="status"></p>
+    </section>
     <section id="welcome" class="welcome card">
       <p class="eyebrow" data-i18n="videoInterview">VIDEO INTERVIEW</p>
       <h1 id="welcomeTitle" data-i18n="checkingLink">Checking your interview link…</h1>
@@ -25,14 +31,26 @@
     </section>
     <section id="roomView" class="room" hidden>
       <div class="stage card">
-        <div id="remoteStage" class="remote-stage"><div class="waiting"><strong data-i18n="waiting">Waiting for the other participant…</strong><span data-i18n="keepOpen">Keep this page open. Video will appear automatically after they connect.</span></div></div>
-        <div id="localStage" class="local-stage"><span data-i18n="myVideo">My video</span></div>
+        <div class="stage-heading"><strong data-i18n="videoInterview">VIDEO INTERVIEW</strong><span id="participantCount" role="status">0 online</span></div>
+        <div id="participantGrid" class="participant-grid">
+          <article id="localStage" class="participant-tile local-stage" hidden></article>
+          <div id="remoteStage" class="remote-stage"></div>
+        </div>
+        <div id="waitingParticipants" class="waiting" hidden><strong data-i18n="waiting">Waiting for other participants…</strong><span data-i18n="keepOpen">Keep this page open. Video will appear automatically after they connect.</span></div>
         <div id="audioStage" hidden></div>
+        <div class="controls">
+          <button id="mic" data-i18n="microphone">🎙️ Microphone</button><button id="camera" data-i18n="camera">🎥 Camera</button>
+          <button id="leave" class="leave" data-i18n="leave">Leave interview</button>
+          <button id="endRoom" class="danger" data-i18n="endRoom" hidden>End for everyone</button>
+        </div>
+        <p class="leave-notice" data-i18n="leaveNotice">Leave disconnects only you. Other participants stay in the room.</p>
+        <p id="roomError" class="error" role="alert"></p>
       </div>
       <aside class="side card">
         <p class="eyebrow">INTERVIEW ASSISTANT</p>
         <h2 data-i18n="inProgress">Interview in progress</h2>
         <p id="participantState" class="muted" data-i18n="connectingRoom">Connecting to the secure room…</p>
+        <p id="roomAccessNotice" class="access-notice" data-i18n="readOnly" hidden>View-only recruiting access: you can join the call, but cannot save transcription, run AI analysis, or end the room.</p>
         <div id="aiBoundaryNotice" class="notice"><strong data-i18n="aiBoundary">AI assistance</strong><p data-i18n="aiNotice">AI may assist with transcription, evidence organization, and a draft score. It does not evaluate appearance, accent, or other protected characteristics.</p></div>
         <section id="candidateResumePanel" class="candidate-resume-panel" hidden>
           <div class="candidate-resume-heading"><div><span id="candidateResumeLabel" class="candidate-resume-label">Candidate resume</span><strong id="candidateResumeName"></strong></div><span id="candidateResumeFile" class="candidate-resume-file" hidden></span></div>
@@ -57,9 +75,6 @@
           <button id="aiFinal" class="small secondary" data-i18n="createSummary">Create summary and score draft</button>
           <div id="aiSummary" class="ai-output"></div>
         </section>
-        <div class="controls">
-          <button id="mic" data-i18n="microphone">🎙️ Microphone</button><button id="camera" data-i18n="camera">🎥 Camera</button><button id="leave" class="danger" data-i18n="leave">End / Leave</button>
-        </div>
       </aside>
     </section>
   </main>

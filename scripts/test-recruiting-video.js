@@ -3,28 +3,211 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
+const vm = require('node:vm');
 const { createRecruitingVideoService, digest, roomName, expiryFor } = require('../lib/recruiting-video');
 const { createRecruitingInterviewAnalyzer, normalize } = require('../lib/recruiting-interview-ai');
 
-function fixture(analyzeInterview) {
-  const db = {
+function fixture(analyzeInterview, { canAccess = () => true, snapshotReads = false } = {}) {
+  let db = {
     recruitingCandidates:[{ id:'candidate-1', name:'Synthetic Candidate', phone:'+15005550006', email:'candidate@example.invalid', position:'PPF Installer', location:'Los Angeles, CA', source:'Indeed', experience:'Three years installing PPF.', resumeText:'Synthetic resume body.', notes:'Verify installation portfolio.', resume:{ name:'synthetic-resume.pdf', size:1234, uploadedAt:'2026-09-18T00:00:00.000Z', file:'/private/path.pdf' } }],
     recruitingInterviews:[{ id:'interview-1', candidateId:'candidate-1', startsAt:new Date(Date.now() + 86400000).toISOString(), durationMinutes:45, interviewerName:'Fixture Owner' }],
     recruitingVideoInvites:[]
   };
-  let sent = null;
+  const clone = value => JSON.parse(JSON.stringify(value));
   const service = createRecruitingVideoService({
-    readDb:() => db, writeDb:() => {}, readBody:async req => req.body || {},
-    send:(_res, status, body) => { sent = { status, body }; }, canAccess:() => true,
+    readDb:() => snapshotReads ? clone(db) : db,
+    writeDb:value => { db = snapshotReads ? clone(value) : value; }, readBody:async req => req.body || {},
+    send:(res, status, body) => { res.result = { status, body }; }, canAccess,
     publicBaseUrl:() => 'https://quad.example', notify:() => {}, analyzeInterview
   });
   const call = async (kind, pathname, method = 'POST', body = {}, actor = { id:'owner', name:'Fixture Owner' }) => {
-    sent = null; const req = { method, body };
-    await service[kind](req, {}, new URL(`https://quad.example${pathname}`), actor);
-    return sent;
+    const req = { method, body }, res = {};
+    await service[kind](req, res, new URL(`https://quad.example${pathname}`), actor);
+    return res.result;
   };
-  return { db, call };
+  return { get db() { return db; }, call };
 }
+
+async function withConfiguredVideo(callback) {
+  const names = ['LIVEKIT_URL', 'LIVEKIT_API_KEY', 'LIVEKIT_API_SECRET'];
+  const previous = names.map(name => process.env[name]);
+  process.env.LIVEKIT_URL = 'wss://livekit.example';
+  process.env.LIVEKIT_API_KEY = 'fixture-key';
+  process.env.LIVEKIT_API_SECRET = 'fixture-secret-fixture-secret-fixture-secret';
+  try { return await callback(); }
+  finally { names.forEach((name, index) => previous[index] === undefined ? delete process.env[name] : process.env[name] = previous[index]); }
+}
+
+function tokenClaims(result) {
+  assert.equal(result.status, 200);
+  return JSON.parse(Buffer.from(result.body.token.split('.')[1], 'base64url').toString('utf8'));
+}
+
+const videoPath = action => `/api/recruiting/interviews/interview-1/video-${action}`;
+const hasFixturePermission = (actor, permission) => Boolean(actor?.permissions?.includes(permission));
+const editor = { id:'synthetic-editor-a', name:'Synthetic Interviewer A', permissions:['recruitingView', 'recruitingEdit'] };
+const otherEditor = { id:'synthetic-editor-b', name:'Synthetic Interviewer B', permissions:['recruitingView', 'recruitingEdit'] };
+const viewer = { id:'synthetic-viewer', name:'Synthetic Observer', permissions:['recruitingView'] };
+const participantSessionA = 'synthetic-session-a-0001';
+const participantSessionB = 'synthetic-session-b-0002';
+
+test('multiple interviewers and same-account sessions get distinct identities without replacing the shared room or invite', async () => {
+  await withConfiguredVideo(async () => {
+    const env = fixture(undefined, { canAccess:hasFixturePermission });
+    const invite = await env.call('handleAdmin', videoPath('invite'), 'POST', {}, editor);
+    assert.equal(invite.status, 201);
+    const originalInvite = JSON.stringify(env.db.recruitingVideoInvites);
+    const token = (actor, participantSessionId) => env.call('handleAdmin', videoPath('token'), 'POST', participantSessionId ? { participantSessionId } : {}, actor);
+    const first = await token(editor, participantSessionA);
+    const reconnect = await token(editor, participantSessionA);
+    const anotherDevice = await token(editor, participantSessionB);
+    const anotherPerson = await token(otherEditor, participantSessionA);
+    const legacyFirst = await token(editor), legacySecond = await token(editor);
+    const results = [first, reconnect, anotherDevice, anotherPerson, legacyFirst, legacySecond];
+    const claims = results.map(tokenClaims);
+    assert.equal(claims[0].sub, claims[1].sub, 'Reconnecting the same per-tab session keeps its identity');
+    assert.equal(new Set([claims[0].sub, ...claims.slice(2).map(row => row.sub)]).size, 5, 'Different actors, devices and legacy joins cannot share an identity');
+    for (const [index, claim] of claims.entries()) {
+      assert.equal(claim.sub, results[index].body.participantIdentity);
+      assert.equal(claim.video.room, roomName('interview-1'));
+      assert.equal(claim.video.roomJoin, true);
+      assert.equal(claim.video.canPublish, true);
+      assert.equal(claim.video.canSubscribe, true);
+      const metadata = JSON.parse(claim.metadata);
+      assert.equal(metadata.role, 'interviewer');
+      assert.equal(metadata.interviewId, 'interview-1');
+      assert.equal(metadata.canWriteTranscript, true);
+      assert.equal(Object.hasOwn(metadata, 'speakerUserId'), false);
+      assert.equal(results[index].body.canManageRoom, true);
+      assert.equal(results[index].body.canWriteTranscript, true);
+    }
+    assert.equal(JSON.stringify(env.db.recruitingVideoInvites), originalInvite, 'Joining more interviewers must not regenerate or revoke the candidate invitation');
+  });
+});
+
+test('recruiting video permissions allow view-only joining but forbid mutation and no-view access', async () => {
+  await withConfiguredVideo(async () => {
+    const env = fixture(async () => ({ summary:'Synthetic analysis' }), { canAccess:hasFixturePermission });
+    await env.call('handleAdmin', videoPath('invite'), 'POST', {}, editor);
+    const readOnly = await env.call('handleAdmin', videoPath('token'), 'POST', { participantSessionId:participantSessionA }, viewer);
+    const claims = tokenClaims(readOnly), metadata = JSON.parse(claims.metadata);
+    assert.equal(readOnly.body.canManageRoom, false);
+    assert.equal(readOnly.body.canWriteTranscript, false);
+    assert.equal(metadata.role, 'interviewer');
+    assert.equal(metadata.canWriteTranscript, false);
+    const original = JSON.stringify(env.db);
+    const withoutView = [
+      { id:'no-access', name:'No access', permissions:[] },
+      { id:'edit-only', name:'No view', permissions:['recruitingEdit'] }
+    ];
+    for (const actor of [viewer, ...withoutView]) {
+      const actions = actor === viewer ? ['invite','transcript','analyze','end'] : ['token','invite','transcript','analyze','end'];
+      for (const action of actions) {
+        const response = await env.call('handleAdmin', videoPath(action), 'POST', { text:'Should not be saved', consent:true }, actor);
+        assert.equal(response.status, 403, `${actor.id}/${action}`);
+        assert.equal(response.body.code, 'RECRUITING_FORBIDDEN');
+      }
+    }
+    assert.equal(JSON.stringify(env.db), original, 'Denied access must not mutate evidence or end a shared room');
+  });
+});
+
+test('invalid interviewer sessions are rejected instead of issuing ambiguous participant identities', async () => {
+  await withConfiguredVideo(async () => {
+    const env = fixture();
+    await env.call('handleAdmin', videoPath('invite'));
+    for (const participantSessionId of ['short', 'session with spaces 0001', '../synthetic-session', 'x'.repeat(101)]) {
+      const response = await env.call('handleAdmin', videoPath('token'), 'POST', { participantSessionId });
+      assert.equal(response.status, 400);
+      assert.equal(response.body.code, 'INTERVIEW_PARTICIPANT_SESSION_INVALID');
+    }
+  });
+});
+
+test('transcript attribution is server-owned and cross-participant duplicate IDs fail explicitly', async () => {
+  const env = fixture(undefined, { canAccess:hasFixturePermission });
+  const body = {
+    id:'shared-line-id', participantSessionId:participantSessionA, text:'Original interviewer question.', language:'en',
+    speaker:'candidate', speakerName:'Forged person', speakerUserId:'forged-user', participantIdentity:'candidate-forged', createdAt:'1900-01-01'
+  };
+  const first = await env.call('handleAdmin', videoPath('transcript'), 'POST', body, editor);
+  assert.equal(first.status, 201);
+  assert.equal(first.body.row.speaker, 'interviewer');
+  assert.equal(first.body.row.speakerName, editor.name);
+  assert.equal(first.body.row.participantIdentity, `recruiter-${digest(editor.id).slice(0, 16)}-${participantSessionA}`);
+  assert.equal(Object.hasOwn(first.body.row, 'speakerUserId'), false, 'The broadcastable row omits the internal user ID');
+  assert.equal(env.db.recruitingInterviews[0].aiInterview.transcript[0].speakerUserId, editor.id);
+  assert.notEqual(first.body.row.createdAt, body.createdAt);
+  const replay = await env.call('handleAdmin', videoPath('transcript'), 'POST', { ...body, text:'Do not overwrite original evidence.' }, editor);
+  assert.equal(replay.status, 201);
+  assert.equal(replay.body.row.text, 'Original interviewer question.');
+  assert.equal(env.db.recruitingInterviews[0].aiInterview.transcript.length, 1);
+  for (const [actor, participantSessionId] of [[otherEditor, participantSessionA], [editor, participantSessionB]]) {
+    const conflict = await env.call('handleAdmin', videoPath('transcript'), 'POST', { ...body, participantSessionId }, actor);
+    assert.equal(conflict.status, 409);
+    assert.equal(conflict.body.code, 'INTERVIEW_TRANSCRIPT_CONFLICT');
+  }
+  const second = await env.call('handleAdmin', videoPath('transcript'), 'POST', { id:'different-line-id', participantSessionId:participantSessionA, text:'Second interviewer question.' }, otherEditor);
+  assert.equal(second.status, 201);
+  assert.equal(env.db.recruitingInterviews[0].aiInterview.transcript.length, 2);
+  const legacy = await env.call('handleAdmin', videoPath('transcript'), 'POST', { id:'legacy-line', text:'Older client without a session.' }, editor);
+  assert.equal(legacy.status, 201, 'Existing clients without participantSessionId retain transcript access');
+});
+
+test('candidate public responses never expose internal interviewer user IDs, private profile or AI analysis', async () => {
+  await withConfiguredVideo(async () => {
+    const env = fixture(undefined, { canAccess:hasFixturePermission });
+    await env.call('handleAdmin', videoPath('transcript'), 'POST', { id:'private-staff-line', participantSessionId:participantSessionA, text:'Describe your work experience.' }, editor);
+    env.db.recruitingInterviews[0].aiInterview.analysis = { summary:'Private evidence score draft', generatedByUserId:editor.id };
+    const created = await env.call('handleAdmin', videoPath('invite'), 'POST', {}, editor);
+    const raw = new URL(created.body.joinUrl).searchParams.get('invite');
+    const details = await env.call('handlePublic', `/api/public/recruiting-video/invite/${raw}`, 'GET');
+    const exchange = await env.call('handlePublic', `/api/public/recruiting-video/invite/${raw}/exchange`, 'POST', { consent:true });
+    assert.equal(exchange.status, 200);
+    const rejoin = await env.call('handlePublic', '/api/public/recruiting-video/session', 'POST', { interviewId:'interview-1', sessionSecret:exchange.body.sessionSecret });
+    for (const result of [details, exchange, rejoin]) {
+      assert.equal(result.status, 200);
+      const serialized = JSON.stringify(result.body);
+      assert.doesNotMatch(serialized, /speakerUserId|generatedByUserId|synthetic-editor-a|candidateProfile|resumeText|private\/path|Private evidence score draft/);
+      assert.equal(Object.hasOwn(result.body.aiState || {}, 'analysis'), false);
+    }
+    const candidateClaims = tokenClaims(exchange);
+    assert.equal(JSON.parse(candidateClaims.metadata).role, 'candidate');
+    const candidateBody = { interviewId:'interview-1', sessionSecret:exchange.body.sessionSecret, id:'candidate-owned-line', text:'I have installation experience.', speaker:'interviewer', speakerUserId:editor.id, speakerName:editor.name, participantIdentity:'forged-staff-identity' };
+    const transcript = await env.call('handlePublic', '/api/public/recruiting-video/transcript', 'POST', candidateBody);
+    assert.equal(transcript.status, 201);
+    assert.equal(transcript.body.row.speaker, 'candidate');
+    assert.equal(transcript.body.row.speakerName, 'Synthetic Candidate');
+    assert.equal(transcript.body.row.participantIdentity, candidateClaims.sub);
+    assert.equal(Object.hasOwn(transcript.body.row, 'speakerUserId'), false);
+    const conflict = await env.call('handlePublic', '/api/public/recruiting-video/transcript', 'POST', { ...candidateBody, id:'private-staff-line' });
+    assert.equal(conflict.status, 409, 'A candidate cannot silently overwrite or claim an interviewer transcript ID');
+  });
+});
+
+test('awaiting AI analysis preserves transcript evidence written by another interviewer meanwhile', async () => {
+  let finishAnalysis, started;
+  const analysisStarted = new Promise(resolve => { started = resolve; });
+  const analyze = async ({ transcript }) => {
+    assert.equal(transcript.length, 1);
+    started();
+    return new Promise(resolve => { finishAnalysis = resolve; });
+  };
+  const env = fixture(analyze, { canAccess:hasFixturePermission, snapshotReads:true });
+  await env.call('handleAdmin', videoPath('transcript'), 'POST', { id:'before-analysis', participantSessionId:participantSessionA, text:'First preserved evidence.' }, editor);
+  const pending = env.call('handleAdmin', videoPath('analyze'), 'POST', { mode:'next' }, editor);
+  await analysisStarted;
+  const concurrent = await env.call('handleAdmin', videoPath('transcript'), 'POST', { id:'during-analysis', participantSessionId:participantSessionB, text:'Concurrent preserved evidence.' }, otherEditor);
+  assert.equal(concurrent.status, 201);
+  finishAnalysis({ summary:'Synthetic bounded analysis', scores:{} });
+  const analyzed = await pending;
+  assert.equal(analyzed.status, 200);
+  const state = env.db.recruitingInterviews[0].aiInterview;
+  assert.deepEqual(state.transcript.map(row => row.id), ['before-analysis','during-analysis']);
+  assert.equal(state.analysis.summary, 'Synthetic bounded analysis');
+  assert.equal(state.analysis.generatedByUserId, editor.id);
+  assert.equal(analyzed.body.aiState.transcript.length, 2, 'Response returns the fresh saved evidence, not a stale pre-analysis snapshot');
+});
 
 test('helpers create isolated room names and bounded expiry', () => {
   assert.equal(roomName('safe-id/../../bad'), 'quad-interview-safe-idbad');
@@ -54,28 +237,133 @@ test('candidate page defaults to English and exposes all four requested language
   assert.match(css, /\.candidate-view #aiBoundaryNotice,[\s\S]*?\.candidate-view \.transcript-panel\s*\{[^}]*display:\s*none\s*!important/);
 });
 
-test('question-first room uses the full screen and adapts remote video orientation', () => {
+test('question-first room uses independent participant tiles and per-tile video orientation', () => {
   const html = fs.readFileSync(require.resolve('../public/recruiting-interview.html'), 'utf8');
   const script = fs.readFileSync(require.resolve('../public/recruiting-interview.js'), 'utf8');
   const css = fs.readFileSync(require.resolve('../public/recruiting-interview.css'), 'utf8');
   assert.match(css, /\.interview-shell\s*\{[^}]*width:\s*100%/);
   assert.match(css, /\[hidden\]\s*\{[^}]*display:\s*none\s*!important/);
-  assert.match(css, /\.room\s*\{[^}]*grid-template-columns:\s*clamp\(280px, 24vw, 420px\) minmax\(0, 1fr\)/);
-  assert.match(css, /\.remote-stage\s*\{[^}]*aspect-ratio:\s*16\/9/);
-  assert.match(css, /\.remote-stage\.portrait-video\s*\{[^}]*aspect-ratio:\s*9\/16/);
-  assert.match(css, /\.local-stage\.portrait-video\s*\{[^}]*aspect-ratio:\s*9\/16/);
+  assert.match(css, /\.room\s*\{[^}]*grid-template-columns:\s*clamp\(340px, 38vw, 680px\) minmax\(0, 1fr\)/);
+  assert.match(css, /\.participant-grid\s*\{[^}]*display:\s*grid[^}]*grid-template-columns:\s*repeat\(2, minmax\(0, 1fr\)\)/);
+  assert.match(css, /\.remote-stage\s*\{[^}]*display:\s*contents/);
+  assert.match(css, /\.participant-tile\s*\{[^}]*aspect-ratio:\s*4\/3/);
+  assert.match(css, /\.participant-tile\.portrait-video\s*\{[^}]*aspect-ratio:\s*3\/4/);
   assert.match(css, /\.stage\s*\{[^}]*background:\s*transparent/);
-  assert.match(css, /\.remote-stage video\s*\{[^}]*width:\s*100%[^}]*height:\s*100%[^}]*object-fit:\s*contain/);
+  assert.match(css, /\.participant-media video\s*\{[^}]*width:\s*100%[^}]*height:\s*100%[^}]*object-fit:\s*contain/);
   assert.match(css, /\.local-stage video\s*\{[^}]*object-fit:\s*cover/);
-  assert.doesNotMatch(css, /\.remote-stage video\s*\{[^}]*object-fit:\s*cover/);
-  for (const id of ['questionBankPanel', 'questionKitSelect', 'questionBankList']) assert.match(html, new RegExp(`id="${id}"`));
+  assert.doesNotMatch(css, /\.participant-media video\s*\{[^}]*object-fit:\s*cover/);
+  for (const id of ['questionBankPanel', 'questionKitSelect', 'questionBankList', 'participantGrid', 'localStage', 'remoteStage', 'audioStage', 'participantCount', 'waitingParticipants']) assert.match(html, new RegExp(`id="${id}"`));
   assert.match(script, /function renderQuestionBank\(\)/);
   assert.match(script, /displayValue\(value\)/);
   assert.match(script, /function updateVideoAspect\(element, container\)/);
   assert.match(script, /element\.videoHeight > element\.videoWidth \* 1\.08/);
-  assert.match(script, /updateVideoAspect\(video, \$\('localStage'\)\)/);
-  assert.match(script, /if \(!transcriptActive\) startTranscript\(\);/);
+  assert.match(script, /updateVideoAspect\(element, entry\.tile\)/);
+  assert.match(script, /const participants = new Map\(\)/);
+  assert.match(script, /participants\.set\(participant\.identity, entry\)/);
+  assert.match(script, /if \(!local\) \$\('remoteStage'\)\.appendChild\(tile\)/);
+  assert.match(script, /if \(!transcriptActive && canTranscribe\(\)\) startTranscript\(\);/);
   assert.match(script, /transcriptActive = false; recognition = null;/);
+});
+
+test('room keeps ordinary leave separate from permission-gated end-for-everyone and signed-in sharing', () => {
+  const html = fs.readFileSync(require.resolve('../public/recruiting-interview.html'), 'utf8');
+  const script = fs.readFileSync(require.resolve('../public/recruiting-interview.js'), 'utf8');
+  const leave = script.slice(script.indexOf('async function leaveInterview()'), script.indexOf('async function endInterviewForEveryone()'));
+  const end = script.slice(script.indexOf('async function endInterviewForEveryone()'), script.indexOf('function showInterviewerLink()'));
+  const share = script.slice(script.indexOf('function showInterviewerLink()'), script.indexOf('async function copyInterviewerLink()'));
+  assert.match(leave, /await disconnectLocal\(\); showDisconnected\(\)/);
+  assert.doesNotMatch(leave, /video-end|request\(|roomEnded = true|removeItem/);
+  assert.match(end, /!connected \|\| !recruiter \|\| info\?\.canManageRoom !== true/);
+  assert.match(end, /if \(!window\.confirm\(t\('endConfirm'\)\)\) return/);
+  assert.match(end, /\/video-end/);
+  assert.match(end, /roomEnded = true; await disconnectLocal\(\)/);
+  assert.match(html, /id="endRoom"[^>]*hidden/);
+  assert.match(script, /\$\('endRoom'\)\.hidden = !recruiter \|\| info\?\.canManageRoom !== true \|\| !connected/);
+  assert.match(share, /url\.searchParams\.set\('interview', info\.interviewId\)/);
+  assert.doesNotMatch(share, /searchParams\.set\(['"](?:invite|token|sessionSecret|auth)/);
+  assert.match(script, /if \(recruiter && !authToken\) throw new Error\(t\('signInRequired'\)\)/);
+  assert.match(script, /const participantSessionId = Array\.from\(crypto\.getRandomValues\(new Uint8Array\(16\)\)/);
+  assert.doesNotMatch(script, /(?:localStorage|sessionStorage)\.setItem\([^\n]*participantSessionId/);
+});
+
+test('multiplayer transcript uses server attribution, readonly guards and a single automatic leader', () => {
+  const script = fs.readFileSync(require.resolve('../public/recruiting-interview.js'), 'utf8');
+  const receive = script.slice(script.indexOf('function receiveTranscript('), script.indexOf('async function saveTranscript('));
+  const save = script.slice(script.indexOf('async function saveTranscript('), script.indexOf('function startTranscript()'));
+  const leader = script.slice(script.indexOf('function isAutoAnalysisLeader()'), script.indexOf('function updateParticipantCount()'));
+  assert.match(script, /function canTranscribe\(\) \{ return recruiter \? info\?\.canWriteTranscript === true : Boolean\(sessionSecret\)/);
+  assert.match(save, /if \(!connected \|\| !room \|\| !canTranscribe\(\) \|\| !text\.trim\(\)\) return/);
+  assert.match(script, /if \(!connected \|\| !canTranscribe\(\)\) return/);
+  assert.match(script, /if \(analysisBusy \|\| !connected \|\| !recruiter \|\| info\?\.canWriteTranscript !== true \|\| \(automatic && !isAutoAnalysisLeader\(\)\)\) return/);
+  assert.match(receive, /value\.row\.participantIdentity !== participant\.identity/);
+  assert.match(receive, /participantMetadata\(participant\)\.canWriteTranscript !== true/);
+  assert.match(receive, /speaker:role, speakerName:participant\.name/);
+  assert.match(save, /if \(room !== activeRoom \|\| !connected \|\| !data\.row\) return/);
+  assert.ok(save.indexOf('await request(') < save.indexOf('publishData('));
+  assert.match(save, /const \{ id, speaker, speakerName, participantIdentity, text:savedText, language:savedLanguage, createdAt \} = data\.row/);
+  assert.doesNotMatch(save, /\.\.\.data\.row|speakerUserId/);
+  assert.match(leader, /participantMetadata\(entry\.participant\)\.canWriteTranscript === true/);
+  assert.match(leader, /eligible\.map\(entry => entry\.participant\.identity\)\.sort\(\)/);
+  assert.match(leader, /identities\[0\] === room\.localParticipant\.identity/);
+});
+
+test('disconnect and failed joins stop local media and detach every participant track', () => {
+  const script = fs.readFileSync(require.resolve('../public/recruiting-interview.js'), 'utf8');
+  const disconnect = script.slice(script.indexOf('async function disconnectLocal()'), script.indexOf('function showDisconnected()'));
+  assert.match(disconnect, /const previous = room; room = null; connected = false/);
+  assert.match(disconnect, /stopTranscript\(\); stopLocalTracks\(previous\); clearParticipants\(\)/);
+  assert.match(disconnect, /previous\?\.disconnect\(true\)/);
+  assert.match(script, /publication\.track\?\.stop\(\)/);
+  assert.match(script, /track\.detach\(attached\.element\)/);
+  assert.match(script, /attached\.element\.remove\(\); entry\.tracks\.delete\(track\)/);
+  assert.match(script, /RoomEvent\.Disconnected, reason =>[\s\S]*?disconnectLocal\(\); showDisconnected\(\)/);
+  assert.match(script, /if \(room === joiningRoom\) callback\(\.\.\.args\)/);
+  assert.match(script, /stopLocalTracks\(joiningRoom\);\s*if \(!joiningRoom \|\| room === joiningRoom\) await disconnectLocal\(\)/);
+  assert.match(script, /if \(room !== activeRoom\) \{ stopLocalTracks\(activeRoom\); return; \}/);
+  assert.match(script, /window\.addEventListener\('pagehide', \(\) => \{ stopTranscript\(\); stopLocalTracks\(room\); room\?\.disconnect\(true\); \}\)/);
+});
+
+test('fresh candidate invitation replaces stale stored session while reconnect keeps the active session', async () => {
+  const script = fs.readFileSync(require.resolve('../public/recruiting-interview.js'), 'utf8');
+  const helper = script.slice(script.indexOf('async function tokenForJoin()'), script.indexOf('async function join()'));
+  assert.match(helper, /^async function tokenForJoin\(\)/);
+  function context(status, memorySecret = '', invite = 'synthetic-new-invite') {
+    const calls = [], stored = new Map([['quadInterview.synthetic-interview', JSON.stringify({ sessionSecret:'synthetic-old-session' })]]);
+    const value = vm.createContext({
+      invite, info:{ interviewId:'synthetic-interview', status }, sessionSecret:memorySecret,
+      localStorage:{ getItem:key => stored.get(key) || null, setItem:(key, text) => stored.set(key, text) },
+      request:async (url, options) => {
+        calls.push({ url, body:JSON.parse(options.body) });
+        return { interviewId:'synthetic-interview', sessionSecret:'synthetic-new-session', expiresAt:'2099-01-01T00:00:00.000Z' };
+      },
+      recruiterAccess:async () => { calls.push({ url:'synthetic-recruiter-access' }); return { participantIdentity:'synthetic-recruiter' }; }
+    });
+    vm.runInContext(helper, value);
+    return { value, calls, stored };
+  }
+  const fresh = context('active');
+  await fresh.value.tokenForJoin();
+  assert.equal(fresh.calls[0].url, '/api/public/recruiting-video/invite/synthetic-new-invite/exchange');
+  assert.equal(fresh.calls[0].body.consent, true);
+  assert.equal(JSON.parse(fresh.stored.get('quadInterview.synthetic-interview')).sessionSecret, 'synthetic-new-session');
+  await fresh.value.tokenForJoin();
+  assert.equal(fresh.calls[1].url, '/api/public/recruiting-video/session');
+  assert.equal(fresh.calls[1].body.sessionSecret, 'synthetic-new-session', 'Same-page reconnect uses the newly exchanged session');
+
+  const joined = context('joined');
+  await joined.value.tokenForJoin();
+  assert.equal(joined.calls[0].url, '/api/public/recruiting-video/session');
+  assert.equal(joined.calls[0].body.sessionSecret, 'synthetic-old-session');
+  assert.equal(joined.calls.length, 1, 'A joined one-time link is not exchanged twice');
+
+  const inMemory = context('joined', 'synthetic-current-memory-session');
+  await inMemory.value.tokenForJoin();
+  assert.equal(inMemory.calls[0].body.sessionSecret, 'synthetic-current-memory-session');
+
+  const staff = context('active', '', '');
+  await staff.value.tokenForJoin();
+  assert.equal(staff.calls[0].url, 'synthetic-recruiter-access');
+  assert.equal(staff.calls.length, 1, 'Interviewer access never uses the public candidate exchange');
 });
 
 test('AI analysis normalization never fabricates unsupported scores', () => {

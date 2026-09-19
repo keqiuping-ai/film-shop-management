@@ -33,11 +33,27 @@
     zh:'自动转写未能启动，请检查浏览器的麦克风和语音识别权限。'
   };
   const backCopy = { en:'← Back to recruiting', es:'← Volver a contratación', pt:'← Voltar ao recrutamento', zh:'← 返回招聘中心' };
+  const interviewerCopy = {
+    en:{ secureLink:'🔒 Sign-in protected interviewer access', privacy:'Sign in with a system account that has recruiting access. The candidate uses a separate invitation link. Camera and microphone access begins only after you click Join; video is not recorded by default.' },
+    es:{ secureLink:'🔒 Acceso para entrevistadores con inicio de sesión', privacy:'Inicie sesión con una cuenta del sistema con acceso a contratación. El candidato usa un enlace de invitación independiente. La cámara y el micrófono se solicitan al pulsar Entrar; el video no se graba de forma predeterminada.' },
+    pt:{ secureLink:'🔒 Acesso de entrevistador protegido por login', privacy:'Entre com uma conta do sistema com acesso ao recrutamento. O candidato usa um convite separado. A câmera e o microfone são solicitados ao clicar em Entrar; o vídeo não é gravado por padrão.' },
+    zh:{ secureLink:'🔒 登录保护的面试官入口', privacy:'请先登录具有招聘权限的系统账号；候选人使用独立邀请链接。点击进入后才会申请摄像头和麦克风权限；不会默认录制视频。' }
+  };
+  const roomCopy = {
+    en:{ leave:'Leave interview', endRoom:'End for everyone', endConfirm:'End this interview for everyone? All participants will be disconnected and the candidate link will stop working.', ending:'Ending interview…', roomEnded:'This interview has ended for everyone', disconnected:'You are disconnected. You can try joining again.', participants:'{count} online', cameraPaused:'Camera off / waiting for video', microphoneMuted:'Microphone muted', waiting:'Waiting for other participants…', shareInterviewer:'Interviewer link', copyLink:'Copy interviewer link', linkCopied:'Interviewer link copied.', copyManually:'Select and copy the link above.', shareNotice:'For interviewers only: sign in with an account that has recruiting access before opening this link. This is not the candidate invitation link.', signInRequired:'Please sign in with an account that has recruiting access, then open this interviewer link again.', readOnly:'View-only recruiting access: you can join the call, but cannot save transcription, run AI analysis, or end the room.', muteTranscript:'Turn on your microphone before starting transcription.', leaveNotice:'Leave disconnects only you. Other participants stay in the room.', participantRole:'Participant' },
+    es:{ leave:'Salir de la entrevista', endRoom:'Finalizar para todos', endConfirm:'¿Finalizar esta entrevista para todos? Se desconectarán todos los participantes y el enlace del candidato dejará de funcionar.', ending:'Finalizando entrevista…', roomEnded:'La entrevista ha finalizado para todos', disconnected:'Se perdió la conexión. Puede intentar entrar de nuevo.', participants:'{count} en línea', cameraPaused:'Cámara apagada / esperando video', microphoneMuted:'Micrófono silenciado', waiting:'Esperando a otros participantes…', shareInterviewer:'Enlace para entrevistadores', copyLink:'Copiar enlace para entrevistadores', linkCopied:'Enlace para entrevistadores copiado.', copyManually:'Seleccione y copie el enlace de arriba.', shareNotice:'Solo para entrevistadores: inicie sesión con una cuenta con acceso a contratación antes de abrir este enlace. No es el enlace de invitación del candidato.', signInRequired:'Inicie sesión con una cuenta con acceso a contratación y vuelva a abrir este enlace.', readOnly:'Acceso de solo lectura: puede participar, pero no guardar transcripciones, ejecutar análisis de IA ni finalizar la sala.', muteTranscript:'Active su micrófono antes de iniciar la transcripción.', leaveNotice:'Salir solo le desconecta a usted. Los demás permanecen en la sala.', participantRole:'Participante' },
+    pt:{ leave:'Sair da entrevista', endRoom:'Encerrar para todos', endConfirm:'Encerrar esta entrevista para todos? Todos serão desconectados e o link do candidato deixará de funcionar.', ending:'Encerrando entrevista…', roomEnded:'A entrevista foi encerrada para todos', disconnected:'Você foi desconectado. Pode tentar entrar novamente.', participants:'{count} online', cameraPaused:'Câmera desligada / aguardando vídeo', microphoneMuted:'Microfone silenciado', waiting:'Aguardando outros participantes…', shareInterviewer:'Link para entrevistadores', copyLink:'Copiar link para entrevistadores', linkCopied:'Link para entrevistadores copiado.', copyManually:'Selecione e copie o link acima.', shareNotice:'Somente para entrevistadores: entre com uma conta com acesso ao recrutamento antes de abrir este link. Este não é o convite do candidato.', signInRequired:'Entre com uma conta com acesso ao recrutamento e abra este link novamente.', readOnly:'Acesso somente leitura: você pode participar, mas não salvar transcrições, executar análise de IA ou encerrar a sala.', muteTranscript:'Ative seu microfone antes de iniciar a transcrição.', leaveNotice:'Sair desconecta apenas você. Os outros permanecem na sala.', participantRole:'Participante' },
+    zh:{ leave:'离开面试', endRoom:'结束所有人的面试', endConfirm:'确定结束整场面试吗？所有参与者都会断开，候选人链接也将失效。', ending:'正在结束整场面试…', roomEnded:'本次面试已为所有人结束', disconnected:'连接已断开，可以尝试重新进入。', participants:'{count} 人在线', cameraPaused:'摄像头关闭 / 等待画面', microphoneMuted:'麦克风已关闭', waiting:'正在等待其他参与者…', shareInterviewer:'面试官链接', copyLink:'复制面试官链接', linkCopied:'已复制面试官链接。', copyManually:'请选择并复制上面的链接。', shareNotice:'仅供面试官：请先登录具有招聘权限的账号，再打开此链接。这里不分享候选人的一次性邀请链接。', signInRequired:'请先登录具有招聘权限的账号，再打开此面试官链接。', readOnly:'当前为招聘只读权限：可以加入通话，不能保存转写、调用 AI 分析或结束整场面试。', muteTranscript:'请先打开麦克风，再开始转写。', leaveNotice:'“离开”只断开你自己，其他人仍留在房间内。', participantRole:'参与者' }
+  };
+  // Kept in memory for this page only: separate tabs/devices must not evict each other.
+  const participantSessionId = Array.from(crypto.getRandomValues(new Uint8Array(16)), value => value.toString(16).padStart(2, '0')).join('');
+  const participants = new Map();
   let language = localStorage.getItem('quadInterview.language') || 'en';
   if (!copy[language]) language = 'en';
   let info = null, room = null, joining = false, leaving = false, sessionSecret = '', recognition = null, transcriptActive = false, micEnabled = true, cameraEnabled = true;
+  let connected = false, ending = false, roomEnded = false, hasJoined = false;
   let analysisBusy = false, newEvidenceCount = 0, lastAutoAnalysisAt = 0, selectedKitId = '', selectedQuestionId = '';
-  const t = (key, vars = {}) => Object.entries(vars).reduce((value, [name, replacement]) => value.replace(`{${name}}`, replacement), copy[language][key] || copy.en[key] || key);
+  const t = (key, vars = {}) => Object.entries(vars).reduce((value, [name, replacement]) => value.replace(`{${name}}`, replacement), (recruiter && interviewerCopy[language]?.[key]) || roomCopy[language]?.[key] || copy[language][key] || roomCopy.en[key] || copy.en[key] || key);
   const qt = key => questionCopy[language]?.[key] || questionCopy.en[key] || key;
   const rt = (key, vars = {}) => Object.entries(vars).reduce((value, [name, replacement]) => value.replace(`{${name}}`, replacement), resumeCopy[language]?.[key] || resumeCopy.en[key] || key);
   const request = async (url, options = {}) => {
@@ -45,7 +61,7 @@
     if (options.auth) headers.Authorization = `Bearer ${authToken}`;
     const response = await fetch(url, { ...options, headers });
     const body = await response.json().catch(() => ({}));
-    if (!response.ok) { const error = new Error(body.error || `${t('requestFailed')} (${response.status})`); error.code = body.code; throw error; }
+    if (!response.ok) { const error = new Error(body.error || `${t('requestFailed')} (${response.status})`); error.code = body.code; error.status = response.status; throw error; }
     return body;
   };
   const when = value => value ? new Intl.DateTimeFormat(localeCodes[language], { dateStyle:'full', timeStyle:'short', timeZone:'America/Los_Angeles' }).format(new Date(value)) : '';
@@ -55,17 +71,24 @@
     document.querySelectorAll('[data-i18n]').forEach(node => { node.textContent = t(node.dataset.i18n); });
     $('backToRecruiting').textContent = backCopy[language] || backCopy.en;
     if (info) renderReady();
+    for (const entry of participants.values()) renderParticipant(entry);
+    updateParticipantCount(); updatePermissions();
     $('transcriptToggle').textContent = t(transcriptActive ? 'stopTranscript' : 'startTranscript');
     document.title = `QUAD FILM · ${t('videoInterview')}`;
   }
-  function error(message) { $('error').textContent = message || ''; $('connectionBadge').textContent = t('connectionFailed'); $('connectionBadge').className = 'badge warn'; }
+  function error(message) { $('error').textContent = message || ''; $('roomError').textContent = message || ''; $('connectionBadge').textContent = t('connectionFailed'); $('connectionBadge').className = 'badge warn'; }
   function renderReady() {
     $('welcomeTitle').textContent = recruiter ? t('recruiterWelcome', { name:info.candidateName }) : t('candidateWelcome', { name:info.candidateName });
     $('welcomeMeta').textContent = `${when(info.startsAt)} · ${t('minutes', { count:String(info.durationMinutes || 30) })}`;
-    $('consentRow').hidden = recruiter; $('consent').checked = recruiter;
-    $('join').disabled = recruiter ? false : !$('consent').checked;
-    $('join').textContent = recruiter ? t('recruiterJoin') : info.status === 'joined' ? t('reconnect') : t('join');
-    $('connectionBadge').textContent = t('linkValid');
+    $('consentRow').hidden = recruiter;
+    if (recruiter) $('consent').checked = true;
+    $('join').disabled = joining || roomEnded || (!recruiter && !$('consent').checked);
+    $('join').textContent = hasJoined ? t('reconnect') : recruiter ? t('recruiterJoin') : info.status === 'joined' ? t('reconnect') : t('join');
+    $('join').hidden = roomEnded;
+    if (roomEnded) { $('welcomeTitle').textContent = t('roomEnded'); $('welcomeMeta').textContent = t('safeToClose'); }
+    $('connectionBadge').textContent = t(roomEnded ? 'roomEnded' : connected ? 'connected' : 'linkValid');
+    $('connectionBadge').className = connected ? 'badge live' : 'badge';
+    updatePermissions();
     renderCandidateResume(); renderQuestionBank(); renderTranscripts(info.aiState?.transcript || []); renderAnalysis(info.aiState?.analysis || null);
   }
   function ready(data) {
@@ -77,24 +100,26 @@
   async function boot() {
     try {
       if (invite) return ready(await request(`/api/public/recruiting-video/invite/${encodeURIComponent(invite)}`));
-      if (interviewId && authToken) return ready(await request(`/api/recruiting/interviews/${encodeURIComponent(interviewId)}/video-token`, { method:'POST', auth:true }));
+      if (recruiter && !authToken) throw new Error(t('signInRequired'));
+      if (interviewId && authToken) return ready(await recruiterAccess());
       throw new Error(t('connectionFailed'));
-    } catch (cause) { error(cause.message); }
+    } catch (cause) { error(recruiter && [401, 403].includes(cause.status) ? t('signInRequired') : cause.message); }
   }
   function renderTranscripts(rows) {
     const list = $('transcriptList'); list.replaceChildren();
     for (const row of rows.slice(-30)) appendTranscript(row);
   }
   function appendTranscript(row) {
-    if ($(`transcript-${CSS.escape(String(row.id || ''))}`)) return;
+    if (!row?.id || !row.text || $(`transcript-${row.id}`)) return;
     const line = document.createElement('div'); line.className = 'transcript-line'; line.id = `transcript-${row.id}`;
     const speaker = row.speaker === 'candidate' ? t('candidate') : t('interviewer');
-    const label = document.createElement('strong'); label.textContent = speaker;
+    const label = document.createElement('strong'); label.textContent = row.speakerName ? `${row.speakerName} · ${speaker}` : speaker;
+    line.dataset.participantIdentity = String(row.participantIdentity || '');
     const text = document.createElement('span'); text.textContent = row.text;
     line.append(label, text); $('transcriptList').appendChild(line); line.scrollIntoView({ block:'nearest' });
   }
   function queueRealtimeAnalysis() {
-    if (!recruiter || analysisBusy) return;
+    if (!recruiter || info?.canWriteTranscript !== true || !connected || analysisBusy || !isAutoAnalysisLeader()) return;
     newEvidenceCount += 1;
     const now = Date.now();
     if (newEvidenceCount < 3 || now - lastAutoAnalysisAt < 30_000) return;
@@ -209,54 +234,231 @@
     element.addEventListener('resize', apply);
     if (element.readyState >= 1) apply();
   }
-  function attachRemote(track, participant) {
-    const element = track.attach();
-    if (track.kind === LivekitClient.Track.Kind.Video) { $('remoteStage').querySelector('.waiting')?.remove(); element.autoplay = true; element.playsInline = true; updateVideoAspect(element, $('remoteStage')); $('remoteStage').appendChild(element); $('participantState').textContent = t('joined', { name:participant?.name || t('other') }); }
-    else if (track.kind === LivekitClient.Track.Kind.Audio) { element.autoplay = true; $('audioStage').appendChild(element); element.play().catch(() => {}); }
+  function participantMetadata(participant) {
+    try { return JSON.parse(participant?.metadata || '{}'); } catch { return {}; }
+  }
+  function participantRole(participant, local = false) {
+    const role = local ? (recruiter ? 'interviewer' : 'candidate') : participantMetadata(participant).role;
+    return ['interviewer', 'candidate'].includes(role) ? role : 'participantRole';
+  }
+  function canTranscribe() { return recruiter ? info?.canWriteTranscript === true : Boolean(sessionSecret); }
+  function updatePermissions() {
+    $('shareInterviewer').hidden = !recruiter || !info?.interviewId || roomEnded;
+    $('endRoom').hidden = !recruiter || info?.canManageRoom !== true || !connected;
+    $('endRoom').disabled = ending || leaving;
+    $('endRoom').textContent = t(ending ? 'ending' : 'endRoom');
+    $('transcriptToggle').disabled = !connected || !canTranscribe() || ending || leaving;
+    $('aiNext').disabled = !connected || !recruiter || info?.canWriteTranscript !== true || analysisBusy;
+    $('aiFinal').disabled = $('aiNext').disabled;
+    $('roomAccessNotice').hidden = !recruiter || info?.canWriteTranscript === true;
+    $('mic').disabled = !connected || ending || leaving;
+    $('camera').disabled = !connected || ending || leaving;
+    $('leave').disabled = !connected || ending || leaving;
+    $('leave').textContent = t(leaving ? 'leaving' : 'leave');
+    $('mic').textContent = t(micEnabled ? 'micOn' : 'micOff');
+    $('camera').textContent = t(cameraEnabled ? 'cameraOn' : 'cameraOff');
+  }
+  function isAutoAnalysisLeader() {
+    if (!room || info?.canWriteTranscript !== true) return false;
+    const eligible = [...participants.values()].filter(entry => participantRole(entry.participant, entry.local) === 'interviewer'
+      && (entry.local ? info.canWriteTranscript === true : participantMetadata(entry.participant).canWriteTranscript === true));
+    const identities = eligible.map(entry => entry.participant.identity).sort();
+    return identities[0] === room.localParticipant.identity;
+  }
+  function updateParticipantCount() {
+    const count = connected ? participants.size : 0;
+    $('participantCount').textContent = t('participants', { count:String(count) });
+    $('participantState').textContent = connected ? t('participants', { count:String(count) }) : t('connectingRoom');
+    $('waitingParticipants').hidden = !connected || count > 1;
+  }
+  function renderParticipant(entry) {
+    const { participant, tile, name, role, placeholder, avatar, status, local, tracks } = entry;
+    const displayName = participant.name || (local ? info?.participantName : '') || t(participantRole(participant, local));
+    name.textContent = `${displayName}${local ? ` (${t('you')})` : ''}`;
+    role.textContent = t(participantRole(participant, local));
+    avatar.textContent = displayName.trim().split(/\s+/).slice(0, 2).map(value => value[0] || '').join('').toUpperCase();
+    placeholder.querySelector('span').textContent = t('cameraPaused');
+    let hasVideo = false;
+    for (const [track, attached] of tracks) {
+      if (track.kind !== LivekitClient.Track.Kind.Video) continue;
+      const visible = !attached.publication?.isMuted && !track.isMuted;
+      attached.element.hidden = !visible; hasVideo ||= visible;
+      if (visible && attached.element.videoWidth && attached.element.videoHeight) tile.classList.toggle('portrait-video', attached.element.videoHeight > attached.element.videoWidth * 1.08);
+    }
+    placeholder.hidden = hasVideo; tile.classList.toggle('camera-off', !hasVideo);
+    if (!hasVideo) tile.classList.remove('portrait-video');
+    status.textContent = participant.isMicrophoneEnabled === false ? t('microphoneMuted') : '';
+    status.hidden = !status.textContent;
+  }
+  function ensureParticipant(participant, local = false) {
+    if (!participant?.identity) return null;
+    let entry = participants.get(participant.identity);
+    if (entry) { entry.participant = participant; renderParticipant(entry); return entry; }
+    const tile = local ? $('localStage') : document.createElement('article');
+    tile.replaceChildren(); tile.hidden = false; tile.className = `participant-tile ${local ? 'local-stage' : 'remote-tile'}`;
+    tile.dataset.participantIdentity = participant.identity;
+    const media = document.createElement('div'); media.className = 'participant-media';
+    const placeholder = document.createElement('div'); placeholder.className = 'participant-placeholder';
+    const avatar = document.createElement('b'); const cameraText = document.createElement('span'); placeholder.append(avatar, cameraText);
+    const label = document.createElement('div'); label.className = 'participant-label';
+    const name = document.createElement('strong'); const role = document.createElement('span'); label.append(name, role);
+    const status = document.createElement('span'); status.className = 'participant-status';
+    tile.append(media, placeholder, label, status);
+    if (!local) $('remoteStage').appendChild(tile);
+    entry = { participant, tile, media, placeholder, avatar, name, role, status, local, tracks:new Map() };
+    participants.set(participant.identity, entry); renderParticipant(entry); updateParticipantCount(); return entry;
+  }
+  function detachTrack(entry, track) {
+    const attached = entry?.tracks.get(track);
+    if (!attached) return;
+    try { track.detach(attached.element); } catch {}
+    attached.element.remove(); entry.tracks.delete(track);
+  }
+  function attachParticipantTrack(track, publication, participant, local = false) {
+    const entry = ensureParticipant(participant, local);
+    if (!entry || !track) return;
+    const video = track.kind === LivekitClient.Track.Kind.Video;
+    if (!video && (local || track.kind !== LivekitClient.Track.Kind.Audio)) return;
+    if (video && publication?.source && ![LivekitClient.Track.Source.Camera, LivekitClient.Track.Source.Unknown].includes(publication.source)) return;
+    if (entry.tracks.has(track)) { renderParticipant(entry); return; }
+    if (video) for (const previous of [...entry.tracks.keys()]) if (previous.kind === LivekitClient.Track.Kind.Video) detachTrack(entry, previous);
+    const element = track.attach(); element.autoplay = true;
+    entry.tracks.set(track, { element, publication });
+    if (video) {
+      element.playsInline = true; element.muted = local; updateVideoAspect(element, entry.tile); entry.media.appendChild(element);
+    } else {
+      $('audioStage').appendChild(element); element.play()?.catch(() => {});
+    }
+    renderParticipant(entry);
+  }
+  function syncParticipant(participant, local = false) {
+    const entry = ensureParticipant(participant, local); if (!entry) return;
+    const camera = participant.getTrackPublication?.(LivekitClient.Track.Source.Camera);
+    if (camera?.track && (local || camera.isSubscribed !== false)) attachParticipantTrack(camera.track, camera, participant, local);
+    if (!local) for (const publication of participant.audioTrackPublications?.values() || []) {
+      if (publication.track && publication.isSubscribed !== false) attachParticipantTrack(publication.track, publication, participant);
+    }
+    renderParticipant(entry);
+  }
+  function syncParticipants() {
+    if (!room) return;
+    for (const entry of [...participants.values()]) if (entry.local ? entry.participant.identity !== room.localParticipant.identity : !room.remoteParticipants.has(entry.participant.identity)) removeParticipant(entry.participant);
+    syncParticipant(room.localParticipant, true);
+    for (const participant of room.remoteParticipants.values()) syncParticipant(participant);
+    updateParticipantCount();
+  }
+  function removeParticipant(participant) {
+    const entry = participants.get(participant?.identity); if (!entry) return;
+    for (const track of [...entry.tracks.keys()]) detachTrack(entry, track);
+    if (entry.local) { entry.tile.replaceChildren(); entry.tile.hidden = true; } else entry.tile.remove();
+    participants.delete(participant.identity); updateParticipantCount();
+  }
+  function clearParticipants() {
+    for (const entry of [...participants.values()]) removeParticipant(entry.participant);
+    $('audioStage').replaceChildren(); updateParticipantCount();
+  }
+  function recruiterAccess() {
+    return request(`/api/recruiting/interviews/${encodeURIComponent(interviewId)}/video-token`, { method:'POST', auth:true, body:JSON.stringify({ participantSessionId }) });
   }
   async function tokenForJoin() {
-    if (!invite) return info;
-    const stored = JSON.parse(localStorage.getItem(`quadInterview.${info.interviewId}`) || 'null');
-    if (info.status === 'joined' && stored?.sessionSecret) { sessionSecret = stored.sessionSecret; return request('/api/public/recruiting-video/session', { method:'POST', body:JSON.stringify({ interviewId:info.interviewId, sessionSecret }) }); }
+    if (!invite) return recruiterAccess();
+    let stored = null;
+    try { stored = JSON.parse(localStorage.getItem(`quadInterview.${info.interviewId}`) || 'null'); } catch {}
+    if (sessionSecret || (info.status === 'joined' && stored?.sessionSecret)) { sessionSecret ||= stored.sessionSecret; return request('/api/public/recruiting-video/session', { method:'POST', body:JSON.stringify({ interviewId:info.interviewId, sessionSecret }) }); }
     const data = await request(`/api/public/recruiting-video/invite/${encodeURIComponent(invite)}/exchange`, { method:'POST', body:JSON.stringify({ consent:true }) });
     sessionSecret = data.sessionSecret; localStorage.setItem(`quadInterview.${data.interviewId}`, JSON.stringify({ sessionSecret, expiresAt:data.expiresAt })); return data;
   }
   async function join() {
-    if (joining || (!$('consent').checked && invite)) return;
+    if (!info || joining || leaving || ending || connected || roomEnded || (!$('consent').checked && invite)) return;
     if (!window.LivekitClient?.isBrowserSupported?.()) return error(t('unsupported'));
-    joining = true; $('join').disabled = true; $('join').textContent = t('connecting');
+    joining = true; $('join').disabled = true; $('join').textContent = t('connecting'); $('error').textContent = ''; $('roomError').textContent = '';
+    let joiningRoom = null;
     try {
+      await disconnectLocal();
       const access = await tokenForJoin(); info = { ...info, ...access };
-      room = new LivekitClient.Room({ adaptiveStream:true, dynacast:true, disconnectOnPageLeave:true });
-      room.on(LivekitClient.RoomEvent.TrackSubscribed, attachRemote);
-      room.on(LivekitClient.RoomEvent.TrackUnsubscribed, track => { track.detach().forEach(node => node.remove()); if (!$('remoteStage').querySelector('video')) $('remoteStage').classList.remove('portrait-video'); });
-      room.on(LivekitClient.RoomEvent.ParticipantConnected, participant => { $('participantState').textContent = t('joined', { name:participant.name || t('other') }); });
-      room.on(LivekitClient.RoomEvent.DataReceived, payload => { try { const value = JSON.parse(new TextDecoder().decode(payload)); if (value.type === 'transcript') { appendTranscript(value.row); queueRealtimeAnalysis(); } } catch {} });
-      room.on(LivekitClient.RoomEvent.Reconnecting, () => { $('connectionBadge').textContent = t('reconnecting'); $('connectionBadge').className = 'badge warn'; });
-      room.on(LivekitClient.RoomEvent.Reconnected, () => { $('connectionBadge').textContent = t('connected'); $('connectionBadge').className = 'badge live'; });
-      await room.connect(access.url, access.token); await room.localParticipant.setCameraEnabled(true); await room.localParticipant.setMicrophoneEnabled(true, { echoCancellation:true, noiseSuppression:true, autoGainControl:true });
-      const local = room.localParticipant.getTrackPublication(LivekitClient.Track.Source.Camera)?.track;
-      if (local) { const video = local.attach(); video.muted = true; video.playsInline = true; updateVideoAspect(video, $('localStage')); $('localStage').appendChild(video); }
+      joiningRoom = new LivekitClient.Room({ adaptiveStream:true, dynacast:true, disconnectOnPageLeave:true }); room = joiningRoom;
+      const on = (event, callback) => joiningRoom.on(event, (...args) => { if (room === joiningRoom) callback(...args); });
+      on(LivekitClient.RoomEvent.TrackSubscribed, (track, publication, participant) => attachParticipantTrack(track, publication, participant));
+      on(LivekitClient.RoomEvent.TrackUnsubscribed, (track, _publication, participant) => { const entry = participants.get(participant?.identity); if (entry) { detachTrack(entry, track); renderParticipant(entry); } });
+      on(LivekitClient.RoomEvent.TrackUnpublished, (publication, participant) => { const entry = participants.get(participant?.identity); if (entry) { for (const [track, attached] of [...entry.tracks]) if (attached.publication === publication || track === publication.track) detachTrack(entry, track); renderParticipant(entry); } });
+      on(LivekitClient.RoomEvent.ParticipantConnected, participant => syncParticipant(participant));
+      on(LivekitClient.RoomEvent.ParticipantDisconnected, removeParticipant);
+      for (const event of [LivekitClient.RoomEvent.ParticipantNameChanged, LivekitClient.RoomEvent.ParticipantMetadataChanged]) on(event, (_value, participant) => syncParticipant(participant, participant?.identity === room.localParticipant.identity));
+      for (const event of [LivekitClient.RoomEvent.TrackMuted, LivekitClient.RoomEvent.TrackUnmuted]) on(event, (_publication, participant) => syncParticipant(participant, participant?.identity === room.localParticipant.identity));
+      on(LivekitClient.RoomEvent.LocalTrackPublished, publication => attachParticipantTrack(publication.track, publication, room.localParticipant, true));
+      on(LivekitClient.RoomEvent.LocalTrackUnpublished, publication => { const entry = participants.get(room.localParticipant.identity); if (entry) { for (const [track, attached] of [...entry.tracks]) if (attached.publication === publication || track === publication.track) detachTrack(entry, track); renderParticipant(entry); } });
+      on(LivekitClient.RoomEvent.DataReceived, (payload, participant) => receiveTranscript(payload, participant));
+      on(LivekitClient.RoomEvent.Reconnecting, () => { $('connectionBadge').textContent = t('reconnecting'); $('connectionBadge').className = 'badge warn'; });
+      on(LivekitClient.RoomEvent.Reconnected, () => { syncParticipants(); $('connectionBadge').textContent = t('connected'); $('connectionBadge').className = 'badge live'; });
+      on(LivekitClient.RoomEvent.Disconnected, reason => {
+        roomEnded ||= [LivekitClient.DisconnectReason.ROOM_DELETED, LivekitClient.DisconnectReason.ROOM_CLOSED].includes(reason);
+        disconnectLocal(); showDisconnected();
+      });
+      await joiningRoom.connect(access.url, access.token);
+      if (room !== joiningRoom) throw new Error(t('disconnected'));
+      await joiningRoom.localParticipant.setCameraEnabled(true);
+      if (room !== joiningRoom) throw new Error(t('disconnected'));
+      await joiningRoom.localParticipant.setMicrophoneEnabled(true, { echoCancellation:true, noiseSuppression:true, autoGainControl:true });
+      if (room !== joiningRoom) throw new Error(t('disconnected'));
+      connected = true; hasJoined = true; micEnabled = true; cameraEnabled = true; syncParticipants(); updatePermissions();
       $('welcome').hidden = true; $('roomView').hidden = false; $('connectionBadge').textContent = t('connected'); $('connectionBadge').className = 'badge live'; renderTranscripts(access.aiState?.transcript || []); renderAnalysis(access.aiState?.analysis || null);
-      if (!transcriptActive) startTranscript();
-    } catch (cause) { error(cause.message); $('join').disabled = false; $('join').textContent = t('retry'); }
-    finally { joining = false; }
+      if (!transcriptActive && canTranscribe()) startTranscript();
+    } catch (cause) {
+      stopLocalTracks(joiningRoom);
+      if (!joiningRoom || room === joiningRoom) await disconnectLocal();
+      $('welcome').hidden = false; $('roomView').hidden = true; error(recruiter && [401, 403].includes(cause.status) ? t('signInRequired') : cause.message);
+      $('join').disabled = roomEnded; $('join').hidden = roomEnded; $('join').textContent = t('retry');
+    } finally { joining = false; updatePermissions(); }
+  }
+  function rememberTranscript(row) {
+    if (!row?.id || !String(row.text || '').trim()) return false;
+    info.aiState ||= {}; info.aiState.transcript ||= [];
+    if (info.aiState.transcript.some(item => item.id === row.id)) return false;
+    info.aiState.transcript.push(row);
+    info.aiState.transcript = info.aiState.transcript.slice(-300); appendTranscript(row); return true;
+  }
+  function receiveTranscript(payload, participant) {
+    // A peer may send arbitrary data. Its signed room identity, not its payload, identifies the speaker.
+    if (!participant?.identity || !room?.remoteParticipants.has(participant.identity)) return;
+    const role = participantRole(participant); if (!['candidate', 'interviewer'].includes(role)) return;
+    try {
+      const value = JSON.parse(new TextDecoder().decode(payload));
+      if (value.type !== 'transcript' || typeof value.row?.id !== 'string' || value.row.id.length > 200 || typeof value.row.text !== 'string' || !value.row.text.trim() || value.row.text.length > 2000) return;
+      if (value.row.participantIdentity !== participant.identity) return;
+      if (role === 'interviewer' && participantMetadata(participant).canWriteTranscript !== true) return;
+      const row = { id:value.row.id, text:value.row.text, language:String(value.row.language || '').slice(0, 20), createdAt:value.row.createdAt,
+        speaker:role, speakerName:participant.name || t(role), participantIdentity:participant.identity };
+      if (rememberTranscript(row)) queueRealtimeAnalysis();
+    } catch {}
   }
   async function saveTranscript(text) {
-    const row = { id:`${Date.now()}-${crypto.getRandomValues(new Uint32Array(1))[0]}`, speaker:recruiter ? 'interviewer' : 'candidate', text, language, createdAt:new Date().toISOString() };
-    appendTranscript(row); room?.localParticipant.publishData(new TextEncoder().encode(JSON.stringify({ type:'transcript', row })), { reliable:true }).catch(() => {});
-    const body = { id:row.id, text, language };
-    if (recruiter) { await request(`/api/recruiting/interviews/${encodeURIComponent(info.interviewId)}/video-transcript`, { method:'POST', auth:true, body:JSON.stringify(body) }); queueRealtimeAnalysis(); }
-    else await request('/api/public/recruiting-video/transcript', { method:'POST', body:JSON.stringify({ ...body, interviewId:info.interviewId, sessionSecret }) });
+    if (!connected || !room || !canTranscribe() || !text.trim()) return;
+    const activeRoom = room;
+    const body = { id:`${Date.now()}-${crypto.getRandomValues(new Uint32Array(1))[0]}`, text, language, participantSessionId,
+      speakerName:info.participantName || activeRoom.localParticipant.name || '', participantIdentity:info.participantIdentity || activeRoom.localParticipant.identity };
+    const data = recruiter
+      ? await request(`/api/recruiting/interviews/${encodeURIComponent(info.interviewId)}/video-transcript`, { method:'POST', auth:true, body:JSON.stringify(body) })
+      : await request('/api/public/recruiting-video/transcript', { method:'POST', body:JSON.stringify({ ...body, interviewId:info.interviewId, sessionSecret }) });
+    if (room !== activeRoom || !connected || !data.row) return;
+    // Broadcast only the server-attributed row, without private account identifiers.
+    const { id, speaker, speakerName, participantIdentity, text:savedText, language:savedLanguage, createdAt } = data.row;
+    const row = { id, speaker, speakerName, participantIdentity, text:savedText, language:savedLanguage, createdAt };
+    rememberTranscript(row);
+    activeRoom.localParticipant.publishData(new TextEncoder().encode(JSON.stringify({ type:'transcript', row })), { reliable:true }).catch(() => {});
+    queueRealtimeAnalysis();
   }
   function startTranscript() {
+    if (!connected || !canTranscribe()) return;
+    if (transcriptActive) { stopTranscript(); return; }
+    if (!micEnabled) { $('transcriptStatus').textContent = t('muteTranscript'); return; }
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) { $('transcriptStatus').textContent = t('transcriptUnavailable'); return; }
-    if (transcriptActive) { transcriptActive = false; recognition?.stop(); $('transcriptToggle').textContent = t('startTranscript'); $('transcriptStatus').textContent = t('transcriptOff'); return; }
     recognition = new SpeechRecognition(); recognition.continuous = true; recognition.interimResults = true; recognition.lang = localeCodes[language]; transcriptActive = true;
-    recognition.onresult = event => { for (let index = event.resultIndex; index < event.results.length; index++) if (event.results[index].isFinal) saveTranscript(event.results[index][0].transcript.trim()).catch(cause => { $('transcriptStatus').textContent = cause.message; }); };
-    recognition.onend = () => { if (transcriptActive) try { recognition.start(); } catch {} };
+    const activeRecognition = recognition;
+    recognition.onresult = event => { if (recognition !== activeRecognition || !transcriptActive || !micEnabled) return; for (let index = event.resultIndex; index < event.results.length; index++) if (event.results[index].isFinal) saveTranscript(event.results[index][0].transcript.trim()).catch(cause => { $('transcriptStatus').textContent = cause.message; }); };
+    recognition.onend = () => { if (recognition === activeRecognition && transcriptActive && connected && canTranscribe()) try { activeRecognition.start(); } catch {} };
     recognition.onerror = event => {
+      if (recognition !== activeRecognition) return;
       if (['not-allowed', 'service-not-allowed'].includes(event.error)) {
         transcriptActive = false; $('transcriptToggle').textContent = t('startTranscript'); $('transcriptStatus').textContent = transcriptBlocked[language] || transcriptBlocked.en;
       } else if (!['no-speech', 'aborted'].includes(event.error)) $('transcriptStatus').textContent = event.error;
@@ -267,38 +469,89 @@
       transcriptActive = false; recognition = null; $('transcriptToggle').textContent = t('startTranscript'); $('transcriptStatus').textContent = t('transcriptUnavailable');
     }
   }
+  function stopTranscript() {
+    transcriptActive = false;
+    const previous = recognition; recognition = null;
+    try { previous?.stop(); } catch {}
+    $('transcriptToggle').textContent = t('startTranscript'); $('transcriptStatus').textContent = t('transcriptOff');
+  }
   async function analyze(mode, automatic = false) {
-    if (analysisBusy) return;
+    if (analysisBusy || !connected || !recruiter || info?.canWriteTranscript !== true || (automatic && !isAutoAnalysisLeader())) return;
     analysisBusy = true;
-    const button = mode === 'final' ? $('aiFinal') : $('aiNext'); button.disabled = true; $('aiStatus').textContent = t('aiWorking');
-    try { const data = await request(`/api/recruiting/interviews/${encodeURIComponent(info.interviewId)}/video-analyze`, { method:'POST', auth:true, body:JSON.stringify({ mode }) }); renderAnalysis(data.aiState?.analysis); $('aiStatus').textContent = t('aiReady'); }
-    catch { $('aiStatus').textContent = t('aiFailed'); if (automatic) lastAutoAnalysisAt = 0; } finally { analysisBusy = false; button.disabled = false; }
+    updatePermissions(); $('aiStatus').textContent = t('aiWorking');
+    try { const data = await request(`/api/recruiting/interviews/${encodeURIComponent(info.interviewId)}/video-analyze`, { method:'POST', auth:true, body:JSON.stringify({ mode }) }); info.aiState ||= {}; info.aiState.analysis = data.aiState?.analysis; renderAnalysis(data.aiState?.analysis); $('aiStatus').textContent = t('aiReady'); }
+    catch { $('aiStatus').textContent = t('aiFailed'); if (automatic) lastAutoAnalysisAt = 0; } finally { analysisBusy = false; updatePermissions(); }
+  }
+  function stopLocalTracks(activeRoom) {
+    for (const publication of activeRoom?.localParticipant?.trackPublications?.values() || []) {
+      try { publication.track?.stop(); } catch {}
+    }
+  }
+  async function disconnectLocal() {
+    const previous = room; room = null; connected = false;
+    stopTranscript(); stopLocalTracks(previous); clearParticipants(); updatePermissions();
+    try { await Promise.race([Promise.resolve(previous?.disconnect(true)), new Promise(resolve => setTimeout(resolve, 1500))]); } catch {}
+  }
+  function showDisconnected() {
+    $('roomView').hidden = true; $('welcome').hidden = false;
+    $('consentRow').hidden = recruiter || roomEnded;
+    $('join').hidden = roomEnded; $('join').disabled = roomEnded || (!recruiter && !$('consent').checked); $('join').textContent = t('reconnect');
+    $('welcomeTitle').textContent = t(roomEnded ? 'roomEnded' : 'interviewEnded');
+    $('welcomeMeta').textContent = t('safeToClose'); $('connectionBadge').textContent = t(roomEnded ? 'roomEnded' : 'interviewEnded'); $('connectionBadge').className = 'badge';
+    if (roomEnded) { $('interviewerShare').hidden = true; if (invite && info?.interviewId) localStorage.removeItem(`quadInterview.${info.interviewId}`); }
+    updatePermissions();
   }
   async function leaveInterview() {
-    if (leaving) return;
-    leaving = true; const button = $('leave'); button.disabled = true; button.textContent = t('leaving');
-    transcriptActive = false;
-    try { recognition?.stop(); } catch {}
-    recognition = null;
-    try { await Promise.race([Promise.resolve(room?.disconnect()), new Promise(resolve => setTimeout(resolve, 1500))]); } catch {}
-    room = null;
-    if (recruiter) {
-      try { await Promise.race([request(`/api/recruiting/interviews/${encodeURIComponent(info?.interviewId || interviewId)}/video-end`, { method:'POST', auth:true, body:'{}' }), new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 3500))]); } catch {}
-      window.location.assign('/?page=recruiting');
-      return;
-    }
-    if (info?.interviewId) localStorage.removeItem(`quadInterview.${info.interviewId}`);
-    $('roomView').hidden = true; $('welcome').hidden = false; $('consentRow').hidden = true; $('join').hidden = true;
-    $('welcomeTitle').textContent = t('interviewEnded'); $('welcomeMeta').textContent = t('safeToClose'); $('connectionBadge').textContent = t('interviewEnded'); $('connectionBadge').className = 'badge';
-    document.querySelector('.device-check').hidden = true; document.querySelector('.privacy').hidden = true; history.replaceState(null, '', '/recruiting-interview.html?ended=1');
+    if (leaving || ending) return;
+    leaving = true; updatePermissions();
+    try { await disconnectLocal(); showDisconnected(); }
+    finally { leaving = false; updatePermissions(); }
+  }
+  async function endInterviewForEveryone() {
+    if (!connected || !recruiter || info?.canManageRoom !== true || ending || leaving) return;
+    if (!window.confirm(t('endConfirm'))) return;
+    ending = true; updatePermissions(); $('roomError').textContent = '';
+    try {
+      await request(`/api/recruiting/interviews/${encodeURIComponent(info.interviewId)}/video-end`, { method:'POST', auth:true, body:'{}' });
+      roomEnded = true; await disconnectLocal(); showDisconnected();
+    } catch (cause) { error(cause.message); }
+    finally { ending = false; updatePermissions(); }
+  }
+  function showInterviewerLink() {
+    if (!recruiter || !info?.interviewId || roomEnded) return;
+    const url = new URL('/recruiting-interview.html', location.origin);
+    url.searchParams.set('interview', info.interviewId);
+    $('interviewerLink').value = url.href; $('shareStatus').textContent = ''; $('interviewerShare').hidden = !$('interviewerShare').hidden;
+  }
+  async function copyInterviewerLink() {
+    if (!recruiter || !info?.interviewId || roomEnded) return;
+    try { await navigator.clipboard.writeText($('interviewerLink').value); $('shareStatus').textContent = t('linkCopied'); }
+    catch { $('interviewerLink').focus(); $('interviewerLink').select(); $('shareStatus').textContent = t('copyManually'); }
+  }
+  async function toggleDevice(device) {
+    if (!connected || !room || ending || leaving) return;
+    const activeRoom = room; const button = $(device); button.disabled = true;
+    try {
+      if (device === 'mic') await activeRoom.localParticipant.setMicrophoneEnabled(!activeRoom.localParticipant.isMicrophoneEnabled);
+      else await activeRoom.localParticipant.setCameraEnabled(!activeRoom.localParticipant.isCameraEnabled);
+      if (room !== activeRoom) { stopLocalTracks(activeRoom); return; }
+      micEnabled = activeRoom.localParticipant.isMicrophoneEnabled; cameraEnabled = activeRoom.localParticipant.isCameraEnabled;
+      if (!micEnabled && transcriptActive) stopTranscript();
+      syncParticipant(activeRoom.localParticipant, true);
+    } catch (cause) { if (room === activeRoom) $('roomError').textContent = cause.message; }
+    finally { updatePermissions(); }
   }
   $('language').addEventListener('change', event => { language = event.target.value; applyLanguage(); if (recognition && transcriptActive) { recognition.stop(); recognition.lang = localeCodes[language]; } });
   $('backToRecruiting').hidden = !recruiter;
   $('backToRecruiting').addEventListener('click', () => window.location.assign('/?page=recruiting'));
-  $('consent').addEventListener('change', () => { if (invite) $('join').disabled = !$('consent').checked || !info; });
+  $('consent').addEventListener('change', () => { if (invite) $('join').disabled = !$('consent').checked || !info || joining || roomEnded; });
   $('join').addEventListener('click', join); $('transcriptToggle').addEventListener('click', startTranscript); $('aiNext').addEventListener('click', () => analyze('next')); $('aiFinal').addEventListener('click', () => analyze('final'));
-  $('mic').addEventListener('click', async () => { if (!room) return; micEnabled = !room.localParticipant.isMicrophoneEnabled; await room.localParticipant.setMicrophoneEnabled(micEnabled); $('mic').textContent = t(micEnabled ? 'micOn' : 'micOff'); });
-  $('camera').addEventListener('click', async () => { if (!room) return; cameraEnabled = !room.localParticipant.isCameraEnabled; await room.localParticipant.setCameraEnabled(cameraEnabled); $('camera').textContent = t(cameraEnabled ? 'cameraOn' : 'cameraOff'); });
+  $('mic').addEventListener('click', () => toggleDevice('mic'));
+  $('camera').addEventListener('click', () => toggleDevice('camera'));
   $('leave').addEventListener('click', leaveInterview);
+  $('endRoom').addEventListener('click', endInterviewForEveryone);
+  $('shareInterviewer').addEventListener('click', showInterviewerLink);
+  $('copyInterviewerLink').addEventListener('click', copyInterviewerLink);
+  window.addEventListener('pagehide', () => { stopTranscript(); stopLocalTracks(room); room?.disconnect(true); });
   applyLanguage(); boot();
 })();
