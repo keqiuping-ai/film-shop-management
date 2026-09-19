@@ -42,6 +42,13 @@ test('candidate page defaults to English and exposes all four requested language
   assert.match(html, /id="transcriptToggle"/); assert.match(html, /id="aiNext"/); assert.match(html, /id="aiFinal"/);
 });
 
+test('remote video shows the complete camera frame while the local preview may stay cropped', () => {
+  const css = fs.readFileSync(require.resolve('../public/recruiting-interview.css'), 'utf8');
+  assert.match(css, /\.remote-stage video\s*\{[^}]*object-fit:\s*contain/);
+  assert.match(css, /\.local-stage video\s*\{[^}]*object-fit:\s*cover/);
+  assert.doesNotMatch(css, /\.remote-stage video\s*\{[^}]*object-fit:\s*cover/);
+});
+
 test('AI analysis normalization never fabricates unsupported scores', () => {
   const value = normalize({ scores:{ technicalSkill:8, salesAbility:0, communication:11 }, nextQuestions:['One'], evidence:['Observed example'] });
   assert.equal(value.scores.technicalSkill, 8); assert.equal(value.scores.salesAbility, null); assert.equal(value.scores.communication, null);
