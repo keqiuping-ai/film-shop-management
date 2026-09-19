@@ -127,6 +127,11 @@ test('new and existing interview dialogs expose every interview action without a
   assert.match(existing, /进入视频面试室/);
 });
 
+test('recruiter video-room navigation cannot leave Safari on an about:blank popup', () => {
+  assert.doesNotMatch(frontendSource, /window\.open\(['"]about:blank/);
+  assert.match(frontendSource, /window\.location\.assign\(`\/recruiting-interview\.html\?interview=/);
+});
+
 test('default application order puts verified recent dates first and unknowns last by entry time', () => {
   const env = harness();
   const people = [

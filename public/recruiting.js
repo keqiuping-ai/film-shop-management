@@ -543,12 +543,9 @@
   }
 
   async function saveAndJoinVideoInterview() {
-    const popup = window.open('about:blank', '_blank');
-    if (popup) popup.opener = null;
     const saved = await saveOpenInterview(false);
-    if (!saved) { popup?.close(); return; }
-    const url = `/recruiting-interview.html?interview=${encodeURIComponent(saved.id)}`;
-    if (popup) popup.location.href = url; else window.open(url, '_blank', 'noopener');
+    if (!saved) return;
+    window.location.assign(`/recruiting-interview.html?interview=${encodeURIComponent(saved.id)}`);
   }
 
   async function createVideoInvite(interviewId) {
@@ -569,7 +566,7 @@
   }
 
   function joinVideoInterview(interviewId) {
-    window.open(`/recruiting-interview.html?interview=${encodeURIComponent(interviewId)}`, '_blank', 'noopener');
+    window.location.assign(`/recruiting-interview.html?interview=${encodeURIComponent(interviewId)}`);
   }
 
   function updateAmbiguity(selected = '') {
