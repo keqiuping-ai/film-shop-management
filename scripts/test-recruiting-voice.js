@@ -5,6 +5,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { createRecruitingVideoService, digest, roomName } = require('../lib/recruiting-video');
+const { INTERVIEW_KITS } = require('../lib/recruiting-interview-kits');
 
 const NOTICE = '2026-09-19-voice-v1';
 const SESSION_A = 'synthetic-voice-session-a';
@@ -16,6 +17,8 @@ const OTHER_EDITOR = { id:'voice-editor-b', name:'Synthetic Interviewer B', perm
 const VIEWER = { id:'voice-viewer', name:'Synthetic Observer', permissions:['recruitingView'] };
 const AUDIO = Buffer.from('SYNTHETIC_AUDIO_BYTES_NOT_A_REAL_RECORDING');
 const QUESTION = 'Tell me about a specific installation you completed.';
+const FIXED_KIT = INTERVIEW_KITS.find(kit => kit.id === 'wholesale_quick_6');
+const FIXED_QUESTION = FIXED_KIT.questions[0];
 const clone = value => JSON.parse(JSON.stringify(value));
 function deferred() {
   let resolve, reject;
@@ -37,7 +40,7 @@ function fixture(overrides = {}) {
   };
   const calls = { speech:[], transcribe:[], translate:[] }, writes = [];
   const provider = {
-    configured:() => overrides.configured !== false,
+    configured:() => typeof overrides.configured === 'function' ? overrides.configured() : overrides.configured !== false,
     speech:async body => { calls.speech.push(body); return overrides.speech ? overrides.speech(body) : { audioBase64:Buffer.from('SYNTHETIC_AI_VOICE').toString('base64'), mimeType:'audio/mpeg' }; },
     transcribe:async body => { calls.transcribe.push(body); return overrides.transcribe ? overrides.transcribe(body) : { text:'I completed a full-front installation and verified every edge.' }; }
   };
@@ -61,6 +64,7 @@ function fixture(overrides = {}) {
     consent(value = true, extra = {}) { return this.public('voice-consent', { consent:value, noticeVersion:NOTICE, ...extra }); },
     voice(operation, body = {}, actor = EDITOR) { return this.admin('voice', { operation, ...body }, actor); },
     speech(body = {}, actor = EDITOR) { return this.admin('speech', { requestId:'synthetic-speech-request-1', text:QUESTION, questionId:'', kitId:'', ...body }, actor); },
+    prepare(body = {}, actor = EDITOR) { return route('handleAdmin', '/api/recruiting/interviews/voice-interview-1/video-speech-prepare', { kitId:FIXED_KIT.id, questionId:FIXED_QUESTION.id, ...body }, actor); },
     answer(turnId, body = {}, actor = EDITOR) { return this.admin('answer', { requestId:'synthetic-answer-request-1', turnId, candidateIdentity:CANDIDATE_IDENTITY, mimeType:'audio/webm', durationMs:1500, audioBase64:AUDIO.toString('base64'), ...body }, actor); }
   };
 }
@@ -393,7 +397,7 @@ test('voice provider uses bounded English speech and multipart English transcrip
   const speechBody = JSON.parse(calls[0].options.body);
   assert.equal(calls[0].url, 'https://mock-provider.invalid/v1/audio/speech');
   assert.equal(speechBody.model, 'gpt-4o-mini-tts'); assert.equal(speechBody.input, QUESTION);
-  assert.equal(speechBody.response_format, 'mp3'); assert.equal(speechBody.voice, 'coral');
+  assert.equal(speechBody.response_format, 'mp3'); assert.equal(speechBody.voice, 'onyx');
   const transcript = await provider.transcribe({ audio:AUDIO, mimeType:'audio/webm;codecs=opus' });
   assert.equal(transcript.text, 'A synthetic English answer.');
   assert.equal(calls[1].url, 'https://mock-provider.invalid/v1/audio/transcriptions');
@@ -472,4 +476,199 @@ test('provider bounds streamed and announced response bytes before they become u
   assert.equal(cancelled, true, 'Oversized streaming audio is cancelled promptly');
   const announced = providerFixture(async () => new Response('{}', { headers:{ 'content-type':'application/json', 'content-length':'100001' } }));
   await assert.rejects(announced.transcribe({ audio:AUDIO, mimeType:'audio/webm' }), error => error.code === 'INTERVIEW_VOICE_PROVIDER_INVALID');
+});
+
+test('fixed question preparation works before a candidate joins without consent, control, transcript or recording changes', async () => {
+  const env = fixture();
+  env.mutate(db => { db.recruitingVideoInvites[0].status = 'active'; });
+  const before = clone(env.db), result = ok(await env.prepare());
+  assert.equal(result.mimeType, 'audio/mpeg'); assert.equal(result.voiceName, 'onyx');
+  assert.match(result.audioKey, /^[a-f0-9]{64}:[a-f0-9]{64}$/);
+  assert.ok(result.audioBase64);
+  assert.equal(env.calls.speech.length, 1);
+  assert.equal(env.calls.speech[0].text, FIXED_QUESTION.en, 'Only the server-owned English question is synthesized');
+  assert.equal(env.calls.transcribe.length + env.calls.translate.length, 0);
+  assert.deepEqual(env.db, before, 'Warming public question audio cannot grant consent, claim control or save candidate evidence');
+  const again = ok(await env.prepare());
+  assert.equal(again.audioKey, result.audioKey); assert.equal(again.audioBase64, result.audioBase64);
+  assert.equal(env.calls.speech.length, 1, 'Warm audio is reused without another provider request');
+});
+
+test('preparation rejects arbitrary material, unknown questions, public sessions and unauthorized actors', async () => {
+  const env = fixture();
+  for (const body of [{ text:'Private candidate material must not be cached.' }, { questionId:'not-a-question' }, { kitId:'not-a-kit' }, { participantSessionId:SESSION_A }, { questionId:'', kitId:'' }]) {
+    error(await env.prepare(body), 400);
+  }
+  for (const actor of [VIEWER, { id:'edit-only', permissions:['recruitingEdit'] }, null]) error(await env.prepare({}, actor), 403);
+  error(await env.public('speech-prepare', { kitId:FIXED_KIT.id, questionId:FIXED_QUESTION.id }), 404);
+  assert.equal(env.calls.speech.length, 0); assert.equal(env.writes.length, 0);
+});
+
+test('simultaneous canonical preparations share provider work and provider failure remains retryable', async () => {
+  const pending = deferred(), started = deferred(); let attempt = 0;
+  const env = fixture({ speech:async () => { attempt++; started.resolve(); return pending.promise; } });
+  const first = env.prepare(); await providerStarted(first, started); const second = env.prepare();
+  await Promise.resolve(); await Promise.resolve();
+  assert.equal(env.calls.speech.length, 1);
+  pending.resolve({ audioBase64:Buffer.from('COALESCED_ONYX_QUESTION').toString('base64'), mimeType:'audio/mpeg' });
+  const [left, right] = await Promise.all([first, second]);
+  assert.equal(ok(left).audioKey, ok(right).audioKey); assert.equal(attempt, 1);
+  let fail = true;
+  const failing = fixture({ speech:async () => { if (fail) throw new Error('Synthetic private upstream detail'); return { audioBase64:Buffer.from('RETRY_QUESTION').toString('base64'), mimeType:'audio/mpeg' }; } });
+  const failed = await failing.prepare(); assert.ok(failed.status >= 400);
+  assert.equal(failed.body.audioBase64, undefined); assert.doesNotMatch(JSON.stringify(failed.body), /private upstream detail/);
+  fail = false; ok(await failing.prepare()); assert.equal(failing.calls.speech.length, 2);
+});
+
+test('prepared playback requires fresh consent and control and returns a fresh turn without resynthesizing or transferring bytes', async () => {
+  const env = fixture(), warm = ok(await env.prepare());
+  const body = { text:FIXED_QUESTION.en, kitId:FIXED_KIT.id, questionId:FIXED_QUESTION.id, preparedAudioKey:warm.audioKey };
+  error(await env.speech(body), 409, 'INTERVIEW_VOICE_CONTROLLER_REQUIRED');
+  ok(await env.voice('claim'));
+  error(await env.speech(body), 409, 'INTERVIEW_VOICE_CONSENT_REQUIRED');
+  ok(await env.consent());
+  const ready = ok(await env.speech(body));
+  assert.equal(ready.audioPrepared, true); assert.equal(ready.audioKey, warm.audioKey);
+  assert.equal(ready.audioBase64, undefined); assert.equal(ready.voice.currentTurn.phase, 'ready');
+  assert.equal(env.calls.speech.length, 1);
+  assert.equal(env.db.recruitingInterviews[0].aiInterview.transcript.length, 0, 'A prepared turn is not yet spoken evidence');
+  const second = ok(await env.speech({ ...body, requestId:'synthetic-prepared-next-request' }));
+  assert.notEqual(second.voice.currentTurn.id, ready.voice.currentTurn.id); assert.equal(second.audioBase64, undefined);
+  ok(await env.consent(false));
+  error(await env.speech({ ...body, requestId:'synthetic-prepared-revoked-request' }), 409, 'INTERVIEW_VOICE_CONSENT_REQUIRED');
+  assert.equal(env.calls.transcribe.length, 0);
+});
+
+test('prepared keys cannot substitute another question or freeform text, and a stale valid key falls back to correct audio', async () => {
+  const env = fixture(), warm = ok(await env.prepare()); ok(await env.consent()); ok(await env.voice('claim'));
+  const secondQuestion = FIXED_KIT.questions[1];
+  const different = ok(await env.speech({ requestId:'synthetic-different-fixed', text:secondQuestion.en, questionId:secondQuestion.id, kitId:FIXED_KIT.id, preparedAudioKey:warm.audioKey }));
+  assert.notEqual(different.audioPrepared, true); assert.ok(different.audioBase64);
+  assert.notEqual(different.audioKey, warm.audioKey);
+  assert.equal(different.voice.currentTurn.questionText, secondQuestion.en);
+  const mismatch = await env.speech({ requestId:'synthetic-mismatch-fixed', text:'This is private and not the canonical question.', questionId:FIXED_QUESTION.id, kitId:FIXED_KIT.id, preparedAudioKey:warm.audioKey });
+  assert.ok(mismatch.status >= 400, 'A canonical question ID cannot launder arbitrary content into the generic cache');
+  for (const preparedAudioKey of ['', 'incorrect-cache-key', 'a'.repeat(128), `${'a'.repeat(64)}:${'g'.repeat(64)}`]) {
+    error(await env.speech({ requestId:`synthetic-invalid-key-${preparedAudioKey.length}`, text:FIXED_QUESTION.en, questionId:FIXED_QUESTION.id, kitId:FIXED_KIT.id, preparedAudioKey }), 400);
+  }
+  const stale = ok(await env.speech({ requestId:'synthetic-stale-cache-key', text:FIXED_QUESTION.en, questionId:FIXED_QUESTION.id, kitId:FIXED_KIT.id, preparedAudioKey:`${'0'.repeat(64)}:${'1'.repeat(64)}` }));
+  assert.notEqual(stale.audioPrepared, true); assert.equal(stale.audioKey, warm.audioKey); assert.equal(stale.audioBase64, warm.audioBase64);
+  assert.ok(!JSON.stringify(env.writes).includes(warm.audioBase64), 'Generic audio is not stored alongside candidate DB records');
+});
+
+test('cached preparation cannot bypass disabled configuration or stale permission and invite checks', async () => {
+  let configured = true;
+  const env = fixture({ configured:() => configured }); ok(await env.prepare());
+  configured = false; error(await env.prepare(), 503); assert.equal(env.calls.speech.length, 1);
+  const configGate = deferred(), configStarted = deferred(); let pendingConfigured = true;
+  const configurationChanged = fixture({ configured:() => pendingConfigured, speech:async () => { configStarted.resolve(); return configGate.promise; } });
+  const configWork = configurationChanged.prepare(); await providerStarted(configWork, configStarted); pendingConfigured = false;
+  configGate.resolve({ audioBase64:Buffer.from('LATE_DISABLED_CONFIG_AUDIO').toString('base64'), mimeType:'audio/mpeg' });
+  const configResult = await configWork; error(configResult, 503); assert.equal(configResult.body.audioBase64, undefined);
+  for (const change of [
+    env => env.mutate(db => { db.users = [{ ...EDITOR, permissions:[] }]; }),
+    env => env.mutate(db => { db.recruitingVideoInvites[0].status = 'revoked'; }),
+    env => env.mutate(db => { db.recruitingInterviews[0].status = 'completed'; })
+  ]) {
+    const pending = deferred(), started = deferred();
+    const pendingEnv = fixture({ speech:async () => { started.resolve(); return pending.promise; } });
+    const work = pendingEnv.prepare(); await providerStarted(work, started); change(pendingEnv);
+    pending.resolve({ audioBase64:Buffer.from('LATE_FIXED_QUESTION').toString('base64'), mimeType:'audio/mpeg' });
+    const response = await work; assert.ok(response.status >= 400); assert.equal(response.body.audioBase64, undefined);
+    assert.equal(pendingEnv.writes.length, 0);
+  }
+});
+
+test('speech cache bounds simultaneous generation, coalesces equal questions and evicts older entries', async () => {
+  const { createRecruitingSpeechCache } = require('../lib/recruiting-speech-cache');
+  let active = 0, peak = 0;
+  const calls = [], gates = new Map();
+  const cache = createRecruitingSpeechCache({ maxEntries:2, concurrency:2, generate:async ({ text }) => {
+    calls.push(text); active++; peak = Math.max(peak, active);
+    const gate = deferred(); gates.set(text, gate); await gate.promise; active--;
+    return { audioBase64:Buffer.from(`SYNTHETIC_FIXED_AUDIO:${text}`).toString('base64'), mimeType:'audio/mpeg' };
+  } });
+  const a = cache.prepare('Question A?'), aDuplicate = cache.prepare('Question A?'), b = cache.prepare('Question B?'), c = cache.prepare('Question C?');
+  for (let i = 0; i < 20; i++) await Promise.resolve();
+  assert.equal(calls.length, 2); assert.equal(peak, 2); assert.equal(calls.filter(text => text === 'Question A?').length, 1);
+  gates.get('Question A?').resolve(); const [left, right] = await Promise.all([a, aDuplicate]); assert.equal(left.audioKey, right.audioKey);
+  for (let i = 0; i < 20; i++) await Promise.resolve();
+  assert.equal(calls.length, 3); assert.equal(peak, 2);
+  gates.get('Question B?').resolve(); await b; gates.get('Question C?').resolve(); await c;
+  const again = cache.prepare('Question A?');
+  for (let i = 0; i < 20; i++) await Promise.resolve();
+  assert.equal(calls.filter(text => text === 'Question A?').length, 2, 'Oldest item is regenerated once the entry bound evicts it');
+  gates.get('Question A?').resolve(); await again;
+});
+
+test('speech cache enforces a finite queue and generation budget rather than spawning unlimited provider work', async () => {
+  const { createRecruitingSpeechCache } = require('../lib/recruiting-speech-cache');
+  const gate = deferred(); let calls = 0;
+  const cache = createRecruitingSpeechCache({ concurrency:1, maxQueue:1, maxGenerationsPerMinute:2, generate:async ({ text }) => {
+    calls++; await gate.promise; return { audioBase64:Buffer.from(`SYNTHETIC:${text}`).toString('base64'), mimeType:'audio/mpeg' };
+  } });
+  const first = cache.prepare('Bounded question one?');
+  for (let i = 0; i < 20; i++) await Promise.resolve();
+  const second = cache.prepare('Bounded question two?');
+  await assert.rejects(cache.prepare('Bounded question three?'), error => error.statusCode === 429);
+  assert.equal(calls, 1); gate.resolve(); await Promise.all([first, second]);
+  assert.equal(calls, 2);
+  await assert.rejects(cache.prepare('A fourth unique question?'), error => error.statusCode === 429);
+  assert.equal(calls, 2);
+  await cache.prepare('Bounded question one?'); assert.equal(calls, 2, 'A warm read does not consume the generation budget');
+});
+
+test('queued speech preparations expire and do not synthesize later after the caller has timed out', async t => {
+  t.mock.timers.enable({ apis:['setTimeout'] });
+  const { createRecruitingSpeechCache } = require('../lib/recruiting-speech-cache');
+  const gate = deferred(), calls = [];
+  const cache = createRecruitingSpeechCache({ concurrency:1, maxQueue:2, maxQueueWaitMs:50, generate:async ({ text }) => {
+    calls.push(text); await gate.promise; return { audioBase64:Buffer.from('BOUNDED_QUEUE_AUDIO').toString('base64'), mimeType:'audio/mpeg' };
+  } });
+  const first = cache.prepare('Already generating?');
+  for (let i = 0; i < 20; i++) await Promise.resolve();
+  const queued = cache.prepare('Should expire before generation?');
+  const expectation = assert.rejects(queued, error => error.code === 'INTERVIEW_VOICE_PROVIDER_TIMEOUT' && error.statusCode === 504);
+  for (let i = 0; i < 20; i++) await Promise.resolve();
+  t.mock.timers.tick(51); await expectation; gate.resolve(); await first;
+  assert.deepEqual(calls, ['Already generating?']);
+});
+
+test('durable generic question cache survives a new instance and rejects corrupt or mismatched files', async () => {
+  const fs = require('node:fs/promises'), os = require('node:os'), path = require('node:path');
+  const { createRecruitingSpeechCache, cacheKeyFor } = require('../lib/recruiting-speech-cache');
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'quad-synthetic-speech-cache-'));
+  let calls = 0;
+  const generate = async ({ text }) => { calls++; return { audioBase64:Buffer.from(`SYNTHETIC_ONYX:${text}`).toString('base64'), mimeType:'audio/mpeg' }; };
+  try {
+    const first = await createRecruitingSpeechCache({ cacheDir:directory, generate }).prepare(FIXED_QUESTION.en);
+    const second = await createRecruitingSpeechCache({ cacheDir:directory, generate }).prepare(FIXED_QUESTION.en);
+    assert.deepEqual(second, first); assert.equal(calls, 1);
+    const names = await fs.readdir(directory); assert.deepEqual(names, [`${cacheKeyFor(FIXED_QUESTION.en)}.json`]);
+    const filename = path.join(directory, names[0]);
+    const saved = JSON.parse(await fs.readFile(filename, 'utf8'));
+    assert.ok(!Object.hasOwn(saved, 'text')); assert.ok(!Object.hasOwn(saved, 'apiKey'));
+    assert.match(saved.audioKey, /^[a-f0-9]{64}:[a-f0-9]{64}$/);
+    await fs.writeFile(filename, JSON.stringify({ ...saved, audioKey:`${'a'.repeat(64)}:${'b'.repeat(64)}` }));
+    const replaced = await createRecruitingSpeechCache({ cacheDir:directory, generate }).prepare(FIXED_QUESTION.en);
+    assert.equal(replaced.audioKey, first.audioKey); assert.equal(calls, 2, 'Invalid content checksum is never returned as cached audio');
+    await fs.writeFile(filename, '{not-json');
+    await createRecruitingSpeechCache({ cacheDir:directory, generate }).prepare(FIXED_QUESTION.en);
+    assert.equal(calls, 3);
+  } finally { await fs.rm(directory, { recursive:true, force:true }); }
+});
+
+test('explicit follow-ups preserve question association but never read or poison canonical audio caches', async () => {
+  const env = fixture(), warm = ok(await env.prepare()); ok(await env.consent()); ok(await env.voice('claim'));
+  const body = { requestId:'synthetic-linked-followup', text:'What evidence supports that result?', kitId:FIXED_KIT.id, questionId:FIXED_QUESTION.id, followup:true };
+  const answer = ok(await env.speech(body));
+  assert.ok(answer.audioBase64); assert.equal(answer.audioPrepared, undefined);
+  assert.equal(answer.voice.currentTurn.questionText, body.text); assert.equal(answer.voice.currentTurn.questionId, FIXED_QUESTION.id);
+  assert.equal(env.calls.speech.length, 2);
+  error(await env.speech({ ...body, requestId:'synthetic-followup-key-forged', preparedAudioKey:warm.audioKey }), 400);
+  error(await env.speech({ ...body, followup:false }), 400);
+  const repeatedCanonical = ok(await env.speech({ ...body, requestId:'synthetic-canonical-as-followup', text:FIXED_QUESTION.en }));
+  assert.ok(repeatedCanonical.audioBase64); assert.equal(repeatedCanonical.audioPrepared, undefined);
+  assert.equal(env.calls.speech.length, 3, 'Even identical words marked as a follow-up do not read the fixed bank cache');
+  const stillWarm = ok(await env.prepare()); assert.equal(stillWarm.audioKey, warm.audioKey); assert.equal(env.calls.speech.length, 3);
 });

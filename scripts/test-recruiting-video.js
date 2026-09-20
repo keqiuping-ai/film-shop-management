@@ -197,6 +197,69 @@ test('candidate public responses never expose internal interviewer user IDs, pri
   });
 });
 
+test('candidate joins with an explicit versioned AI choice, while legacy and video-only joins never silently grant it', async () => {
+  await withConfiguredVideo(async () => {
+    for (const [extra, expected] of [
+      [{ voiceConsent:true, voiceNoticeVersion:'2026-09-19-voice-v1' }, true],
+      [{ voiceConsent:false, voiceNoticeVersion:'2026-09-19-voice-v1' }, false],
+      [{}, false]
+    ]) {
+      const env = fixture(undefined, { snapshotReads:true });
+      const created = await env.call('handleAdmin', videoPath('invite'));
+      const raw = new URL(created.body.joinUrl).searchParams.get('invite');
+      const response = await env.call('handlePublic', `/api/public/recruiting-video/invite/${raw}/exchange`, 'POST', { consent:true, ...extra });
+      assert.equal(response.status, 200, JSON.stringify(response.body));
+      const invitation = env.db.recruitingVideoInvites[0];
+      assert.equal(invitation.status, 'joined');
+      assert.equal(invitation.voiceConsent?.consent === true, expected);
+      if (expected) {
+        assert.equal(invitation.voiceConsent.noticeVersion, '2026-09-19-voice-v1');
+        assert.ok(Date.parse(invitation.voiceConsent.updatedAt));
+      }
+      assert.equal(env.db.recruitingInterviews[0].aiInterview?.voice?.recording === true, false);
+      assert.equal((env.db.recruitingInterviews[0].aiInterview?.transcript || []).length, 0);
+      const state = await env.call('handlePublic', '/api/public/recruiting-video/voice-state', 'POST', { interviewId:'interview-1', sessionSecret:response.body.sessionSecret });
+      assert.equal(state.status, 200); assert.equal(state.body.voice.consent, expected);
+    }
+  });
+});
+
+test('outdated or malformed AI consent at join fails without consuming the invitation', async () => {
+  await withConfiguredVideo(async () => {
+    for (const body of [
+      { voiceConsent:true },
+      { voiceConsent:true, voiceNoticeVersion:'outdated-notice' },
+      { voiceConsent:'true', voiceNoticeVersion:'2026-09-19-voice-v1' }
+    ]) {
+      const env = fixture(undefined, { snapshotReads:true });
+      const created = await env.call('handleAdmin', videoPath('invite'));
+      const raw = new URL(created.body.joinUrl).searchParams.get('invite');
+      const before = JSON.stringify(env.db);
+      const response = await env.call('handlePublic', `/api/public/recruiting-video/invite/${raw}/exchange`, 'POST', { consent:true, ...body });
+      assert.equal(response.status, 400, JSON.stringify(response.body));
+      assert.equal(JSON.stringify(env.db), before, 'Invalid disclosure cannot consume a one-time link or fabricate consent');
+    }
+  });
+});
+
+test('reconnect never regrants withdrawn AI consent, even if an old page posts affirmative join fields', async () => {
+  await withConfiguredVideo(async () => {
+    const env = fixture(undefined, { snapshotReads:true });
+    const created = await env.call('handleAdmin', videoPath('invite'));
+    const raw = new URL(created.body.joinUrl).searchParams.get('invite');
+    const joined = await env.call('handlePublic', `/api/public/recruiting-video/invite/${raw}/exchange`, 'POST', { consent:true, voiceConsent:true, voiceNoticeVersion:'2026-09-19-voice-v1' });
+    assert.equal(joined.status, 200);
+    const body = { interviewId:'interview-1', sessionSecret:joined.body.sessionSecret };
+    const revoked = await env.call('handlePublic', '/api/public/recruiting-video/voice-consent', 'POST', { ...body, consent:false, noticeVersion:'2026-09-19-voice-v1' });
+    assert.equal(revoked.status, 200);
+    const rejoin = await env.call('handlePublic', '/api/public/recruiting-video/session', 'POST', { ...body, consent:true, voiceConsent:true, voiceNoticeVersion:'2026-09-19-voice-v1' });
+    assert.ok([200, 400].includes(rejoin.status));
+    assert.equal(env.db.recruitingVideoInvites[0].voiceConsent.consent, false);
+    const state = await env.call('handlePublic', '/api/public/recruiting-video/voice-state', 'POST', body);
+    assert.equal(state.status, 200); assert.equal(state.body.voice.consent, false); assert.equal(state.body.voice.recording, false);
+  });
+});
+
 test('awaiting AI analysis preserves transcript evidence written by another interviewer meanwhile', async () => {
   let finishAnalysis, started;
   const analysisStarted = new Promise(resolve => { started = resolve; });
@@ -328,17 +391,18 @@ test('disconnect and failed joins stop local media and detach every participant 
   assert.match(script, /if \(room === joiningRoom\) callback\(\.\.\.args\)/);
   assert.match(script, /stopLocalTracks\(joiningRoom\);\s*if \(!joiningRoom \|\| room === joiningRoom\) await disconnectLocal\(\)/);
   assert.match(script, /if \(room !== activeRoom\) \{ stopLocalTracks\(activeRoom\); return; \}/);
-  assert.match(script, /window\.addEventListener\('pagehide', \(\) => \{ void voiceUi\?\.disconnect\(\); stopTranscript\(\); stopLocalTracks\(room\); room\?\.disconnect\(true\); \}\)/);
+  assert.match(script, /window\.addEventListener\('pagehide', \(\) => \{ voiceUi\?\.dispose\(\); stopTranscript\(\); stopLocalTracks\(room\); room\?\.disconnect\(true\); \}\)/);
 });
 
 test('fresh candidate invitation replaces stale stored session while reconnect keeps the active session', async () => {
   const script = fs.readFileSync(require.resolve('../public/recruiting-interview.js'), 'utf8');
-  const helper = script.slice(script.indexOf('async function tokenForJoin()'), script.indexOf('async function join()'));
-  assert.match(helper, /^async function tokenForJoin\(\)/);
+  const helper = script.slice(script.indexOf('async function tokenForJoin('), script.indexOf('async function join('));
+  assert.match(helper, /^async function tokenForJoin\(voiceConsent\)/);
   function context(status, memorySecret = '', invite = 'synthetic-new-invite') {
     const calls = [], stored = new Map([['quadInterview.synthetic-interview', JSON.stringify({ sessionSecret:'synthetic-old-session' })]]);
     const value = vm.createContext({
       invite, info:{ interviewId:'synthetic-interview', status }, sessionSecret:memorySecret,
+      window:{ QuadInterviewVoice:{ NOTICE_VERSION:'2026-09-19-voice-v1' } },
       localStorage:{ getItem:key => stored.get(key) || null, setItem:(key, text) => stored.set(key, text) },
       request:async (url, options) => {
         calls.push({ url, body:JSON.parse(options.body) });
@@ -350,13 +414,21 @@ test('fresh candidate invitation replaces stale stored session while reconnect k
     return { value, calls, stored };
   }
   const fresh = context('active');
-  await fresh.value.tokenForJoin();
+  await fresh.value.tokenForJoin(true);
   assert.equal(fresh.calls[0].url, '/api/public/recruiting-video/invite/synthetic-new-invite/exchange');
   assert.equal(fresh.calls[0].body.consent, true);
+  assert.equal(fresh.calls[0].body.voiceConsent, true);
+  assert.equal(fresh.calls[0].body.voiceNoticeVersion, '2026-09-19-voice-v1');
   assert.equal(JSON.parse(fresh.stored.get('quadInterview.synthetic-interview')).sessionSecret, 'synthetic-new-session');
   await fresh.value.tokenForJoin();
   assert.equal(fresh.calls[1].url, '/api/public/recruiting-video/session');
   assert.equal(fresh.calls[1].body.sessionSecret, 'synthetic-new-session', 'Same-page reconnect uses the newly exchanged session');
+  assert.equal(Object.hasOwn(fresh.calls[1].body, 'voiceConsent'), false, 'Rejoining must not repost an affirmative consent choice');
+
+  const videoOnly = context('active'); await videoOnly.value.tokenForJoin(false);
+  assert.equal(videoOnly.calls[0].body.voiceConsent, false);
+  const unspecified = context('active'); await unspecified.value.tokenForJoin();
+  assert.equal(unspecified.calls[0].body.voiceConsent, false, 'Default/no explicit choice does not enable recording');
 
   const joined = context('joined');
   await joined.value.tokenForJoin();

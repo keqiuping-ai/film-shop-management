@@ -6,10 +6,10 @@
   <meta name="theme-color" content="#073d49">
   <title>QUAD FILM Video Interview</title>
   <link rel="icon" href="/quad-film-icon-192.png">
-  <link rel="stylesheet" href="/recruiting-interview.css?v=20260919-controlled-voice-1">
+  <link rel="stylesheet" href="/recruiting-interview.css?v=20260919-male-preload-1">
   <script defer src="/livekit-client.umd.js?v=1"></script>
-  <script defer src="/recruiting-interview-voice.js?v=20260919-controlled-voice-1"></script>
-  <script defer src="/recruiting-interview.js?v=20260919-controlled-voice-1"></script>
+  <script defer src="/recruiting-interview-voice.js?v=20260919-male-preload-1"></script>
+  <script defer src="/recruiting-interview.js?v=20260919-male-preload-1"></script>
 </head>
 <body>
   <main class="interview-shell">
@@ -25,9 +25,10 @@
       <h1 id="welcomeTitle" data-i18n="checkingLink">Checking your interview link…</h1>
       <p id="welcomeMeta" class="muted"></p>
       <div class="device-check"><span data-i18n="cameraCheck">🎥 Camera</span><span data-i18n="micCheck">🎙️ Microphone</span><span data-i18n="secureLink">🔒 One-time secure link</span></div>
-      <label id="consentRow" class="consent"><input id="consent" type="checkbox"><span data-i18n="consent">I agree to join this audio/video call. Joining does not enable answer recording or transcription; optional AI consent is separate.</span></label>
+      <div id="consentRow" class="join-consent"><strong id="joinConsentTitle">Choose how to join</strong><p id="joinConsentNotice"></p><p id="joinConsentSaved" class="panel-status" hidden></p></div>
       <p id="error" class="error" role="alert"></p>
-      <button id="join" class="primary" disabled data-i18n="join">Join video interview</button>
+      <div class="join-actions"><button id="join" class="primary" disabled>Agree & join AI-assisted interview</button><button id="joinVideoOnly" class="primary secondary" disabled>Join video only (no AI recording)</button></div>
+      <div id="welcomeVoicePrepare" class="voice-prepare" hidden><span id="welcomeVoicePrepareStatus" role="status" aria-live="polite"></span><button id="welcomeVoicePrepareRetry" class="small" type="button" hidden>Retry audio preparation</button></div>
       <p class="privacy" data-i18n="privacy">No account or app download is required. Your browser asks for camera and microphone access only after you consent. Video is not recorded by default.</p>
     </section>
     <section id="roomView" class="room" hidden>
@@ -65,10 +66,12 @@
           <p id="voiceState" class="voice-state" role="status" aria-live="polite"></p>
           <p id="voiceCurrentQuestion" class="voice-current-question"></p>
           <div id="voiceCandidateConsent" hidden>
-            <label class="consent voice-consent"><input id="voiceConsentCheck" type="checkbox"><span id="voiceConsentNotice"></span></label>
-            <div class="voice-actions"><button id="voiceConsentSave" class="small" type="button">Agree to optional AI voice & answer recording</button><button id="voiceConsentRevoke" class="small secondary" type="button">Revoke consent</button></div>
+            <p id="voiceConsentNotice" class="voice-consent"></p>
+            <div class="voice-actions"><button id="voiceConsentSave" class="small" type="button">Enable optional AI assistance & answer recording</button><button id="voiceConsentRevoke" class="small secondary" type="button">Revoke consent / keep video only</button></div>
           </div>
           <div id="voiceHostControls" hidden>
+            <div class="voice-prepare"><span id="voicePrepareStatus" role="status" aria-live="polite"></span><button id="voicePrepareRetry" class="small" type="button" hidden>Retry audio preparation</button></div>
+            <p id="voiceBlockingReason" class="panel-status" role="status"></p>
             <div class="voice-actions"><button id="voiceClaim" class="small" type="button">Take AI control</button><button id="voiceRelease" class="small secondary" type="button">Release control</button></div>
             <div class="voice-actions"><button id="voiceSpeak" class="small" type="button">Speak selected question in English</button><button id="voiceRepeat" class="small secondary" type="button">Repeat last question</button><button id="voiceStop" class="small danger" type="button">Stop AI voice</button></div>
             <details class="voice-followup"><summary>追问 / Follow-up</summary><label><span id="voiceFollowupLabel">Draft a follow-up</span><textarea id="voiceFollowupDraft" maxlength="2000" rows="3"></textarea></label><button id="voiceTranslateFollowup" class="small" type="button">Generate English preview</button><label><span id="voiceFollowupPreviewLabel">Review English preview</span><textarea id="voiceFollowupPreview" maxlength="2000" rows="3" spellcheck="true"></textarea></label><button id="voiceConfirmFollowup" class="small" type="button">Confirm & speak this English preview</button></details>

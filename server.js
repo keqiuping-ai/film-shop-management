@@ -6069,6 +6069,7 @@ const recruitingService = recruiting.createRecruitingService({
 const recruitingVideoService = createRecruitingVideoService({
   readDb, writeDb, readBody, send, canAccess, publicBaseUrl:requestPublicBaseUrl, notify:notifyDataChanged,
   readVoiceBody:async req => JSON.parse(await readRawBody(req, 6_000_000) || '{}'),
+  speechCacheDir:path.join(DATA_DIR, 'recruiting-speech-cache'),
   voiceProvider:createRecruitingVoiceProvider({ getConfig:() => ({ apiKey:openAiCustomerReplyKey(readDb()), baseUrl:process.env.OPENAI_API_BASE_URL || 'https://api.openai.com/v1' }) }),
   translateVoiceText:createRecruitingTranslator({
     getConfig:() => { const db = readDb(); return { apiKey:openAiCustomerReplyKey(db), model:customerAiReplyModel(db), baseUrl:process.env.OPENAI_API_BASE_URL || 'https://api.openai.com/v1' }; },

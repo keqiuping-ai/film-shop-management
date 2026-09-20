@@ -3,6 +3,16 @@
   const NOTICE_VERSION = '2026-09-19-voice-v1';
   const MAX_RECORDING_MS = 120_000;
   const MAX_AUDIO_BYTES = 4 * 1024 * 1024;
+  const MAX_PREPARED_BYTES = 24 * 1024 * 1024;
+  const MAX_PREPARED_ENTRIES = 48;
+  const PREPARE_TIMEOUT_MS = 40_000;
+  const consentCopy = {
+    en:{ title:'Choose how to join', notice:'Optional AI assistance: an AI-generated male voice asks English questions. If you agree, the interviewer may manually record selected microphone answers (up to 120 seconds each) and send them to OpenAI for transcription, Chinese translation and job-related evidence analysis. The resulting text is saved in your recruiting record; this app does not store raw audio. OpenAI processes audio under its service data policies. You can choose video only or revoke consent at any time. No recording starts automatically; a person makes the hiring decision.', join:'Agree & join AI-assisted interview', videoOnly:'Join video only (no AI recording)', enable:'Enable optional AI assistance & answer recording', revoke:'Revoke consent / keep video only', active:'Your AI choice is saved. Reconnecting does not start recording.', inactive:'Your video-only choice is saved. Reconnecting does not enable AI recording.' },
+    zh:{ title:'选择加入方式', notice:'可选 AI 辅助：AI 生成的男声用英语提问。同意后，面试官可手动录制选定的麦克风回答（每段最多 120 秒），发送给 OpenAI 转写、翻译为中文并整理岗位相关证据。生成的文字保存至招聘档案，本应用不存储原始音频；OpenAI 按其服务数据政策处理音频。你可选择仅视频通话，也可随时撤回同意。不会自动开始录音，招聘决定由人工作出。', join:'同意并加入 AI 辅助面试', videoOnly:'仅视频通话，不启用 AI 录音', enable:'同意启用 AI 辅助与回答录音', revoke:'撤回同意，保留视频通话', active:'已保留你的 AI 选择，重新连接不会开始录音。', inactive:'已保留仅视频通话的选择，重新连接不会启用 AI 录音。' },
+    es:{ title:'Elija cómo entrar', notice:'Asistencia de IA opcional: una voz masculina generada por IA hace preguntas en inglés. Si acepta, el entrevistador puede grabar manualmente respuestas seleccionadas de su micrófono (hasta 120 segundos cada una) y enviarlas a OpenAI para transcripción, traducción al chino y análisis de evidencia laboral. El texto se guarda en su expediente; esta aplicación no guarda el audio original. OpenAI procesa el audio según sus políticas de datos. Puede elegir solo video o retirar su consentimiento en cualquier momento. Ninguna grabación comienza automáticamente; una persona decide la contratación.', join:'Aceptar y entrar con asistencia de IA', videoOnly:'Entrar solo por video (sin grabación de IA)', enable:'Aceptar asistencia de IA y grabación de respuestas', revoke:'Retirar consentimiento / mantener solo video', active:'Su elección de IA está guardada. Reconectar no inicia grabaciones.', inactive:'Su elección de solo video está guardada. Reconectar no activa grabaciones de IA.' },
+    pt:{ title:'Escolha como entrar', notice:'Assistência opcional de IA: uma voz masculina gerada por IA faz perguntas em inglês. Se concordar, o entrevistador poderá gravar manualmente respostas selecionadas do seu microfone (até 120 segundos cada) e enviá-las à OpenAI para transcrição, tradução para chinês e análise de evidências profissionais. O texto é salvo no seu registro; este aplicativo não armazena áudio bruto. A OpenAI processa o áudio conforme suas políticas de dados. Você pode escolher apenas vídeo ou retirar o consentimento a qualquer momento. Nenhuma gravação começa automaticamente; uma pessoa decide a contratação.', join:'Concordar e entrar com assistência de IA', videoOnly:'Entrar apenas por vídeo (sem gravação de IA)', enable:'Concordar com IA e gravação de respostas', revoke:'Retirar consentimento / manter apenas vídeo', active:'Sua escolha de IA foi salva. Reconectar não inicia gravações.', inactive:'Sua escolha de apenas vídeo foi salva. Reconectar não ativa gravações de IA.' }
+  };
+  const consentText = (language, key) => (consentCopy[language] || consentCopy.en)[key] || '';
   const english = text => Boolean(String(text || '').trim()) && !/[\u3400-\u9fff\u3040-\u30ff\uac00-\ud7af]/u.test(String(text));
   const newId = () => `voice-${crypto.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`}`;
   const cancelled = () => Object.assign(new Error('Operation cancelled.'), { name:'AbortError' });
@@ -11,13 +21,78 @@
     const $ = bridge.$;
     const ctx = () => bridge.getContext();
     const zh = () => ctx().language === 'zh';
-    const text = (en, cn) => zh() ? cn : en;
+    const text = (en, cn, es, pt) => ({ zh:cn, es:es || en, pt:pt || en })[ctx().language] || en;
     let voice = null, activeRoom = null, generation = 0, requestSequence = 0, appliedSequence = 0;
     let healthy = false, polling = false, timer = null, leaseTimer = null, busy = false;
     let playback = null, capture = null, captureStarting = false, pendingAnswer = null, uploadPromise = null;
     let lastQuestion = null, previewSource = '', previewQuestion = '', previewRevision = 0, followupBusy = false;
     const requests = new Set();
     let statusMessage = '', statusError = false;
+    const prepared = new Map(), preparationJobs = new Map(), preparationFailures = new Map();
+    let preparationQueue = [], desiredQuestions = [], preparationStopped = false, preparedBytes = 0;
+    const preparationWaiters = new Set();
+
+    function audioIdentity(question) { return JSON.stringify([question?.kitId || '', question?.questionId || '', String(question?.text || '').trim()]); }
+    function cachedQuestion(question) {
+      if (question?.followup) return null;
+      const key = audioIdentity(question), item = prepared.get(key);
+      if (item) { prepared.delete(key); prepared.set(key, item); }
+      return item || null;
+    }
+    function cacheQuestion(question, data) {
+      if (question?.followup || !question?.kitId || !question?.questionId || !data.audioKey || data.voiceName !== 'onyx' || data.mimeType !== 'audio/mpeg' || typeof data.audioBase64 !== 'string' || !data.audioBase64.length || data.audioBase64.length > 8 * 1024 * 1024) return false;
+      const key = audioIdentity(question), size = data.audioBase64.length;
+      if (prepared.has(key)) preparedBytes -= prepared.get(key).size;
+      prepared.delete(key);
+      while (prepared.size && (prepared.size >= MAX_PREPARED_ENTRIES || preparedBytes + size > MAX_PREPARED_BYTES)) { const oldest = prepared.keys().next().value; preparedBytes -= prepared.get(oldest).size; prepared.delete(oldest); }
+      prepared.set(key, { audioBase64:data.audioBase64, audioKey:data.audioKey, mimeType:data.mimeType, size }); preparedBytes += size;
+      return true;
+    }
+    function renderPreparation() {
+      const host = writable(), total = desiredQuestions.length;
+      const ready = desiredQuestions.filter(question => prepared.has(audioIdentity(question))).length;
+      const failed = desiredQuestions.filter(question => preparationFailures.has(audioIdentity(question))).length;
+      const loading = desiredQuestions.some(question => preparationJobs.has(audioIdentity(question))) || preparationQueue.length > 0;
+      let status = host && total ? `${text('English male voice', '英语男声', 'Voz masculina en inglés', 'Voz masculina em inglês')} · ${text('Prepared', '已准备', 'Preparadas', 'Preparadas')} ${ready}/${total}` : '';
+      if (status && loading) status += text(' · preparing in the background; no playback', ' · 后台准备中，不会自动播音', ' · preparando en segundo plano; sin reproducción', ' · preparando em segundo plano; sem reprodução');
+      else if (status && failed) status += text(' · some audio needs retry', ' · 部分语音准备失败，可重试', ' · algunos audios requieren reintento', ' · alguns áudios precisam de nova tentativa');
+      for (const id of ['voicePrepareStatus', 'welcomeVoicePrepareStatus']) if ($(id)) $(id).textContent = status;
+      if ($('welcomeVoicePrepare')) $('welcomeVoicePrepare').hidden = !host || !total;
+      for (const id of ['voicePrepareRetry', 'welcomeVoicePrepareRetry']) if ($(id)) { $(id).hidden = !host || !failed; $(id).disabled = !host || loading; $(id).textContent = text('Retry audio preparation', '重试准备语音', 'Reintentar preparar audio', 'Tentar preparar áudio novamente'); }
+    }
+    function settlePreparationWaiters() {
+      if (preparationQueue.length || preparationJobs.size) return;
+      for (const resolve of preparationWaiters) resolve(); preparationWaiters.clear();
+    }
+    function pumpPreparation() {
+      if (preparationStopped || !writable() || !ctx().info?.interviewId) { preparationQueue = []; settlePreparationWaiters(); return; }
+      while (preparationJobs.size < 2 && preparationQueue.length) {
+        const question = preparationQueue.shift(), key = audioIdentity(question);
+        if (prepared.has(key) || preparationJobs.has(key) || preparationFailures.has(key)) continue;
+        const controller = new AbortController();
+        preparationJobs.set(key, controller);
+        const interviewId = ctx().info.interviewId;
+        let timeout;
+        const deadline = new Promise((_, reject) => { timeout = setTimeout(() => { controller.abort(); reject(new Error(text('Audio preparation timed out.', '语音准备超时。', 'La preparación de audio agotó el tiempo.', 'O preparo do áudio excedeu o tempo.'))); }, PREPARE_TIMEOUT_MS); });
+        void Promise.race([bridge.request(`/api/recruiting/interviews/${encodeURIComponent(interviewId)}/video-speech-prepare`, { method:'POST', auth:true, body:JSON.stringify({ kitId:question.kitId, questionId:question.questionId }), signal:controller.signal }), deadline])
+          .then(data => { if (preparationStopped || controller.signal.aborted || ctx().info?.interviewId !== interviewId || !writable()) return; if (!cacheQuestion(question, data)) throw new Error('Prepared audio was not valid.'); preparationFailures.delete(key); })
+          .catch(cause => { if (!preparationStopped) preparationFailures.set(key, cause.message || 'Audio preparation failed.'); })
+          .finally(() => { clearTimeout(timeout); preparationJobs.delete(key); pumpPreparation(); renderPreparation(); settlePreparationWaiters(); });
+      }
+      renderPreparation(); settlePreparationWaiters();
+    }
+    function prepareQuestions() {
+      if (preparationStopped || !writable() || !ctx().info?.interviewId) return Promise.resolve();
+      const seen = new Set();
+      desiredQuestions = (bridge.getSelectedKitQuestions?.() || []).filter(question => { const key = audioIdentity(question); if (!question?.kitId || !question?.questionId || !english(question.text) || seen.has(key)) return false; seen.add(key); return true; }).slice(0, MAX_PREPARED_ENTRIES);
+      const selected = audioIdentity(bridge.getSelectedQuestion());
+      desiredQuestions.sort((a, b) => Number(audioIdentity(b) === selected) - Number(audioIdentity(a) === selected));
+      preparationQueue = desiredQuestions.filter(question => { const key = audioIdentity(question); return !prepared.has(key) && !preparationJobs.has(key) && !preparationFailures.has(key); });
+      const complete = new Promise(resolve => preparationWaiters.add(resolve));
+      pumpPreparation(); return complete;
+    }
+    function retryPreparation() { for (const question of desiredQuestions) preparationFailures.delete(audioIdentity(question)); return prepareQuestions(); }
+    function dispose() { preparationStopped = true; preparationQueue = []; for (const controller of preparationJobs.values()) controller.abort(); for (const resolve of preparationWaiters) resolve(); preparationWaiters.clear(); prepared.clear(); preparedBytes = 0; void disconnect(); }
 
     function ownsControl() {
       const c = ctx();
@@ -61,14 +136,14 @@
       const c = ctx(), host = Boolean(c.recruiter), owner = ownsControl(), ready = allowed();
       $('voiceHostControls').hidden = !host;
       $('voiceCandidateConsent').hidden = host;
-      $('voiceDisclosure').textContent = text('AI-generated English voice may be played into this call. Recording is optional and starts only after the candidate agrees and an interviewer clicks Start.', '本通话可播放 AI 生成的英文语音。录音是可选的，只有候选人明确同意且面试官点击开始后才启动。');
-      $('voiceTitle').textContent = text('Controlled AI voice', '受控 AI 语音');
-      $('voiceConsentNotice').textContent = text('Optional: I agree to hear clearly identified AI-generated English questions and to let the interviewer record my microphone answers (up to 120 seconds each), send that audio to OpenAI for transcription, Chinese translation and job-related evidence analysis, and save the resulting text in my recruiting record. This app does not store raw audio. OpenAI processes audio under its service data policies. I can revoke consent without leaving the call; unsaved recordings are then discarded. A person makes the hiring decision.', '可选：我同意听取明确标识的 AI 英文问题，并允许面试官录制我的麦克风回答（每段最多 120 秒），将音频发送给 OpenAI 转写、翻译为中文及整理岗位相关证据，并将生成的文字保存至招聘档案。本应用不存储原始音频；OpenAI 按其服务数据政策处理音频。我可以不退出通话而撤回同意，届时未保存录音会被丢弃。招聘决定由人工作出。');
-      $('voiceConsentSave').textContent = text('Agree to optional AI voice & answer recording', '同意可选 AI 语音与回答录音');
-      $('voiceConsentRevoke').textContent = text('Revoke consent', '撤回同意');
-      $('voiceConsentSave').disabled = !c.connected || !$('voiceConsentCheck').checked || busy || voice?.consent === true;
+      $('voiceDisclosure').textContent = text('AI-generated male voice asks English questions in the call. Recording stays optional and manual; preparing question audio does not record anyone.', 'AI 男声在通话中用英语提问。录音始终可选且手动开启；提前准备题目音频不会录制任何人。', 'Una voz masculina generada por IA hace preguntas en inglés en la llamada. La grabación es opcional y manual; preparar preguntas no graba a nadie.', 'Uma voz masculina gerada por IA faz perguntas em inglês na chamada. A gravação é opcional e manual; preparar perguntas não grava ninguém.');
+      $('voiceTitle').textContent = text('AI English male voice', 'AI 英语男声', 'Voz masculina de IA en inglés', 'Voz masculina de IA em inglês');
+      $('voiceConsentNotice').textContent = consentText(c.language, 'notice');
+      $('voiceConsentSave').textContent = consentText(c.language, 'enable');
+      $('voiceConsentRevoke').textContent = consentText(c.language, 'revoke');
+      $('voiceConsentSave').hidden = voice?.consent === true;
+      $('voiceConsentSave').disabled = !c.connected || busy || voice?.consent === true;
       $('voiceConsentRevoke').disabled = !c.connected || busy || voice?.consent !== true;
-      $('voiceConsentCheck').disabled = voice?.consent === true || busy;
       $('voiceClaim').textContent = text('Take AI control', '取得 AI 控制权');
       $('voiceRelease').textContent = text('Release control', '释放控制权');
       $('voiceSpeak').textContent = text('Speak selected question in English', '英文播报当前题目');
@@ -79,6 +154,19 @@
       const blocked = busy || Boolean(playback || capture || captureStarting || pendingAnswer || uploadPromise);
       $('voiceSpeak').disabled = !ready || blocked || !english(bridge.getSelectedQuestion()?.text);
       if ($('voiceQuestionSpeak')) { $('voiceQuestionSpeak').disabled = $('voiceSpeak').disabled; $('voiceQuestionSpeak').textContent = text('Ask this question aloud in English (AI)', '让 AI 用英语提问'); }
+      let blocking = '';
+      if (!writable()) blocking = text('Read-only access cannot control AI.', '只读权限不能控制 AI。', 'El acceso de solo lectura no permite controlar la IA.', 'O acesso somente leitura não pode controlar a IA.');
+      else if (!c.connected) blocking = text('Join the call to play questions. Audio can prepare beforehand.', '加入通话后可播题，题目音频可提前准备。', 'Entre en la llamada para reproducir preguntas. El audio puede prepararse antes.', 'Entre na chamada para reproduzir perguntas. O áudio pode ser preparado antes.');
+      else if (!healthy) blocking = text('Checking room status. If the connection failed, reconnect before continuing.', '正在核实房间状态，连接失败时请重连。', 'Verificando la sala. Si falla la conexión, vuelva a conectarse.', 'Verificando a sala. Se a conexão falhar, reconecte.');
+      else if (!voice?.configured) blocking = text('AI voice is not configured.', 'AI 语音尚未配置。', 'La voz de IA no está configurada.', 'A voz de IA não está configurada.');
+      else if (!owner) blocking = text('Take AI control before speaking or recording.', '请先取得 AI 控制权，再播题或录音。', 'Tome el control de IA antes de hablar o grabar.', 'Assuma o controle de IA antes de falar ou gravar.');
+      else if (!activeRoom?.remoteParticipants.has(voice.candidateIdentity)) blocking = text('Waiting for the candidate to join.', '等待候选人加入通话。', 'Esperando a que entre el candidato.', 'Aguardando a entrada do candidato.');
+      else if (voice.consent !== true) blocking = text('Candidate chose video only or has not enabled optional AI. Continue manually, or let the candidate choose Enable AI in their page.', '候选人选择了仅视频，或尚未启用可选 AI。可继续人工面试；候选人也可在其页面自行启用 AI。', 'El candidato eligió solo video o no activó la IA. Continúe manualmente; el candidato puede activar la IA en su página.', 'O candidato escolheu apenas vídeo ou não ativou IA. Continue manualmente; o candidato pode ativar IA na própria página.');
+      else if (blocked) blocking = text('Finish or stop the current question / answer first.', '请先完成或停止当前提问／回答。', 'Primero termine o detenga la pregunta / respuesta actual.', 'Primeiro conclua ou pare a pergunta / resposta atual.');
+      else if (!english(bridge.getSelectedQuestion()?.text)) blocking = text('Select an English question first.', '请先选择一道英文题目。', 'Seleccione primero una pregunta en inglés.', 'Selecione primeiro uma pergunta em inglês.');
+      if ($('voiceBlockingReason')) $('voiceBlockingReason').textContent = host ? blocking : '';
+      if ($('voiceQuestionBlockingReason')) $('voiceQuestionBlockingReason').textContent = host ? blocking : '';
+      if ($('voiceQuestionSpeak')) $('voiceQuestionSpeak').title = blocking;
       $('voiceRepeat').disabled = !ready || blocked || !lastQuestion;
       $('voiceStop').disabled = !owner || (!playback && !busy && !orphanedTurn());
       $('voiceFollowupLabel').textContent = text('Draft a follow-up (Chinese or English)', '追问草稿（中文或英文）');
@@ -107,6 +195,7 @@
       $('voiceCurrentQuestion').textContent = currentTurn()?.questionText ? `${text('Current spoken question', '本次已播问题')}: ${currentTurn().questionText}` : '';
       $('voiceStatus').textContent = statusMessage;
       $('voiceStatus').classList.toggle('error', statusError);
+      renderPreparation();
     }
     function questionKey() { const q = bridge.getSelectedQuestion() || {}; return `${q.kitId || ''}:${q.questionId || ''}`; }
     async function poll() {
@@ -193,12 +282,15 @@
         // Resume during the user gesture, before waiting for synthesis or publish.
         item.context = new AudioContext(); await item.context.resume();
         if (!isCurrent(capturedRoom, version) || item.cancelled) throw cancelled();
-        message(text('Generating English AI audio…', '正在生成英文 AI 语音…'));
-        const data = await api('video-speech', { requestId:newId(), text:String(question.text).trim(), questionId:question.questionId || '', kitId:question.kitId || '' });
-        if (data.duplicate || !data.audioBase64) throw new Error(text('This request was already processed or produced no audio. Use Repeat for a new playback.', '此请求已处理或未返回音频。如需重新播报，请点击重读。'));
+        const cached = cachedQuestion(question);
+        message(cached ? text('Prepared male voice: connecting audio to the call…', '男声音频已准备，正在接入通话…', 'Voz masculina preparada: conectando el audio…', 'Voz masculina preparada: conectando o áudio…') : text('Preparing English male voice… first preparation may take longer.', '正在准备英语男声…首次生成可能需要等待。', 'Preparando la voz masculina en inglés… la primera vez puede tardar.', 'Preparando a voz masculina em inglês… a primeira vez pode demorar.'));
+        const data = await api('video-speech', { requestId:newId(), text:String(question.text).trim(), questionId:question.questionId || '', kitId:question.kitId || '', ...(question.followup ? { followup:true } : {}), ...(cached ? { preparedAudioKey:cached.audioKey } : {}) });
+        const audioBase64 = data.audioPrepared === true && cached?.audioKey === data.audioKey ? cached.audioBase64 : data.audioPrepared ? '' : data.audioBase64;
+        if (data.duplicate || !audioBase64) throw new Error(text('This request was already processed or produced no matching audio. Use Repeat for a new playback.', '此请求已处理或未返回匹配音频。如需重新播报，请点击重读。'));
+        if (data.audioBase64) cacheQuestion(question, data);
         await operation('status');
         if (!isCurrent(capturedRoom, version) || item.cancelled || !allowed() || currentTurn()?.id !== data.turnId || currentTurn()?.phase !== 'ready') throw cancelled();
-        const bytes = Uint8Array.from(atob(data.audioBase64), char => char.charCodeAt(0));
+        const bytes = Uint8Array.from(atob(audioBase64), char => char.charCodeAt(0));
         const audio = await item.context.decodeAudioData(bytes.buffer);
         if (!isCurrent(capturedRoom, version) || item.cancelled || !allowed()) throw cancelled();
         item.destination = item.context.createMediaStreamDestination();
@@ -240,7 +332,7 @@
     function invalidatePreview() {
       previewRevision += 1; previewSource = ''; previewQuestion = ''; $('voiceFollowupPreview').value = ''; render();
     }
-    function selectedQuestionChanged() { invalidatePreview(); render(); }
+    function selectedQuestionChanged() { invalidatePreview(); void prepareQuestions(); render(); }
     async function translateFollowup() {
       if (!allowed() || followupBusy || playback || capture || pendingAnswer || uploadPromise) return;
       const draft = $('voiceFollowupDraft').value, key = questionKey(), revision = ++previewRevision;
@@ -257,7 +349,7 @@
     }
     function confirmFollowup() {
       if (previewSource !== $('voiceFollowupDraft').value || previewQuestion !== questionKey() || !previewSource || !english($('voiceFollowupPreview').value)) return;
-      return speak({ ...bridge.getSelectedQuestion(), text:$('voiceFollowupPreview').value.trim() });
+      return speak({ ...bridge.getSelectedQuestion(), text:$('voiceFollowupPreview').value.trim(), followup:true });
     }
     function candidateMicrophone() {
       if (!activeRoom || !voice?.candidateIdentity) return null;
@@ -368,11 +460,10 @@
       message(text('In-memory audio discarded. Any text already saved remains in the record.', '内存中的音频已丢弃；此前已保存的文字仍保留在档案中。'));
     }
     async function setConsent(consent) {
-      if (ctx().recruiter || !ctx().connected || busy || (consent && !$('voiceConsentCheck').checked)) return;
+      if (ctx().recruiter || !ctx().connected || busy) return;
       busy = true; render();
       try {
         const data = await api('voice-consent', { consent:Boolean(consent), noticeVersion:NOTICE_VERSION }, { publicRoute:true });
-        if (!consent) $('voiceConsentCheck').checked = false;
         // This is only a wake-up hint. Peers always refetch authoritative consent.
         try { await activeRoom?.localParticipant.publishData(new TextEncoder().encode(JSON.stringify({ type:'voice-state-changed' })), { reliable:true }); } catch {}
         message(consent ? text('Optional consent saved. An interviewer must still start each recording.', '已保存可选同意；每段录音仍须面试官手动开始。') : text('Consent revoked. You remain in the call; no new answer recording is allowed.', '已撤回同意，你仍在通话中，不能再开始新的回答录音。'));
@@ -418,10 +509,10 @@
     bind('voiceTranslateFollowup', translateFollowup); bind('voiceConfirmFollowup', confirmFollowup);
     bind('voiceRecordStart', startRecording); bind('voiceRecordStop', stopRecording); bind('voiceRetryAnswer', retryAnswer); bind('voiceDiscardAnswer', discardAnswer);
     bind('voiceConsentSave', () => setConsent(true)); bind('voiceConsentRevoke', () => setConsent(false));
-    $('voiceConsentCheck').addEventListener('change', render);
+    for (const id of ['voicePrepareRetry', 'welcomeVoicePrepareRetry']) if ($(id)) bind(id, retryPreparation);
     $('voiceFollowupDraft').addEventListener('input', invalidatePreview); $('voiceFollowupPreview').addEventListener('input', render);
     render();
-    return Object.freeze({ connect, disconnect, suspend, sync, render, selectedQuestionChanged, receiveSignal, beforeAnalyze, claim, release, speakSelected, repeat, stop, translateFollowup, confirmFollowup, startRecording, stopRecording, retryAnswer, discardAnswer, setConsent });
+    return Object.freeze({ connect, disconnect, suspend, sync, render, selectedQuestionChanged, receiveSignal, beforeAnalyze, claim, release, speakSelected, repeat, stop, translateFollowup, confirmFollowup, startRecording, stopRecording, retryAnswer, discardAnswer, setConsent, prepareQuestions, retryPreparation, dispose });
   }
-  window.QuadInterviewVoice = Object.freeze({ create });
+  window.QuadInterviewVoice = Object.freeze({ create, consentText, NOTICE_VERSION });
 })();

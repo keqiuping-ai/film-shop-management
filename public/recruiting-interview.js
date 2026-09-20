@@ -27,10 +27,10 @@
     zh:{ title:'应聘者简历', position:'应聘岗位', location:'所在地', source:'来源', availability:'最早到岗', employment:'工作意愿', compensation:'薪酬匹配', experience:'工作经历', resources:'客户 / 经销商资源', resume:'简历正文', notes:'招聘备注', missing:'尚未录入简历正文。', attachment:'已附简历：{name}' }
   };
   const controlledVoiceCopy = {
-    en:{ consent:'I agree to join this audio/video call. Joining does not enable answer recording or transcription; optional AI consent is separate.', liveTranscript:'Saved answer text', transcriptOff:'Automatic transcription is off. Candidate consent and a manual recording action are required.', createSummary:'Stop recording & analyze (keep call open)' },
-    es:{ consent:'Acepto entrar en esta llamada de audio y video. Entrar no activa grabación ni transcripción; el consentimiento opcional de IA es independiente.', liveTranscript:'Respuestas guardadas', transcriptOff:'La transcripción automática está desactivada. Se requiere consentimiento del candidato y grabación manual.', createSummary:'Detener grabación y analizar (mantener llamada)' },
-    pt:{ consent:'Concordo em entrar nesta chamada de áudio e vídeo. Entrar não ativa gravação ou transcrição; o consentimento opcional de IA é separado.', liveTranscript:'Respostas salvas', transcriptOff:'A transcrição automática está desligada. É necessário consentimento do candidato e gravação manual.', createSummary:'Parar gravação e analisar (manter chamada)' },
-    zh:{ consent:'我同意加入音视频通话。进入房间不会开启回答录音或转写；可选的 AI 功能需要另外同意。', liveTranscript:'已保存的回答原文与中文译文', transcriptOff:'自动转写已关闭。需候选人另行同意，且由面试官手动开始录音。', createSummary:'停止录音并分析（不结束通话）' }
+    en:{ liveTranscript:'Saved answer text', transcriptOff:'Automatic transcription is off. Candidate consent and a manual recording action are required.', createSummary:'Stop recording & analyze (keep call open)' },
+    es:{ liveTranscript:'Respuestas guardadas', transcriptOff:'La transcripción automática está desactivada. Se requiere consentimiento del candidato y grabación manual.', createSummary:'Detener grabación y analizar (mantener llamada)' },
+    pt:{ liveTranscript:'Respostas salvas', transcriptOff:'A transcrição automática está desligada. É necessário consentimento do candidato e gravação manual.', createSummary:'Parar gravação e analisar (manter chamada)' },
+    zh:{ liveTranscript:'已保存的回答原文与中文译文', transcriptOff:'自动转写已关闭。需候选人明确同意，且由面试官手动开始录音。', createSummary:'停止录音并分析（不结束通话）' }
   };
   const backCopy = { en:'← Back to recruiting', es:'← Volver a contratación', pt:'← Voltar ao recrutamento', zh:'← 返回招聘中心' };
   const interviewerCopy = {
@@ -78,14 +78,25 @@
     document.title = `QUAD FILM · ${t('videoInterview')}`;
   }
   function error(message) { $('error').textContent = message || ''; $('roomError').textContent = message || ''; $('connectionBadge').textContent = t('connectionFailed'); $('connectionBadge').className = 'badge warn'; }
+  function renderJoinControls() {
+    const reconnecting = hasJoined || Boolean(sessionSecret) || info?.status === 'joined';
+    const consentText = key => window.QuadInterviewVoice?.consentText(language, key) || '';
+    $('consentRow').hidden = recruiter || roomEnded;
+    $('joinConsentTitle').textContent = consentText('title');
+    $('joinConsentNotice').textContent = consentText('notice');
+    $('joinConsentSaved').hidden = !reconnecting;
+    $('joinConsentSaved').textContent = consentText(info?.voiceConsent === true ? 'active' : 'inactive');
+    $('join').disabled = !info || joining || roomEnded;
+    $('join').textContent = joining ? t('connecting') : reconnecting ? t('reconnect') : recruiter ? t('recruiterJoin') : consentText('join');
+    $('join').hidden = roomEnded;
+    $('joinVideoOnly').hidden = recruiter || roomEnded || reconnecting;
+    $('joinVideoOnly').disabled = !info || joining || roomEnded;
+    $('joinVideoOnly').textContent = consentText('videoOnly');
+  }
   function renderReady() {
     $('welcomeTitle').textContent = recruiter ? t('recruiterWelcome', { name:info.candidateName }) : t('candidateWelcome', { name:info.candidateName });
     $('welcomeMeta').textContent = `${when(info.startsAt)} · ${t('minutes', { count:String(info.durationMinutes || 30) })}`;
-    $('consentRow').hidden = recruiter;
-    if (recruiter) $('consent').checked = true;
-    $('join').disabled = joining || roomEnded || (!recruiter && !$('consent').checked);
-    $('join').textContent = hasJoined ? t('reconnect') : recruiter ? t('recruiterJoin') : info.status === 'joined' ? t('reconnect') : t('join');
-    $('join').hidden = roomEnded;
+    renderJoinControls();
     if (roomEnded) { $('welcomeTitle').textContent = t('roomEnded'); $('welcomeMeta').textContent = t('safeToClose'); }
     $('connectionBadge').textContent = t(roomEnded ? 'roomEnded' : connected ? 'connected' : 'linkValid');
     $('connectionBadge').className = connected ? 'badge live' : 'badge';
@@ -205,17 +216,26 @@
         strong.append(strongTitle, document.createTextNode(question.strong));
         const speak = document.createElement('button'); speak.id = 'voiceQuestionSpeak'; speak.type = 'button'; speak.className = 'small question-speak';
         speak.textContent = language === 'zh' ? '让 AI 用英语提问' : 'Ask this question aloud in English (AI)'; speak.disabled = true;
+        speak.setAttribute('aria-describedby', 'voiceQuestionBlockingReason');
         speak.onclick = () => { void voiceUi?.speakSelected(); };
-        details.append(bilingual, focus, strong, speak); card.appendChild(details);
+        const speakAction = document.createElement('div'); speakAction.className = 'question-speak-action';
+        const speakReason = document.createElement('span'); speakReason.id = 'voiceQuestionBlockingReason'; speakReason.className = 'panel-status';
+        speakAction.append(speak, speakReason);
+        details.append(bilingual, focus, strong, speakAction); card.appendChild(details);
       }
       list.appendChild(card);
     });
     voiceUi?.render();
+    void voiceUi?.prepareQuestions();
   }
   function selectedQuestion() {
     const kit = info?.interviewKits?.find(item => item.id === selectedKitId);
     const question = kit?.questions?.find(item => item.id === selectedQuestionId);
     return question ? { text:question.en, questionId:question.id, kitId:kit.id } : null;
+  }
+  function selectedKitQuestions() {
+    const kit = info?.interviewKits?.find(item => item.id === selectedKitId);
+    return (kit?.questions || []).map(question => ({ text:question.en, questionId:question.id, kitId:kit.id }));
   }
   function displayValue(value) {
     if (typeof value === 'string' || typeof value === 'number') return String(value);
@@ -389,22 +409,25 @@
   function recruiterAccess() {
     return request(`/api/recruiting/interviews/${encodeURIComponent(interviewId)}/video-token`, { method:'POST', auth:true, body:JSON.stringify({ participantSessionId }) });
   }
-  async function tokenForJoin() {
+  async function tokenForJoin(voiceConsent) {
     if (!invite) return recruiterAccess();
     let stored = null;
     try { stored = JSON.parse(localStorage.getItem(`quadInterview.${info.interviewId}`) || 'null'); } catch {}
     if (sessionSecret || (info.status === 'joined' && stored?.sessionSecret)) { sessionSecret ||= stored.sessionSecret; return request('/api/public/recruiting-video/session', { method:'POST', body:JSON.stringify({ interviewId:info.interviewId, sessionSecret }) }); }
-    const data = await request(`/api/public/recruiting-video/invite/${encodeURIComponent(invite)}/exchange`, { method:'POST', body:JSON.stringify({ consent:true }) });
-    sessionSecret = data.sessionSecret; localStorage.setItem(`quadInterview.${data.interviewId}`, JSON.stringify({ sessionSecret, expiresAt:data.expiresAt })); return data;
+    const data = await request(`/api/public/recruiting-video/invite/${encodeURIComponent(invite)}/exchange`, { method:'POST', body:JSON.stringify({ consent:true, voiceConsent:voiceConsent === true, voiceNoticeVersion:window.QuadInterviewVoice.NOTICE_VERSION }) });
+    // The server choice is authoritative even if media permission or local storage fails next.
+    info = { ...info, ...data }; sessionSecret = data.sessionSecret;
+    try { localStorage.setItem(`quadInterview.${data.interviewId}`, JSON.stringify({ sessionSecret, expiresAt:data.expiresAt })); } catch {}
+    return data;
   }
-  async function join() {
-    if (!info || joining || leaving || ending || connected || roomEnded || (!$('consent').checked && invite)) return;
+  async function join(voiceConsent = false) {
+    if (!info || joining || leaving || ending || connected || roomEnded) return;
     if (!window.LivekitClient?.isBrowserSupported?.()) return error(t('unsupported'));
-    joining = true; $('join').disabled = true; $('join').textContent = t('connecting'); $('error').textContent = ''; $('roomError').textContent = '';
+    joining = true; renderJoinControls(); $('error').textContent = ''; $('roomError').textContent = '';
     let joiningRoom = null;
     try {
       await disconnectLocal();
-      const access = await tokenForJoin(); info = { ...info, ...access };
+      const access = await tokenForJoin(voiceConsent); info = { ...info, ...access };
       joiningRoom = new LivekitClient.Room({ adaptiveStream:true, dynacast:true, disconnectOnPageLeave:true }); room = joiningRoom;
       const on = (event, callback) => joiningRoom.on(event, (...args) => { if (room === joiningRoom) callback(...args); });
       on(LivekitClient.RoomEvent.TrackSubscribed, (track, publication, participant) => attachParticipantTrack(track, publication, participant));
@@ -432,7 +455,7 @@
       if (room !== joiningRoom) throw new Error(t('disconnected'));
       connected = true; hasJoined = true; micEnabled = true; cameraEnabled = true; syncParticipants(); updatePermissions();
       $('welcome').hidden = true; $('roomView').hidden = false; $('connectionBadge').textContent = t('connected'); $('connectionBadge').className = 'badge live'; renderTranscripts(access.aiState?.transcript || []); renderAnalysis(access.aiState?.analysis || null);
-      // Joining never starts recording or browser transcription. Consent is a separate action.
+      // The explicit join choice only saves permission. No recording starts on join.
       $('transcriptStatus').textContent = t('transcriptOff'); updateRoomAudio();
       await voiceUi?.connect();
     } catch (cause) {
@@ -440,7 +463,7 @@
       if (!joiningRoom || room === joiningRoom) await disconnectLocal();
       $('welcome').hidden = false; $('roomView').hidden = true; error(recruiter && [401, 403].includes(cause.status) ? t('signInRequired') : cause.message);
       $('join').disabled = roomEnded; $('join').hidden = roomEnded; $('join').textContent = t('retry');
-    } finally { joining = false; updatePermissions(); }
+    } finally { joining = false; renderJoinControls(); updatePermissions(); }
   }
   function receiveTranscript(payload, participant) {
     // Room data is not evidence or permission. Only wake up authoritative server polling.
@@ -478,8 +501,7 @@
   }
   function showDisconnected() {
     $('roomView').hidden = true; $('welcome').hidden = false;
-    $('consentRow').hidden = recruiter || roomEnded;
-    $('join').hidden = roomEnded; $('join').disabled = roomEnded || (!recruiter && !$('consent').checked); $('join').textContent = t('reconnect');
+    renderJoinControls();
     $('welcomeTitle').textContent = t(roomEnded ? 'roomEnded' : 'interviewEnded');
     $('welcomeMeta').textContent = t('safeToClose'); $('connectionBadge').textContent = t(roomEnded ? 'roomEnded' : 'interviewEnded'); $('connectionBadge').className = 'badge';
     if (roomEnded) { $('interviewerShare').hidden = true; if (invite && info?.interviewId) localStorage.removeItem(`quadInterview.${info.interviewId}`); }
@@ -527,8 +549,7 @@
   $('language').addEventListener('change', event => { language = event.target.value; applyLanguage(); });
   $('backToRecruiting').hidden = !recruiter;
   $('backToRecruiting').addEventListener('click', () => window.location.assign('/?page=recruiting'));
-  $('consent').addEventListener('change', () => { if (invite) $('join').disabled = !$('consent').checked || !info || joining || roomEnded; });
-  $('join').addEventListener('click', join); $('aiNext').addEventListener('click', () => analyze('next')); $('aiFinal').addEventListener('click', () => analyze('final'));
+  $('join').addEventListener('click', () => join(true)); $('joinVideoOnly').addEventListener('click', () => join(false)); $('aiNext').addEventListener('click', () => analyze('next')); $('aiFinal').addEventListener('click', () => analyze('final'));
   $('enableRoomAudio').addEventListener('click', enableRoomAudio);
   $('mic').addEventListener('click', () => toggleDevice('mic'));
   $('camera').addEventListener('click', () => toggleDevice('camera'));
@@ -536,11 +557,12 @@
   $('endRoom').addEventListener('click', endInterviewForEveryone);
   $('shareInterviewer').addEventListener('click', showInterviewerLink);
   $('copyInterviewerLink').addEventListener('click', copyInterviewerLink);
-  window.addEventListener('pagehide', () => { void voiceUi?.disconnect(); stopTranscript(); stopLocalTracks(room); room?.disconnect(true); });
+  window.addEventListener('pagehide', () => { voiceUi?.dispose(); stopTranscript(); stopLocalTracks(room); room?.disconnect(true); });
   voiceUi = window.QuadInterviewVoice?.create({ $, request,
     getContext:() => ({ recruiter, room, connected, info, sessionSecret, participantSessionId, language }),
     getSelectedQuestion:selectedQuestion,
-    onState:data => { if (!info || !recruiter) return; if (data.aiState) { info.aiState = data.aiState; renderTranscripts(data.aiState.transcript || []); renderAnalysis(data.aiState.analysis || null); } }
+    getSelectedKitQuestions:selectedKitQuestions,
+    onState:data => { if (!info) return; if (data.voice) info.voiceConsent = data.voice.consent === true; if (!recruiter) return; if (data.aiState) { info.aiState = data.aiState; renderTranscripts(data.aiState.transcript || []); renderAnalysis(data.aiState.analysis || null); } }
   });
   applyLanguage(); boot();
 })();

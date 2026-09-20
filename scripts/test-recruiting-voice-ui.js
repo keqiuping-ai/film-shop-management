@@ -13,7 +13,7 @@ function deferred() { let resolve, reject; const promise = new Promise((yes, no)
 async function flush() { for (let i = 0; i < 30; i++) await Promise.resolve(); }
 
 function harness(options = {}) {
-  const nodes = new Map(), calls = [], events = [], sources = [], recorders = [], timerCallbacks = new Map();
+  const nodes = new Map(), calls = [], events = [], sources = [], recorders = [], timerCallbacks = new Map(), timerDelays = new Map();
   let timerId = 0, serial = 0, answerCount = 0, publishGate = null, speechGate = null;
   const $ = id => {
     if (!nodes.has(id)) nodes.set(id, { hidden:false, disabled:false, checked:false, textContent:'', value:'', listeners:{}, classList:{ toggle() {} }, addEventListener(name, callback) { this.listeners[name] = callback; } });
@@ -29,6 +29,8 @@ function harness(options = {}) {
   const context = { recruiter:true, room, connected:true, info:{ interviewId:'ui-interview', canWriteTranscript:true }, sessionSecret:'synthetic-candidate-secret', participantSessionId:'synthetic-ui-session', language:'en' };
   const state = { configured:true, consent:options.consent !== false, candidateIdentity:candidate.identity, controllerIdentity:'', controllerName:'', leaseExpiresAt:'', currentTurn:null, recording:false };
   let question = { text:turnText, questionId:'question-one', kitId:'synthetic-kit' };
+  let kitQuestions = options.questions || [question];
+  const audioKeyFor = body => `${Buffer.from(body.kitId + ':' + body.questionId).toString('hex').padEnd(64, '0').slice(0, 64)}:${'b'.repeat(64)}`;
   class AudioContext {
     constructor() { this.destination = {}; events.push('audio-context-created'); }
     async resume() { events.push('audio-context-resumed'); }
@@ -56,9 +58,13 @@ function harness(options = {}) {
         const phase = { speaking:'speaking', waiting:'waiting', interrupted:'interrupted', recording:'recording', 'stop-recording':'captured' }[body.operation];
         state.currentTurn.phase = phase; state.recording = phase === 'recording';
       }
+    } else if (url.endsWith('/video-speech-prepare')) {
+      if (options.prepare) return options.prepare(body, requestOptions);
+      return { mimeType:'audio/mpeg', audioBase64:Buffer.from('SYNTHETIC-AI-AUDIO').toString('base64'), audioKey:audioKeyFor(body), voiceName:'onyx' };
     } else if (url.endsWith('/video-speech')) {
       if (speechGate) await speechGate.promise;
       state.currentTurn = { id:`turn-${++serial}`, phase:'ready', questionText:body.text, questionId:body.questionId, kitId:body.kitId };
+      if (body.preparedAudioKey) return { voice:clone(state), turnId:state.currentTurn.id, mimeType:'audio/mpeg', audioPrepared:true, audioKey:options.wrongPreparedKey ? `${'c'.repeat(64)}:${'d'.repeat(64)}` : body.preparedAudioKey };
       return { voice:clone(state), turnId:state.currentTurn.id, mimeType:'audio/mpeg', audioBase64:Buffer.from('SYNTHETIC-AI-AUDIO').toString('base64') };
     } else if (url.endsWith('/video-followup')) return { text:'What evidence supports that result?' };
     else if (url.endsWith('/video-answer')) {
@@ -74,14 +80,15 @@ function harness(options = {}) {
     window:{ AudioContext, MediaRecorder, MediaStream, LivekitClient }, LivekitClient, MediaRecorder, MediaStream,
     crypto:{ randomUUID:() => `synthetic-request-${++serial}` }, Date, Math, Promise, Uint8Array, Blob, AbortController,
     TextEncoder, TextDecoder, atob:value => Buffer.from(value, 'base64').toString('binary'), btoa:value => Buffer.from(value, 'binary').toString('base64'),
-    setTimeout(callback) { const id = ++timerId; timerCallbacks.set(id, callback); return id; }, clearTimeout:id => timerCallbacks.delete(id),
+    setTimeout(callback, ms) { const id = ++timerId; timerCallbacks.set(id, callback); timerDelays.set(id, ms); return id; }, clearTimeout:id => { timerCallbacks.delete(id); timerDelays.delete(id); },
     setInterval(callback) { const id = ++timerId; timerCallbacks.set(id, callback); return id; }, clearInterval:id => timerCallbacks.delete(id)
   };
   vm.runInNewContext(source, sandbox, { filename:'recruiting-interview-voice.js' });
-  const ui = sandbox.window.QuadInterviewVoice.create({ $, request, getContext:() => context, getSelectedQuestion:() => question, onState() {} });
-  return { ui, $, calls, events, sources, recorders, state, context, room, candidatePublication, candidate, timerCallbacks,
+  const ui = sandbox.window.QuadInterviewVoice.create({ $, request, getContext:() => context, getSelectedQuestion:() => question, getSelectedKitQuestions:() => kitQuestions, onState() {} });
+  return { ui, $, calls, events, sources, recorders, state, context, room, candidatePublication, candidate, timerCallbacks, timerDelays,
     setPublishGate(value) { publishGate = value; }, setSpeechGate(value) { speechGate = value; },
     question(value) { question = value; ui.selectedQuestionChanged(); },
+    questions(value) { kitQuestions = value; },
     async ready() { await ui.connect(); await ui.claim(); },
     async waiting() { await this.ready(); await ui.speakSelected(); sources.at(-1).onended(); await flush(); assert.equal(state.currentTurn.phase, 'waiting'); }
   };
@@ -90,7 +97,7 @@ function harness(options = {}) {
 test('joining, claiming control and consent refresh do not automatically speak or record', async () => {
   const env = harness(); await env.ready(); env.ui.sync();
   assert.equal(env.sources.length, 0); assert.equal(env.recorders.length, 0);
-  assert.equal(env.calls.filter(call => /video-speech|video-answer/.test(call.url)).length, 0);
+  assert.equal(env.calls.filter(call => /\/(?:video-speech|video-answer)$/.test(call.url)).length, 0);
   env.context.info.canWriteTranscript = false; env.ui.render(); await env.ui.speakSelected(); await env.ui.startRecording();
   assert.equal(env.sources.length, 0); assert.equal(env.recorders.length, 0);
 });
@@ -194,4 +201,130 @@ test('discarding memory audio after English text was saved does not claim that n
   await assert.rejects(env.ui.stopRecording(), /pending/i); await env.ui.discardAnswer();
   assert.doesNotMatch(env.$('voiceStatus').textContent, /Nothing was added|没有新增档案记录/i);
   assert.equal(env.$('voiceRetryAnswer').hidden, true);
+});
+
+test('question audio prepares before connection or consent without publishing, speaking or recording', async () => {
+  const env = harness({ consent:false }); env.context.connected = false;
+  await env.ui.prepareQuestions();
+  const calls = env.calls.filter(call => call.url.endsWith('/video-speech-prepare'));
+  assert.equal(calls.length, 1); assert.deepEqual(calls[0].body, { kitId:'synthetic-kit', questionId:'question-one' });
+  assert.equal(env.events.length, 0); assert.equal(env.sources.length, 0); assert.equal(env.recorders.length, 0);
+  assert.match(env.$('welcomeVoicePrepareStatus').textContent, /1\/1/);
+  env.context.connected = true; await env.ready(); await env.ui.speakSelected(); await env.ui.startRecording();
+  assert.ok(!env.calls.some(call => call.url.endsWith('/video-speech') || call.url.endsWith('/video-answer')));
+  assert.equal(env.sources.length, 0); assert.equal(env.recorders.length, 0);
+  await env.ui.disconnect();
+  const candidate = harness(); candidate.context.recruiter = false; await candidate.ui.prepareQuestions();
+  assert.equal(candidate.calls.length, 0, 'Candidate/public page never warms provider audio');
+});
+
+test('kit preloading keeps at most two requests in flight, prioritizes selected question and does not autoplay', async () => {
+  const questions = Array.from({ length:6 }, (_, i) => ({ kitId:'synthetic-kit', questionId:i === 5 ? 'question-one' : `question-${i + 2}`, text:i === 5 ? turnText : `Synthetic question ${i + 2}?` }));
+  const gates = new Map(); let active = 0, peak = 0;
+  const env = harness({ questions, prepare:async body => {
+    active++; peak = Math.max(peak, active); const gate = deferred(); gates.set(body.questionId, gate);
+    await gate.promise; active--;
+    return { mimeType:'audio/mpeg', audioKey:`${'a'.repeat(64)}:${'b'.repeat(64)}`, voiceName:'onyx', audioBase64:Buffer.from('SYNTHETIC_PRELOAD_AUDIO').toString('base64') };
+  } });
+  const work = env.ui.prepareQuestions(); await flush();
+  assert.equal(gates.size, 2); assert.equal(env.calls[0].body.questionId, 'question-one');
+  for (let round = 0; round < 6; round++) { for (const gate of gates.values()) gate.resolve(); await flush(); }
+  await work; assert.equal(gates.size, 6); assert.equal(peak, 2); assert.equal(active, 0);
+  assert.equal(env.sources.length + env.recorders.length, 0); assert.ok(!env.events.includes('publish-start'));
+  const count = env.calls.length; await env.ui.prepareQuestions(); assert.equal(env.calls.length, count, 'Switching back to the same warmed kit does not repeat network preparation');
+  assert.match(env.$('voicePrepareStatus').textContent, /6\/6/);
+});
+
+test('clicking a warmed question uses cached bytes but still authorizes a new turn before room playback', async () => {
+  const env = harness(); await env.ui.prepareQuestions(); await env.ready();
+  assert.equal(env.sources.length, 0); await env.ui.speakSelected();
+  const prepareCall = env.calls.find(call => call.url.endsWith('/video-speech-prepare'));
+  const speechCall = env.calls.find(call => call.url.endsWith('/video-speech'));
+  assert.ok(prepareCall); assert.match(speechCall.body.preparedAudioKey, /^[a-f0-9]{64}:[a-f0-9]{64}$/);
+  assert.equal(env.sources.length, 1); assert.ok(env.events.indexOf('publish-complete') < env.events.indexOf('source-start'));
+  assert.ok(env.calls.some(call => call.body.operation === 'speaking'));
+  assert.equal(env.calls.filter(call => call.url.endsWith('/video-speech-prepare')).length, 1);
+  await env.ui.stop();
+  env.state.consent = false; env.ui.receiveSignal(new TextEncoder().encode(JSON.stringify({ type:'voice-state-changed' })), env.candidate); await flush();
+  const count = env.calls.filter(call => call.url.endsWith('/video-speech')).length; await env.ui.speakSelected();
+  assert.equal(env.calls.filter(call => call.url.endsWith('/video-speech')).length, count, 'A warmed local file cannot override withdrawn consent');
+  await env.ui.disconnect();
+});
+
+test('a mismatched prepared audio acknowledgement cannot play the wrong cached voice', async () => {
+  const env = harness({ wrongPreparedKey:true }); await env.ui.prepareQuestions(); await env.ready(); await env.ui.speakSelected();
+  assert.equal(env.sources.length, 0); assert.ok(!env.events.includes('publish-start'));
+  assert.match(env.$('voiceStatus').textContent, /matching audio|匹配音频/i);
+  assert.equal(env.state.currentTurn.phase, 'interrupted'); await env.ui.disconnect();
+});
+
+test('preparation failure is visible and only an explicit retry restarts failed fixed questions', async () => {
+  let fail = true;
+  const env = harness({ prepare:async () => {
+    if (fail) throw new Error('Synthetic preparation failed');
+    return { mimeType:'audio/mpeg', audioKey:`${'a'.repeat(64)}:${'b'.repeat(64)}`, voiceName:'onyx', audioBase64:Buffer.from('RETRIED_FIXED_AUDIO').toString('base64') };
+  } });
+  await env.ui.prepareQuestions();
+  assert.equal(env.$('voicePrepareRetry').hidden, false); assert.match(env.$('voicePrepareStatus').textContent, /retry|失败/i);
+  await env.ui.prepareQuestions(); assert.equal(env.calls.length, 1, 'Routine render or kit refresh cannot retry a failed provider request indefinitely');
+  fail = false; await env.ui.retryPreparation(); assert.equal(env.calls.length, 2);
+  assert.equal(env.$('voicePrepareRetry').hidden, true); assert.match(env.$('voicePrepareStatus').textContent, /1\/1/);
+  assert.equal(env.events.length, 0);
+});
+
+test('a stalled preload has a finite deadline, rejects late results and can be retried without automatic audio', async () => {
+  const gate = deferred(); let signal;
+  const env = harness({ prepare:async (body, options) => { signal = options.signal; return gate.promise; } });
+  const work = env.ui.prepareQuestions(); await flush();
+  const deadline = Array.from(env.timerDelays).find(([, ms]) => ms === 40000);
+  assert.ok(deadline, 'Preparation has an explicit bounded timeout');
+  env.timerCallbacks.get(deadline[0])(); await flush(); await work;
+  assert.equal(signal.aborted, true); assert.equal(env.$('voicePrepareRetry').hidden, false);
+  gate.resolve({ mimeType:'audio/mpeg', audioKey:`${'a'.repeat(64)}:${'b'.repeat(64)}`, voiceName:'onyx', audioBase64:Buffer.from('LATE_AUDIO_MUST_NOT_PLAY').toString('base64') }); await flush();
+  assert.match(env.$('voicePrepareStatus').textContent, /0\/1/); assert.equal(env.events.length, 0);
+});
+
+test('closing or losing write permission during preload cannot cache late audio or start media', async () => {
+  for (const change of [env => env.ui.dispose(), env => { env.context.info.canWriteTranscript = false; }]) {
+    const gate = deferred(); const env = harness({ prepare:async () => gate.promise });
+    const work = env.ui.prepareQuestions(); await flush(); change(env);
+    gate.resolve({ mimeType:'audio/mpeg', audioKey:`${'a'.repeat(64)}:${'b'.repeat(64)}`, voiceName:'onyx', audioBase64:Buffer.from('STALE_AUDIO').toString('base64') });
+    await work; await flush();
+    assert.equal(env.sources.length + env.recorders.length, 0); assert.ok(!env.events.includes('publish-start'));
+    assert.doesNotMatch(env.$('voicePrepareStatus').textContent, /1\/1/);
+  }
+});
+
+test('existing video-only candidate can opt in with one explicit button, without checkbox or automatic capture', async () => {
+  const env = harness({ consent:false }); env.context.recruiter = false;
+  await env.ui.connect();
+  assert.equal(env.$('voiceConsentSave').disabled, false);
+  await env.ui.setConsent(true);
+  const saved = env.calls.find(call => call.url.endsWith('/voice-consent'));
+  assert.equal(saved.body.consent, true); assert.equal(saved.body.noticeVersion, '2026-09-19-voice-v1');
+  assert.equal(env.state.consent, true); assert.equal(env.$('voiceConsentSave').hidden, true);
+  assert.equal(env.sources.length + env.recorders.length, 0);
+  await env.ui.setConsent(false); assert.equal(env.state.consent, false);
+  assert.doesNotMatch(source, /voiceConsentCheck/);
+  const html = fs.readFileSync(require.resolve('../public/recruiting-interview.html'), 'utf8');
+  assert.doesNotMatch(html, /id="(?:voiceConsentCheck|consent)"/);
+  assert.match(html, /id="joinVideoOnly"/); assert.match(html, /id="joinConsentNotice"/);
+  await env.ui.disconnect();
+});
+
+test('reviewed follow-ups and repeats stay explicit, linked to their question, and outside the fixed question cache', async () => {
+  const env = harness(); await env.ui.prepareQuestions(); await env.ready();
+  env.$('voiceFollowupDraft').value = '请具体说明证据。'; await env.ui.translateFollowup();
+  assert.equal(env.sources.length, 0); await env.ui.confirmFollowup();
+  let spoken = env.calls.filter(call => call.url.endsWith('/video-speech'));
+  assert.equal(spoken.length, 1); assert.equal(spoken[0].body.followup, true);
+  assert.equal(spoken[0].body.questionId, 'question-one'); assert.equal(spoken[0].body.kitId, 'synthetic-kit');
+  assert.equal(spoken[0].body.text, 'What evidence supports that result?');
+  assert.equal(Object.hasOwn(spoken[0].body, 'preparedAudioKey'), false);
+  env.sources.at(-1).onended(); await flush(); await env.ui.repeat();
+  spoken = env.calls.filter(call => call.url.endsWith('/video-speech'));
+  assert.equal(spoken.length, 2); assert.equal(spoken[1].body.followup, true);
+  assert.equal(Object.hasOwn(spoken[1].body, 'preparedAudioKey'), false);
+  assert.equal(env.calls.filter(call => call.url.endsWith('/video-speech-prepare')).length, 1);
+  await env.ui.disconnect();
 });

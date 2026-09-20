@@ -33,6 +33,16 @@ body { margin: 0; min-height: 100vh; background: radial-gradient(circle at top l
 .primary, .controls button { border: 0; border-radius: 13px; padding: 14px 18px; font-size: 16px; font-weight: 800; cursor: pointer; }
 .primary { width: 100%; margin-top: 18px; background: #087d8f; color: #fff; }
 .primary:disabled { opacity: .45; cursor: not-allowed; }
+.join-consent { padding:14px; border:1px solid #cbdcde; border-radius:12px; background:#f6fbfb; font-size:13px; line-height:1.5; }
+.join-consent p { margin:7px 0 0; }
+.join-actions { display:grid; gap:9px; margin-top:14px; }
+.join-actions .primary { margin:0; font-size:14px; }
+.join-actions .secondary { background:white; border:1px solid #87b5bd; color:#075f6d; }
+.voice-prepare { display:flex; align-items:center; flex-wrap:wrap; gap:8px; margin:8px 0; color:#47646b; font-size:12px; line-height:1.45; }
+.voice-prepare:has(span:empty) { display:none; }
+.voice-prepare .small { font-size:12px; padding:5px 8px; }
+.question-speak-action { display:flex; flex-direction:column; justify-content:center; gap:6px; min-width:0; }
+.question-speak-action .panel-status:empty { display:none; }
 .privacy { font-size: 12px; color: #6d7f84; line-height: 1.5; }
 .error { color: #b42318; min-height: 20px; }
 .share-panel { margin: 6px 0 16px; padding: 14px; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 8px 12px; }
@@ -121,8 +131,7 @@ body { margin: 0; min-height: 100vh; background: radial-gradient(circle at top l
 .voice-actions .small.secondary { width:auto; margin:0; }
 .voice-actions .small.danger { color:#a52c22; border-color:#dfb1aa; background:#fff4f1; }
 .voice-panel button:disabled { cursor:not-allowed; }
-.voice-consent { padding:10px; font-size:12px; align-items:flex-start; }
-.voice-consent input { margin:1px 0 0; }
+.voice-consent { margin:8px 0; font-size:12px; line-height:1.5; }
 .voice-followup { margin:10px 0; padding:10px; border:1px solid #cbdcde; border-radius:9px; background:white; }
 .voice-followup summary { color:#075f6d; font-size:13px; font-weight:700; cursor:pointer; }
 .voice-followup label { display:grid; gap:5px; margin:10px 0; font-size:12px; color:#47646b; }
