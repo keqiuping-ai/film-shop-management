@@ -11736,21 +11736,32 @@ async function api(req, res) {
       next.cost = db[collection][idx].cost || 0;
     }
     if (collection === 'products') {
-      next.sku = String(next.sku || '').trim().slice(0, 160);
+      const previousProduct = db[collection][idx];
+      const previousSku = String(previousProduct.sku || '');
+      const requestedSku = String(next.sku || '').trim().slice(0, 160);
+      const requestedName = String(next.name || '').trim().slice(0, 240);
+      const requestedModel = String(next.model || requestedSku).trim().slice(0, 160);
+      if (user.role !== 'owner' && (
+        requestedName !== String(previousProduct.name || '').trim()
+        || requestedModel !== String(previousProduct.model || previousSku).trim()
+      )) {
+        return send(res, 403, { error: '只有老板账号可以修改库存商品的名称和型号' });
+      }
+      next.sku = requestedSku;
       if (!next.sku) return send(res, 400, { error: '商品 SKU 不能为空' });
-      next.name = String(next.name || '').trim().slice(0, 240);
+      next.name = requestedName;
       if (!next.name) return send(res, 400, { error: '商品名称不能为空' });
-      next.model = String(next.model || next.sku).trim().slice(0, 160);
+      next.model = requestedModel;
       next.specification = String(next.specification || '').trim().slice(0, 240);
       next.portalVisible = next.portalVisible !== false;
       next.portalPurchasable = next.portalPurchasable !== false;
       if ((db.products || []).some(row => row.id !== recordId && String(row.sku || '').toLowerCase() === next.sku.toLowerCase())) {
         return send(res, 400, { error: `商品 SKU ${next.sku} 已存在，不能重复使用` });
       }
-      const previousSku = String(db[collection][idx].sku || '');
-      if (next.sku !== previousSku && productSkuReferences(db, previousSku).length) {
+      if (next.sku !== previousSku.trim() && productSkuReferences(db, previousSku).length) {
         return send(res, 400, { error: `商品 ${previousSku} 已有订单或库存流水，SKU 不能改名。请新建 SKU 并保留原档案。` });
       }
+      if (next.sku === previousSku.trim()) next.sku = previousSku;
       if (Number(next.qty || 0) !== Number(db[collection][idx].qty || 0)) {
         return send(res, 400, { error: '库存数量不能在商品档案中直接修改。请使用入库、订单出库或盘点调整流水。' });
       }

@@ -9542,8 +9542,10 @@ function openPriceRule(id) {
 
 function openProduct(id) {
   const item = state.products.find(x => x.id === id) || { sku: '', model: '', specification: '', name: '', category: '窗膜卷料', unit: 'm', cost: 0, price: 0, wholesale: 0, minPrice: 0, qty: 0, reorder: 0, location: '', portalVisible: true, portalPurchasable: true, portalDescription: '', portalImageUrl: '', portalVideoUrl: '', portalNewProduct: false };
+  const isEdit = Boolean(id);
+  const ownerCanEditIdentity = user?.role === 'owner';
   const fields = [
-    ['sku','SKU','text',item.sku], ['model',lang === 'zh' ? '型号' : 'Model','text',item.model || item.sku], ['specification',lang === 'zh' ? '规格' : 'Specification','text',item.specification || ''], ['name',t('productName'),'text',item.name], ['category',t('category'),'select',item.category, productCategories()],
+    ['sku','SKU',isEdit ? 'readonly' : 'text',item.sku], ['model',lang === 'zh' ? '型号（仅老板可修改）' : 'Model (owner only)',isEdit && !ownerCanEditIdentity ? 'readonly' : 'text',item.model || item.sku], ['specification',lang === 'zh' ? '规格' : 'Specification','text',item.specification || ''], ['name',lang === 'zh' ? '名称（仅老板可修改）' : 'Name (owner only)',isEdit && !ownerCanEditIdentity ? 'readonly' : 'text',item.name], ['category',t('category'),'select',item.category, productCategories()],
     ['unit',lang === 'zh' ? '单位' : 'Unit','text',item.unit], ...(canSeeFinance() ? [['cost',`${t('cost')} $`,'number',item.cost]] : []), ['price',`${t('retailPrice')} $`,'number',item.price],
     ['wholesale',`${t('wholesalePrice')} $`,'number',item.wholesale],
     ['minPrice',`${t('minSalePrice')} $`,'number',item.minPrice || item.wholesale || 0],
