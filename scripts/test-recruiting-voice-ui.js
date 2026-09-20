@@ -295,7 +295,7 @@ test('closing or losing write permission during preload cannot cache late audio 
   }
 });
 
-test('existing video-only candidate can opt in with one explicit button, without checkbox or automatic capture', async () => {
+test('legacy manual voice consent never claims the new automatic-recording notice or starts capture', async () => {
   const env = harness({ consent:false }); env.context.recruiter = false;
   await env.ui.connect();
   assert.equal(env.$('voiceConsentSave').disabled, false);

@@ -27,10 +27,10 @@
     zh:{ title:'应聘者简历', position:'应聘岗位', location:'所在地', source:'来源', availability:'最早到岗', employment:'工作意愿', compensation:'薪酬匹配', experience:'工作经历', resources:'客户 / 经销商资源', resume:'简历正文', notes:'招聘备注', missing:'尚未录入简历正文。', attachment:'已附简历：{name}' }
   };
   const controlledVoiceCopy = {
-    en:{ liveTranscript:'Saved answer text', transcriptOff:'Automatic transcription is off. Candidate consent and a manual recording action are required.', createSummary:'Stop recording & analyze (keep call open)' },
-    es:{ liveTranscript:'Respuestas guardadas', transcriptOff:'La transcripción automática está desactivada. Se requiere consentimiento del candidato y grabación manual.', createSummary:'Detener grabación y analizar (mantener llamada)' },
-    pt:{ liveTranscript:'Respostas salvas', transcriptOff:'A transcrição automática está desligada. É necessário consentimento do candidato e gravação manual.', createSummary:'Parar gravação e analisar (manter chamada)' },
-    zh:{ liveTranscript:'已保存的回答原文与中文译文', transcriptOff:'自动转写已关闭。需候选人明确同意，且由面试官手动开始录音。', createSummary:'停止录音并分析（不结束通话）' }
+    en:{ liveTranscript:'Saved statements and Chinese translation', transcriptOff:'Consenting participants are recorded automatically from their own microphones. Segments appear after transcription; original Chinese and English are preserved.', createSummary:'Finish notes & analyze (keep call open)' },
+    es:{ liveTranscript:'Intervenciones guardadas y traducción al chino', transcriptOff:'Los participantes que aceptan se graban automáticamente desde sus propios micrófonos. Los segmentos aparecen tras transcribirse; se conserva el original chino o inglés.', createSummary:'Finalizar notas y analizar (mantener llamada)' },
+    pt:{ liveTranscript:'Falas salvas e tradução para chinês', transcriptOff:'Os participantes que concordam são gravados automaticamente pelos próprios microfones. Os segmentos aparecem após a transcrição; chinês e inglês originais são preservados.', createSummary:'Concluir notas e analisar (manter chamada)' },
+    zh:{ liveTranscript:'已保存的发言原文与中文对照', transcriptOff:'已同意的参与者会自动记录自己的麦克风，片段转写后显示；保留中文或英文原话。', createSummary:'完成记录并分析（不结束通话）' }
   };
   const backCopy = { en:'← Back to recruiting', es:'← Volver a contratación', pt:'← Voltar ao recrutamento', zh:'← 返回招聘中心' };
   const interviewerCopy = {
@@ -50,7 +50,7 @@
   const participants = new Map();
   let language = localStorage.getItem('quadInterview.language') || 'en';
   if (!copy[language]) language = 'en';
-  let info = null, room = null, joining = false, leaving = false, sessionSecret = '', micEnabled = true, cameraEnabled = true, voiceUi = null;
+  let info = null, room = null, joining = false, leaving = false, sessionSecret = '', micEnabled = true, cameraEnabled = true, voiceUi = null, autoUi = null;
   let connected = false, ending = false, roomEnded = false, hasJoined = false;
   let analysisBusy = false, selectedKitId = '', selectedQuestionId = '';
   const t = (key, vars = {}) => Object.entries(vars).reduce((value, [name, replacement]) => value.replace(`{${name}}`, replacement), controlledVoiceCopy[language]?.[key] || (recruiter && interviewerCopy[language]?.[key]) || roomCopy[language]?.[key] || copy[language][key] || roomCopy.en[key] || copy.en[key] || key);
@@ -74,22 +74,23 @@
     for (const entry of participants.values()) renderParticipant(entry);
     updateParticipantCount(); updatePermissions();
     $('transcriptToggle').hidden = true; $('transcriptToggle').disabled = true;
-    voiceUi?.render();
+    voiceUi?.render(); autoUi?.render();
     document.title = `QUAD FILM · ${t('videoInterview')}`;
   }
   function error(message) { $('error').textContent = message || ''; $('roomError').textContent = message || ''; $('connectionBadge').textContent = t('connectionFailed'); $('connectionBadge').className = 'badge warn'; }
   function renderJoinControls() {
     const reconnecting = hasJoined || Boolean(sessionSecret) || info?.status === 'joined';
-    const consentText = key => window.QuadInterviewVoice?.consentText(language, key) || '';
-    $('consentRow').hidden = recruiter || roomEnded;
+    const savedChoice = info?.autoConsentRecorded === true && info?.autoNoticeVersion === window.QuadInterviewAuto?.NOTICE_VERSION;
+    const consentText = key => window.QuadInterviewAuto?.consentText(language, key) || '';
+    $('consentRow').hidden = roomEnded;
     $('joinConsentTitle').textContent = consentText('title');
     $('joinConsentNotice').textContent = consentText('notice');
-    $('joinConsentSaved').hidden = !reconnecting;
-    $('joinConsentSaved').textContent = consentText(info?.voiceConsent === true ? 'active' : 'inactive');
+    $('joinConsentSaved').hidden = !savedChoice;
+    $('joinConsentSaved').textContent = consentText(info?.autoConsent === true ? 'active' : 'inactive');
     $('join').disabled = !info || joining || roomEnded;
-    $('join').textContent = joining ? t('connecting') : reconnecting ? t('reconnect') : recruiter ? t('recruiterJoin') : consentText('join');
+    $('join').textContent = joining ? t('connecting') : reconnecting && savedChoice ? t('reconnect') : consentText('join');
     $('join').hidden = roomEnded;
-    $('joinVideoOnly').hidden = recruiter || roomEnded || reconnecting;
+    $('joinVideoOnly').hidden = roomEnded || (reconnecting && savedChoice);
     $('joinVideoOnly').disabled = !info || joining || roomEnded;
     $('joinVideoOnly').textContent = consentText('videoOnly');
   }
@@ -119,6 +120,7 @@
   }
   function renderTranscripts(rows) {
     const list = $('transcriptList'); list.replaceChildren();
+    if (!recruiter) return; // Internal interviewer notes and analysis are never shown to candidates.
     for (const row of rows.slice(-30)) appendTranscript(row);
   }
   function appendTranscript(row) {
@@ -138,8 +140,10 @@
       line.append(question);
     }
     line.append(source);
-    if (row.translationZh) { const translated = document.createElement('span'); translated.className = 'transcript-translation'; translated.textContent = `中文译文 / Chinese translation: ${row.translationZh}`; line.append(translated); }
-    else if (row.translationError) { const missing = document.createElement('span'); missing.className = 'transcript-translation'; missing.textContent = language === 'zh' ? '中文翻译未完成；英文原文已保存，请人工核对。' : 'Chinese translation is unavailable. The English original was saved; review it manually.'; line.append(missing); }
+    if (row.translationStatus === 'not_needed') { const original = document.createElement('span'); original.className = 'transcript-translation'; original.textContent = language === 'zh' ? '原文为中文，无需另行翻译。' : 'The original is Chinese; no additional translation is needed.'; line.append(original); }
+    else if (row.translationZh) { const translated = document.createElement('span'); translated.className = 'transcript-translation'; translated.textContent = `中文译文 / Chinese translation: ${row.translationZh}`; line.append(translated); }
+    else if (row.translationStatus === 'pending') { const pending = document.createElement('span'); pending.className = 'transcript-translation'; pending.textContent = language === 'zh' ? '原文已保存，中文翻译中…' : 'Original text saved. Chinese translation is in progress…'; line.append(pending); }
+    else if (row.translationError || row.translationStatus === 'failed') { const missing = document.createElement('span'); missing.className = 'transcript-translation'; missing.textContent = language === 'zh' ? '中文翻译未完成；原文已保存，请人工核对。' : 'Chinese translation is unavailable. The original text was saved; review it manually.'; line.append(missing); }
     $('transcriptList').appendChild(line);
   }
   function recommendedKitId(kits, position) {
@@ -225,7 +229,7 @@
       }
       list.appendChild(card);
     });
-    voiceUi?.render();
+    voiceUi?.render(); autoUi?.render();
     void voiceUi?.prepareQuestions();
   }
   function selectedQuestion() {
@@ -300,7 +304,7 @@
     $('leave').textContent = t(leaving ? 'leaving' : 'leave');
     $('mic').textContent = t(micEnabled ? 'micOn' : 'micOff');
     $('camera').textContent = t(cameraEnabled ? 'cameraOn' : 'cameraOff');
-    voiceUi?.render();
+    voiceUi?.render(); autoUi?.render();
   }
   function updateRoomAudio() {
     $('enableRoomAudio').hidden = !connected || room?.canPlaybackAudio !== false;
@@ -376,7 +380,7 @@
       $('audioStage').appendChild(element); element.play()?.catch(() => { if (connected) $('enableRoomAudio').hidden = false; });
     }
     renderParticipant(entry);
-    voiceUi?.sync();
+    voiceUi?.sync(); void autoUi?.sync();
   }
   function syncParticipant(participant, local = false) {
     const entry = ensureParticipant(participant, local); if (!entry) return;
@@ -393,45 +397,50 @@
     syncParticipant(room.localParticipant, true);
     for (const participant of room.remoteParticipants.values()) syncParticipant(participant);
     updateParticipantCount();
-    voiceUi?.sync();
+    voiceUi?.sync(); void autoUi?.sync();
   }
   function removeParticipant(participant) {
     const entry = participants.get(participant?.identity); if (!entry) return;
     for (const track of [...entry.tracks.keys()]) detachTrack(entry, track);
     if (entry.local) { entry.tile.replaceChildren(); entry.tile.hidden = true; } else entry.tile.remove();
     participants.delete(participant.identity); updateParticipantCount();
-    voiceUi?.sync();
+    voiceUi?.sync(); void autoUi?.sync();
   }
   function clearParticipants() {
     for (const entry of [...participants.values()]) removeParticipant(entry.participant);
     $('audioStage').replaceChildren(); updateParticipantCount();
   }
-  function recruiterAccess() {
-    return request(`/api/recruiting/interviews/${encodeURIComponent(interviewId)}/video-token`, { method:'POST', auth:true, body:JSON.stringify({ participantSessionId }) });
+  function autoJoinFields(choice) {
+    return typeof choice === 'boolean' ? { autoConsent:choice, autoNoticeVersion:window.QuadInterviewAuto.NOTICE_VERSION } : {};
   }
-  async function tokenForJoin(voiceConsent) {
-    if (!invite) return recruiterAccess();
+  function recruiterAccess(choice) {
+    return request(`/api/recruiting/interviews/${encodeURIComponent(interviewId)}/video-token`, { method:'POST', auth:true, body:JSON.stringify({ participantSessionId, ...autoJoinFields(choice) }) });
+  }
+  async function tokenForJoin(autoConsent) {
+    if (!invite) return recruiterAccess(autoConsent);
     let stored = null;
     try { stored = JSON.parse(localStorage.getItem(`quadInterview.${info.interviewId}`) || 'null'); } catch {}
-    if (sessionSecret || (info.status === 'joined' && stored?.sessionSecret)) { sessionSecret ||= stored.sessionSecret; return request('/api/public/recruiting-video/session', { method:'POST', body:JSON.stringify({ interviewId:info.interviewId, sessionSecret }) }); }
-    const data = await request(`/api/public/recruiting-video/invite/${encodeURIComponent(invite)}/exchange`, { method:'POST', body:JSON.stringify({ consent:true, voiceConsent:voiceConsent === true, voiceNoticeVersion:window.QuadInterviewVoice.NOTICE_VERSION }) });
+    if (sessionSecret || (info.status === 'joined' && stored?.sessionSecret)) { sessionSecret ||= stored.sessionSecret; return request('/api/public/recruiting-video/session', { method:'POST', body:JSON.stringify({ interviewId:info.interviewId, sessionSecret, ...autoJoinFields(autoConsent) }) }); }
+    const data = await request(`/api/public/recruiting-video/invite/${encodeURIComponent(invite)}/exchange`, { method:'POST', body:JSON.stringify({ consent:true, ...autoJoinFields(autoConsent) }) });
     // The server choice is authoritative even if media permission or local storage fails next.
     info = { ...info, ...data }; sessionSecret = data.sessionSecret;
     try { localStorage.setItem(`quadInterview.${data.interviewId}`, JSON.stringify({ sessionSecret, expiresAt:data.expiresAt })); } catch {}
     return data;
   }
-  async function join(voiceConsent = false) {
+  async function join(autoConsent) {
     if (!info || joining || leaving || ending || connected || roomEnded) return;
     if (!window.LivekitClient?.isBrowserSupported?.()) return error(t('unsupported'));
+    // Start/resume AudioContext in the Join gesture, before network or media awaits (Safari).
+    void autoUi?.primeAudio();
     joining = true; renderJoinControls(); $('error').textContent = ''; $('roomError').textContent = '';
     let joiningRoom = null;
     try {
       await disconnectLocal();
-      const access = await tokenForJoin(voiceConsent); info = { ...info, ...access };
+      const access = await tokenForJoin(autoConsent); info = { ...info, ...access };
       joiningRoom = new LivekitClient.Room({ adaptiveStream:true, dynacast:true, disconnectOnPageLeave:true }); room = joiningRoom;
       const on = (event, callback) => joiningRoom.on(event, (...args) => { if (room === joiningRoom) callback(...args); });
       on(LivekitClient.RoomEvent.TrackSubscribed, (track, publication, participant) => attachParticipantTrack(track, publication, participant));
-      on(LivekitClient.RoomEvent.TrackUnsubscribed, (track, _publication, participant) => { const entry = participants.get(participant?.identity); if (entry) { detachTrack(entry, track); renderParticipant(entry); } voiceUi?.sync(); });
+      on(LivekitClient.RoomEvent.TrackUnsubscribed, (track, _publication, participant) => { const entry = participants.get(participant?.identity); if (entry) { detachTrack(entry, track); renderParticipant(entry); } voiceUi?.sync(); void autoUi?.sync(); });
       on(LivekitClient.RoomEvent.TrackUnpublished, (publication, participant) => { const entry = participants.get(participant?.identity); if (entry) { for (const [track, attached] of [...entry.tracks]) if (attached.publication === publication || track === publication.track) detachTrack(entry, track); renderParticipant(entry); } });
       on(LivekitClient.RoomEvent.ParticipantConnected, participant => syncParticipant(participant));
       on(LivekitClient.RoomEvent.ParticipantDisconnected, removeParticipant);
@@ -440,8 +449,8 @@
       on(LivekitClient.RoomEvent.LocalTrackPublished, publication => attachParticipantTrack(publication.track, publication, room.localParticipant, true));
       on(LivekitClient.RoomEvent.LocalTrackUnpublished, publication => { const entry = participants.get(room.localParticipant.identity); if (entry) { for (const [track, attached] of [...entry.tracks]) if (attached.publication === publication || track === publication.track) detachTrack(entry, track); renderParticipant(entry); } });
       on(LivekitClient.RoomEvent.DataReceived, (payload, participant) => receiveTranscript(payload, participant));
-      on(LivekitClient.RoomEvent.Reconnecting, () => { connected = false; voiceUi?.suspend(language === 'zh' ? '正在重连，AI 播音与录音已停止；不会自动恢复。' : 'Reconnecting. AI playback and recording stopped; they will not restart automatically.', true); updatePermissions(); $('connectionBadge').textContent = t('reconnecting'); $('connectionBadge').className = 'badge warn'; });
-      on(LivekitClient.RoomEvent.Reconnected, () => { connected = true; syncParticipants(); void voiceUi?.connect(); updatePermissions(); updateRoomAudio(); $('connectionBadge').textContent = t('connected'); $('connectionBadge').className = 'badge live'; });
+      on(LivekitClient.RoomEvent.Reconnecting, () => { void autoUi?.suspend(); connected = false; voiceUi?.suspend(language === 'zh' ? '正在重连，AI 播音已停止。自动记录将在核实同意及参与者后继续。' : 'Reconnecting. AI playback stopped. Automatic notes resume after consent and participants are verified.', true); updatePermissions(); $('connectionBadge').textContent = t('reconnecting'); $('connectionBadge').className = 'badge warn'; });
+      on(LivekitClient.RoomEvent.Reconnected, () => { connected = true; syncParticipants(); void voiceUi?.connect(); void autoUi?.connect(); updatePermissions(); updateRoomAudio(); $('connectionBadge').textContent = t('connected'); $('connectionBadge').className = 'badge live'; });
       on(LivekitClient.RoomEvent.AudioPlaybackStatusChanged, updateRoomAudio);
       on(LivekitClient.RoomEvent.Disconnected, reason => {
         roomEnded ||= [LivekitClient.DisconnectReason.ROOM_DELETED, LivekitClient.DisconnectReason.ROOM_CLOSED].includes(reason);
@@ -455,9 +464,9 @@
       if (room !== joiningRoom) throw new Error(t('disconnected'));
       connected = true; hasJoined = true; micEnabled = true; cameraEnabled = true; syncParticipants(); updatePermissions();
       $('welcome').hidden = true; $('roomView').hidden = false; $('connectionBadge').textContent = t('connected'); $('connectionBadge').className = 'badge live'; renderTranscripts(access.aiState?.transcript || []); renderAnalysis(access.aiState?.analysis || null);
-      // The explicit join choice only saves permission. No recording starts on join.
+      // Each browser records only its own microphone after current explicit consent and presence checks.
       $('transcriptStatus').textContent = t('transcriptOff'); updateRoomAudio();
-      await voiceUi?.connect();
+      await Promise.all([voiceUi?.connect(), autoUi?.connect()]);
     } catch (cause) {
       stopLocalTracks(joiningRoom);
       if (!joiningRoom || room === joiningRoom) await disconnectLocal();
@@ -468,6 +477,7 @@
   function receiveTranscript(payload, participant) {
     // Room data is not evidence or permission. Only wake up authoritative server polling.
     voiceUi?.receiveSignal(payload, participant);
+    autoUi?.receiveSignal(payload, participant);
   }
   function stopTranscript() {
     $('transcriptToggle').hidden = true; $('transcriptToggle').disabled = true; $('transcriptStatus').textContent = t('transcriptOff');
@@ -478,7 +488,7 @@
     analysisBusy = true;
     updatePermissions(); $('aiStatus').textContent = t('aiWorking');
     try {
-      await voiceUi?.beforeAnalyze(mode);
+      if (mode === 'final') { await voiceUi?.beforeAnalyze(mode); await autoUi?.beforeAnalyze(); }
       if (!connected || room !== activeRoom) return;
       const data = await request(`/api/recruiting/interviews/${encodeURIComponent(info.interviewId)}/video-analyze`, { method:'POST', auth:true, body:JSON.stringify({ mode }) });
       if (!connected || room !== activeRoom) return;
@@ -492,6 +502,7 @@
     }
   }
   async function disconnectLocal() {
+    await autoUi?.suspend(); // Retain unsaved same-session segments across network reconnects.
     const voiceCleanup = voiceUi?.disconnect();
     const previous = room; room = null; connected = false;
     stopTranscript(); stopLocalTracks(previous); clearParticipants(); updatePermissions();
@@ -510,7 +521,8 @@
   async function leaveInterview() {
     if (leaving || ending) return;
     leaving = true; updatePermissions();
-    try { await disconnectLocal(); showDisconnected(); }
+    try { await autoUi?.pause(); await disconnectLocal(); showDisconnected(); }
+    catch (cause) { $('roomError').textContent = cause.message; }
     finally { leaving = false; updatePermissions(); }
   }
   async function endInterviewForEveryone() {
@@ -518,6 +530,7 @@
     if (!window.confirm(t('endConfirm'))) return;
     ending = true; updatePermissions(); $('roomError').textContent = '';
     try {
+      await voiceUi?.beforeAnalyze(); await autoUi?.requestRoomFlush();
       await request(`/api/recruiting/interviews/${encodeURIComponent(info.interviewId)}/video-end`, { method:'POST', auth:true, body:'{}' });
       roomEnded = true; await disconnectLocal(); showDisconnected();
     } catch (cause) { error(cause.message); }
@@ -549,7 +562,7 @@
   $('language').addEventListener('change', event => { language = event.target.value; applyLanguage(); });
   $('backToRecruiting').hidden = !recruiter;
   $('backToRecruiting').addEventListener('click', () => window.location.assign('/?page=recruiting'));
-  $('join').addEventListener('click', () => join(true)); $('joinVideoOnly').addEventListener('click', () => join(false)); $('aiNext').addEventListener('click', () => analyze('next')); $('aiFinal').addEventListener('click', () => analyze('final'));
+  $('join').addEventListener('click', () => { const preserve = (hasJoined || sessionSecret || info?.status === 'joined') && info?.autoConsentRecorded === true && info?.autoNoticeVersion === window.QuadInterviewAuto?.NOTICE_VERSION; void join(preserve ? undefined : true); }); $('joinVideoOnly').addEventListener('click', () => join(false)); $('aiNext').addEventListener('click', () => analyze('next')); $('aiFinal').addEventListener('click', () => analyze('final'));
   $('enableRoomAudio').addEventListener('click', enableRoomAudio);
   $('mic').addEventListener('click', () => toggleDevice('mic'));
   $('camera').addEventListener('click', () => toggleDevice('camera'));
@@ -557,7 +570,11 @@
   $('endRoom').addEventListener('click', endInterviewForEveryone);
   $('shareInterviewer').addEventListener('click', showInterviewerLink);
   $('copyInterviewerLink').addEventListener('click', copyInterviewerLink);
-  window.addEventListener('pagehide', () => { voiceUi?.dispose(); stopTranscript(); stopLocalTracks(room); room?.disconnect(true); });
+  window.addEventListener('pagehide', () => { autoUi?.dispose(); voiceUi?.dispose(); stopTranscript(); stopLocalTracks(room); room?.disconnect(true); });
+  autoUi = window.QuadInterviewAuto?.create({ $, request,
+    getContext:() => ({ recruiter, room, connected, info, sessionSecret, participantSessionId, language }),
+    onState:data => { if (!info) return; if (data.autoState) { info.autoConsent = data.autoState.ownConsent === true; if (typeof data.autoState.ownConsentRecorded === 'boolean') info.autoConsentRecorded = data.autoState.ownConsentRecorded; if (typeof data.autoState.ownNoticeVersion === 'string') info.autoNoticeVersion = data.autoState.ownNoticeVersion; } if (recruiter && data.aiState) { info.aiState = data.aiState; renderTranscripts(data.aiState.transcript || []); renderAnalysis(data.aiState.analysis || null); } }
+  });
   voiceUi = window.QuadInterviewVoice?.create({ $, request,
     getContext:() => ({ recruiter, room, connected, info, sessionSecret, participantSessionId, language }),
     getSelectedQuestion:selectedQuestion,

@@ -31,7 +31,7 @@ function fixture(analyzeInterview, { canAccess = () => true, snapshotReads = fal
       invite = { id:'synthetic-consented-invite', interviewId:'interview-1', candidateId:'candidate-1', status:'joined', expiresAt:new Date(Date.now() + 86400000).toISOString(), roomName:roomName('interview-1') };
       db.recruitingVideoInvites.push(invite);
     }
-    invite.voiceConsent = { consent:true, noticeVersion:'2026-09-19-voice-v1', updatedAt:new Date().toISOString() };
+    invite.voiceConsent = { consent:true, noticeVersion:'2026-09-20-auto-v1', updatedAt:new Date().toISOString() };
   };
   return { get db() { return db; }, call, grantVoiceConsent };
 }
@@ -174,7 +174,7 @@ test('candidate public responses never expose internal interviewer user IDs, pri
     const details = await env.call('handlePublic', `/api/public/recruiting-video/invite/${raw}`, 'GET');
     const exchange = await env.call('handlePublic', `/api/public/recruiting-video/invite/${raw}/exchange`, 'POST', { consent:true });
     assert.equal(exchange.status, 200);
-    const voiceConsent = await env.call('handlePublic', '/api/public/recruiting-video/voice-consent', 'POST', { interviewId:'interview-1', sessionSecret:exchange.body.sessionSecret, consent:true, noticeVersion:'2026-09-19-voice-v1' });
+    const voiceConsent = await env.call('handlePublic', '/api/public/recruiting-video/auto', 'POST', { operation:'consent', interviewId:'interview-1', sessionSecret:exchange.body.sessionSecret, consent:true, noticeVersion:'2026-09-20-auto-v1' });
     assert.equal(voiceConsent.status, 200);
     const rejoin = await env.call('handlePublic', '/api/public/recruiting-video/session', 'POST', { interviewId:'interview-1', sessionSecret:exchange.body.sessionSecret });
     for (const result of [details, exchange, rejoin]) {
@@ -199,10 +199,12 @@ test('candidate public responses never expose internal interviewer user IDs, pri
 
 test('candidate joins with an explicit versioned AI choice, while legacy and video-only joins never silently grant it', async () => {
   await withConfiguredVideo(async () => {
-    for (const [extra, expected] of [
-      [{ voiceConsent:true, voiceNoticeVersion:'2026-09-19-voice-v1' }, true],
-      [{ voiceConsent:false, voiceNoticeVersion:'2026-09-19-voice-v1' }, false],
-      [{}, false]
+    for (const [extra, expected, automatic] of [
+      [{ autoConsent:true, autoNoticeVersion:'2026-09-20-auto-v1' }, true, true],
+      [{ autoConsent:false, autoNoticeVersion:'2026-09-20-auto-v1' }, false, false],
+      [{ voiceConsent:true, voiceNoticeVersion:'2026-09-20-auto-v1' }, true, false],
+      [{ voiceConsent:false, voiceNoticeVersion:'2026-09-20-auto-v1' }, false, false],
+      [{}, false, false]
     ]) {
       const env = fixture(undefined, { snapshotReads:true });
       const created = await env.call('handleAdmin', videoPath('invite'));
@@ -212,14 +214,18 @@ test('candidate joins with an explicit versioned AI choice, while legacy and vid
       const invitation = env.db.recruitingVideoInvites[0];
       assert.equal(invitation.status, 'joined');
       assert.equal(invitation.voiceConsent?.consent === true, expected);
+      assert.equal(response.body.autoConsent, automatic, 'Only the automatic-recording disclosure grants automatic consent');
       if (expected) {
-        assert.equal(invitation.voiceConsent.noticeVersion, '2026-09-19-voice-v1');
+        assert.equal(invitation.voiceConsent.noticeVersion, '2026-09-20-auto-v1');
         assert.ok(Date.parse(invitation.voiceConsent.updatedAt));
       }
       assert.equal(env.db.recruitingInterviews[0].aiInterview?.voice?.recording === true, false);
       assert.equal((env.db.recruitingInterviews[0].aiInterview?.transcript || []).length, 0);
       const state = await env.call('handlePublic', '/api/public/recruiting-video/voice-state', 'POST', { interviewId:'interview-1', sessionSecret:response.body.sessionSecret });
       assert.equal(state.status, 200); assert.equal(state.body.voice.consent, expected);
+      const automaticState = await env.call('handlePublic', '/api/public/recruiting-video/auto', 'POST', { operation:'status', interviewId:'interview-1', sessionSecret:response.body.sessionSecret });
+      assert.equal(automaticState.body.autoState.ownConsent, automatic);
+      assert.equal(automaticState.body.autoState.allowed, false, 'A lone candidate cannot automatically record before the interviewer consents');
     }
   });
 });
@@ -229,7 +235,10 @@ test('outdated or malformed AI consent at join fails without consuming the invit
     for (const body of [
       { voiceConsent:true },
       { voiceConsent:true, voiceNoticeVersion:'outdated-notice' },
-      { voiceConsent:'true', voiceNoticeVersion:'2026-09-19-voice-v1' }
+      { voiceConsent:'true', voiceNoticeVersion:'2026-09-20-auto-v1' },
+      { autoConsent:true },
+      { autoConsent:true, autoNoticeVersion:'2026-09-19-voice-v1' },
+      { autoConsent:'true', autoNoticeVersion:'2026-09-20-auto-v1' }
     ]) {
       const env = fixture(undefined, { snapshotReads:true });
       const created = await env.call('handleAdmin', videoPath('invite'));
@@ -242,21 +251,58 @@ test('outdated or malformed AI consent at join fails without consuming the invit
   });
 });
 
+test('the retired voice-consent route cannot authorize automatic recording, even with the new notice', async () => {
+  await withConfiguredVideo(async () => {
+    const env = fixture(undefined, { snapshotReads:true });
+    const created = await env.call('handleAdmin', videoPath('invite'));
+    const raw = new URL(created.body.joinUrl).searchParams.get('invite');
+    const joined = await env.call('handlePublic', `/api/public/recruiting-video/invite/${raw}/exchange`, 'POST', { consent:true });
+    const identity = { interviewId:'interview-1', sessionSecret:joined.body.sessionSecret };
+    for (const noticeVersion of ['2026-09-19-voice-v1', '2026-09-20-auto-v1']) {
+      const response = await env.call('handlePublic', '/api/public/recruiting-video/voice-consent', 'POST', { ...identity, consent:true, noticeVersion });
+      assert.equal(response.status, noticeVersion === '2026-09-20-auto-v1' ? 409 : 400);
+      if (response.status === 409) assert.equal(response.body.code, 'INTERVIEW_AUTO_CONSENT_REQUIRED');
+    }
+    const state = await env.call('handlePublic', '/api/public/recruiting-video/auto', 'POST', { ...identity, operation:'status' });
+    assert.equal(state.body.autoState.ownConsent, false); assert.equal(state.body.autoState.allowed, false);
+  });
+});
+
 test('reconnect never regrants withdrawn AI consent, even if an old page posts affirmative join fields', async () => {
   await withConfiguredVideo(async () => {
     const env = fixture(undefined, { snapshotReads:true });
     const created = await env.call('handleAdmin', videoPath('invite'));
     const raw = new URL(created.body.joinUrl).searchParams.get('invite');
-    const joined = await env.call('handlePublic', `/api/public/recruiting-video/invite/${raw}/exchange`, 'POST', { consent:true, voiceConsent:true, voiceNoticeVersion:'2026-09-19-voice-v1' });
+    const joined = await env.call('handlePublic', `/api/public/recruiting-video/invite/${raw}/exchange`, 'POST', { consent:true, voiceConsent:true, voiceNoticeVersion:'2026-09-20-auto-v1' });
     assert.equal(joined.status, 200);
     const body = { interviewId:'interview-1', sessionSecret:joined.body.sessionSecret };
-    const revoked = await env.call('handlePublic', '/api/public/recruiting-video/voice-consent', 'POST', { ...body, consent:false, noticeVersion:'2026-09-19-voice-v1' });
+    const revoked = await env.call('handlePublic', '/api/public/recruiting-video/voice-consent', 'POST', { ...body, consent:false, noticeVersion:'2026-09-20-auto-v1' });
     assert.equal(revoked.status, 200);
-    const rejoin = await env.call('handlePublic', '/api/public/recruiting-video/session', 'POST', { ...body, consent:true, voiceConsent:true, voiceNoticeVersion:'2026-09-19-voice-v1' });
+    const rejoin = await env.call('handlePublic', '/api/public/recruiting-video/session', 'POST', { ...body, consent:true, voiceConsent:true, voiceNoticeVersion:'2026-09-20-auto-v1' });
     assert.ok([200, 400].includes(rejoin.status));
     assert.equal(env.db.recruitingVideoInvites[0].voiceConsent.consent, false);
     const state = await env.call('handlePublic', '/api/public/recruiting-video/voice-state', 'POST', body);
     assert.equal(state.status, 200); assert.equal(state.body.voice.consent, false); assert.equal(state.body.voice.recording, false);
+  });
+});
+
+test('automatic consent survives reconnect only as the saved choice, and a withdrawal remains withdrawn', async () => {
+  await withConfiguredVideo(async () => {
+    const env = fixture(undefined, { snapshotReads:true });
+    const created = await env.call('handleAdmin', videoPath('invite'));
+    const raw = new URL(created.body.joinUrl).searchParams.get('invite');
+    const joined = await env.call('handlePublic', `/api/public/recruiting-video/invite/${raw}/exchange`, 'POST', { consent:true, autoConsent:true, autoNoticeVersion:'2026-09-20-auto-v1' });
+    assert.equal(joined.status, 200); assert.equal(joined.body.autoConsent, true);
+    const body = { interviewId:'interview-1', sessionSecret:joined.body.sessionSecret };
+    const rejoined = await env.call('handlePublic', '/api/public/recruiting-video/session', 'POST', body);
+    assert.equal(rejoined.status, 200); assert.equal(rejoined.body.autoConsent, true);
+    const revoked = await env.call('handlePublic', '/api/public/recruiting-video/auto', 'POST', { ...body, operation:'consent', consent:false, noticeVersion:'2026-09-20-auto-v1' });
+    assert.equal(revoked.status, 200);
+    const videoOnlyRejoin = await env.call('handlePublic', '/api/public/recruiting-video/session', 'POST', body);
+    assert.equal(videoOnlyRejoin.status, 200); assert.equal(videoOnlyRejoin.body.autoConsent, false);
+    assert.equal(videoOnlyRejoin.body.autoConsentRecorded, true); assert.equal(videoOnlyRejoin.body.autoNoticeVersion, '2026-09-20-auto-v1');
+    const state = await env.call('handlePublic', '/api/public/recruiting-video/auto', 'POST', { ...body, operation:'status' });
+    assert.equal(state.body.autoState.ownConsent, false); assert.equal(state.body.autoState.allowed, false);
   });
 });
 
@@ -310,7 +356,7 @@ test('candidate page defaults to English and exposes all four requested language
   assert.match(script, /document\.body\.classList\.add\(recruiter \? 'recruiter-view' : 'candidate-view'\)/);
   assert.match(script, /\$\('backToRecruiting'\)\.hidden = !recruiter/);
   assert.match(script, /\$\('backToRecruiting'\)\.addEventListener\('click', \(\) => window\.location\.assign\('\/\?page=recruiting'\)\)/);
-  assert.match(css, /\.candidate-view #aiBoundaryNotice,[\s\S]*?\.candidate-view \.transcript-panel\s*\{[^}]*display:\s*none\s*!important/);
+  assert.match(css, /\.candidate-view \.transcript-panel\s*\{[^}]*display:\s*none\s*!important/);
 });
 
 test('question-first room uses independent participant tiles and per-tile video orientation', () => {
@@ -338,7 +384,7 @@ test('question-first room uses independent participant tiles and per-tile video 
   assert.match(script, /participants\.set\(participant\.identity, entry\)/);
   assert.match(script, /if \(!local\) \$\('remoteStage'\)\.appendChild\(tile\)/);
   assert.doesNotMatch(script, /SpeechRecognition|startTranscript\(|saveTranscript\(/, 'Joining must not start browser-owned continuous transcription');
-  assert.match(script, /await voiceUi\?\.connect\(\)/);
+  assert.match(script, /await Promise\.all\(\[voiceUi\?\.connect\(\), autoUi\?\.connect\(\)\]\)/);
   assert.match(script, /\$\('transcriptToggle'\)\.hidden = true; \$\('transcriptToggle'\)\.disabled = true/);
 });
 
@@ -391,18 +437,19 @@ test('disconnect and failed joins stop local media and detach every participant 
   assert.match(script, /if \(room === joiningRoom\) callback\(\.\.\.args\)/);
   assert.match(script, /stopLocalTracks\(joiningRoom\);\s*if \(!joiningRoom \|\| room === joiningRoom\) await disconnectLocal\(\)/);
   assert.match(script, /if \(room !== activeRoom\) \{ stopLocalTracks\(activeRoom\); return; \}/);
-  assert.match(script, /window\.addEventListener\('pagehide', \(\) => \{ voiceUi\?\.dispose\(\); stopTranscript\(\); stopLocalTracks\(room\); room\?\.disconnect\(true\); \}\)/);
+  assert.match(script, /window\.addEventListener\('pagehide', \(\) => \{ autoUi\?\.dispose\(\); voiceUi\?\.dispose\(\); stopTranscript\(\); stopLocalTracks\(room\); room\?\.disconnect\(true\); \}\)/);
 });
 
 test('fresh candidate invitation replaces stale stored session while reconnect keeps the active session', async () => {
   const script = fs.readFileSync(require.resolve('../public/recruiting-interview.js'), 'utf8');
   const helper = script.slice(script.indexOf('async function tokenForJoin('), script.indexOf('async function join('));
-  assert.match(helper, /^async function tokenForJoin\(voiceConsent\)/);
+  const joinFields = script.slice(script.indexOf('function autoJoinFields('), script.indexOf('function recruiterAccess('));
+  assert.match(helper, /^async function tokenForJoin\(autoConsent\)/);
   function context(status, memorySecret = '', invite = 'synthetic-new-invite') {
     const calls = [], stored = new Map([['quadInterview.synthetic-interview', JSON.stringify({ sessionSecret:'synthetic-old-session' })]]);
     const value = vm.createContext({
       invite, info:{ interviewId:'synthetic-interview', status }, sessionSecret:memorySecret,
-      window:{ QuadInterviewVoice:{ NOTICE_VERSION:'2026-09-19-voice-v1' } },
+      window:{ QuadInterviewAuto:{ NOTICE_VERSION:'2026-09-20-auto-v1' } },
       localStorage:{ getItem:key => stored.get(key) || null, setItem:(key, text) => stored.set(key, text) },
       request:async (url, options) => {
         calls.push({ url, body:JSON.parse(options.body) });
@@ -410,25 +457,25 @@ test('fresh candidate invitation replaces stale stored session while reconnect k
       },
       recruiterAccess:async () => { calls.push({ url:'synthetic-recruiter-access' }); return { participantIdentity:'synthetic-recruiter' }; }
     });
-    vm.runInContext(helper, value);
+    vm.runInContext(joinFields + helper, value);
     return { value, calls, stored };
   }
   const fresh = context('active');
   await fresh.value.tokenForJoin(true);
   assert.equal(fresh.calls[0].url, '/api/public/recruiting-video/invite/synthetic-new-invite/exchange');
   assert.equal(fresh.calls[0].body.consent, true);
-  assert.equal(fresh.calls[0].body.voiceConsent, true);
-  assert.equal(fresh.calls[0].body.voiceNoticeVersion, '2026-09-19-voice-v1');
+  assert.equal(fresh.calls[0].body.autoConsent, true);
+  assert.equal(fresh.calls[0].body.autoNoticeVersion, '2026-09-20-auto-v1');
   assert.equal(JSON.parse(fresh.stored.get('quadInterview.synthetic-interview')).sessionSecret, 'synthetic-new-session');
   await fresh.value.tokenForJoin();
   assert.equal(fresh.calls[1].url, '/api/public/recruiting-video/session');
   assert.equal(fresh.calls[1].body.sessionSecret, 'synthetic-new-session', 'Same-page reconnect uses the newly exchanged session');
-  assert.equal(Object.hasOwn(fresh.calls[1].body, 'voiceConsent'), false, 'Rejoining must not repost an affirmative consent choice');
+  assert.equal(Object.hasOwn(fresh.calls[1].body, 'autoConsent'), false, 'Rejoining must not repost an affirmative consent choice');
 
   const videoOnly = context('active'); await videoOnly.value.tokenForJoin(false);
-  assert.equal(videoOnly.calls[0].body.voiceConsent, false);
+  assert.equal(videoOnly.calls[0].body.autoConsent, false);
   const unspecified = context('active'); await unspecified.value.tokenForJoin();
-  assert.equal(unspecified.calls[0].body.voiceConsent, false, 'Default/no explicit choice does not enable recording');
+  assert.equal(Object.hasOwn(unspecified.calls[0].body, 'autoConsent'), false, 'Default/no explicit choice does not enable or upgrade recording');
 
   const joined = context('joined');
   await joined.value.tokenForJoin();
@@ -520,10 +567,15 @@ test('one-time candidate link exchanges once and reconnects only with the browse
     const unconsentedTranscript = await call('handlePublic', '/api/public/recruiting-video/transcript', 'POST', transcriptBody);
     assert.equal(unconsentedTranscript.status, 409, 'Joining video does not grant separate AI transcription consent');
     assert.equal(unconsentedTranscript.body.code, 'INTERVIEW_VOICE_CONSENT_REQUIRED');
-    const voiceConsent = await call('handlePublic', '/api/public/recruiting-video/voice-consent', 'POST', { interviewId:'interview-1', sessionSecret:joined.body.sessionSecret, consent:true, noticeVersion:'2026-09-19-voice-v1' });
+    const voiceConsent = await call('handlePublic', '/api/public/recruiting-video/auto', 'POST', { operation:'consent', interviewId:'interview-1', sessionSecret:joined.body.sessionSecret, consent:true, noticeVersion:'2026-09-20-auto-v1' });
     assert.equal(voiceConsent.status, 200);
     const transcript = await call('handlePublic', '/api/public/recruiting-video/transcript', 'POST', transcriptBody);
     assert.equal(transcript.status, 201); assert.equal(db.recruitingInterviews[0].aiInterview.transcript[0].speaker, 'candidate');
+    const earlyEnd = await call('handleAdmin', '/api/recruiting/interviews/interview-1/video-end');
+    assert.equal(earlyEnd.status, 409, 'A consented live participant must flush the last microphone segment before ending');
+    assert.equal(earlyEnd.body.code, 'INTERVIEW_AUTO_FLUSH_REQUIRED');
+    const paused = await call('handlePublic', '/api/public/recruiting-video/auto', 'POST', { operation:'pause', interviewId:'interview-1', sessionSecret:joined.body.sessionSecret, epoch:voiceConsent.body.autoState.epoch });
+    assert.equal(paused.status, 200);
     delete process.env.LIVEKIT_URL; delete process.env.LIVEKIT_API_KEY; delete process.env.LIVEKIT_API_SECRET;
     const ended = await call('handleAdmin', '/api/recruiting/interviews/interview-1/video-end');
     assert.equal(ended.status, 200); assert.equal(db.recruitingVideoInvites[0].status, 'ended');

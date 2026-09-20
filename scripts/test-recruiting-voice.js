@@ -7,7 +7,7 @@ const assert = require('node:assert/strict');
 const { createRecruitingVideoService, digest, roomName } = require('../lib/recruiting-video');
 const { INTERVIEW_KITS } = require('../lib/recruiting-interview-kits');
 
-const NOTICE = '2026-09-19-voice-v1';
+const NOTICE = '2026-09-20-auto-v1';
 const SESSION_A = 'synthetic-voice-session-a';
 const SESSION_B = 'synthetic-voice-session-b';
 const CANDIDATE_SECRET = 'synthetic-private-candidate-session-secret';
@@ -61,7 +61,7 @@ function fixture(overrides = {}) {
     mutate(callback) { const fresh = clone(db); callback(fresh); db = fresh; },
     admin(action, body = {}, actor = EDITOR, method = 'POST') { return route('handleAdmin', `/api/recruiting/interviews/voice-interview-1/video-${action}`, { participantSessionId:SESSION_A, ...body }, actor, method); },
     public(action, body = {}, method = 'POST') { return route('handlePublic', `/api/public/recruiting-video/${action}`, { interviewId:'voice-interview-1', sessionSecret:CANDIDATE_SECRET, ...body }, null, method); },
-    consent(value = true, extra = {}) { return this.public('voice-consent', { consent:value, noticeVersion:NOTICE, ...extra }); },
+    consent(value = true, extra = {}) { return this.public('auto', { operation:'consent', consent:value, noticeVersion:NOTICE, ...extra }); },
     voice(operation, body = {}, actor = EDITOR) { return this.admin('voice', { operation, ...body }, actor); },
     speech(body = {}, actor = EDITOR) { return this.admin('speech', { requestId:'synthetic-speech-request-1', text:QUESTION, questionId:'', kitId:'', ...body }, actor); },
     prepare(body = {}, actor = EDITOR) { return route('handleAdmin', '/api/recruiting/interviews/voice-interview-1/video-speech-prepare', { kitId:FIXED_KIT.id, questionId:FIXED_QUESTION.id, ...body }, actor); },
@@ -382,7 +382,7 @@ function providerFixture(fetchImpl, extra = {}) {
   });
 }
 
-test('voice provider uses bounded English speech and multipart English transcription with injected transport only', async () => {
+test('voice provider uses bounded English speech and multipart source-language transcription with injected transport only', async () => {
   const calls = [];
   const provider = providerFixture(async (url, options) => {
     calls.push({ url, options });
@@ -402,7 +402,7 @@ test('voice provider uses bounded English speech and multipart English transcrip
   assert.equal(transcript.text, 'A synthetic English answer.');
   assert.equal(calls[1].url, 'https://mock-provider.invalid/v1/audio/transcriptions');
   assert.ok(calls[1].options.body instanceof FormData);
-  assert.equal(calls[1].options.body.get('language'), 'en');
+  assert.equal(calls[1].options.body.has('language'), false, 'Transcription preserves the original spoken language rather than forcing English');
   assert.equal(calls[1].options.body.get('model'), 'gpt-4o-mini-transcribe');
   assert.equal(calls[1].options.body.get('response_format'), 'json');
   assert.deepEqual(Buffer.from(await calls[1].options.body.get('file').arrayBuffer()), AUDIO);
@@ -455,7 +455,7 @@ test('provider aborts a stalled transport within its deadline and exposes only a
 });
 
 test('provider rejects malformed transcription output and non-audio speech without fabricating usable evidence', async () => {
-  for (const body of [{ text:'' }, { text:42 }, {}, { text:'中文不能作为英文回答' }, { text:'x'.repeat(12001) }]) {
+  for (const body of [{ text:42 }, {}, { text:'x'.repeat(12001) }]) {
     const provider = providerFixture(async () => new Response(JSON.stringify(body), { headers:{ 'content-type':'application/json' } }));
     await assert.rejects(provider.transcribe({ audio:AUDIO, mimeType:'audio/webm' }), error => error.code === 'INTERVIEW_VOICE_PROVIDER_INVALID');
   }

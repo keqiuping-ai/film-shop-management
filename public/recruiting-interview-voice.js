@@ -1,6 +1,6 @@
 (() => {
   'use strict';
-  const NOTICE_VERSION = '2026-09-19-voice-v1';
+  const NOTICE_VERSION = '2026-09-19-voice-v1'; // Legacy manual consent is never a new automatic-recording grant.
   const MAX_RECORDING_MS = 120_000;
   const MAX_AUDIO_BYTES = 4 * 1024 * 1024;
   const MAX_PREPARED_BYTES = 24 * 1024 * 1024;
@@ -136,7 +136,7 @@
       const c = ctx(), host = Boolean(c.recruiter), owner = ownsControl(), ready = allowed();
       $('voiceHostControls').hidden = !host;
       $('voiceCandidateConsent').hidden = host;
-      $('voiceDisclosure').textContent = text('AI-generated male voice asks English questions in the call. Recording stays optional and manual; preparing question audio does not record anyone.', 'AI 男声在通话中用英语提问。录音始终可选且手动开启；提前准备题目音频不会录制任何人。', 'Una voz masculina generada por IA hace preguntas en inglés en la llamada. La grabación es opcional y manual; preparar preguntas no graba a nadie.', 'Uma voz masculina gerada por IA faz perguntas em inglês na chamada. A gravação é opcional e manual; preparar perguntas não grava ninguém.');
+      $('voiceDisclosure').textContent = window.QuadInterviewAuto ? text('AI male voice asks only the question you select. Automatic microphone notes have separate consent and pause controls in the video panel.', 'AI 男声只播报你选定的问题；自动麦克风记录在视频区单独显示同意、暂停与状态。', 'La voz masculina de IA lee solo la pregunta elegida. El registro automático tiene controles de consentimiento y pausa en el panel de video.', 'A voz masculina de IA lê apenas a pergunta escolhida. O registro automático tem controles de consentimento e pausa no painel de vídeo.') : text('AI-generated male voice asks English questions in the call. Recording stays optional and manual; preparing question audio does not record anyone.', 'AI 男声在通话中用英语提问。录音始终可选且手动开启；提前准备题目音频不会录制任何人。');
       $('voiceTitle').textContent = text('AI English male voice', 'AI 英语男声', 'Voz masculina de IA en inglés', 'Voz masculina de IA em inglês');
       $('voiceConsentNotice').textContent = consentText(c.language, 'notice');
       $('voiceConsentSave').textContent = consentText(c.language, 'enable');
@@ -159,7 +159,7 @@
       else if (!c.connected) blocking = text('Join the call to play questions. Audio can prepare beforehand.', '加入通话后可播题，题目音频可提前准备。', 'Entre en la llamada para reproducir preguntas. El audio puede prepararse antes.', 'Entre na chamada para reproduzir perguntas. O áudio pode ser preparado antes.');
       else if (!healthy) blocking = text('Checking room status. If the connection failed, reconnect before continuing.', '正在核实房间状态，连接失败时请重连。', 'Verificando la sala. Si falla la conexión, vuelva a conectarse.', 'Verificando a sala. Se a conexão falhar, reconecte.');
       else if (!voice?.configured) blocking = text('AI voice is not configured.', 'AI 语音尚未配置。', 'La voz de IA no está configurada.', 'A voz de IA não está configurada.');
-      else if (!owner) blocking = text('Take AI control before speaking or recording.', '请先取得 AI 控制权，再播题或录音。', 'Tome el control de IA antes de hablar o grabar.', 'Assuma o controle de IA antes de falar ou gravar.');
+      else if (!owner) blocking = text('Take AI voice control to speak a question. Automatic notes do not need this control.', '请先取得 AI 播音控制权再播题；自动记录不需要此控制权。', 'Tome el control de voz de IA para leer una pregunta. El registro automático no necesita este control.', 'Assuma o controle de voz de IA para ler uma pergunta. O registro automático não precisa deste controle.');
       else if (!activeRoom?.remoteParticipants.has(voice.candidateIdentity)) blocking = text('Waiting for the candidate to join.', '等待候选人加入通话。', 'Esperando a que entre el candidato.', 'Aguardando a entrada do candidato.');
       else if (voice.consent !== true) blocking = text('Candidate chose video only or has not enabled optional AI. Continue manually, or let the candidate choose Enable AI in their page.', '候选人选择了仅视频，或尚未启用可选 AI。可继续人工面试；候选人也可在其页面自行启用 AI。', 'El candidato eligió solo video o no activó la IA. Continúe manualmente; el candidato puede activar la IA en su página.', 'O candidato escolheu apenas vídeo ou não ativou IA. Continue manualmente; o candidato pode ativar IA na própria página.');
       else if (blocked) blocking = text('Finish or stop the current question / answer first.', '请先完成或停止当前提问／回答。', 'Primero termine o detenga la pregunta / respuesta actual.', 'Primeiro conclua ou pare a pergunta / resposta atual.');
@@ -179,7 +179,7 @@
       $('voiceRecordStop').textContent = text('Stop & transcribe answer', '停止并转写回答');
       $('voiceRetryAnswer').textContent = text('Retry saving this answer', '重试保存本段回答');
       $('voiceDiscardAnswer').textContent = text('Discard unsaved audio', '丢弃未保存录音');
-      $('voiceRecordStart').disabled = !ready || blocked || currentTurn()?.phase !== 'waiting' || !candidateMicrophone();
+      $('voiceRecordStart').disabled = Boolean(window.QuadInterviewAuto) || !ready || blocked || currentTurn()?.phase !== 'waiting' || !candidateMicrophone();
       $('voiceRecordStop').disabled = !capture || Boolean(uploadPromise);
       $('voiceRetryAnswer').hidden = !pendingAnswer || Boolean(uploadPromise) || Boolean(pendingAnswer?.terminalError);
       $('voiceRetryAnswer').disabled = !ready || Boolean(uploadPromise);
@@ -226,7 +226,7 @@
     async function claim() {
       if (!writable() || !ctx().connected || busy) return;
       busy = true; render();
-      try { await operation('claim'); message(text('You control AI voice. Every question and recording still needs a manual click.', '已取得 AI 控制权；每次播题和录音仍需手动点击。')); }
+      try { await operation('claim'); message(window.QuadInterviewAuto ? text('You control AI voice. Click the question to speak; consenting participants are recorded automatically.', '已取得 AI 播音控制权。点题目即可提问；已同意的参与者会自动记录发言。') : text('You control AI voice. Every question and recording still needs a manual click.', '已取得 AI 控制权；每次播题和录音仍需手动点击。')); }
       catch (cause) { message(cause.message, true); }
       finally { busy = false; render(); }
     }
@@ -363,6 +363,7 @@
       return { participant, publication, track };
     }
     async function startRecording() {
+      if (window.QuadInterviewAuto) return; // Automatic mode records local microphones only; legacy remote capture is disabled.
       if (!allowed() || busy || playback || capture || captureStarting || pendingAnswer || uploadPromise || currentTurn()?.phase !== 'waiting') return;
       const candidate = candidateMicrophone();
       if (!candidate) return message(text('The consenting candidate microphone is not available.', '已同意的候选人麦克风尚不可用。'), true);
@@ -460,6 +461,7 @@
       message(text('In-memory audio discarded. Any text already saved remains in the record.', '内存中的音频已丢弃；此前已保存的文字仍保留在档案中。'));
     }
     async function setConsent(consent) {
+      if (window.QuadInterviewAuto) return; // Current consent belongs to the automatic local-microphone workflow.
       if (ctx().recruiter || !ctx().connected || busy) return;
       busy = true; render();
       try {

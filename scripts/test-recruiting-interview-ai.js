@@ -80,3 +80,36 @@ test('later/custom configured text models retain their reasoning defaults', asyn
   await analyze(input());
   assert.equal(Object.hasOwn(sent, 'reasoning_effort'), false);
 });
+
+test('Chinese and mixed-language answers remain original evidence in analysis', async () => {
+  let sent;
+  const analyze = createRecruitingInterviewAnalyzer({ getConfig:() => config, requestJson:async (_url, options) => {
+    sent = JSON.parse(options.body); return response({ summary:'原话分析' });
+  } });
+  const text = '我第一周拜访了三家 dealerships，并拿到一个试单。';
+  await analyze({ ...input(), transcript:[{ speaker:'candidate', text, source:'openai_auto_audio', language:'mixed' }] });
+  assert.equal(JSON.parse(sent.messages[1].content).transcript[0].text, text);
+  assert.match(sent.messages[0].content, /original language \(Chinese, English or mixed\)/);
+  assert.doesNotMatch(sent.messages[0].content, /original English|supporting English text/);
+});
+
+test('long interviews retain their earliest evidence rather than taking the last 160 rows', async () => {
+  let sent;
+  const analyze = createRecruitingInterviewAnalyzer({ getConfig:() => config, requestJson:async (_url, options) => {
+    sent = JSON.parse(options.body); return response({});
+  } });
+  const transcript = Array.from({ length:400 }, (_, index) => ({ id:`answer-${index}`, speaker:'candidate', text:`Original evidence ${index}` }));
+  await analyze({ ...input(), transcript });
+  const source = JSON.parse(sent.messages[1].content);
+  assert.equal(source.transcript.length, 400);
+  assert.equal(source.transcript[0].text, 'Original evidence 0');
+  assert.equal(source.transcript[399].text, 'Original evidence 399');
+});
+
+test('oversized complete evidence fails visibly without silently truncating or calling a provider', async () => {
+  let calls = 0;
+  const analyze = createRecruitingInterviewAnalyzer({ getConfig:() => config, requestJson:async () => { calls++; return response({}); } });
+  await assert.rejects(analyze({ ...input(), transcript:[{ speaker:'candidate', text:'x'.repeat(200001) }] }), { code:'INTERVIEW_ANALYSIS_TOO_LARGE' });
+  await assert.rejects(analyze({ ...input(), transcript:Array.from({length:2001}, () => ({ speaker:'candidate', text:'Evidence' })) }), { code:'INTERVIEW_ANALYSIS_TOO_LARGE' });
+  assert.equal(calls, 0);
+});

@@ -6,10 +6,11 @@
   <meta name="theme-color" content="#073d49">
   <title>QUAD FILM Video Interview</title>
   <link rel="icon" href="/quad-film-icon-192.png">
-  <link rel="stylesheet" href="/recruiting-interview.css?v=20260919-male-preload-1">
+  <link rel="stylesheet" href="/recruiting-interview.css?v=20260920-auto-recording-1">
   <script defer src="/livekit-client.umd.js?v=1"></script>
-  <script defer src="/recruiting-interview-voice.js?v=20260919-male-preload-1"></script>
-  <script defer src="/recruiting-interview.js?v=20260919-male-preload-1"></script>
+  <script defer src="/recruiting-interview-auto.js?v=20260920-auto-recording-1"></script>
+  <script defer src="/recruiting-interview-voice.js?v=20260920-auto-recording-1"></script>
+  <script defer src="/recruiting-interview.js?v=20260920-auto-recording-1"></script>
 </head>
 <body>
   <main class="interview-shell">
@@ -39,6 +40,15 @@
           <div id="remoteStage" class="remote-stage"></div>
         </div>
         <div id="waitingParticipants" class="waiting" hidden><strong data-i18n="waiting">Waiting for other participants…</strong><span data-i18n="keepOpen">Keep this page open. Video will appear automatically after they connect.</span></div>
+        <section id="autoPanel" class="auto-panel" aria-label="Automatic interview transcription">
+          <div class="auto-heading"><strong id="autoTitle">Automatic interview notes</strong><span id="autoRecordingBadge" class="auto-badge" role="status"></span></div>
+          <p id="autoStatus" class="auto-status" role="status" aria-live="polite"></p>
+          <div class="auto-level"><label id="autoLevelLabel" for="autoLevel">Your microphone</label><meter id="autoLevel" min="0" max="1" value="0"></meter><span id="autoLevelText"></span></div>
+          <p id="autoQueueStatus" class="panel-status" role="status"></p>
+          <p id="autoError" class="error" role="alert" hidden></p>
+          <div class="voice-actions"><button id="autoConsentEnable" class="small" type="button" hidden>Agree to automatic recording</button><button id="autoPause" class="small secondary" type="button">Pause recording</button><button id="autoRevoke" class="small secondary" type="button">Withdraw consent</button><button id="autoRetry" class="small" type="button" hidden>Retry unsaved segments</button><button id="autoDiscard" class="small danger" type="button" hidden>Discard unsaved audio</button><button id="autoEnableAudio" class="small" type="button" hidden>Enable microphone processing</button></div>
+          <details class="auto-disclosure"><summary id="autoNoticeTitle">Recording and AI information</summary><p id="autoNotice"></p></details>
+        </section>
         <div id="audioStage" hidden></div>
         <button id="enableRoomAudio" class="audio-recovery" type="button" hidden>Enable room audio / 启用房间声音</button>
         <div class="controls">
@@ -65,18 +75,18 @@
           <p id="voiceDisclosure" class="voice-disclosure"></p>
           <p id="voiceState" class="voice-state" role="status" aria-live="polite"></p>
           <p id="voiceCurrentQuestion" class="voice-current-question"></p>
-          <div id="voiceCandidateConsent" hidden>
+          <div hidden><div id="voiceCandidateConsent" hidden>
             <p id="voiceConsentNotice" class="voice-consent"></p>
             <div class="voice-actions"><button id="voiceConsentSave" class="small" type="button">Enable optional AI assistance & answer recording</button><button id="voiceConsentRevoke" class="small secondary" type="button">Revoke consent / keep video only</button></div>
-          </div>
+          </div></div>
           <div id="voiceHostControls" hidden>
             <div class="voice-prepare"><span id="voicePrepareStatus" role="status" aria-live="polite"></span><button id="voicePrepareRetry" class="small" type="button" hidden>Retry audio preparation</button></div>
             <p id="voiceBlockingReason" class="panel-status" role="status"></p>
             <div class="voice-actions"><button id="voiceClaim" class="small" type="button">Take AI control</button><button id="voiceRelease" class="small secondary" type="button">Release control</button></div>
             <div class="voice-actions"><button id="voiceSpeak" class="small" type="button">Speak selected question in English</button><button id="voiceRepeat" class="small secondary" type="button">Repeat last question</button><button id="voiceStop" class="small danger" type="button">Stop AI voice</button></div>
             <details class="voice-followup"><summary>追问 / Follow-up</summary><label><span id="voiceFollowupLabel">Draft a follow-up</span><textarea id="voiceFollowupDraft" maxlength="2000" rows="3"></textarea></label><button id="voiceTranslateFollowup" class="small" type="button">Generate English preview</button><label><span id="voiceFollowupPreviewLabel">Review English preview</span><textarea id="voiceFollowupPreview" maxlength="2000" rows="3" spellcheck="true"></textarea></label><button id="voiceConfirmFollowup" class="small" type="button">Confirm & speak this English preview</button></details>
-            <p id="voiceRecordNotice" class="panel-status"></p>
-            <div class="voice-actions"><button id="voiceRecordStart" class="small" type="button">Start candidate answer recording</button><button id="voiceRecordStop" class="small secondary" type="button">Stop & transcribe answer</button><button id="voiceRetryAnswer" class="small" type="button" hidden>Retry saving this answer</button><button id="voiceDiscardAnswer" class="small danger" type="button" hidden>Discard unsaved audio</button></div>
+            <div hidden><p id="voiceRecordNotice" class="panel-status"></p>
+            <div class="voice-actions"><button id="voiceRecordStart" class="small" type="button" disabled>Legacy manual recording</button><button id="voiceRecordStop" class="small secondary" type="button" disabled>Legacy stop</button><button id="voiceRetryAnswer" class="small" type="button" hidden>Retry saving this answer</button><button id="voiceDiscardAnswer" class="small danger" type="button" hidden>Discard unsaved audio</button></div></div>
           </div>
           <p id="voiceStatus" class="panel-status" role="status" aria-live="polite"></p>
         </section>
