@@ -9545,7 +9545,7 @@ function openProduct(id) {
   const isEdit = Boolean(id);
   const ownerCanEditIdentity = user?.role === 'owner';
   const fields = [
-    ['sku','SKU',isEdit ? 'readonly' : 'text',item.sku], ['model',lang === 'zh' ? '型号（仅老板可修改）' : 'Model (owner only)',isEdit && !ownerCanEditIdentity ? 'readonly' : 'text',item.model || item.sku], ['specification',lang === 'zh' ? '规格' : 'Specification','text',item.specification || ''], ['name',lang === 'zh' ? '名称（仅老板可修改）' : 'Name (owner only)',isEdit && !ownerCanEditIdentity ? 'readonly' : 'text',item.name], ['category',t('category'),'select',item.category, productCategories()],
+    ['sku','SKU',isEdit ? 'readonly' : 'text',item.sku], ['model',lang === 'zh' ? '型号（仅老板可修改）' : 'Model (owner only)',isEdit && !ownerCanEditIdentity ? 'readonly' : 'text',item.model || item.sku], ['specification',lang === 'zh' ? '规格' : 'Specification','text',item.specification || ''], ['name',lang === 'zh' ? '名称（仅老板可修改）' : 'Name (owner only)',isEdit && !ownerCanEditIdentity ? 'readonly' : 'text',item.name], ['category',t('category'),'select',item.category, productCategories(item.category)],
     ['unit',lang === 'zh' ? '单位' : 'Unit','text',item.unit], ...(canSeeFinance() ? [['cost',`${t('cost')} $`,'number',item.cost]] : []), ['price',`${t('retailPrice')} $`,'number',item.price],
     ['wholesale',`${t('wholesalePrice')} $`,'number',item.wholesale],
     ['minPrice',`${t('minSalePrice')} $`,'number',item.minPrice || item.wholesale || 0],
@@ -11617,10 +11617,19 @@ function setupWorkshopStockGuard() {
   update();
 }
 
-function productCategories() {
-  return lang === 'zh'
-    ? ['窗膜卷料','TPU车衣','改色膜','工具耗材','零售商品']
-    : ['Window Tint Rolls','PPF','Color Wrap','Tools & Supplies','Retail Product'];
+function productCategories(currentCategory = '') {
+  const options = [
+    ['窗膜卷料', lang === 'zh' ? '窗膜卷料' : 'Window Tint Rolls'],
+    ['TPU车衣', lang === 'zh' ? 'TPU车衣' : 'PPF'],
+    ['改色膜', lang === 'zh' ? '改色膜' : 'Color Wrap'],
+    ['工具耗材', lang === 'zh' ? '工具耗材' : 'Tools & Supplies'],
+    ['零售商品', lang === 'zh' ? '零售商品' : 'Retail Product']
+  ];
+  const current = String(currentCategory || '').trim();
+  if (current && !options.some(([value]) => value === current)) {
+    options.unshift([current, `${current}${lang === 'zh' ? '（当前类别）' : ' (current category)'}`]);
+  }
+  return options;
 }
 function expenseCategories() {
   return lang === 'zh'

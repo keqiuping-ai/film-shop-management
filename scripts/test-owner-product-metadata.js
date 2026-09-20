@@ -45,7 +45,9 @@ async function run() {
   const html = fs.readFileSync(path.join(root, 'public/index.html'), 'utf8');
   assert(appSource.includes("['sku','SKU',isEdit ? 'readonly' : 'text'"), 'Existing SKU must be read-only in the product editor');
   assert(appSource.includes('ownerCanEditIdentity'), 'Product identity fields must be owner-gated in the UI');
-  assert(html.includes('/app.js?v=136'), 'Desktop app asset marker must be bumped');
+  assert(appSource.includes('productCategories(item.category)'), 'Product editor must preserve the current legacy category');
+  assert(appSource.includes("options.unshift([current"), 'Unknown legacy categories must remain selectable instead of falling back to the first option');
+  assert(html.includes('/app.js?v=137'), 'Desktop app asset marker must be bumped');
 
   const child = spawn(process.execPath, ['server.js'], {
     cwd: root,
