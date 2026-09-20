@@ -26,11 +26,11 @@
     pt:{ title:'Currículo do candidato', position:'Cargo', location:'Localização', source:'Origem', availability:'Disponibilidade', employment:'Tipo de trabalho', compensation:'Remuneração', experience:'Experiência profissional', resources:'Recursos de clientes / concessionárias', resume:'Currículo', notes:'Notas de recrutamento', missing:'O texto do currículo ainda não foi inserido.', attachment:'Currículo anexado: {name}' },
     zh:{ title:'应聘者简历', position:'应聘岗位', location:'所在地', source:'来源', availability:'最早到岗', employment:'工作意愿', compensation:'薪酬匹配', experience:'工作经历', resources:'客户 / 经销商资源', resume:'简历正文', notes:'招聘备注', missing:'尚未录入简历正文。', attachment:'已附简历：{name}' }
   };
-  const transcriptBlocked = {
-    en:'Automatic transcription could not start. Check browser microphone and speech-recognition permissions.',
-    es:'No se pudo iniciar la transcripción automática. Revise los permisos del micrófono y reconocimiento de voz.',
-    pt:'Não foi possível iniciar a transcrição automática. Verifique as permissões do microfone e reconhecimento de voz.',
-    zh:'自动转写未能启动，请检查浏览器的麦克风和语音识别权限。'
+  const controlledVoiceCopy = {
+    en:{ consent:'I agree to join this audio/video call. Joining does not enable answer recording or transcription; optional AI consent is separate.', liveTranscript:'Saved answer text', transcriptOff:'Automatic transcription is off. Candidate consent and a manual recording action are required.', createSummary:'Stop recording & analyze (keep call open)' },
+    es:{ consent:'Acepto entrar en esta llamada de audio y video. Entrar no activa grabación ni transcripción; el consentimiento opcional de IA es independiente.', liveTranscript:'Respuestas guardadas', transcriptOff:'La transcripción automática está desactivada. Se requiere consentimiento del candidato y grabación manual.', createSummary:'Detener grabación y analizar (mantener llamada)' },
+    pt:{ consent:'Concordo em entrar nesta chamada de áudio e vídeo. Entrar não ativa gravação ou transcrição; o consentimento opcional de IA é separado.', liveTranscript:'Respostas salvas', transcriptOff:'A transcrição automática está desligada. É necessário consentimento do candidato e gravação manual.', createSummary:'Parar gravação e analisar (manter chamada)' },
+    zh:{ consent:'我同意加入音视频通话。进入房间不会开启回答录音或转写；可选的 AI 功能需要另外同意。', liveTranscript:'已保存的回答原文与中文译文', transcriptOff:'自动转写已关闭。需候选人另行同意，且由面试官手动开始录音。', createSummary:'停止录音并分析（不结束通话）' }
   };
   const backCopy = { en:'← Back to recruiting', es:'← Volver a contratación', pt:'← Voltar ao recrutamento', zh:'← 返回招聘中心' };
   const interviewerCopy = {
@@ -50,10 +50,10 @@
   const participants = new Map();
   let language = localStorage.getItem('quadInterview.language') || 'en';
   if (!copy[language]) language = 'en';
-  let info = null, room = null, joining = false, leaving = false, sessionSecret = '', recognition = null, transcriptActive = false, micEnabled = true, cameraEnabled = true;
+  let info = null, room = null, joining = false, leaving = false, sessionSecret = '', micEnabled = true, cameraEnabled = true, voiceUi = null;
   let connected = false, ending = false, roomEnded = false, hasJoined = false;
-  let analysisBusy = false, newEvidenceCount = 0, lastAutoAnalysisAt = 0, selectedKitId = '', selectedQuestionId = '';
-  const t = (key, vars = {}) => Object.entries(vars).reduce((value, [name, replacement]) => value.replace(`{${name}}`, replacement), (recruiter && interviewerCopy[language]?.[key]) || roomCopy[language]?.[key] || copy[language][key] || roomCopy.en[key] || copy.en[key] || key);
+  let analysisBusy = false, selectedKitId = '', selectedQuestionId = '';
+  const t = (key, vars = {}) => Object.entries(vars).reduce((value, [name, replacement]) => value.replace(`{${name}}`, replacement), controlledVoiceCopy[language]?.[key] || (recruiter && interviewerCopy[language]?.[key]) || roomCopy[language]?.[key] || copy[language][key] || roomCopy.en[key] || copy.en[key] || key);
   const qt = key => questionCopy[language]?.[key] || questionCopy.en[key] || key;
   const rt = (key, vars = {}) => Object.entries(vars).reduce((value, [name, replacement]) => value.replace(`{${name}}`, replacement), resumeCopy[language]?.[key] || resumeCopy.en[key] || key);
   const request = async (url, options = {}) => {
@@ -73,7 +73,8 @@
     if (info) renderReady();
     for (const entry of participants.values()) renderParticipant(entry);
     updateParticipantCount(); updatePermissions();
-    $('transcriptToggle').textContent = t(transcriptActive ? 'stopTranscript' : 'startTranscript');
+    $('transcriptToggle').hidden = true; $('transcriptToggle').disabled = true;
+    voiceUi?.render();
     document.title = `QUAD FILM · ${t('videoInterview')}`;
   }
   function error(message) { $('error').textContent = message || ''; $('roomError').textContent = message || ''; $('connectionBadge').textContent = t('connectionFailed'); $('connectionBadge').className = 'badge warn'; }
@@ -112,19 +113,23 @@
   function appendTranscript(row) {
     if (!row?.id || !row.text || $(`transcript-${row.id}`)) return;
     const line = document.createElement('div'); line.className = 'transcript-line'; line.id = `transcript-${row.id}`;
-    const speaker = row.speaker === 'candidate' ? t('candidate') : t('interviewer');
+    const assistant = row.speaker === 'assistant' || row.source === 'openai_speech';
+    const speaker = assistant ? (language === 'zh' ? 'AI 面试助手' : 'AI interview assistant') : row.speaker === 'candidate' ? t('candidate') : t('interviewer');
     const label = document.createElement('strong'); label.textContent = row.speakerName ? `${row.speakerName} · ${speaker}` : speaker;
     line.dataset.participantIdentity = String(row.participantIdentity || '');
-    const text = document.createElement('span'); text.textContent = row.text;
-    line.append(label, text); $('transcriptList').appendChild(line); line.scrollIntoView({ block:'nearest' });
-  }
-  function queueRealtimeAnalysis() {
-    if (!recruiter || info?.canWriteTranscript !== true || !connected || analysisBusy || !isAutoAnalysisLeader()) return;
-    newEvidenceCount += 1;
-    const now = Date.now();
-    if (newEvidenceCount < 3 || now - lastAutoAnalysisAt < 30_000) return;
-    newEvidenceCount = 0; lastAutoAnalysisAt = now;
-    analyze('next', true);
+    const source = document.createElement('span'); source.className = 'transcript-source';
+    const sourceLabel = assistant ? (language === 'zh' ? 'AI 英文提问（不是候选人回答）' : 'AI-generated English question (not a candidate answer)') : row.speaker === 'candidate' ? (language === 'zh' ? '回答转写原文' : 'Original answer transcript') : (language === 'zh' ? '面试官发言记录' : 'Interviewer statement');
+    source.textContent = `${sourceLabel}: ${row.text}`;
+    line.append(label);
+    if (row.questionText || row.questionId || row.turnId) {
+      const question = document.createElement('p'); question.className = 'transcript-question';
+      question.textContent = `${language === 'zh' ? '对应问题' : 'Question'}${row.questionId ? ` [${row.questionId}]` : ''}: ${row.questionText || row.turnId || ''}`;
+      line.append(question);
+    }
+    line.append(source);
+    if (row.translationZh) { const translated = document.createElement('span'); translated.className = 'transcript-translation'; translated.textContent = `中文译文 / Chinese translation: ${row.translationZh}`; line.append(translated); }
+    else if (row.translationError) { const missing = document.createElement('span'); missing.className = 'transcript-translation'; missing.textContent = language === 'zh' ? '中文翻译未完成；英文原文已保存，请人工核对。' : 'Chinese translation is unavailable. The English original was saved; review it manually.'; line.append(missing); }
+    $('transcriptList').appendChild(line);
   }
   function recommendedKitId(kits, position) {
     const value = String(position || '').toLowerCase();
@@ -178,7 +183,7 @@
       option.textContent = language === 'zh' ? optionKit.titleZh : optionKit.titleEn;
       option.selected = optionKit.id === kit.id; select.appendChild(option);
     }
-    select.onchange = event => { selectedKitId = event.target.value; selectedQuestionId = ''; renderQuestionBank(); };
+    select.onchange = event => { selectedKitId = event.target.value; selectedQuestionId = ''; renderQuestionBank(); voiceUi?.selectedQuestionChanged(); };
     const list = $('questionBankList'); list.replaceChildren();
     kit.questions.forEach((question, index) => {
       const selected = question.id === selectedQuestionId;
@@ -188,7 +193,7 @@
       const wording = document.createElement('span'); wording.className = 'question-text'; wording.textContent = language === 'zh' ? question.zh : question.en;
       const flag = document.createElement('span'); flag.className = 'question-critical'; flag.textContent = question.critical ? qt('critical') : '';
       button.append(number, wording, flag);
-      button.onclick = () => { selectedQuestionId = selected ? '' : question.id; renderQuestionBank(); };
+      button.onclick = () => { selectedQuestionId = selected ? '' : question.id; renderQuestionBank(); voiceUi?.selectedQuestionChanged(); };
       card.appendChild(button);
       if (selected) {
         const details = document.createElement('div'); details.className = 'question-details';
@@ -198,10 +203,19 @@
         focus.append(focusTitle, document.createTextNode(question.focus));
         const strong = document.createElement('p'); const strongTitle = document.createElement('strong'); strongTitle.textContent = qt('strong');
         strong.append(strongTitle, document.createTextNode(question.strong));
-        details.append(bilingual, focus, strong); card.appendChild(details);
+        const speak = document.createElement('button'); speak.id = 'voiceQuestionSpeak'; speak.type = 'button'; speak.className = 'small question-speak';
+        speak.textContent = language === 'zh' ? '让 AI 用英语提问' : 'Ask this question aloud in English (AI)'; speak.disabled = true;
+        speak.onclick = () => { void voiceUi?.speakSelected(); };
+        details.append(bilingual, focus, strong, speak); card.appendChild(details);
       }
       list.appendChild(card);
     });
+    voiceUi?.render();
+  }
+  function selectedQuestion() {
+    const kit = info?.interviewKits?.find(item => item.id === selectedKitId);
+    const question = kit?.questions?.find(item => item.id === selectedQuestionId);
+    return question ? { text:question.en, questionId:question.id, kitId:kit.id } : null;
   }
   function displayValue(value) {
     if (typeof value === 'string' || typeof value === 'number') return String(value);
@@ -223,6 +237,16 @@
     const scores = document.createElement('section'); const scoreTitle = document.createElement('strong'); scoreTitle.textContent = t('scores'); scores.appendChild(scoreTitle);
     for (const [name, value] of Object.entries(analysis.scores || {})) { const row = document.createElement('div'); row.className = 'score-row'; const key = document.createElement('span'); key.textContent = name; const score = document.createElement('b'); score.textContent = value == null ? '—' : `${value}/10`; row.append(key, score); scores.appendChild(row); }
     $('aiSummary').appendChild(scores);
+    for (const review of analysis.questionReviews || []) {
+      const section = document.createElement('section'); section.className = 'question-review';
+      const boundary = document.createElement('strong'); boundary.className = 'analysis-label'; boundary.textContent = language === 'zh' ? 'AI 分析 · 不是候选人原话' : 'AI analysis · not a candidate quote';
+      const question = document.createElement('p'); question.textContent = review.question || review.turnId || '';
+      const answer = document.createElement('p'); answer.textContent = review.answerSummary || '';
+      section.append(boundary, question, answer);
+      for (const block of [renderList(t('evidence'), review.evidence), renderList(language === 'zh' ? '已体现的优势' : 'Supported strengths', review.strengths), renderList(t('openQuestions'), review.openQuestions)]) if (block) section.append(block);
+      const score = document.createElement('p'); score.textContent = `${language === 'zh' ? '本题证据参考评分' : 'Question evidence score'}: ${review.score == null ? '—' : `${review.score}/10`}`; section.append(score);
+      $('aiSummary').append(section);
+    }
     if (analysis.resumeDraft) { const resume = document.createElement('section'); const resumeTitle = document.createElement('strong'); resumeTitle.textContent = t('resumeDraft'); const pre = document.createElement('p'); pre.textContent = analysis.resumeDraft; resume.append(resumeTitle, pre); $('aiSummary').appendChild(resume); }
   }
   function updateVideoAspect(element, container) {
@@ -241,13 +265,12 @@
     const role = local ? (recruiter ? 'interviewer' : 'candidate') : participantMetadata(participant).role;
     return ['interviewer', 'candidate'].includes(role) ? role : 'participantRole';
   }
-  function canTranscribe() { return recruiter ? info?.canWriteTranscript === true : Boolean(sessionSecret); }
   function updatePermissions() {
     $('shareInterviewer').hidden = !recruiter || !info?.interviewId || roomEnded;
     $('endRoom').hidden = !recruiter || info?.canManageRoom !== true || !connected;
     $('endRoom').disabled = ending || leaving;
     $('endRoom').textContent = t(ending ? 'ending' : 'endRoom');
-    $('transcriptToggle').disabled = !connected || !canTranscribe() || ending || leaving;
+    $('transcriptToggle').hidden = true; $('transcriptToggle').disabled = true;
     $('aiNext').disabled = !connected || !recruiter || info?.canWriteTranscript !== true || analysisBusy;
     $('aiFinal').disabled = $('aiNext').disabled;
     $('roomAccessNotice').hidden = !recruiter || info?.canWriteTranscript === true;
@@ -257,13 +280,16 @@
     $('leave').textContent = t(leaving ? 'leaving' : 'leave');
     $('mic').textContent = t(micEnabled ? 'micOn' : 'micOff');
     $('camera').textContent = t(cameraEnabled ? 'cameraOn' : 'cameraOff');
+    voiceUi?.render();
   }
-  function isAutoAnalysisLeader() {
-    if (!room || info?.canWriteTranscript !== true) return false;
-    const eligible = [...participants.values()].filter(entry => participantRole(entry.participant, entry.local) === 'interviewer'
-      && (entry.local ? info.canWriteTranscript === true : participantMetadata(entry.participant).canWriteTranscript === true));
-    const identities = eligible.map(entry => entry.participant.identity).sort();
-    return identities[0] === room.localParticipant.identity;
+  function updateRoomAudio() {
+    $('enableRoomAudio').hidden = !connected || room?.canPlaybackAudio !== false;
+  }
+  async function enableRoomAudio() {
+    if (!connected || !room) return;
+    const active = room;
+    try { await active.startAudio(); if (room === active) updateRoomAudio(); }
+    catch { if (room === active) { $('enableRoomAudio').hidden = false; $('roomError').textContent = language === 'zh' ? '房间声音仍被浏览器阻止，请再次点击启用声音。' : 'Room audio is still blocked by the browser. Click Enable room audio again.'; } }
   }
   function updateParticipantCount() {
     const count = connected ? participants.size : 0;
@@ -327,9 +353,10 @@
     if (video) {
       element.playsInline = true; element.muted = local; updateVideoAspect(element, entry.tile); entry.media.appendChild(element);
     } else {
-      $('audioStage').appendChild(element); element.play()?.catch(() => {});
+      $('audioStage').appendChild(element); element.play()?.catch(() => { if (connected) $('enableRoomAudio').hidden = false; });
     }
     renderParticipant(entry);
+    voiceUi?.sync();
   }
   function syncParticipant(participant, local = false) {
     const entry = ensureParticipant(participant, local); if (!entry) return;
@@ -346,12 +373,14 @@
     syncParticipant(room.localParticipant, true);
     for (const participant of room.remoteParticipants.values()) syncParticipant(participant);
     updateParticipantCount();
+    voiceUi?.sync();
   }
   function removeParticipant(participant) {
     const entry = participants.get(participant?.identity); if (!entry) return;
     for (const track of [...entry.tracks.keys()]) detachTrack(entry, track);
     if (entry.local) { entry.tile.replaceChildren(); entry.tile.hidden = true; } else entry.tile.remove();
     participants.delete(participant.identity); updateParticipantCount();
+    voiceUi?.sync();
   }
   function clearParticipants() {
     for (const entry of [...participants.values()]) removeParticipant(entry.participant);
@@ -379,7 +408,7 @@
       joiningRoom = new LivekitClient.Room({ adaptiveStream:true, dynacast:true, disconnectOnPageLeave:true }); room = joiningRoom;
       const on = (event, callback) => joiningRoom.on(event, (...args) => { if (room === joiningRoom) callback(...args); });
       on(LivekitClient.RoomEvent.TrackSubscribed, (track, publication, participant) => attachParticipantTrack(track, publication, participant));
-      on(LivekitClient.RoomEvent.TrackUnsubscribed, (track, _publication, participant) => { const entry = participants.get(participant?.identity); if (entry) { detachTrack(entry, track); renderParticipant(entry); } });
+      on(LivekitClient.RoomEvent.TrackUnsubscribed, (track, _publication, participant) => { const entry = participants.get(participant?.identity); if (entry) { detachTrack(entry, track); renderParticipant(entry); } voiceUi?.sync(); });
       on(LivekitClient.RoomEvent.TrackUnpublished, (publication, participant) => { const entry = participants.get(participant?.identity); if (entry) { for (const [track, attached] of [...entry.tracks]) if (attached.publication === publication || track === publication.track) detachTrack(entry, track); renderParticipant(entry); } });
       on(LivekitClient.RoomEvent.ParticipantConnected, participant => syncParticipant(participant));
       on(LivekitClient.RoomEvent.ParticipantDisconnected, removeParticipant);
@@ -388,8 +417,9 @@
       on(LivekitClient.RoomEvent.LocalTrackPublished, publication => attachParticipantTrack(publication.track, publication, room.localParticipant, true));
       on(LivekitClient.RoomEvent.LocalTrackUnpublished, publication => { const entry = participants.get(room.localParticipant.identity); if (entry) { for (const [track, attached] of [...entry.tracks]) if (attached.publication === publication || track === publication.track) detachTrack(entry, track); renderParticipant(entry); } });
       on(LivekitClient.RoomEvent.DataReceived, (payload, participant) => receiveTranscript(payload, participant));
-      on(LivekitClient.RoomEvent.Reconnecting, () => { $('connectionBadge').textContent = t('reconnecting'); $('connectionBadge').className = 'badge warn'; });
-      on(LivekitClient.RoomEvent.Reconnected, () => { syncParticipants(); $('connectionBadge').textContent = t('connected'); $('connectionBadge').className = 'badge live'; });
+      on(LivekitClient.RoomEvent.Reconnecting, () => { connected = false; voiceUi?.suspend(language === 'zh' ? '正在重连，AI 播音与录音已停止；不会自动恢复。' : 'Reconnecting. AI playback and recording stopped; they will not restart automatically.', true); updatePermissions(); $('connectionBadge').textContent = t('reconnecting'); $('connectionBadge').className = 'badge warn'; });
+      on(LivekitClient.RoomEvent.Reconnected, () => { connected = true; syncParticipants(); void voiceUi?.connect(); updatePermissions(); updateRoomAudio(); $('connectionBadge').textContent = t('connected'); $('connectionBadge').className = 'badge live'; });
+      on(LivekitClient.RoomEvent.AudioPlaybackStatusChanged, updateRoomAudio);
       on(LivekitClient.RoomEvent.Disconnected, reason => {
         roomEnded ||= [LivekitClient.DisconnectReason.ROOM_DELETED, LivekitClient.DisconnectReason.ROOM_CLOSED].includes(reason);
         disconnectLocal(); showDisconnected();
@@ -402,7 +432,9 @@
       if (room !== joiningRoom) throw new Error(t('disconnected'));
       connected = true; hasJoined = true; micEnabled = true; cameraEnabled = true; syncParticipants(); updatePermissions();
       $('welcome').hidden = true; $('roomView').hidden = false; $('connectionBadge').textContent = t('connected'); $('connectionBadge').className = 'badge live'; renderTranscripts(access.aiState?.transcript || []); renderAnalysis(access.aiState?.analysis || null);
-      if (!transcriptActive && canTranscribe()) startTranscript();
+      // Joining never starts recording or browser transcription. Consent is a separate action.
+      $('transcriptStatus').textContent = t('transcriptOff'); updateRoomAudio();
+      await voiceUi?.connect();
     } catch (cause) {
       stopLocalTracks(joiningRoom);
       if (!joiningRoom || room === joiningRoom) await disconnectLocal();
@@ -410,77 +442,26 @@
       $('join').disabled = roomEnded; $('join').hidden = roomEnded; $('join').textContent = t('retry');
     } finally { joining = false; updatePermissions(); }
   }
-  function rememberTranscript(row) {
-    if (!row?.id || !String(row.text || '').trim()) return false;
-    info.aiState ||= {}; info.aiState.transcript ||= [];
-    if (info.aiState.transcript.some(item => item.id === row.id)) return false;
-    info.aiState.transcript.push(row);
-    info.aiState.transcript = info.aiState.transcript.slice(-300); appendTranscript(row); return true;
-  }
   function receiveTranscript(payload, participant) {
-    // A peer may send arbitrary data. Its signed room identity, not its payload, identifies the speaker.
-    if (!participant?.identity || !room?.remoteParticipants.has(participant.identity)) return;
-    const role = participantRole(participant); if (!['candidate', 'interviewer'].includes(role)) return;
-    try {
-      const value = JSON.parse(new TextDecoder().decode(payload));
-      if (value.type !== 'transcript' || typeof value.row?.id !== 'string' || value.row.id.length > 200 || typeof value.row.text !== 'string' || !value.row.text.trim() || value.row.text.length > 2000) return;
-      if (value.row.participantIdentity !== participant.identity) return;
-      if (role === 'interviewer' && participantMetadata(participant).canWriteTranscript !== true) return;
-      const row = { id:value.row.id, text:value.row.text, language:String(value.row.language || '').slice(0, 20), createdAt:value.row.createdAt,
-        speaker:role, speakerName:participant.name || t(role), participantIdentity:participant.identity };
-      if (rememberTranscript(row)) queueRealtimeAnalysis();
-    } catch {}
-  }
-  async function saveTranscript(text) {
-    if (!connected || !room || !canTranscribe() || !text.trim()) return;
-    const activeRoom = room;
-    const body = { id:`${Date.now()}-${crypto.getRandomValues(new Uint32Array(1))[0]}`, text, language, participantSessionId,
-      speakerName:info.participantName || activeRoom.localParticipant.name || '', participantIdentity:info.participantIdentity || activeRoom.localParticipant.identity };
-    const data = recruiter
-      ? await request(`/api/recruiting/interviews/${encodeURIComponent(info.interviewId)}/video-transcript`, { method:'POST', auth:true, body:JSON.stringify(body) })
-      : await request('/api/public/recruiting-video/transcript', { method:'POST', body:JSON.stringify({ ...body, interviewId:info.interviewId, sessionSecret }) });
-    if (room !== activeRoom || !connected || !data.row) return;
-    // Broadcast only the server-attributed row, without private account identifiers.
-    const { id, speaker, speakerName, participantIdentity, text:savedText, language:savedLanguage, createdAt } = data.row;
-    const row = { id, speaker, speakerName, participantIdentity, text:savedText, language:savedLanguage, createdAt };
-    rememberTranscript(row);
-    activeRoom.localParticipant.publishData(new TextEncoder().encode(JSON.stringify({ type:'transcript', row })), { reliable:true }).catch(() => {});
-    queueRealtimeAnalysis();
-  }
-  function startTranscript() {
-    if (!connected || !canTranscribe()) return;
-    if (transcriptActive) { stopTranscript(); return; }
-    if (!micEnabled) { $('transcriptStatus').textContent = t('muteTranscript'); return; }
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SpeechRecognition) { $('transcriptStatus').textContent = t('transcriptUnavailable'); return; }
-    recognition = new SpeechRecognition(); recognition.continuous = true; recognition.interimResults = true; recognition.lang = localeCodes[language]; transcriptActive = true;
-    const activeRecognition = recognition;
-    recognition.onresult = event => { if (recognition !== activeRecognition || !transcriptActive || !micEnabled) return; for (let index = event.resultIndex; index < event.results.length; index++) if (event.results[index].isFinal) saveTranscript(event.results[index][0].transcript.trim()).catch(cause => { $('transcriptStatus').textContent = cause.message; }); };
-    recognition.onend = () => { if (recognition === activeRecognition && transcriptActive && connected && canTranscribe()) try { activeRecognition.start(); } catch {} };
-    recognition.onerror = event => {
-      if (recognition !== activeRecognition) return;
-      if (['not-allowed', 'service-not-allowed'].includes(event.error)) {
-        transcriptActive = false; $('transcriptToggle').textContent = t('startTranscript'); $('transcriptStatus').textContent = transcriptBlocked[language] || transcriptBlocked.en;
-      } else if (!['no-speech', 'aborted'].includes(event.error)) $('transcriptStatus').textContent = event.error;
-    };
-    try {
-      recognition.start(); $('transcriptToggle').textContent = t('stopTranscript'); $('transcriptStatus').textContent = t('transcriptOn');
-    } catch {
-      transcriptActive = false; recognition = null; $('transcriptToggle').textContent = t('startTranscript'); $('transcriptStatus').textContent = t('transcriptUnavailable');
-    }
+    // Room data is not evidence or permission. Only wake up authoritative server polling.
+    voiceUi?.receiveSignal(payload, participant);
   }
   function stopTranscript() {
-    transcriptActive = false;
-    const previous = recognition; recognition = null;
-    try { previous?.stop(); } catch {}
-    $('transcriptToggle').textContent = t('startTranscript'); $('transcriptStatus').textContent = t('transcriptOff');
+    $('transcriptToggle').hidden = true; $('transcriptToggle').disabled = true; $('transcriptStatus').textContent = t('transcriptOff');
   }
-  async function analyze(mode, automatic = false) {
-    if (analysisBusy || !connected || !recruiter || info?.canWriteTranscript !== true || (automatic && !isAutoAnalysisLeader())) return;
+  async function analyze(mode) {
+    if (analysisBusy || !connected || !recruiter || info?.canWriteTranscript !== true) return;
+    const activeRoom = room;
     analysisBusy = true;
     updatePermissions(); $('aiStatus').textContent = t('aiWorking');
-    try { const data = await request(`/api/recruiting/interviews/${encodeURIComponent(info.interviewId)}/video-analyze`, { method:'POST', auth:true, body:JSON.stringify({ mode }) }); info.aiState ||= {}; info.aiState.analysis = data.aiState?.analysis; renderAnalysis(data.aiState?.analysis); $('aiStatus').textContent = t('aiReady'); }
-    catch { $('aiStatus').textContent = t('aiFailed'); if (automatic) lastAutoAnalysisAt = 0; } finally { analysisBusy = false; updatePermissions(); }
+    try {
+      await voiceUi?.beforeAnalyze(mode);
+      if (!connected || room !== activeRoom) return;
+      const data = await request(`/api/recruiting/interviews/${encodeURIComponent(info.interviewId)}/video-analyze`, { method:'POST', auth:true, body:JSON.stringify({ mode }) });
+      if (!connected || room !== activeRoom) return;
+      info.aiState ||= {}; info.aiState.analysis = data.aiState?.analysis; renderAnalysis(data.aiState?.analysis); $('aiStatus').textContent = t('aiReady');
+    } catch (cause) { $('aiStatus').textContent = `${t('aiFailed')} ${cause.message || ''}`; }
+    finally { analysisBusy = false; updatePermissions(); }
   }
   function stopLocalTracks(activeRoom) {
     for (const publication of activeRoom?.localParticipant?.trackPublications?.values() || []) {
@@ -488,9 +469,12 @@
     }
   }
   async function disconnectLocal() {
+    const voiceCleanup = voiceUi?.disconnect();
     const previous = room; room = null; connected = false;
     stopTranscript(); stopLocalTracks(previous); clearParticipants(); updatePermissions();
+    $('enableRoomAudio').hidden = true;
     try { await Promise.race([Promise.resolve(previous?.disconnect(true)), new Promise(resolve => setTimeout(resolve, 1500))]); } catch {}
+    await voiceCleanup;
   }
   function showDisconnected() {
     $('roomView').hidden = true; $('welcome').hidden = false;
@@ -536,22 +520,27 @@
       else await activeRoom.localParticipant.setCameraEnabled(!activeRoom.localParticipant.isCameraEnabled);
       if (room !== activeRoom) { stopLocalTracks(activeRoom); return; }
       micEnabled = activeRoom.localParticipant.isMicrophoneEnabled; cameraEnabled = activeRoom.localParticipant.isCameraEnabled;
-      if (!micEnabled && transcriptActive) stopTranscript();
       syncParticipant(activeRoom.localParticipant, true);
     } catch (cause) { if (room === activeRoom) $('roomError').textContent = cause.message; }
     finally { updatePermissions(); }
   }
-  $('language').addEventListener('change', event => { language = event.target.value; applyLanguage(); if (recognition && transcriptActive) { recognition.stop(); recognition.lang = localeCodes[language]; } });
+  $('language').addEventListener('change', event => { language = event.target.value; applyLanguage(); });
   $('backToRecruiting').hidden = !recruiter;
   $('backToRecruiting').addEventListener('click', () => window.location.assign('/?page=recruiting'));
   $('consent').addEventListener('change', () => { if (invite) $('join').disabled = !$('consent').checked || !info || joining || roomEnded; });
-  $('join').addEventListener('click', join); $('transcriptToggle').addEventListener('click', startTranscript); $('aiNext').addEventListener('click', () => analyze('next')); $('aiFinal').addEventListener('click', () => analyze('final'));
+  $('join').addEventListener('click', join); $('aiNext').addEventListener('click', () => analyze('next')); $('aiFinal').addEventListener('click', () => analyze('final'));
+  $('enableRoomAudio').addEventListener('click', enableRoomAudio);
   $('mic').addEventListener('click', () => toggleDevice('mic'));
   $('camera').addEventListener('click', () => toggleDevice('camera'));
   $('leave').addEventListener('click', leaveInterview);
   $('endRoom').addEventListener('click', endInterviewForEveryone);
   $('shareInterviewer').addEventListener('click', showInterviewerLink);
   $('copyInterviewerLink').addEventListener('click', copyInterviewerLink);
-  window.addEventListener('pagehide', () => { stopTranscript(); stopLocalTracks(room); room?.disconnect(true); });
+  window.addEventListener('pagehide', () => { void voiceUi?.disconnect(); stopTranscript(); stopLocalTracks(room); room?.disconnect(true); });
+  voiceUi = window.QuadInterviewVoice?.create({ $, request,
+    getContext:() => ({ recruiter, room, connected, info, sessionSecret, participantSessionId, language }),
+    getSelectedQuestion:selectedQuestion,
+    onState:data => { if (!info || !recruiter) return; if (data.aiState) { info.aiState = data.aiState; renderTranscripts(data.aiState.transcript || []); renderAnalysis(data.aiState.analysis || null); } }
+  });
   applyLanguage(); boot();
 })();

@@ -25,7 +25,15 @@ function fixture(analyzeInterview, { canAccess = () => true, snapshotReads = fal
     await service[kind](req, res, new URL(`https://quad.example${pathname}`), actor);
     return res.result;
   };
-  return { get db() { return db; }, call };
+  const grantVoiceConsent = () => {
+    let invite = db.recruitingVideoInvites.find(row => ['active', 'joined'].includes(row.status));
+    if (!invite) {
+      invite = { id:'synthetic-consented-invite', interviewId:'interview-1', candidateId:'candidate-1', status:'joined', expiresAt:new Date(Date.now() + 86400000).toISOString(), roomName:roomName('interview-1') };
+      db.recruitingVideoInvites.push(invite);
+    }
+    invite.voiceConsent = { consent:true, noticeVersion:'2026-09-19-voice-v1', updatedAt:new Date().toISOString() };
+  };
+  return { get db() { return db; }, call, grantVoiceConsent };
 }
 
 async function withConfiguredVideo(callback) {
@@ -126,6 +134,7 @@ test('invalid interviewer sessions are rejected instead of issuing ambiguous par
 
 test('transcript attribution is server-owned and cross-participant duplicate IDs fail explicitly', async () => {
   const env = fixture(undefined, { canAccess:hasFixturePermission });
+  env.grantVoiceConsent();
   const body = {
     id:'shared-line-id', participantSessionId:participantSessionA, text:'Original interviewer question.', language:'en',
     speaker:'candidate', speakerName:'Forged person', speakerUserId:'forged-user', participantIdentity:'candidate-forged', createdAt:'1900-01-01'
@@ -157,6 +166,7 @@ test('transcript attribution is server-owned and cross-participant duplicate IDs
 test('candidate public responses never expose internal interviewer user IDs, private profile or AI analysis', async () => {
   await withConfiguredVideo(async () => {
     const env = fixture(undefined, { canAccess:hasFixturePermission });
+    env.grantVoiceConsent();
     await env.call('handleAdmin', videoPath('transcript'), 'POST', { id:'private-staff-line', participantSessionId:participantSessionA, text:'Describe your work experience.' }, editor);
     env.db.recruitingInterviews[0].aiInterview.analysis = { summary:'Private evidence score draft', generatedByUserId:editor.id };
     const created = await env.call('handleAdmin', videoPath('invite'), 'POST', {}, editor);
@@ -164,6 +174,8 @@ test('candidate public responses never expose internal interviewer user IDs, pri
     const details = await env.call('handlePublic', `/api/public/recruiting-video/invite/${raw}`, 'GET');
     const exchange = await env.call('handlePublic', `/api/public/recruiting-video/invite/${raw}/exchange`, 'POST', { consent:true });
     assert.equal(exchange.status, 200);
+    const voiceConsent = await env.call('handlePublic', '/api/public/recruiting-video/voice-consent', 'POST', { interviewId:'interview-1', sessionSecret:exchange.body.sessionSecret, consent:true, noticeVersion:'2026-09-19-voice-v1' });
+    assert.equal(voiceConsent.status, 200);
     const rejoin = await env.call('handlePublic', '/api/public/recruiting-video/session', 'POST', { interviewId:'interview-1', sessionSecret:exchange.body.sessionSecret });
     for (const result of [details, exchange, rejoin]) {
       assert.equal(result.status, 200);
@@ -194,6 +206,7 @@ test('awaiting AI analysis preserves transcript evidence written by another inte
     return new Promise(resolve => { finishAnalysis = resolve; });
   };
   const env = fixture(analyze, { canAccess:hasFixturePermission, snapshotReads:true });
+  env.grantVoiceConsent();
   await env.call('handleAdmin', videoPath('transcript'), 'POST', { id:'before-analysis', participantSessionId:participantSessionA, text:'First preserved evidence.' }, editor);
   const pending = env.call('handleAdmin', videoPath('analyze'), 'POST', { mode:'next' }, editor);
   await analysisStarted;
@@ -261,8 +274,9 @@ test('question-first room uses independent participant tiles and per-tile video 
   assert.match(script, /const participants = new Map\(\)/);
   assert.match(script, /participants\.set\(participant\.identity, entry\)/);
   assert.match(script, /if \(!local\) \$\('remoteStage'\)\.appendChild\(tile\)/);
-  assert.match(script, /if \(!transcriptActive && canTranscribe\(\)\) startTranscript\(\);/);
-  assert.match(script, /transcriptActive = false; recognition = null;/);
+  assert.doesNotMatch(script, /SpeechRecognition|startTranscript\(|saveTranscript\(/, 'Joining must not start browser-owned continuous transcription');
+  assert.match(script, /await voiceUi\?\.connect\(\)/);
+  assert.match(script, /\$\('transcriptToggle'\)\.hidden = true; \$\('transcriptToggle'\)\.disabled = true/);
 });
 
 test('room keeps ordinary leave separate from permission-gated end-for-everyone and signed-in sharing', () => {
@@ -286,25 +300,19 @@ test('room keeps ordinary leave separate from permission-gated end-for-everyone 
   assert.doesNotMatch(script, /(?:localStorage|sessionStorage)\.setItem\([^\n]*participantSessionId/);
 });
 
-test('multiplayer transcript uses server attribution, readonly guards and a single automatic leader', () => {
+test('multiplayer transcript trusts only server evidence and analysis remains manual, guarded and answer-aware', () => {
   const script = fs.readFileSync(require.resolve('../public/recruiting-interview.js'), 'utf8');
-  const receive = script.slice(script.indexOf('function receiveTranscript('), script.indexOf('async function saveTranscript('));
-  const save = script.slice(script.indexOf('async function saveTranscript('), script.indexOf('function startTranscript()'));
-  const leader = script.slice(script.indexOf('function isAutoAnalysisLeader()'), script.indexOf('function updateParticipantCount()'));
-  assert.match(script, /function canTranscribe\(\) \{ return recruiter \? info\?\.canWriteTranscript === true : Boolean\(sessionSecret\)/);
-  assert.match(save, /if \(!connected \|\| !room \|\| !canTranscribe\(\) \|\| !text\.trim\(\)\) return/);
-  assert.match(script, /if \(!connected \|\| !canTranscribe\(\)\) return/);
-  assert.match(script, /if \(analysisBusy \|\| !connected \|\| !recruiter \|\| info\?\.canWriteTranscript !== true \|\| \(automatic && !isAutoAnalysisLeader\(\)\)\) return/);
-  assert.match(receive, /value\.row\.participantIdentity !== participant\.identity/);
-  assert.match(receive, /participantMetadata\(participant\)\.canWriteTranscript !== true/);
-  assert.match(receive, /speaker:role, speakerName:participant\.name/);
-  assert.match(save, /if \(room !== activeRoom \|\| !connected \|\| !data\.row\) return/);
-  assert.ok(save.indexOf('await request(') < save.indexOf('publishData('));
-  assert.match(save, /const \{ id, speaker, speakerName, participantIdentity, text:savedText, language:savedLanguage, createdAt \} = data\.row/);
-  assert.doesNotMatch(save, /\.\.\.data\.row|speakerUserId/);
-  assert.match(leader, /participantMetadata\(entry\.participant\)\.canWriteTranscript === true/);
-  assert.match(leader, /eligible\.map\(entry => entry\.participant\.identity\)\.sort\(\)/);
-  assert.match(leader, /identities\[0\] === room\.localParticipant\.identity/);
+  const receive = script.slice(script.indexOf('function receiveTranscript('), script.indexOf('function stopTranscript('));
+  const analyze = script.slice(script.indexOf('async function analyze('), script.indexOf('function stopLocalTracks('));
+  assert.match(receive, /voiceUi\?\.receiveSignal\(payload, participant\)/);
+  assert.doesNotMatch(receive, /renderTranscripts|JSON\.parse|\.row|speakerUserId/, 'Room data cannot append or forge transcript evidence');
+  assert.match(analyze, /if \(analysisBusy \|\| !connected \|\| !recruiter \|\| info\?\.canWriteTranscript !== true\) return/);
+  assert.match(analyze, /await voiceUi\?\.beforeAnalyze\(mode\)/);
+  assert.ok(analyze.indexOf('await voiceUi?.beforeAnalyze(mode)') < analyze.indexOf('await request('));
+  assert.equal((analyze.match(/if \(!connected \|\| room !== activeRoom\) return/g) || []).length, 2, 'The same room is checked before and after analysis');
+  assert.doesNotMatch(script, /isAutoAnalysisLeader|analyze\([^)]*,\s*true|startTranscript\(/);
+  assert.match(script, /getSelectedQuestion:selectedQuestion/);
+  assert.match(script, /text:question\.en, questionId:question\.id, kitId:kit\.id/, 'Spoken question source is English, independent of UI language');
 });
 
 test('disconnect and failed joins stop local media and detach every participant track', () => {
@@ -320,7 +328,7 @@ test('disconnect and failed joins stop local media and detach every participant 
   assert.match(script, /if \(room === joiningRoom\) callback\(\.\.\.args\)/);
   assert.match(script, /stopLocalTracks\(joiningRoom\);\s*if \(!joiningRoom \|\| room === joiningRoom\) await disconnectLocal\(\)/);
   assert.match(script, /if \(room !== activeRoom\) \{ stopLocalTracks\(activeRoom\); return; \}/);
-  assert.match(script, /window\.addEventListener\('pagehide', \(\) => \{ stopTranscript\(\); stopLocalTracks\(room\); room\?\.disconnect\(true\); \}\)/);
+  assert.match(script, /window\.addEventListener\('pagehide', \(\) => \{ void voiceUi\?\.disconnect\(\); stopTranscript\(\); stopLocalTracks\(room\); room\?\.disconnect\(true\); \}\)/);
 });
 
 test('fresh candidate invitation replaces stale stored session while reconnect keeps the active session', async () => {
@@ -436,7 +444,13 @@ test('one-time candidate link exchanges once and reconnects only with the browse
     assert.equal(rejoined.status, 200); assert.ok(rejoined.body.token);
     assert.equal(Object.hasOwn(rejoined.body, 'candidateProfile'), false);
 
-    const transcript = await call('handlePublic', '/api/public/recruiting-video/transcript', 'POST', { interviewId:'interview-1', sessionSecret:joined.body.sessionSecret, id:'candidate-line-1', text:'I installed PPF for three years.', language:'en' });
+    const transcriptBody = { interviewId:'interview-1', sessionSecret:joined.body.sessionSecret, id:'candidate-line-1', text:'I installed PPF for three years.', language:'en' };
+    const unconsentedTranscript = await call('handlePublic', '/api/public/recruiting-video/transcript', 'POST', transcriptBody);
+    assert.equal(unconsentedTranscript.status, 409, 'Joining video does not grant separate AI transcription consent');
+    assert.equal(unconsentedTranscript.body.code, 'INTERVIEW_VOICE_CONSENT_REQUIRED');
+    const voiceConsent = await call('handlePublic', '/api/public/recruiting-video/voice-consent', 'POST', { interviewId:'interview-1', sessionSecret:joined.body.sessionSecret, consent:true, noticeVersion:'2026-09-19-voice-v1' });
+    assert.equal(voiceConsent.status, 200);
+    const transcript = await call('handlePublic', '/api/public/recruiting-video/transcript', 'POST', transcriptBody);
     assert.equal(transcript.status, 201); assert.equal(db.recruitingInterviews[0].aiInterview.transcript[0].speaker, 'candidate');
     delete process.env.LIVEKIT_URL; delete process.env.LIVEKIT_API_KEY; delete process.env.LIVEKIT_API_SECRET;
     const ended = await call('handleAdmin', '/api/recruiting/interviews/interview-1/video-end');
@@ -448,7 +462,8 @@ test('one-time candidate link exchanges once and reconnects only with the browse
 
 test('recruiter transcript and AI evidence draft are stored separately from original evidence', async () => {
   const analyzer = async ({ transcript, mode }) => ({ nextQuestions:['Give a specific example.'], evidence:[transcript[0].text], openQuestions:[], scores:{ technicalSkill:7 }, summary:'Draft summary', resumeDraft:'Unverified draft', limitations:[], provider:'openai', model:'fixture', generatedAt:new Date().toISOString(), mode });
-  const { db, call } = fixture(analyzer);
+  const { db, call, grantVoiceConsent } = fixture(analyzer);
+  grantVoiceConsent();
   const line = await call('handleAdmin', '/api/recruiting/interviews/interview-1/video-transcript', 'POST', { id:'interviewer-line-1', text:'Tell me about your PPF experience.', language:'en' });
   assert.equal(line.status, 201); assert.equal(db.recruitingInterviews[0].aiInterview.transcript[0].speaker, 'interviewer');
   const analyzed = await call('handleAdmin', '/api/recruiting/interviews/interview-1/video-analyze', 'POST', { mode:'final' });

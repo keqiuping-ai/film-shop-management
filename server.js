@@ -11,6 +11,7 @@ const { createRecruitingVideoService } = require('./lib/recruiting-video');
 const { createRecruitingInterviewAnalyzer } = require('./lib/recruiting-interview-ai');
 const { createRecruitingTranslator } = require('./lib/recruiting-openai');
 const { createRecruitingEmailProvider } = require('./lib/recruiting-email');
+const { createRecruitingVoiceProvider } = require('./lib/recruiting-voice');
 const execFileAsync = promisify(execFile);
 
 const ROOT = __dirname;
@@ -6067,6 +6068,12 @@ const recruitingService = recruiting.createRecruitingService({
 });
 const recruitingVideoService = createRecruitingVideoService({
   readDb, writeDb, readBody, send, canAccess, publicBaseUrl:requestPublicBaseUrl, notify:notifyDataChanged,
+  readVoiceBody:async req => JSON.parse(await readRawBody(req, 6_000_000) || '{}'),
+  voiceProvider:createRecruitingVoiceProvider({ getConfig:() => ({ apiKey:openAiCustomerReplyKey(readDb()), baseUrl:process.env.OPENAI_API_BASE_URL || 'https://api.openai.com/v1' }) }),
+  translateVoiceText:createRecruitingTranslator({
+    getConfig:() => { const db = readDb(); return { apiKey:openAiCustomerReplyKey(db), model:customerAiReplyModel(db), baseUrl:process.env.OPENAI_API_BASE_URL || 'https://api.openai.com/v1' }; },
+    requestJson:(url, options, timeoutMs) => fetchAiJson(url, options, Math.min(timeoutMs, 25000))
+  }),
   analyzeInterview:createRecruitingInterviewAnalyzer({
     getConfig:() => {
       const db = readDb();

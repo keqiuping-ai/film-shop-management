@@ -6,9 +6,10 @@
   <meta name="theme-color" content="#073d49">
   <title>QUAD FILM Video Interview</title>
   <link rel="icon" href="/quad-film-icon-192.png">
-  <link rel="stylesheet" href="/recruiting-interview.css?v=20260919-multi-interviewers-1">
+  <link rel="stylesheet" href="/recruiting-interview.css?v=20260919-controlled-voice-1">
   <script defer src="/livekit-client.umd.js?v=1"></script>
-  <script defer src="/recruiting-interview.js?v=20260919-multi-interviewers-1"></script>
+  <script defer src="/recruiting-interview-voice.js?v=20260919-controlled-voice-1"></script>
+  <script defer src="/recruiting-interview.js?v=20260919-controlled-voice-1"></script>
 </head>
 <body>
   <main class="interview-shell">
@@ -24,7 +25,7 @@
       <h1 id="welcomeTitle" data-i18n="checkingLink">Checking your interview link…</h1>
       <p id="welcomeMeta" class="muted"></p>
       <div class="device-check"><span data-i18n="cameraCheck">🎥 Camera</span><span data-i18n="micCheck">🎙️ Microphone</span><span data-i18n="secureLink">🔒 One-time secure link</span></div>
-      <label id="consentRow" class="consent"><input id="consent" type="checkbox"><span data-i18n="consent">I understand that this interview uses audio, video, and live transcription to assist with notes. AI scoring is advisory only; a person makes the final decision.</span></label>
+      <label id="consentRow" class="consent"><input id="consent" type="checkbox"><span data-i18n="consent">I agree to join this audio/video call. Joining does not enable answer recording or transcription; optional AI consent is separate.</span></label>
       <p id="error" class="error" role="alert"></p>
       <button id="join" class="primary" disabled data-i18n="join">Join video interview</button>
       <p class="privacy" data-i18n="privacy">No account or app download is required. Your browser asks for camera and microphone access only after you consent. Video is not recorded by default.</p>
@@ -38,6 +39,7 @@
         </div>
         <div id="waitingParticipants" class="waiting" hidden><strong data-i18n="waiting">Waiting for other participants…</strong><span data-i18n="keepOpen">Keep this page open. Video will appear automatically after they connect.</span></div>
         <div id="audioStage" hidden></div>
+        <button id="enableRoomAudio" class="audio-recovery" type="button" hidden>Enable room audio / 启用房间声音</button>
         <div class="controls">
           <button id="mic" data-i18n="microphone">🎙️ Microphone</button><button id="camera" data-i18n="camera">🎥 Camera</button>
           <button id="leave" class="leave" data-i18n="leave">Leave interview</button>
@@ -57,6 +59,24 @@
           <div id="candidateResumeFacts" class="candidate-resume-facts"></div>
           <div id="candidateResumeContent" class="candidate-resume-content"></div>
         </section>
+        <section id="voicePanel" class="voice-panel">
+          <div class="panel-heading"><strong id="voiceTitle">Controlled AI voice</strong><span class="voice-ai-badge">AI</span></div>
+          <p id="voiceDisclosure" class="voice-disclosure"></p>
+          <p id="voiceState" class="voice-state" role="status" aria-live="polite"></p>
+          <p id="voiceCurrentQuestion" class="voice-current-question"></p>
+          <div id="voiceCandidateConsent" hidden>
+            <label class="consent voice-consent"><input id="voiceConsentCheck" type="checkbox"><span id="voiceConsentNotice"></span></label>
+            <div class="voice-actions"><button id="voiceConsentSave" class="small" type="button">Agree to optional AI voice & answer recording</button><button id="voiceConsentRevoke" class="small secondary" type="button">Revoke consent</button></div>
+          </div>
+          <div id="voiceHostControls" hidden>
+            <div class="voice-actions"><button id="voiceClaim" class="small" type="button">Take AI control</button><button id="voiceRelease" class="small secondary" type="button">Release control</button></div>
+            <div class="voice-actions"><button id="voiceSpeak" class="small" type="button">Speak selected question in English</button><button id="voiceRepeat" class="small secondary" type="button">Repeat last question</button><button id="voiceStop" class="small danger" type="button">Stop AI voice</button></div>
+            <details class="voice-followup"><summary>追问 / Follow-up</summary><label><span id="voiceFollowupLabel">Draft a follow-up</span><textarea id="voiceFollowupDraft" maxlength="2000" rows="3"></textarea></label><button id="voiceTranslateFollowup" class="small" type="button">Generate English preview</button><label><span id="voiceFollowupPreviewLabel">Review English preview</span><textarea id="voiceFollowupPreview" maxlength="2000" rows="3" spellcheck="true"></textarea></label><button id="voiceConfirmFollowup" class="small" type="button">Confirm & speak this English preview</button></details>
+            <p id="voiceRecordNotice" class="panel-status"></p>
+            <div class="voice-actions"><button id="voiceRecordStart" class="small" type="button">Start candidate answer recording</button><button id="voiceRecordStop" class="small secondary" type="button">Stop & transcribe answer</button><button id="voiceRetryAnswer" class="small" type="button" hidden>Retry saving this answer</button><button id="voiceDiscardAnswer" class="small danger" type="button" hidden>Discard unsaved audio</button></div>
+          </div>
+          <p id="voiceStatus" class="panel-status" role="status" aria-live="polite"></p>
+        </section>
         <section id="questionBankPanel" class="question-bank-panel" hidden>
           <div class="panel-heading"><strong id="questionBankTitle">Interview question bank</strong><span id="questionCount" class="question-count"></span></div>
           <label class="question-kit-picker"><span id="questionKitLabel">Question set</span><select id="questionKitSelect"></select></label>
@@ -64,7 +84,7 @@
           <div id="questionBankList" class="question-bank-list"></div>
         </section>
         <section class="transcript-panel">
-          <div class="panel-heading"><strong data-i18n="liveTranscript">Live transcript</strong><button id="transcriptToggle" class="small" data-i18n="startTranscript">Start transcript</button></div>
+          <div class="panel-heading"><strong data-i18n="liveTranscript">Saved answer text</strong><button id="transcriptToggle" class="small" data-i18n="startTranscript" hidden disabled>Start transcript</button></div>
           <div id="transcriptStatus" class="panel-status" data-i18n="transcriptOff">Transcription is off.</div>
           <div id="transcriptList" class="transcript-list" aria-live="polite"></div>
         </section>
@@ -72,7 +92,7 @@
           <div class="panel-heading"><strong data-i18n="aiCopilot">AI interview copilot</strong><button id="aiNext" class="small" data-i18n="suggestQuestions">Suggest questions</button></div>
           <p id="aiStatus" class="panel-status" data-i18n="aiReady">Ready to analyze job-related evidence.</p>
           <div id="aiQuestions" class="ai-output"></div>
-          <button id="aiFinal" class="small secondary" data-i18n="createSummary">Create summary and score draft</button>
+          <button id="aiFinal" class="small secondary" data-i18n="createSummary">Stop recording & analyze (keep call open)</button>
           <div id="aiSummary" class="ai-output"></div>
         </section>
       </aside>
