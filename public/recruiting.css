@@ -93,6 +93,18 @@
 .rec-templates button { border:1px solid #d6e5df; border-radius:8px; background:#fff; padding:7px 11px; font-size:12px; color:#49746a; cursor:pointer; }
 .rec-recipient { color:#38655d; background:#eff7f3; border-radius:8px; padding:12px 14px; font-size:13px; }
 .rec-sms-compose { min-height:145px!important; }
+.rec-email-dialog { gap:12px; }
+.rec-email-compose-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; align-items:start; }
+.rec-email-compose-grid > .rec-compose-step { min-width:0; padding:12px; gap:9px; }
+.rec-email-compose-grid textarea { min-height:190px; }
+.rec-email-dialog .rec-email-history { padding:9px 12px; }
+.rec-email-record { padding:10px 0; border-top:1px solid #e0e8e7; overflow-wrap:anywhere; }
+.rec-email-record:first-child { border-top:0; }
+.rec-email-record > strong { display:block; margin-bottom:4px; }
+.rec-email-record .rec-profile-section { margin-top:8px; padding:8px; }
+.rec-email-dialog .rec-recipient { overflow-wrap:anywhere; }
+.rec-email-dialog button:disabled { opacity:.48; cursor:not-allowed; }
+@media(max-width:800px) { .rec-email-compose-grid { grid-template-columns:1fr; } .rec-email-compose-grid textarea { min-height:150px; } }
 .rec-dialog .rec-subtitle { margin:0 0 12px; font-weight:650; color:#305f60; font-size:14px; }
 .rec-profile { grid-template-columns:repeat(2,minmax(0,1fr)); align-items:start; gap:10px; }
 .rec-profile > * { grid-column:1/-1; min-width:0; }

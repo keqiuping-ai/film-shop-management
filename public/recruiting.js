@@ -20,6 +20,7 @@
   let data = null, identity = '', loadedAt = 0, loading = null, error = '';
   let query = '', status = '', tab = 'candidates', scope = '', candidateSort = 'applied', busy = false;
   let composeContext = null;
+  let emailComposeContext = null;
   let sharedPhoneTestContext = null;
   const translationCache = new Map(), translationPending = new Map();
   const readingRequests = new WeakMap();
@@ -27,6 +28,8 @@
   let translationQueue = Promise.resolve(), translationCacheSize = 0, translationLastStartedAt = null;
   const hasHan = text => /\p{Script=Han}/u.test(String(text || ''));
   const phoneKey = phone => { const digits = String(phone || '').replace(/\D/g, ''); return digits.length === 10 ? `1${digits}` : digits; };
+  const emailKey = email => String(email || '').trim().toLowerCase();
+  const validEmail = email => typeof email === 'string' && email.length <= 254 && /^[^\s@<>,;:"\\]+@[^\s@<>,;:"\\]+\.[^\s@<>,;:"\\]+$/.test(email.trim()) && !/[\r\n]/.test(email);
   const tr = (zh, en) => lang === 'zh' ? zh : en;
   const h = value => escapeHtml(value);
   const label = (list, value) => { const item = list.find(row => row[0] === value); return item ? tr(item[1], item[2]) : value || '—'; };
@@ -318,13 +321,16 @@
   function onlineWorkflowHtml(person) {
     const meeting = nextInterview(person.id, 'online'), inPerson = nextInterview(person.id, 'in_person');
     const blockers = smsContactBlockers(person), latest = orderedMessages(person).at(-1), edit = canEdit();
+    const emailFirst = !person.phone?.trim() && validEmail(person.email);
+    const smsInvite = action('invite-online', person.id, tr('短信邀请', 'Invite by SMS'), !emailFirst);
+    const emailInvite = action('invite-online-email', person.id, tr('邮件邀请', 'Invite by email'), emailFirst);
     const step = (number, title, description, buttons, primary = false) => `<article class="rec-workflow-step${primary ? ' rec-workflow-primary' : ''}"><span class="rec-step-number">${number}</span><h4>${h(title)}</h4><p>${description}</p><div class="rec-actions">${buttons}</div></article>`;
     return `<section class="rec-online-workflow" aria-label="${tr('线上面试流程', 'Online interview workflow')}">
       <div class="rec-workflow-heading"><div><span class="rec-eyebrow">ONLINE INTERVIEW</span><h3>${tr('先邀约，再在线见面', 'Invite first. Meet online.')}</h3><p class="rec-note">${tr('以线上面试为主；所有时间均为洛杉矶时间。', 'Online interviews first. All times are in Los Angeles time.')}</p></div>${latest ? `<span class="rec-pill">${latest.direction === 'inbound' ? tr('最近收到回复', 'Latest: reply received') : tr('最近短信：', 'Latest SMS: ') + h(messageStatus(latest.status))}</span>` : `<span class="rec-pill">${tr('暂无短信记录', 'No SMS history')}</span>`}</div>
       <div class="rec-workflow-grid">
-        ${step('01', tr('短信邀请', 'Invite by SMS'), h(tr('先询问线上面试意愿和方便的时间。只生成草稿，不会直接发送。', 'Ask about availability for an online interview. Opens a draft, never sends automatically.')), edit ? action('invite-online', person.id, tr('短信邀请线上面试', 'Invite to online interview'), true) : action('messages', person.id, tr('查看短信记录', 'View messages')), true)}
+        ${step('01', tr('发送邀约', 'Send an invitation'), h(tr('选择邮件或短信，先询问线上面试意愿和时间。只打开草稿，不会直接发送。', 'Choose email or SMS to ask about an online interview and availability. Opens a draft only.')), edit ? (emailFirst ? emailInvite + smsInvite : smsInvite + emailInvite) : action('messages', person.id, tr('短信记录', 'SMS history')) + action('email-messages', person.id, tr('邮件记录', 'Email history')), true)}
         ${step('02', tr('确认时间', 'Confirm a time'), meeting ? `${h(when(meeting.startsAt))}<br>${pill(meeting.status, interviewStates)}` : h(tr('收到回复后保存预约；对方明确同意后再标记“已确认”。', 'Save a time after their reply. Mark confirmed only after explicit agreement.')), edit ? action(meeting ? 'edit-interview' : 'schedule', meeting?.id || person.id, meeting ? tr('查看 / 修改线上时间', 'Review online schedule') : tr('安排线上时间', 'Schedule online')) : '')}
-        ${step('03', tr('线上面试', 'Meet online'), h(tr('保存预约后生成专属链接，用英文短信发给对方；到点进入面试室。', 'Save the appointment, create a private link, and send it in a reviewed English SMS.')), edit ? action(meeting ? 'edit-interview' : 'schedule', meeting?.id || person.id, tr('链接 / 线上面试室', 'Link / interview room')) : '')}
+        ${step('03', tr('线上面试', 'Meet online'), h(tr('保存预约后生成专属链接，用英文邮件或短信发给对方；到点进入面试室。', 'Save the appointment, create a private link, and send it in a reviewed English email or SMS.')), edit ? action(meeting ? 'edit-interview' : 'schedule', meeting?.id || person.id, tr('链接 / 线上面试室', 'Link / interview room')) : '')}
         ${step('04', tr('记录与评分', 'Notes & scores'), h(tr('按销售案例、经销商资源和开发计划记录证据，供人工判断。', 'Record evidence of sales skills, dealership contacts and outreach plans for human review.')), edit ? action('interview-kit', person.id, tr('面试问题与评分', 'Questions & scoring')) : '')}
       </div>
       ${blockers.length ? `<details class="rec-invite-blockers"><summary>${tr('短信暂不能发送 · 查看原因', 'SMS blocked · see why')} (${blockers.length})</summary><ul>${blockers.map(reason => `<li>${h(reason)}</li>`).join('')}</ul>${edit ? action('candidate', person.id, tr('核实联系方式 / 同意记录', 'Review contacts / consent')) : ''}</details>` : `<p class="rec-note">${tr('短信联系条件已具备；英文预览与人工确认仍是发送前必需步骤。', 'SMS contact checks pass. English preview and explicit review are still required before sending.')}</p>`}
@@ -347,7 +353,7 @@
     if (identity !== next) {
       if (document.querySelector('[data-rec-dialog]') && identity) closeModal();
       identity = next; data = null; loadedAt = 0; loading = null; error = ''; query = ''; status = ''; scope = ''; candidateSort = 'applied';
-      composeContext = null; sharedPhoneTestContext = null; translationCache.clear(); translationPending.clear(); translationCacheSize = 0;
+      composeContext = null; emailComposeContext = null; sharedPhoneTestContext = null; translationCache.clear(); translationPending.clear(); translationCacheSize = 0;
       translationQueue = Promise.resolve(); translationLastStartedAt = null;
     }
     return Boolean(next);
@@ -367,8 +373,10 @@
         if (!checkIdentity() || identity !== requestedIdentity) return;
         data = result; loadedAt = Date.now(); error = '';
         updateOpenMessageThread();
+        updateOpenEmailThread();
       } catch (err) {
-        if (identity === requestedIdentity) error = err.message;
+        if (identity === requestedIdentity) error = err?.message || tr('无法读取最新招聘资料，请刷新后重试。', 'Could not read the latest recruiting records. Refresh and retry.');
+        return null;
       } finally {
         if (identity === requestedIdentity) { loading = null; if (current === 'recruiting') repaint(); }
       }
@@ -398,7 +406,7 @@
     return `<p class="rec-order-note">${candidateSort === 'created' ? tr('按录入系统时间最近优先；录入时间不代表申请时间。', 'Sorted by latest system entry, not application date.') : tr('已核实申请日期最近优先；同日先列已知时刻，只有日期不推算时刻。申请日期未核实者单独列后，按录入时间最近优先。', 'Verified application dates, newest first. Within a day, known times appear first; date-only records have no assumed time. Unverified applications follow, sorted by latest system entry.')}</p><div class="rec-table-scroll"><table class="rec-table"><thead><tr><th>${tr('应聘者', 'Candidate')}</th><th>${tr('岗位 / 来源', 'Position / source')}</th><th>${tr('进展', 'Progress')}</th><th>${tr('申请时间 · 洛杉矶', 'Applied · Pacific')}</th><th>${tr('录入系统 · 洛杉矶', 'Entered · Pacific')}</th><th>${tr('面试时间 · 洛杉矶', 'Interview · Pacific')}</th><th>${tr('评分', 'Score')}</th><th>${tr('操作', 'Actions')}</th></tr></thead><tbody>${rows.map((item, index) => {
       const meeting = nextInterview(item.id), score = average(item), info = applicationInfo(item);
       const unknownBoundary = candidateSort === 'applied' && !info.verified && (index === 0 || applicationInfo(rows[index - 1]).verified);
-      return `${unknownBoundary ? `<tr class="rec-date-group"><th colspan="8">${tr('以下申请时间尚未核实 · 按录入系统时间排序，不代表最近投递', 'Application dates below are unverified · sorted by system entry, not recent application')}</th></tr>` : ''}<tr class="rec-candidate-row" tabindex="0" data-rec-action="profile" data-rec-id="${h(item.id)}" aria-label="${h(tr('查看应聘者档案：', 'View candidate profile: ') + item.name)}" aria-haspopup="dialog"><td><div class="rec-person"><span class="rec-avatar">${h(String(item.name || '?').trim().split(/\s+/).map(part => part[0]).slice(0, 2).join('').toUpperCase())}</span><div><button type="button" data-rec-action="profile" data-rec-id="${h(item.id)}">${h(item.name)}</button><span class="rec-muted">${h(item.phone || item.email || tr('联系方式待补充', 'Contact details needed'))}</span>${needsReply(item) ? `<span class="rec-pill warn">${tr('有新回复', 'Reply received')}</span>` : ''}</div></div></td><td>${h(item.position || '—')}<span class="rec-muted">${h(item.source || '—')}${item.location ? ` · ${h(item.location)}` : ''}</span></td><td>${pill(item.status)}</td><td class="rec-date-cell">${info.verified ? `<time datetime="${h(info.raw)}">${h(applicationWhen(info))}</time><span class="rec-muted">${tr('有来源依据', 'Source recorded')}</span>` : `<span class="rec-unverified-date">${tr('申请时间未核实', 'Application date unverified')}</span><span class="rec-muted">${tr('仅按录入时间辅助排序', 'System entry used for ordering only')}</span>`}</td><td class="rec-date-cell"><time datetime="${h(item.createdAt || '')}">${h(recordedWhen(item.createdAt))}</time><span class="rec-muted">${tr('录入 ≠ 投递', 'Entry ≠ application')}</span></td><td>${meeting ? `${h(when(meeting.startsAt))}<span class="rec-muted">${h(label(interviewStates, meeting.status))}</span>` : '<span class="rec-muted">—</span>'}</td><td>${score ? `<span class="rec-score">${score.number}<small> / 10</small></span><span class="rec-muted">${score.count}/6 ${tr('项已评', 'rated')}</span>` : `<span class="rec-muted">${tr('待面试', 'Not rated')}</span>`}</td><td><div class="rec-actions"><button class="rec-text-button" data-rec-action="messages" data-rec-id="${h(item.id)}">${tr('短信', 'Messages')}</button>${canEdit() ? `<button class="rec-text-button" data-rec-action="${meeting ? 'edit-interview' : 'schedule'}" data-rec-id="${h(meeting?.id || item.id)}">${meeting ? tr('查看预约', 'Review interview') : tr('预约', 'Schedule')}</button>` : ''}</div></td></tr>`;
+      return `${unknownBoundary ? `<tr class="rec-date-group"><th colspan="8">${tr('以下申请时间尚未核实 · 按录入系统时间排序，不代表最近投递', 'Application dates below are unverified · sorted by system entry, not recent application')}</th></tr>` : ''}<tr class="rec-candidate-row" tabindex="0" data-rec-action="profile" data-rec-id="${h(item.id)}" aria-label="${h(tr('查看应聘者档案：', 'View candidate profile: ') + item.name)}" aria-haspopup="dialog"><td><div class="rec-person"><span class="rec-avatar">${h(String(item.name || '?').trim().split(/\s+/).map(part => part[0]).slice(0, 2).join('').toUpperCase())}</span><div><button type="button" data-rec-action="profile" data-rec-id="${h(item.id)}">${h(item.name)}</button><span class="rec-muted">${h(item.phone || item.email || tr('联系方式待补充', 'Contact details needed'))}</span>${needsReply(item) ? `<span class="rec-pill warn">${tr('有新回复', 'Reply received')}</span>` : ''}</div></div></td><td>${h(item.position || '—')}<span class="rec-muted">${h(item.source || '—')}${item.location ? ` · ${h(item.location)}` : ''}</span></td><td>${pill(item.status)}</td><td class="rec-date-cell">${info.verified ? `<time datetime="${h(info.raw)}">${h(applicationWhen(info))}</time><span class="rec-muted">${tr('有来源依据', 'Source recorded')}</span>` : `<span class="rec-unverified-date">${tr('申请时间未核实', 'Application date unverified')}</span><span class="rec-muted">${tr('仅按录入时间辅助排序', 'System entry used for ordering only')}</span>`}</td><td class="rec-date-cell"><time datetime="${h(item.createdAt || '')}">${h(recordedWhen(item.createdAt))}</time><span class="rec-muted">${tr('录入 ≠ 投递', 'Entry ≠ application')}</span></td><td>${meeting ? `${h(when(meeting.startsAt))}<span class="rec-muted">${h(label(interviewStates, meeting.status))}</span>` : '<span class="rec-muted">—</span>'}</td><td>${score ? `<span class="rec-score">${score.number}<small> / 10</small></span><span class="rec-muted">${score.count}/6 ${tr('项已评', 'rated')}</span>` : `<span class="rec-muted">${tr('待面试', 'Not rated')}</span>`}</td><td><div class="rec-actions"><button class="rec-text-button" data-rec-action="messages" data-rec-id="${h(item.id)}">${tr('短信', 'SMS')}</button><button class="rec-text-button" data-rec-action="email-messages" data-rec-id="${h(item.id)}">${tr('邮件', 'Email')}</button>${canEdit() ? `<button class="rec-text-button" data-rec-action="${meeting ? 'edit-interview' : 'schedule'}" data-rec-id="${h(meeting?.id || item.id)}">${meeting ? tr('查看预约', 'Review interview') : tr('预约', 'Schedule')}</button>` : ''}</div></td></tr>`;
     }).join('')}</tbody></table></div>`;
   }
 
@@ -434,7 +442,7 @@
     const today = localParts(Date.now()).date;
     const counts = [
       ['today', tr('今日面试', 'Today’s interviews'), interviews().filter(item => localParts(item.startsAt).date === today && item.status !== 'cancelled').length, tr('洛杉矶当地时间', 'Los Angeles local time')],
-      ['reply', tr('未读回复', 'Unread replies'), candidates().filter(needsReply).length, tr('最新候选人回复尚未查看', 'Latest candidate reply not yet viewed')],
+      ['reply', tr('短信未读回复', 'Unread SMS replies'), candidates().filter(needsReply).length, tr('最新短信回复尚未查看；邮件回复请查回信邮箱', 'Latest SMS reply not viewed; check email replies in the reply mailbox')],
       ['upcoming', tr('即将到来的面试', 'Upcoming interviews'), interviews().filter(item => ['scheduled', 'confirmed'].includes(item.status) && Date.parse(item.startsAt) >= Date.now()).length, tr('含等待确认的预约', 'Includes proposed appointments')],
       ['no_show', tr('未到场待跟进', 'No-show follow-up'), interviews().filter(item => item.status === 'no_show').length, tr('已人工标记未到场', 'Marked as no-show')]
     ];
@@ -561,7 +569,7 @@
       ['工作意愿 / Employment', c.employmentType ? employment : ''], ['薪酬匹配 / Compensation fit', c.compensation]
     ];
     const phoneLink = /^[+\d\s().-]+$/.test(c.phone || '') ? `<a class="btn" href="tel:${h(c.phone.replace(/[^+\d]/g, ''))}">${tr('拨打电话', 'Call')}</a>` : '';
-    const emailLink = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(c.email || '') ? `<a class="btn" href="mailto:${h(encodeURIComponent(c.email))}">${tr('打开邮件客户端', 'Open email app')}</a>` : '';
+    const emailLink = action('email-messages', id, tr('邮件邀约 / 记录', 'Email invitation / history'));
     let resumeLink = '';
     try { const url = new URL(c.resumeUrl); if (url.protocol === 'https:') resumeLink = `<a class="btn" href="${h(url.href)}" target="_blank" rel="noopener noreferrer">${tr('打开简历 / 作品来源', 'Open resume / portfolio source')}</a>`; } catch {}
     const html = `<div class="rec-dialog rec-profile" data-rec-dialog="profile" data-rec-id="${h(id)}"><div id="recDialogError" class="rec-alert" role="alert"></div><header class="rec-person-summary"><div><h2>${h(c.name)}</h2><p>${h(c.position || missing)}</p>${pill(c.status)}</div><div class="rec-actions">${action('messages', id, tr('短信往来 / 查看回复', 'Messages / replies'))}${canEdit() ? action('candidate', id, tr('编辑基本资料', 'Edit profile')) : ''}</div></header>${onlineWorkflowHtml(c)}<div class="rec-profile-section-title"><h3>${tr('候选人资料', 'Candidate profile')}</h3><span>${tr('基本信息 · 中英文简历 · 面试记录', 'Contact details · bilingual resume · interview notes')}</span></div><dl class="rec-profile-facts">${facts.map(([name, content]) => `<div class="rec-profile-fact"><dt>${h(name)}</dt><dd class="${content ? '' : 'rec-missing rec-profile-fact-missing'}">${h(content || missing)}</dd></div>`).join('')}</dl>${applicationDatesHtml(c)}<div class="rec-profile-contact-row"><div class="rec-actions">${phoneLink}${emailLink}</div><p class="rec-note">${tr('联系方式按档案原文显示；Indeed 转发邮箱不是候选人的私人邮箱。打开邮件客户端不会自动发信。', 'Contact details are shown as recorded. An Indeed relay address is not a personal email. Opening an email app does not send email.')}</p></div>${interviewScorecardsHtml(c)}${bilingualBlock(id, '经验与经历概览 / Experience overview', c.experience)}${bilingualBlock(id, '经销商资源与开发计划 / Dealership resources & outreach plan', c.dealershipResources)}${bilingualBlock(id, '跟进备注 / Follow-up notes', c.notes)}<section class="rec-profile-section rec-resume-section">${c.resumeText?.trim() ? `<div class="rec-resume-pair">${bilingualBlock(id, '已保存简历原文与对照 / Saved resume text & translation', c.resumeText, 'zh')}</div>` : `<h3>简历原文 / Original resume</h3><p class="rec-missing">${c.resume ? tr('已上传 PDF，但尚未提取文字，暂不能生成全文对照。可查看 PDF 原件；编辑档案可补充提取后的原文。', 'A PDF is uploaded, but text has not been extracted, so full-text translation is unavailable. View the PDF or add its extracted text through Edit profile.') : tr('尚无简历原文。上方经验摘要不能替代完整简历，请补充原文或附件。', 'Original resume text is missing. The experience summary is not a full resume. Add the original text or an attachment.')}</p>`}<div class="rec-attachment">${c.resume ? `${action('view-resume', id, tr('查看 PDF 原件', 'View original PDF'))}<span class="rec-note">${h(c.resume.name)}</span>` : `<span class="rec-note">${tr('尚无 PDF 附件', 'No PDF attachment')}</span>`}${resumeLink}</div><p class="rec-note">${tr('以上为已保存原文，不使用 AI 补写缺失履历；编辑档案可补充简历与附件。', 'This is the saved original. AI does not fill missing history. Use Edit profile to add resume text or attachments.')}</p></section><p class="rec-note">${tr('短信联系', 'SMS contact')}: ${c.smsOptedOut ? tr('已退订 · 禁止发送', 'Opted out · blocked') : c.smsConsent ? tr('已有同意记录', 'Consent recorded') : tr('尚无同意记录 · 不能发送', 'No consent recorded · cannot send')} ${h(c.smsConsentNote || '')}</p></div>`;
@@ -578,9 +586,10 @@
     const initialApplied = parseApplicationDate(c.appliedAt), initialAppliedDate = initialApplied?.date || '';
     const edit = canEdit();
     const currentMeeting = item ? nextInterview(item.id) : null;
+    const emailOptOutControls = `<fieldset ${edit ? '' : 'disabled'}><label class="rec-check"><input type="checkbox" id="recEmailOptedOut" ${c.emailOptedOut ? 'checked' : ''}>${tr('候选人要求停止邮件联系（仅记录真实请求）', 'Candidate requested no further email contact (record actual requests only)')}</label>${input('recEmailOptOutNote', tr('停止／恢复邮件联系的依据与日期', 'Source and date of email opt-out / renewed permission'), c.emailOptOutNote, 'text', 'maxlength="2000"')}<p class="rec-note">${tr('此设置独立于短信授权；不要为发邀请而删除候选人的拒收记录。', 'This is separate from SMS consent. Do not remove a candidate’s opt-out just to send an invitation.')}</p></fieldset>`;
     const phoneLink = /^[+\d\s().-]+$/.test(c.phone || '') ? `<a href="tel:${h(c.phone.replace(/[^+\d]/g, ''))}" class="btn">${tr('拨打电话', 'Call')}</a>` : '';
-    const emailLink = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(c.email || '') ? `<a href="mailto:${h(encodeURIComponent(c.email))}" class="btn">${tr('打开邮件客户端', 'Open email app')}</a>` : '';
-    const html = `<div class="rec-dialog" data-rec-dialog="candidate" data-rec-id="${h(id)}"><div id="recDialogError" class="rec-alert" role="alert"></div>${item ? `<div class="rec-person-summary"><div><strong>${h(c.name)}</strong><p>${h(c.phone || '')} ${h(c.email || '')}</p>${pill(c.status)}</div><div class="rec-actions">${phoneLink}${emailLink}${action('messages', id, tr('短信记录', 'Messages'))}${edit ? currentMeeting ? action('edit-interview', currentMeeting.id, tr('查看预约', 'Review interview'), true) : action('schedule', id, tr('安排面试', 'Schedule'), true) : ''}</div></div>` : ''}<fieldset ${edit ? '' : 'disabled'}><div class="rec-form-grid">${input('recName', tr('姓名 *', 'Name *'), c.name, 'text', 'maxlength="160" required')}${input('recPosition', tr('应聘岗位', 'Position'), c.position, 'text', 'maxlength="160"')}${input('recPhone', tr('手机号', 'Phone'), c.phone, 'tel', 'maxlength="40"')}${input('recEmail', tr('邮箱', 'Email'), c.email, 'email', 'maxlength="254"')}${input('recSource', tr('来源平台', 'Source'), c.source, 'text', 'maxlength="100" list="recSources"')}<datalist id="recSources"><option>Indeed</option><option>Craigslist</option><option>Handshake</option><option>Referral</option><option>Walk-in</option><option>Email</option></datalist>${select('recStatus', tr('招聘状态', 'Recruiting status'), candidateStates, c.status)}${input('recAppliedDate', tr('已核实申请日期（未知请留空）', 'Verified application date (leave blank if unknown)'), initialAppliedDate, 'date', `max="${localParts(Date.now()).date}"`)}${input('recApplicationDateNote', tr('申请日期依据（填写日期时必填）', 'Application date source (required with a date)'), c.applicationDateNote, 'text', 'maxlength="1000"')}<div class="rec-wide rec-date-edit-note"><p class="rec-note">${tr('仅填写来自原始申请或邮件的可核实日期，不要根据录入时间或“几天前”自动推算。清空日期会标记未核实。', 'Use a verifiable date from the original application or email. Do not infer it from system entry or relative dates. Clearing the date marks it unverified.')}${initialApplied?.precision === 'instant' ? ` ${tr('当前保存的精确申请时间：', 'Saved exact application time: ')}${h(recordedWhen(initialApplied.raw))}${tr('；日期不变时保留原始精确时刻，改日期后只保存日期。', '. Keeping the date preserves the exact time; changing it saves a date only.')}` : ''}</p><p class="rec-note">${tr('录入系统时间（只读，不是申请时间）：', 'System entry time (read-only; not application time): ')}${h(item ? recordedWhen(c.createdAt) : tr('将在首次保存时记录', 'Recorded on first save'))}</p></div>${input('recLocation', tr('所在地 / 通勤情况', 'Location / commute'), c.location, 'text', 'maxlength="240"')}${input('recAvailability', tr('最早到岗 / 可工作时间', 'Start date / work availability'), c.availability, 'text', 'maxlength="2000"')}${select('recEmployment', tr('全职 / 兼职意愿', 'Employment preference'), [['', '待确认', 'To confirm'], ['full_time', '全职', 'Full-time'], ['part_time', '兼职', 'Part-time'], ['flexible', '均可', 'Flexible']], c.employmentType || '')}${input('recCompensation', tr('对已发布薪资的匹配情况', 'Fit with published compensation'), c.compensation, 'text', 'maxlength="2000"')}${textarea('recExperience', tr('汽车 / 贴膜 / 销售经验及可核实业绩', 'Automotive / film / sales experience and verifiable results'), c.experience)}${textarea('recResources', tr('经销商资源及第一周开发计划', 'Dealership relationships and first-week outreach plan'), c.dealershipResources)}${textarea('recNotes', tr('跟进备注', 'Follow-up notes'), c.notes)}</div></fieldset><details ${!item ? 'open' : ''}><summary>${tr('简历与附件', 'Resume & attachment')}</summary><fieldset ${edit ? '' : 'disabled'}><div class="rec-form-grid">${input('recResumeUrl', tr('简历 / 作品链接（https://）', 'Resume / portfolio URL (https://)'), c.resumeUrl, 'url', 'maxlength="2000"')}${textarea('recResumeText', tr('简历文本', 'Resume text'), c.resumeText, 60000)}</div></fieldset>${item ? `<div class="rec-attachment">${c.resume ? `<span class="rec-note">${h(c.resume.name)}</span>${action('view-resume', id, tr('查看 PDF', 'View PDF'))}` : `<span class="rec-note">${tr('尚未上传 PDF 简历', 'No PDF uploaded')}</span>`}${edit ? `<label class="btn">${tr('上传 PDF（≤5 MB）', 'Upload PDF (≤5 MB)')}<input type="file" id="recResumeFile" data-rec-id="${h(id)}" accept="application/pdf,.pdf" hidden></label>` : ''}</div>` : `<p class="rec-note">${tr('先保存应聘者档案，即可上传私有 PDF 简历。', 'Save the candidate first to upload a private PDF resume.')}</p>`}</details><details><summary>${tr('面试评分与证据', 'Interview scorecard & evidence')}</summary><fieldset ${edit ? '' : 'disabled'}><p class="rec-note" style="margin-bottom:12px">${tr('1 分为证据弱，10 分为证据充分且匹配度高。未核实请留空；请记录具体案例。', '1 = weak evidence, 10 = strong verified fit. Leave unverified dimensions blank and record examples.')}</p><div class="rec-score-grid">${dimensions.map(([key, zh, en]) => input(`recScore_${key}`, tr(zh, en), c.scores?.[key] ?? '', 'number', 'min="1" max="10" step="1"')).join('')}</div>${textarea('recScoreNotes', tr('评分依据 / 优势 / 待核实事项', 'Evidence / strengths / open questions'), c.scoreNotes)}</fieldset></details><fieldset ${edit ? '' : 'disabled'}><label class="rec-check"><input type="checkbox" id="recConsent" ${c.smsConsent ? 'checked' : ''} ${c.smsOptedOut ? 'disabled' : ''}>${tr('已获得候选人同意，通过短信联系本次招聘和面试安排', 'Candidate agreed to receive recruiting and interview SMS')}</label>${input('recConsentNote', tr('同意来源与日期（勾选时必填）', 'Consent source and date (required when checked)'), c.smsConsentNote, 'text', 'maxlength="2000"')}${c.smsOptedOut ? `<p class="rec-alert">${tr('候选人已退订短信。系统会阻止发送，请通过其他已授权方式联系。', 'Candidate opted out of SMS. Sending is blocked; use another authorized channel.')}</p>` : ''}</fieldset><p class="rec-note">${tr('保存资料不会发送邀请；“打开邮件客户端”仅打开邮件，不会自动发送。', 'Saving a profile sends no invitation. Open email app only opens a draft; it does not send email.')}</p></div>`;
+    const emailLink = action('email-messages', id, tr('邮件邀约 / 记录', 'Email invitation / history'));
+    const html = `<div class="rec-dialog" data-rec-dialog="candidate" data-rec-id="${h(id)}"><div id="recDialogError" class="rec-alert" role="alert"></div>${item ? `<div class="rec-person-summary"><div><strong>${h(c.name)}</strong><p>${h(c.phone || '')} ${h(c.email || '')}</p>${pill(c.status)}</div><div class="rec-actions">${phoneLink}${emailLink}${action('messages', id, tr('短信记录', 'Messages'))}${edit ? currentMeeting ? action('edit-interview', currentMeeting.id, tr('查看预约', 'Review interview'), true) : action('schedule', id, tr('安排面试', 'Schedule'), true) : ''}</div></div>` : ''}<fieldset ${edit ? '' : 'disabled'}><div class="rec-form-grid">${input('recName', tr('姓名 *', 'Name *'), c.name, 'text', 'maxlength="160" required')}${input('recPosition', tr('应聘岗位', 'Position'), c.position, 'text', 'maxlength="160"')}${input('recPhone', tr('手机号', 'Phone'), c.phone, 'tel', 'maxlength="40"')}${input('recEmail', tr('邮箱', 'Email'), c.email, 'email', 'maxlength="254"')}${input('recSource', tr('来源平台', 'Source'), c.source, 'text', 'maxlength="100" list="recSources"')}<datalist id="recSources"><option>Indeed</option><option>Craigslist</option><option>Handshake</option><option>Referral</option><option>Walk-in</option><option>Email</option></datalist>${select('recStatus', tr('招聘状态', 'Recruiting status'), candidateStates, c.status)}${input('recAppliedDate', tr('已核实申请日期（未知请留空）', 'Verified application date (leave blank if unknown)'), initialAppliedDate, 'date', `max="${localParts(Date.now()).date}"`)}${input('recApplicationDateNote', tr('申请日期依据（填写日期时必填）', 'Application date source (required with a date)'), c.applicationDateNote, 'text', 'maxlength="1000"')}<div class="rec-wide rec-date-edit-note"><p class="rec-note">${tr('仅填写来自原始申请或邮件的可核实日期，不要根据录入时间或“几天前”自动推算。清空日期会标记未核实。', 'Use a verifiable date from the original application or email. Do not infer it from system entry or relative dates. Clearing the date marks it unverified.')}${initialApplied?.precision === 'instant' ? ` ${tr('当前保存的精确申请时间：', 'Saved exact application time: ')}${h(recordedWhen(initialApplied.raw))}${tr('；日期不变时保留原始精确时刻，改日期后只保存日期。', '. Keeping the date preserves the exact time; changing it saves a date only.')}` : ''}</p><p class="rec-note">${tr('录入系统时间（只读，不是申请时间）：', 'System entry time (read-only; not application time): ')}${h(item ? recordedWhen(c.createdAt) : tr('将在首次保存时记录', 'Recorded on first save'))}</p></div>${input('recLocation', tr('所在地 / 通勤情况', 'Location / commute'), c.location, 'text', 'maxlength="240"')}${input('recAvailability', tr('最早到岗 / 可工作时间', 'Start date / work availability'), c.availability, 'text', 'maxlength="2000"')}${select('recEmployment', tr('全职 / 兼职意愿', 'Employment preference'), [['', '待确认', 'To confirm'], ['full_time', '全职', 'Full-time'], ['part_time', '兼职', 'Part-time'], ['flexible', '均可', 'Flexible']], c.employmentType || '')}${input('recCompensation', tr('对已发布薪资的匹配情况', 'Fit with published compensation'), c.compensation, 'text', 'maxlength="2000"')}${textarea('recExperience', tr('汽车 / 贴膜 / 销售经验及可核实业绩', 'Automotive / film / sales experience and verifiable results'), c.experience)}${textarea('recResources', tr('经销商资源及第一周开发计划', 'Dealership relationships and first-week outreach plan'), c.dealershipResources)}${textarea('recNotes', tr('跟进备注', 'Follow-up notes'), c.notes)}</div></fieldset><details ${!item ? 'open' : ''}><summary>${tr('简历与附件', 'Resume & attachment')}</summary><fieldset ${edit ? '' : 'disabled'}><div class="rec-form-grid">${input('recResumeUrl', tr('简历 / 作品链接（https://）', 'Resume / portfolio URL (https://)'), c.resumeUrl, 'url', 'maxlength="2000"')}${textarea('recResumeText', tr('简历文本', 'Resume text'), c.resumeText, 60000)}</div></fieldset>${item ? `<div class="rec-attachment">${c.resume ? `<span class="rec-note">${h(c.resume.name)}</span>${action('view-resume', id, tr('查看 PDF', 'View PDF'))}` : `<span class="rec-note">${tr('尚未上传 PDF 简历', 'No PDF uploaded')}</span>`}${edit ? `<label class="btn">${tr('上传 PDF（≤5 MB）', 'Upload PDF (≤5 MB)')}<input type="file" id="recResumeFile" data-rec-id="${h(id)}" accept="application/pdf,.pdf" hidden></label>` : ''}</div>` : `<p class="rec-note">${tr('先保存应聘者档案，即可上传私有 PDF 简历。', 'Save the candidate first to upload a private PDF resume.')}</p>`}</details><details><summary>${tr('面试评分与证据', 'Interview scorecard & evidence')}</summary><fieldset ${edit ? '' : 'disabled'}><p class="rec-note" style="margin-bottom:12px">${tr('1 分为证据弱，10 分为证据充分且匹配度高。未核实请留空；请记录具体案例。', '1 = weak evidence, 10 = strong verified fit. Leave unverified dimensions blank and record examples.')}</p><div class="rec-score-grid">${dimensions.map(([key, zh, en]) => input(`recScore_${key}`, tr(zh, en), c.scores?.[key] ?? '', 'number', 'min="1" max="10" step="1"')).join('')}</div>${textarea('recScoreNotes', tr('评分依据 / 优势 / 待核实事项', 'Evidence / strengths / open questions'), c.scoreNotes)}</fieldset></details><fieldset ${edit ? '' : 'disabled'}><label class="rec-check"><input type="checkbox" id="recConsent" ${c.smsConsent ? 'checked' : ''} ${c.smsOptedOut ? 'disabled' : ''}>${tr('已获得候选人同意，通过短信联系本次招聘和面试安排', 'Candidate agreed to receive recruiting and interview SMS')}</label>${input('recConsentNote', tr('同意来源与日期（勾选时必填）', 'Consent source and date (required when checked)'), c.smsConsentNote, 'text', 'maxlength="2000"')}${c.smsOptedOut ? `<p class="rec-alert">${tr('候选人已退订短信。系统会阻止发送，请通过其他已授权方式联系。', 'Candidate opted out of SMS. Sending is blocked; use another authorized channel.')}</p>` : ''}</fieldset>${emailOptOutControls}<p class="rec-note">${tr('保存资料不会发送邀请。邮件和短信需分别生成英文预览并人工发送。', 'Saving a profile sends no invitation. Email and SMS each require an English preview and a separate manual send.')}</p></div>`;
     openRecruitingModal(item ? tr('应聘者档案', 'Candidate profile') : tr('新增应聘者', 'Add candidate'), html, async () => {
       if (!edit) return;
       const name = value('recName');
@@ -599,6 +608,7 @@
       const appliedAt = !appliedDate ? '' : appliedDate === initialAppliedDate && initialApplied ? initialApplied.raw : appliedDate;
       const body = { name, phone: value('recPhone'), email: value('recEmail'), source: value('recSource'), position: value('recPosition'), location: value('recLocation'), experience: value('recExperience'), dealershipResources: value('recResources'), availability: value('recAvailability'), employmentType: value('recEmployment'), compensation: value('recCompensation'), notes: value('recNotes'), resumeText: value('recResumeText'), resumeUrl: value('recResumeUrl'), status: value('recStatus'), scores, scoreNotes: value('recScoreNotes'), smsConsent: el('recConsent').checked, smsConsentNote: value('recConsentNote') };
       body.appliedAt = appliedAt; body.applicationDateNote = applicationDateNote;
+      body.emailOptedOut = el('recEmailOptedOut').checked; body.emailOptOutNote = value('recEmailOptOutNote');
       await saveMutation(`/api/recruiting/candidates${id ? `/${encodeURIComponent(id)}` : ''}`, body);
     });
     if (!edit) el('modalSave').hidden = true;
@@ -610,8 +620,8 @@
     const person = findCandidate(meeting?.candidateId || candidateId); if (!person) return;
     const mode = meeting ? interviewMode(meeting) : preferredMode;
     const initial = meeting?.startsAt ? localParts(meeting.startsAt) : { date: localParts(Date.now()).date, time: '10:00' };
-    const controls = `<section class="rec-interview-control"><div><strong>${tr('QUAD 一站式面试控制台', 'QUAD one-stop interview console')}</strong><p class="rec-note">${tr('先核对上方时间，再生成候选人链接。生成链接不会发短信；进入短信窗口核对英文后再发送。', 'Review the time above before creating a candidate link. Link creation does not send SMS; review and send from Messages.')}</p></div><div id="recOnlineControls"><div class="rec-interview-control-grid">${action('save-create-video-invite', meeting?.id || '', tr('1 · 保存并生成面试链接', '1 · Save & create interview link'), true)}${action('save-join-video-interview', meeting?.id || '', tr('2 · 进入线上面试室', '2 · Enter online interview room'))}</div><p class="rec-note">${tr('重新生成链接会使旧链接失效。请先生成并发送链接，再进入面试室。', 'Generating a new link invalidates the previous one. Create and share the link before entering the room.')}</p><div id="recVideoInviteResult" class="rec-video-invite-result"></div></div><div class="rec-actions">${action('save-open-interview-kit', person.id, tr('面试问题 / 记录评分', 'Interview questions / scoring'))}${action('profile', person.id, tr('返回应聘者', 'Back to candidate'))}</div><p id="recInterviewSaveState" class="rec-note" role="status">${meeting ? tr('当前预约已保存；修改表单后点击任一入口会先保存最新内容。', 'This appointment is saved. Any action saves current changes first.') : tr('尚未保存；点击任一入口会自动创建预约。', 'Not saved yet. Any action automatically creates the appointment.')}</p></section>`;
-    const html = `<div class="rec-dialog" data-rec-dialog="interview" data-rec-id="${h(person.id)}" data-rec-interview-id="${h(meeting?.id || '')}"><div id="recDialogError" class="rec-alert" role="alert"></div><div class="rec-person-summary"><strong>${h(person.name)}</strong>${pill(person.status)}</div><p class="rec-note">${tr('所有预约均使用洛杉矶时间（PST / PDT），与本机时区无关。短信邀请仍须在短信窗口预览后发送。', 'All appointments use Los Angeles time (PST / PDT), regardless of this computer’s time zone. SMS invitations still require previewing and sending from Messages.')}</p><div class="rec-form-grid">${select('recInterviewMode', tr('面试方式', 'Interview format'), [['online', '线上视频面试（优先）', 'Online video interview (preferred)'], ['in_person', '到店面试（备用）', 'In-person interview (optional)']], mode)}${input('recInterviewDate', tr('面试日期 *', 'Interview date *'), initial.date, 'date', 'required')}${input('recInterviewTime', tr('面试时间 *', 'Interview time *'), initial.time, 'time', 'required')}<div id="recTimeAmbiguity" class="rec-wide"></div>${input('recDuration', tr('时长（分钟）', 'Duration (minutes)'), meeting?.durationMinutes || 30, 'number', 'min="15" max="180" step="5"')}${input('recInterviewer', tr('面试官', 'Interviewer'), meeting?.interviewerName || user?.name || '', 'text', 'maxlength="160" list="recInterviewers"')}<datalist id="recInterviewers">${(data?.interviewers || []).map(person => `<option>${h(person.name)}</option>`).join('')}</datalist><div id="recInterviewAddressField" ${mode === 'online' ? 'hidden' : ''}>${input('recInterviewAddress', tr('到店地址 *', 'In-person address *'), meeting?.address || data?.settings?.address || DEFAULT_ADDRESS, 'text', `maxlength="500" ${mode === 'in_person' ? 'required' : ''}`)}</div>${select('recInterviewStatus', tr('预约状态', 'Appointment status'), interviewStates, meeting?.status || 'scheduled')}${textarea('recInterviewNotes', tr('面试备注', 'Interview notes'), meeting?.notes)}</div>${controls}<label class="rec-check"><input type="checkbox" id="recCandidateConfirmed" ${['confirmed', 'arrived', 'completed'].includes(meeting?.status) ? 'checked' : ''}>${tr('我已收到候选人对日期、时间及面试方式的明确确认', 'I have the candidate’s explicit confirmation of this date, time and interview format')}</label><label class="rec-check"><input type="checkbox" id="recAutoReminders" ${meeting?.automaticReminders ? 'checked' : ''} ${data?.settings?.remindersEnabled === false ? 'disabled' : ''}>${tr('开启本次面试的自动短信提醒（24 小时 / 2 小时前）', 'Enable automatic SMS reminders for this interview (24 hours / 2 hours before)')}</label><p class="rec-note">${data?.settings?.remindersEnabled === false ? tr('本地环境已关闭自动发送。', 'Automatic sending is disabled in this environment.') : tr('自动提醒需要短信同意且预约已确认；取消或改期后按最新安排处理。', 'Automatic reminders require SMS consent and a confirmed appointment. Cancellation or rescheduling uses the latest appointment.')}</p></div>`;
+    const controls = `<section class="rec-interview-control"><div><strong>${tr('QUAD 一站式面试控制台', 'QUAD one-stop interview console')}</strong><p class="rec-note">${tr('先核对上方时间，再生成候选人链接。生成链接不会发送；可选择英文邮件或短信，核对后再发送。', 'Review the time before creating a candidate link. Link creation sends nothing; choose email or SMS and review before sending.')}</p></div><div id="recOnlineControls"><div class="rec-interview-control-grid">${action('save-create-video-invite', meeting?.id || '', tr('1 · 保存并生成面试链接', '1 · Save & create interview link'), true)}${action('save-join-video-interview', meeting?.id || '', tr('2 · 进入线上面试室', '2 · Enter online interview room'))}</div><p class="rec-note">${tr('重新生成链接会使旧链接失效。请先生成并发送链接，再进入面试室。', 'Generating a new link invalidates the previous one. Create and share the link before entering the room.')}</p><div id="recVideoInviteResult" class="rec-video-invite-result"></div></div><div class="rec-actions">${action('save-open-interview-kit', person.id, tr('面试问题 / 记录评分', 'Interview questions / scoring'))}${action('profile', person.id, tr('返回应聘者', 'Back to candidate'))}</div><p id="recInterviewSaveState" class="rec-note" role="status">${meeting ? tr('当前预约已保存；修改表单后点击任一入口会先保存最新内容。', 'This appointment is saved. Any action saves current changes first.') : tr('尚未保存；点击任一入口会自动创建预约。', 'Not saved yet. Any action automatically creates the appointment.')}</p></section>`;
+    const html = `<div class="rec-dialog" data-rec-dialog="interview" data-rec-id="${h(person.id)}" data-rec-interview-id="${h(meeting?.id || '')}"><div id="recDialogError" class="rec-alert" role="alert"></div><div class="rec-person-summary"><strong>${h(person.name)}</strong>${pill(person.status)}</div><p class="rec-note">${tr('所有预约均使用洛杉矶时间（PST / PDT），与本机时区无关。邮件和短信邀请都须生成英文预览后单独发送。', 'All appointments use Los Angeles time (PST / PDT), regardless of this computer’s time zone. Email and SMS invitations each require an English preview and a separate send action.')}</p><div class="rec-form-grid">${select('recInterviewMode', tr('面试方式', 'Interview format'), [['online', '线上视频面试（优先）', 'Online video interview (preferred)'], ['in_person', '到店面试（备用）', 'In-person interview (optional)']], mode)}${input('recInterviewDate', tr('面试日期 *', 'Interview date *'), initial.date, 'date', 'required')}${input('recInterviewTime', tr('面试时间 *', 'Interview time *'), initial.time, 'time', 'required')}<div id="recTimeAmbiguity" class="rec-wide"></div>${input('recDuration', tr('时长（分钟）', 'Duration (minutes)'), meeting?.durationMinutes || 30, 'number', 'min="15" max="180" step="5"')}${input('recInterviewer', tr('面试官', 'Interviewer'), meeting?.interviewerName || user?.name || '', 'text', 'maxlength="160" list="recInterviewers"')}<datalist id="recInterviewers">${(data?.interviewers || []).map(person => `<option>${h(person.name)}</option>`).join('')}</datalist><div id="recInterviewAddressField" ${mode === 'online' ? 'hidden' : ''}>${input('recInterviewAddress', tr('到店地址 *', 'In-person address *'), meeting?.address || data?.settings?.address || DEFAULT_ADDRESS, 'text', `maxlength="500" ${mode === 'in_person' ? 'required' : ''}`)}</div>${select('recInterviewStatus', tr('预约状态', 'Appointment status'), interviewStates, meeting?.status || 'scheduled')}${textarea('recInterviewNotes', tr('面试备注', 'Interview notes'), meeting?.notes)}</div>${controls}<label class="rec-check"><input type="checkbox" id="recCandidateConfirmed" ${['confirmed', 'arrived', 'completed'].includes(meeting?.status) ? 'checked' : ''}>${tr('我已收到候选人对日期、时间及面试方式的明确确认', 'I have the candidate’s explicit confirmation of this date, time and interview format')}</label><label class="rec-check"><input type="checkbox" id="recAutoReminders" ${meeting?.automaticReminders ? 'checked' : ''} ${data?.settings?.remindersEnabled === false ? 'disabled' : ''}>${tr('开启本次面试的自动短信提醒（24 小时 / 2 小时前）', 'Enable automatic SMS reminders for this interview (24 hours / 2 hours before)')}</label><p class="rec-note">${data?.settings?.remindersEnabled === false ? tr('本地环境已关闭自动发送。', 'Automatic sending is disabled in this environment.') : tr('自动提醒需要短信同意且预约已确认；取消或改期后按最新安排处理。', 'Automatic reminders require SMS consent and a confirmed appointment. Cancellation or rescheduling uses the latest appointment.')}</p></div>`;
     openRecruitingModal(meeting ? tr('查看 / 修改面试安排', 'Review / reschedule interview') : mode === 'online' ? tr('安排线上面试', 'Schedule online interview') : tr('安排到店面试（备用）', 'Schedule in-person (optional)'), html, async () => { await saveOpenInterview(true); });
     updateAmbiguity(meeting?.startsAt);
     updateInterviewMode();
@@ -709,18 +719,19 @@
     try {
       const result = await api(`/api/recruiting/interviews/${encodeURIComponent(interviewId)}/video-invite`, { method:'POST', body:'{}', timeoutMs:20000 });
       if (!checkIdentity() || identity !== requestedIdentity || !box.isConnected || !dialog.isConnected || dialog.dataset.recInterviewId !== interviewId || scheduleKey() !== requestedSchedule) return;
-      box.innerHTML = `<label>${tr('一次性候选人链接（仅显示一次）', 'One-time candidate link (shown once)')}<input id="recVideoInviteUrl" readonly value="${h(result.joinUrl)}"></label><div class="rec-actions">${action('compose-video-invite', interviewId, tr('用英文短信发送链接', 'Prepare link SMS'), true)}${action('copy-video-invite', interviewId, tr('复制链接', 'Copy link'))}</div><p class="rec-note">${tr('失效时间：', 'Expires: ')}${h(when(result.expiresAt, true))}</p>`;
+      box.innerHTML = `<label>${tr('一次性候选人链接（仅显示一次）', 'One-time candidate link (shown once)')}<input id="recVideoInviteUrl" readonly value="${h(result.joinUrl)}"></label><div class="rec-actions">${action('compose-video-invite', interviewId, tr('用英文短信发送链接', 'Prepare link SMS'), true)}${action('compose-video-invite-email', interviewId, tr('用英文邮件发送链接', 'Prepare link email'))}${action('copy-video-invite', interviewId, tr('复制链接', 'Copy link'))}</div><p class="rec-note">${tr('失效时间：', 'Expires: ')}${h(when(result.expiresAt, true))}</p>`;
     } catch (err) { if (box.isConnected && dialog.isConnected) { box.textContent = tr('未取得新链接，请核实后重试。', 'No new link was received. Verify and retry.'); dialogError(err.message); } }
     finally { busy = false; }
   }
 
-  function composeVideoInvite(interviewId) {
+  function composeVideoInvite(interviewId, channel = 'sms') {
     const meeting = interviews().find(item => item.id === interviewId);
     const dialog = document.querySelector('[data-rec-dialog="interview"]');
     const url = value('recVideoInviteUrl');
     if (!checkIdentity() || !canEdit() || busy || !meeting || interviewMode(meeting) !== 'online' || !url || dialog?.dataset.recInterviewId !== interviewId) return;
     const person = findCandidate(meeting.candidateId); if (!person) return;
-    openMessages(person.id, template(person, 'online-link', meeting, url), 'online');
+    if (channel === 'email') openEmailMessages(person.id, template(person, 'online-link', meeting, url, 'online', 'email'), 'QUAD FILM - Your Online Interview Link', 'online');
+    else openMessages(person.id, template(person, 'online-link', meeting, url), 'online');
   }
 
   async function copyVideoInvite() {
@@ -739,14 +750,14 @@
     box.innerHTML = instants.length > 1 ? select('recTimeFold', tr('该时间出现两次，请选择', 'This time occurs twice; choose one'), [['', tr('请选择', 'Choose a time')], ...instants.map(instant => [instant, when(instant, true)])], selected) : '';
   }
 
-  function template(person, kind, selectedMeeting = null, joinUrl = '', preferredMode = '') {
+  function template(person, kind, selectedMeeting = null, joinUrl = '', preferredMode = '', channel = 'sms') {
     const onlineInvite = kind === 'online-invitation' || kind === 'online-link';
     let meeting = selectedMeeting || nextInterview(person.id, onlineInvite ? 'online' : kind === 'invitation' ? 'in_person' : preferredMode);
     if (kind === 'online-invitation' && meeting && Date.parse(meeting.startsAt) <= Date.now()) meeting = null;
     const greeting = `Hi ${person.name}, this is QUAD FILM.`;
     const address = meeting?.address || data?.settings?.address || DEFAULT_ADDRESS;
     const time = meeting ? when(meeting.startsAt, true) : '';
-    const optOut = ' Reply STOP to opt out.';
+    const optOut = channel === 'email' ? '\n\nIf you no longer wish to be contacted by email about this application, please let us know.\n\nQUAD FILM Recruiting Team' : ' Reply STOP to opt out.';
     if (kind === 'online-invitation') return `${greeting} Thank you for applying. We would like to invite you to an online video interview for the position you applied for. ${meeting ? `Would ${time} work for you? Please reply to confirm or suggest another time.` : 'Which dates and times would work for you? Please include your time zone.'} No trip to our shop is needed. We will send a private interview link separately once the time is agreed.${optOut}`;
     if (kind === 'online-link') return meeting && joinUrl ? `${greeting} ${['confirmed', 'arrived'].includes(meeting.status) ? 'Your online video interview is scheduled' : 'We would like to propose an online video interview'} for ${time}. Join using your private link: ${joinUrl} Please use a device with a camera and microphone. No trip to our shop is needed. Please reply to confirm or let us know if you need another time.${optOut}` : '';
     if (kind === 'invitation') return `${greeting} Thank you for applying. We would like to invite you to an in-person interview at ${address}. ${meeting ? `Would ${time} work for you?` : 'Which dates and times work for you?'} Please reply to confirm or suggest another time. Thank you!${optOut}`;
@@ -775,6 +786,172 @@
     };
     const pair = labels[value];
     return pair ? tr(pair[0], pair[1]) : value || '';
+  }
+
+  function emailContactBlockers(person) {
+    const reasons = [];
+    if (!validEmail(person?.email)) reasons.push(tr('尚无有效邮箱，请先在档案中核实；不需要填写手机号。', 'No valid email address. Verify it in the profile; a phone number is not required.'));
+    if (person?.emailOptedOut) reasons.push(tr('已记录停止邮件联系，系统直发和邮箱草稿入口均已停止。', 'Email contact is stopped. Both direct sending and the email-app draft are blocked.'));
+    if (person?.doNotContact) reasons.push(tr('已记录禁止联系，不能发送邮件或打开邀约草稿。', 'Do not contact is recorded. Sending email and opening an invitation draft are blocked.'));
+    if (validEmail(person?.email) && candidates().filter(candidate => emailKey(candidate.email) === emailKey(person.email)).length !== 1) reasons.push(tr('此邮箱关联多个或未知档案，请先核实收件人，不能发送邀约。', 'This email is linked to multiple or unknown profiles. Verify the recipient before inviting.'));
+    return reasons;
+  }
+
+  function emailThreadHtml(person) {
+    const list = [...(person?.emailMessages || [])].sort((a, b) => Date.parse(a.timestamp || a.createdAt) - Date.parse(b.timestamp || b.createdAt));
+    return list.length ? list.map(message => `<article class="rec-email-record"><strong>${h(message.subject || tr('无主题', 'No subject'))}</strong><p class="rec-note">${h(message.to || person.email || '')} · ${h(when(message.timestamp || message.createdAt))} · ${h(messageStatus(message.status))}${message.status === 'accepted' ? ` · ${tr('邮件服务已受理，不代表已送达或对方已确认', 'Accepted by the mail service, not proof of delivery or interview confirmation')}` : ''}</p>${bilingualBlock(person.id, tr('邮件正文', 'Email body'), message.text)}</article>`).join('') : `<p class="rec-note">${tr('暂无系统邮件发送记录。外部邮箱草稿和已发送邮件不会自动导入。', 'No system email history. External email drafts and sent mail are not imported automatically.')}</p>`;
+  }
+
+  function emailSenderKey() { return JSON.stringify([data?.email?.from || '', data?.email?.replyTo || '']); }
+
+  function emailSetupNotice() {
+    const configuration = data?.email?.configuration;
+    const missing = configuration ? [['providerConfigured',tr('邮件服务','email service')],['senderConfigured',tr('发件地址','sender address')],['replyToConfigured',tr('回复邮箱','reply mailbox')]].filter(([key]) => configuration[key] === false).map(([, title]) => title) : [];
+    return tr('系统邮件直发尚未配置。', 'Direct email is not configured.') + (missing.length ? tr(` 缺少：${missing.join('、')}。`, ` Missing: ${missing.join(', ')}.`) : '');
+  }
+
+  function openEmailMessages(id, initialDraft = '', initialSubject = '', preferredMode = '') {
+    if (!checkIdentity()) return;
+    const person = findCandidate(id); if (!person) return;
+    const relay = /@(?:[^@.]+\.)?indeedemail\.com$/i.test(person.email || '');
+    const draft = initialDraft || template(person, 'online-invitation', null, '', 'online', 'email');
+    const html = `<div class="rec-dialog rec-email-dialog" data-rec-dialog="email-messages" data-rec-id="${h(id)}"><header class="rec-person-summary"><div><strong>${h(person.name)}</strong><p>${h(person.email || tr('尚无邮箱', 'No email address'))}</p>${relay ? `<span class="rec-note">${tr('Indeed 中转邮箱，不是候选人的私人邮箱；送达取决于平台转发。', 'Indeed relay address, not a personal mailbox; delivery depends on the platform forwarding it.')}</span>` : ''}</div><div class="rec-actions">${action('refresh-email-messages', id, tr('刷新发送记录', 'Refresh sent history'))}${action('profile', id, tr('返回档案', 'Back to profile'))}</div></header><p id="recEmailSender" class="rec-note"></p><p class="rec-note">${tr('本页尚未自动同步邮件回复，请到配置的回信邮箱查看。邮件提交不代表对方确认面试；需收到明确回复后再确认预约。', 'Replies are not synced here automatically. Check the configured reply mailbox. Submitting an email does not confirm an interview; wait for an explicit reply.')}</p><div id="recDialogError" class="rec-alert" role="alert"></div><details class="rec-email-history"><summary id="recEmailHistorySummary">${tr('系统邮件记录', 'System email history')} · ${(person.emailMessages || []).length}</summary><div id="recEmailThreads">${emailThreadHtml(person)}</div></details>${canEdit() ? `<div class="rec-templates">${[['online-invitation','线上邀约','Online invitation'],['confirm','确认时间','Confirm time'],['reminder','面试提醒','Reminder'],['late','未加入跟进','Joining check']].map(([kind, zh, en]) => `<button type="button" data-rec-action="email-template" data-rec-id="${kind}">${tr(zh, en)}</button>`).join('')}</div><div class="rec-email-compose-grid"><section class="rec-compose-step">${input('recEmailSubjectDraft', tr('① 邮件主题（中文或英文）', '① Subject draft (Chinese or English)'), initialSubject || 'QUAD FILM - Online Interview Invitation', 'text', 'maxlength="200"')}${textarea('recEmailDraft', tr('邮件正文（中文或英文）', 'Message draft (Chinese or English)'), draft, 10000)}<div class="rec-actions">${action('preview-email', id, tr('生成完整英文预览', 'Generate full English preview'))}</div></section><section class="rec-compose-step">${input('recEmailSubjectPreview', tr('② 核对英文主题', '② Review English subject'), '', 'text', 'readonly')}${textarea('recEmailBodyPreview', tr('核对英文正文（实际发送内容）', 'Review English body (actual message)'), '', 10000)}<p id="recEmailPreviewState" class="rec-note" role="status">${tr('先生成预览；主题与正文都完整生成后才能发送。', 'Generate a preview first. Both subject and body must be complete before sending.')}</p></section></div><div class="rec-recipient">${tr('收件人', 'Recipient')}: <strong>${h(person.name)}</strong> · ${h(person.email || '—')}<span class="rec-muted">${tr('只发送上方核对后的英文主题和正文。AI 翻译、打开草稿、保存预约均不会发送邮件。', 'Only the reviewed English subject and body are sent. Translation, opening a draft and saving an appointment do not send email.')}</span></div><div class="rec-actions"><button id="recSendEmail" class="btn primary" type="button" data-rec-action="send-email" data-rec-id="${h(id)}" disabled>${tr('③ 确认发送英文邮件', '③ Send reviewed English email')}</button><button id="recOpenEmailApp" class="btn" type="button" data-rec-action="open-email-app" data-rec-id="${h(id)}" disabled>${tr('在邮箱中打开英文邀请草稿', 'Open reviewed English draft in email app')}</button><span id="recEmailCount" class="rec-note"></span></div><p id="recEmailSendState" class="rec-note" role="status" aria-live="polite"></p>` : ''}</div>`;
+    openRecruitingModal(tr('邮件邀约与发送记录', 'Email invitations & sent history'), html, null);
+    el('modalSave').hidden = true;
+    if (el('recEmailBodyPreview')) el('recEmailBodyPreview').readOnly = true;
+    emailComposeContext = { id, identity, dialog:document.querySelector('[data-rec-dialog="email-messages"]'), recipientEmail:person.email || '', senderKey:emailSenderKey(), interviewMode:preferredMode || 'online', version:0, pending:false, ready:false, sourceSubject:'', sourceText:'', previewSubject:'', previewText:'', requestId:'', requestPayload:'' };
+    updateEmailComposeControls();
+  }
+
+  function activeEmailComposer(context = emailComposeContext) {
+    return Boolean(user && token && hasPerm('recruitingView') && context && context === emailComposeContext && context.dialog?.isConnected && el('modal')?.classList.contains('open') && context.identity === identity && context.identity === `${user.id}:${token}` && context.dialog.dataset.recId === context.id);
+  }
+
+  function emailPreviewReady(context) {
+    return Boolean(context?.ready && context.sourceSubject === value('recEmailSubjectDraft') && context.sourceText === value('recEmailDraft') && context.previewSubject === value('recEmailSubjectPreview') && context.previewText === value('recEmailBodyPreview') && context.previewSubject && context.previewText && context.previewSubject.length <= 200 && context.previewText.length <= 10000 && !/[\r\n]/.test(context.previewSubject) && !hasHan(context.previewSubject + context.previewText));
+  }
+
+  function emailComposeBlockers(context, direct = true) {
+    const person = findCandidate(context?.id), reasons = emailContactBlockers(person);
+    if (!canEdit()) reasons.push(tr('需要招聘编辑权限。', 'Recruiting edit permission is required.'));
+    if (emailKey(person?.email) !== emailKey(context?.recipientEmail)) reasons.push(tr('收件邮箱已改变，请重新打开并核对。', 'Recipient email changed. Reopen and review it.'));
+    if (direct && !data?.email?.configured) reasons.push(emailSetupNotice() + tr(' 可在生成并核对英文预览后使用邮箱草稿入口。', ' After reviewing an English preview, use the email-app draft instead.'));
+    if (direct && context?.senderKey !== emailSenderKey()) reasons.push(tr('发件配置已改变，请重新打开并核对。', 'Sender configuration changed. Reopen and review it.'));
+    if (busy) reasons.push(tr('正在提交，请勿重复操作。', 'Submitting; do not repeat the action.'));
+    else if (context?.pending) reasons.push(tr('正在生成完整英文预览，请稍候。', 'Generating the full English preview. Please wait.'));
+    else if (!emailPreviewReady(context)) reasons.push(tr('请先生成当前主题与正文的完整英文预览。', 'Generate the current subject and body as a complete English preview first.'));
+    return reasons;
+  }
+
+  function updateEmailComposeControls() {
+    const context = emailComposeContext; if (!activeEmailComposer(context)) return;
+    const sender = data?.email;
+    if (el('recEmailSender')) el('recEmailSender').textContent = sender?.configured ? `${tr('系统发件：', 'System sender: ')}${sender.from || '—'} · ${tr('回信邮箱：', 'Reply mailbox: ')}${sender.replyTo || sender.from || '—'}` : emailSetupNotice() + tr(' 备用入口会打开本机默认邮箱，实际发件账号请在邮箱中核对。', ' The fallback opens this computer’s email app; check the actual sender account there.');
+    const reasons = emailComposeBlockers(context), fallbackReasons = emailComposeBlockers(context, false);
+    if (el('recSendEmail')) { el('recSendEmail').disabled = reasons.length > 0; el('recSendEmail').className = sender?.configured ? 'btn primary' : 'btn'; }
+    if (el('recOpenEmailApp')) { el('recOpenEmailApp').disabled = fallbackReasons.length > 0; el('recOpenEmailApp').className = sender?.configured ? 'btn' : 'btn primary'; }
+    const previewButton = context.dialog.querySelector('[data-rec-action="preview-email"]');
+    if (previewButton) previewButton.disabled = busy || context.pending || !canEdit() || !value('recEmailSubjectDraft') || !value('recEmailDraft');
+    if (el('recEmailSendState')) { el('recEmailSendState').textContent = reasons.length ? reasons.join(' ') : tr('请核对收件人、英文主题、正文与面试时间／链接，再点击确认发送。', 'Review the recipient, English subject and body, and interview time/link, then click Send.'); el('recEmailSendState').className = reasons.length ? 'rec-banner' : 'rec-note'; }
+    if (el('recEmailCount')) el('recEmailCount').textContent = tr(`主题 ${value('recEmailSubjectPreview').length}/200 · 正文 ${value('recEmailBodyPreview').length}/10000 字符`, `Subject ${value('recEmailSubjectPreview').length}/200 · Body ${value('recEmailBodyPreview').length}/10000 characters`);
+  }
+
+  function invalidateEmailPreview() {
+    if (!activeEmailComposer()) return;
+    Object.assign(emailComposeContext, { version:emailComposeContext.version + 1, ready:false, sourceSubject:'', sourceText:'', previewSubject:'', previewText:'' });
+    if (el('recEmailSubjectPreview')) el('recEmailSubjectPreview').value = '';
+    if (el('recEmailBodyPreview')) el('recEmailBodyPreview').value = '';
+    if (el('recEmailPreviewState')) el('recEmailPreviewState').textContent = tr('草稿已改变，请重新生成完整英文预览。', 'Draft changed. Generate a new full English preview.');
+    updateEmailComposeControls();
+  }
+
+  async function makeEmailPreview() {
+    const context = emailComposeContext;
+    if (!checkIdentity() || !canEdit() || !activeEmailComposer(context) || context.pending || busy) return;
+    const subject = value('recEmailSubjectDraft'), text = value('recEmailDraft');
+    if (!subject || !text || subject.length > 200 || text.length > 10000 || /[\r\n]/.test(subject)) { dialogError(tr('主题需为 1–200 字符且不能换行，正文需为 1–10000 字符。', 'Use a one-line subject of 1–200 characters and a body of 1–10,000 characters.')); return; }
+    invalidateEmailPreview(); const version = context.version;
+    const active = () => activeEmailComposer(context) && canEdit() && context.version === version && value('recEmailSubjectDraft') === subject && value('recEmailDraft') === text;
+    context.pending = true; updateEmailComposeControls(); dialogError('');
+    el('recEmailPreviewState').textContent = tr('正在生成完整英文主题及正文；不会发送邮件…', 'Preparing the complete English subject and body. No email will be sent…');
+    try {
+      const previewSubject = hasHan(subject) ? await requestTranslation(context.id, subject, 'en', active) : subject;
+      if (!active()) return;
+      const previewText = hasHan(text) ? await requestTranslation(context.id, text, 'en', active) : text;
+      if (!active()) return;
+      if (!previewSubject.trim() || !previewText.trim() || previewSubject.length > 200 || previewText.length > 10000 || /[\r\n]/.test(previewSubject) || hasHan(previewSubject + previewText)) throw new Error(tr('未得到完整有效的英文邮件，不能发送；请检查内容和长度后重试。', 'The English email is incomplete or invalid. Check content and length, then retry.'));
+      Object.assign(context, { ready:true, sourceSubject:subject, sourceText:text, previewSubject:previewSubject.trim(), previewText:previewText.trim() });
+      el('recEmailSubjectPreview').value = context.previewSubject; el('recEmailBodyPreview').value = context.previewText;
+      el('recEmailPreviewState').textContent = tr('完整预览已生成，尚未发送。请人工确认内容为英文并核对收件人、时间和链接。', 'Full preview ready, not sent. Confirm the wording is English and review the recipient, time and link.');
+    } catch (err) { if (active()) { dialogError(err.message); el('recEmailPreviewState').textContent = tr('未生成完整预览，不能发送；原草稿已保留。', 'No complete preview. Sending is blocked; the draft is preserved.'); } }
+    finally { if (activeEmailComposer(context)) { context.pending = false; updateEmailComposeControls(); } }
+  }
+
+  async function sendEmail(id) {
+    if (!checkIdentity() || !canEdit() || busy) return;
+    const context = emailComposeContext;
+    if (!activeEmailComposer(context) || context.id !== id || context.pending) return;
+    const reasons = emailComposeBlockers(context);
+    if (reasons.length) { updateEmailComposeControls(); dialogError(reasons.join(' ')); return; }
+    const subject = value('recEmailSubjectPreview'), text = value('recEmailBodyPreview');
+    const payloadKey = JSON.stringify([emailKey(context.recipientEmail), subject, text]);
+    if (!context.requestId || context.requestPayload !== payloadKey) { context.requestId = window.crypto.randomUUID(); context.requestPayload = payloadKey; }
+    const sentVersion = context.version;
+    busy = true; updateEmailComposeControls(); dialogError('');
+    try {
+      const result = await api(`/api/recruiting/candidates/${encodeURIComponent(id)}/email-messages`, { method:'POST', body:JSON.stringify({ subject, text, expectedEmail:context.recipientEmail, clientMessageId:context.requestId }), timeoutMs:30000 });
+      if (!checkIdentity() || identity !== context.identity) return;
+      if (activeEmailComposer(context)) {
+        const status = result.message?.status, failed = ['failed','undelivered','bounced','rejected','canceled','cancelled'].includes(status), uncertain = !failed && !['accepted','sent','delivered'].includes(status);
+        if (!failed && !uncertain && context.version === sentVersion && emailPreviewReady(context)) {
+          el('recEmailDraft').value = ''; invalidateEmailPreview(); context.requestId = ''; context.requestPayload = '';
+          el('recEmailPreviewState').textContent = tr('邮件已提交。新邮件需重新生成预览；送达和候选人确认尚未核实。', 'Email submitted. Generate a new preview for a new message. Delivery and candidate confirmation are not verified.');
+        }
+        dialogError(uncertain ? tr('发送结果待核实，草稿已保留。请刷新记录；重复提交同一内容不会重复发送。', 'Sending is unconfirmed. Draft preserved. Refresh history; retrying the same content will not send it twice.') : failed ? tr('邮件发送失败，草稿已保留，请查看记录后处理。', 'Email sending failed. Draft preserved; review the history.') : tr('邮件服务已受理或提交发送，不代表送达、已读或对方确认。请到回信邮箱查看回复。', 'The mail service accepted or submitted the message. This does not prove delivery, reading or interview confirmation. Check the reply mailbox.'), !failed && !uncertain);
+      }
+      await load(true);
+    } catch (err) { if (activeEmailComposer(context)) dialogError(`${err.message} ${tr('草稿已保留，请先刷新发送记录核实。', 'Draft preserved. Refresh sent history to verify first.')}`); }
+    finally { busy = false; updateEmailComposeControls(); }
+  }
+
+  async function openReviewedEmailApp(id) {
+    if (!checkIdentity() || !canEdit() || busy) return;
+    const context = emailComposeContext;
+    if (!activeEmailComposer(context) || context.id !== id || context.pending) return;
+    const reasons = emailComposeBlockers(context, false);
+    if (reasons.length) { updateEmailComposeControls(); dialogError(reasons.join(' ')); return; }
+    const version = context.version;
+    busy = true; updateEmailComposeControls(); dialogError('');
+    try {
+      const refreshed = await load(true);
+      if (!activeEmailComposer(context) || context.version !== version) return;
+      if (!refreshed || error) throw new Error(tr('无法核实最新联系方式和停止联系记录，未打开邮箱。请刷新后重试。', 'Could not verify the latest contact details and opt-out records. The email app was not opened. Refresh and retry.'));
+      // Unlike direct sending, mailto has no backend send guard; re-read the
+      // authorized snapshot and fail closed before handing off a reviewed draft.
+      busy = false;
+      const latestReasons = emailComposeBlockers(context, false);
+      if (latestReasons.length) { dialogError(latestReasons.join(' ')); return; }
+      const url = `mailto:${encodeURIComponent(context.recipientEmail.trim())}?subject=${encodeURIComponent(context.previewSubject)}&body=${encodeURIComponent(context.previewText)}`;
+      window.location.assign(url);
+      dialogError(tr('已请求在邮箱中打开英文草稿，请核对实际发件账号和完整正文后，在邮箱中点击发送。邮件客户端可能限制长草稿。系统没有发送、记录为已发或确认预约。', 'Requested opening an English draft in your email app. Check the actual sender and complete body, then click Send there. Email apps may limit long drafts. The system has not sent or recorded an email, or confirmed an appointment.'), true);
+    } catch (err) { if (activeEmailComposer(context)) dialogError(err.message); }
+    finally { busy = false; updateEmailComposeControls(); }
+  }
+
+  function updateOpenEmailThread() {
+    if (!activeEmailComposer()) return;
+    const person = findCandidate(emailComposeContext.id), thread = el('recEmailThreads');
+    if (!person || !thread) return;
+    if (el('recEmailHistorySummary')) el('recEmailHistorySummary').textContent = `${tr('系统邮件记录', 'System email history')} · ${(person.emailMessages || []).length}`;
+    const html = emailThreadHtml(person); if (thread.dataset.rendered !== html) { thread.innerHTML = html; thread.dataset.rendered = html; }
+    updateEmailComposeControls();
+  }
+
+  async function refreshEmailMessages(id) {
+    const context = emailComposeContext;
+    if (!activeEmailComposer(context) || context.id !== id || busy) return;
+    await load(true);
+    if (activeEmailComposer(context) && error) dialogError(error);
   }
 
   function sharedPhoneTestActive(person) {
@@ -1084,7 +1261,9 @@
       case 'schedule': openInterview(id); break;
       case 'schedule-in-person': openInterview(id, '', 'in_person'); break;
       case 'invite-online': { const person = findCandidate(id); if (person && canEdit()) openMessages(id, template(person, 'online-invitation'), 'online'); break; }
+      case 'invite-online-email': { const person = findCandidate(id); if (person && canEdit()) openEmailMessages(id, template(person, 'online-invitation', null, '', 'online', 'email'), 'QUAD FILM - Online Interview Invitation', 'online'); break; }
       case 'compose-video-invite': composeVideoInvite(id); break;
+      case 'compose-video-invite-email': composeVideoInvite(id, 'email'); break;
       case 'edit-interview': openInterview('', id); break;
       case 'save-open-interview-kit': saveAndOpenInterviewKit(); break;
       case 'save-create-video-invite': saveAndCreateVideoInvite(); break;
@@ -1094,6 +1273,20 @@
       case 'join-video-interview': joinVideoInterview(id); break;
       case 'messages': openMessages(id); break;
       case 'refresh-messages': refreshMessages(id); break;
+      case 'email-messages': openEmailMessages(id); break;
+      case 'refresh-email-messages': refreshEmailMessages(id); break;
+      case 'preview-email': makeEmailPreview(); break;
+      case 'send-email': sendEmail(id); break;
+      case 'open-email-app': openReviewedEmailApp(id); break;
+      case 'email-template': {
+        if (!activeEmailComposer() || busy) break;
+        const person = findCandidate(emailComposeContext.id); if (!person) break;
+        const content = template(person, id, null, '', emailComposeContext.interviewMode, 'email');
+        if (!content) { dialogError(tr('请先保存面试日期和时间。', 'Save an interview date and time first.')); break; }
+        el('recEmailDraft').value = content;
+        el('recEmailSubjectDraft').value = id === 'online-invitation' ? 'QUAD FILM - Online Interview Invitation' : 'QUAD FILM - Interview Follow-up';
+        invalidateEmailPreview(); dialogError(''); break;
+      }
       case 'view-resume': viewResume(id); break;
       case 'send-sms': sendSms(id); break;
       case 'preview-sms': makeSmsPreview(); break;
@@ -1118,6 +1311,7 @@
     if (event.target.id === 'recSearch') { query = event.target.value; el('recResults').innerHTML = candidateTable(); }
     if (event.target.id === 'recSmsDraft') invalidatePreview();
     if (event.target.id === 'recSmsBody') invalidatePreview();
+    if (['recEmailSubjectDraft','recEmailDraft','recEmailSubjectPreview','recEmailBodyPreview'].includes(event.target.id)) invalidateEmailPreview();
     if (event.target.matches('.rec-kit-score')) updateInterviewKitScore();
   });
   document.addEventListener('keydown', event => {

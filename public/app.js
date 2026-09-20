@@ -708,9 +708,9 @@ const dict = {
 };
 
 dict.zh.recruiting = '招聘与面试中心';
-dict.zh.recruitingSub = '应聘者档案 · 短信沟通 · 面试预约与评分';
+dict.zh.recruitingSub = '应聘者档案 · 短信 / 邮件邀约 · 面试预约与评分';
 dict.en.recruiting = 'Recruiting & Interviews';
-dict.en.recruitingSub = 'Candidates · SMS conversations · Interviews & scorecards';
+dict.en.recruitingSub = 'Candidates · SMS / email invitations · Interviews & scorecards';
 const t = key => dict[lang]?.[key] || dict.zh[key] || key;
 const serviceNames = new Proxy({}, { get: (_, key) => t(key) });
 const roleNames = new Proxy({}, { get: (_, key) => t(key) });

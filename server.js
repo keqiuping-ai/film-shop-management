@@ -10,6 +10,7 @@ const recruiting = require('./lib/recruiting');
 const { createRecruitingVideoService } = require('./lib/recruiting-video');
 const { createRecruitingInterviewAnalyzer } = require('./lib/recruiting-interview-ai');
 const { createRecruitingTranslator } = require('./lib/recruiting-openai');
+const { createRecruitingEmailProvider } = require('./lib/recruiting-email');
 const execFileAsync = promisify(execFile);
 
 const ROOT = __dirname;
@@ -6044,9 +6045,15 @@ async function sendTwilioSms({ to, body, mediaUrl, statusCallback, purpose }) {
   return result;
 }
 
+const recruitingEmailProvider = createRecruitingEmailProvider({
+  getConfig:() => ({ apiKey:process.env.RESEND_API_KEY,
+    from:process.env.RECRUITING_FROM_EMAIL || process.env.RESEND_FROM_EMAIL || process.env.REMINDER_FROM_EMAIL,
+    replyTo:process.env.RECRUITING_REPLY_TO_EMAIL || process.env.RESEND_REPLY_TO_EMAIL })
+});
 const recruitingService = recruiting.createRecruitingService({
   readDb, writeDb, canAccess, readBody, send,
   sendSms:sendTwilioSms, smsConfigured:twilioConfigured,
+  sendEmail:recruitingEmailProvider.send, emailInfo:recruitingEmailProvider.info,
   translationConfigured:() => Boolean(openAiCustomerReplyKey(readDb())),
   translateText:createRecruitingTranslator({
     getConfig:() => {

@@ -141,10 +141,11 @@ test('profile puts four online-first steps before preserved compact candidate de
     const workflowStart = html.indexOf('class="rec-online-workflow"');
     assert.ok(workflowStart >= 0 && workflowStart < html.indexOf('class="rec-profile-facts"'));
     assert.deepEqual([...html.matchAll(/class="rec-step-number">(\d+)</g)].map(match => match[1]), ['01','02','03','04']);
-    const titles = language === 'zh' ? ['短信邀请','确认时间','线上面试','记录与评分'] : ['Invite by SMS','Confirm a time','Meet online','Notes &amp; scores'];
+    const titles = language === 'zh' ? ['发送邀约','确认时间','线上面试','记录与评分'] : ['Send an invitation','Confirm a time','Meet online','Notes &amp; scores'];
     let previous = workflowStart;
     for (const title of titles) { const index = html.indexOf(`<h4>${title}</h4>`); assert.ok(index > previous, title); previous = index; }
     assert.match(html, /data-rec-action="invite-online" data-rec-id="online-first"/);
+    assert.match(html, /data-rec-action="invite-online-email" data-rec-id="online-first"/);
     assert.match(html, /data-rec-action="interview-kit" data-rec-id="online-first"/);
     assert.match(html, /<details class="rec-secondary-interview">/);
     assert.match(html, /Synthetic full experience/);
