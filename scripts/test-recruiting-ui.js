@@ -25,7 +25,7 @@ const testHooks = `
       candidateSort = controls.sort || 'applied';
       translationCache.clear(); translationPending.clear();
     },
-    filteredCandidates, candidateTable, bilingualBlock, openCandidateProfile, openInterviewKit, openInterview,
+    filteredCandidates, candidateTable, bilingualBlock, resumeComparisonHtml, openCandidateProfile, openInterviewKit, openInterview,
     interviewKitCopyText, scorecardAverage, onlineWorkflowHtml, interviewMode,
     interviewSubmission, updateInterviewMode, createVideoInvite, composeVideoInvite, saveOpenInterview,
     saveAndCreateVideoInvite, saveAndJoinVideoInterview,
@@ -102,6 +102,10 @@ function candidate(id, fields = {}) {
 
 function verified(id, appliedAt, fields = {}) {
   return candidate(id, { appliedAt, applicationDateNote: 'Synthetic original application timestamp', ...fields });
+}
+
+function resumeSectionHtml(html) {
+  return html.match(/<section\b[^>]*class="[^"]*\brec-resume-section\b[^"]*"[^>]*>[\s\S]*?<\/section>/)?.[0] || '';
 }
 
 test('new and existing interview dialogs expose every interview action without a save-and-reopen step', () => {
@@ -543,8 +547,11 @@ test('profile preserves every character of a 60,000-character resume including i
   assert.ok(html.includes(escapeHtml(resumeText)), 'full original text must remain present rather than a preview/summary');
   assert.ok(html.includes(escapeHtml(tail)));
   assert.doesNotMatch(html, /<script>notExecutable/);
-  assert.match(html, /已保存简历原文与对照/);
-  assert.match(html, /data-rec-language="zh"/);
+  const resume = resumeSectionHtml(html);
+  assert.match(resume, /data-rec-source="resume"/);
+  assert.match(resume, /data-rec-language="zh"/);
+  const originalColumn = resume.match(/<div\b[^>]*class="[^"]*\brec-original-text\b[^"]*"[^>]*>([\s\S]*?)<\/div>/)?.[1];
+  assert.equal(originalColumn, escapeHtml(resumeText), 'The translation source is the full 60,000-character resume, exactly once');
   assert.equal(env.modals.at(-1).onSave, null, 'reading a profile must not create a save action');
   assert.equal(env.nodes.get('modalSave').hidden, true);
 });
@@ -560,9 +567,58 @@ test('profile keeps short facts in a compact grid while preserving dedicated lon
   assert.equal((html.match(/class="rec-profile-fact"/g) || []).length, 8);
   assert.equal((html.match(/rec-profile-fact-missing/g) || []).length, 3);
   assert.match(html, /class="rec-profile-contact-row"/);
-  assert.match(html, /经验与经历概览 \/ Experience overview/);
+  assert.match(html, /data-rec-record="experience"/);
   assert.match(html, /Detailed synthetic work history\./);
-  assert.match(html, /class="rec-profile-section"/);
+  assert.match(html, /<section class="rec-internal-record" data-rec-record="experience"/);
+});
+
+test('profile presents the original resume before two closed internal-record folds without mislabeling internal text as translation input', () => {
+  for (const language of ['zh', 'en']) {
+    const env = harness(language);
+    const person = candidate('resume-first', {
+      resumeText:'  SYNTHETIC ORIGINAL RESUME\nVerifiable history <not markup> & final line.  ',
+      experience:'INTERNAL EXPERIENCE <review> & follow-up',
+      dealershipResources:'INTERNAL DEALERSHIP RESOURCES\nNot supplied as a resume.',
+      notes:'INTERNAL NOTES\nContact later.',
+      scores:{ sales:1, dealershipNetwork:2, plan:3, communication:4, execution:5, fit:6 },
+      scoreNotes:'INTERNAL SCORE EVIDENCE <verify> & follow up.',
+      interviewScorecards:[{ templateId:'dealer_quick_8', scores:{ street_plan:9 }, notes:{ street_plan:'Synthetic score evidence.' } }]
+    });
+    const before = plain(person); env.fixture([person]); env.ui.openCandidateProfile(person.id);
+    const html = env.modals.at(-1).html, resume = resumeSectionHtml(html);
+    const folds = [...html.matchAll(/<details\b[^>]*class="[^"]*\brec-profile-fold\b[^"]*"[^>]*>[\s\S]*?<\/details>/g)].map(match => match[0]);
+    assert.ok(resume, 'The full resume is a dedicated first-class section');
+    assert.equal(folds.length, 2, 'Internal notes and interview records have distinct folds');
+    for (const fold of folds) {
+      assert.ok(html.indexOf(resume) < html.indexOf(fold), 'Resume appears before secondary internal records');
+      assert.doesNotMatch(fold.match(/^<details\b[^>]*>/)[0], /\bopen(?:\s|=|>)/, 'Secondary records start collapsed');
+      assert.doesNotMatch(fold, /data-rec-translation-block|data-rec-action="translate-reading"|\brec-original-text\b|\brec-translated-text\b/);
+    }
+    assert.match(folds[0], language === 'zh' ? /内部整理与跟进（非简历原文）/ : /Internal notes \(not the resume\)/);
+    assert.match(folds[1], language === 'zh' ? /面试记录与评分（内部参考）/ : /Interview records &(?:amp;)? scores \(internal reference\)/);
+    assert.match(folds[1], /class="rec-kit-saved"/);
+    assert.match(folds[1], /9\.0 \/ 10/);
+    assert.equal((folds[1].match(/class="rec-score-row"/g) || []).length, 6);
+    for (const score of Object.values(person.scores)) assert.ok(folds[1].includes(`<strong>${score} / 10</strong>`));
+    assert.ok(folds[1].includes(escapeHtml(person.scoreNotes)), 'Saved score evidence remains available under interview records');
+    assert.ok(!resume.includes(escapeHtml(person.scoreNotes)), 'Score evidence is not original resume text');
+    assert.equal((html.match(/data-rec-translation-block/g) || []).length, 1, 'Only the original resume can be translated from this profile');
+    assert.equal((html.match(/data-rec-action="translate-reading"/g) || []).length, 1);
+    assert.match(resume, /data-rec-source="resume"/);
+    assert.match(resume, /data-rec-language="zh"/);
+    assert.ok(resume.includes(escapeHtml(person.resumeText)));
+    for (const field of ['experience', 'dealershipResources', 'notes']) {
+      const section = folds[0].match(new RegExp(`<section\\b[^>]*data-rec-record="${field}"[^>]*>([\\s\\S]*?)<\\/section>`))?.[1];
+      assert.ok(section, `${field} is preserved as an explicitly separate internal record`);
+      assert.ok(section.includes(escapeHtml(person[field])));
+      const headings = [...section.matchAll(/<h[1-6]\b[^>]*>([\s\S]*?)<\/h[1-6]>/g)].map(match => match[1]).join(' ');
+      assert.ok(headings, `${field} has a descriptive record heading`);
+      assert.doesNotMatch(headings, /\bAI\b|原文|翻译|original|translation/i, 'Unknown-origin internal fields must not be labeled originals, translations or AI-generated');
+      assert.ok(!resume.includes(escapeHtml(person[field])), `${field} never enters the resume column`);
+    }
+    assert.deepEqual(person, before, 'Opening the reorganized profile never changes saved data');
+    assert.equal(env.modals.at(-1).onSave, null);
+  }
 });
 
 test('candidate interview kits expose all role variants, exact questions, copy text and restored scores', () => {
@@ -598,13 +654,14 @@ test('PDF-only profiles explicitly say text is not extracted and never offer fak
   })]);
   env.ui.openCandidateProfile('pdf-only');
   const html = env.modals.at(-1).html;
-  const resumeSection = html.match(/<section class="rec-profile-section rec-resume-section">([\s\S]*?)<\/section>/)?.[1];
+  const resumeSection = resumeSectionHtml(html);
   assert.ok(resumeSection, 'resume attachment section must be present');
   assert.match(resumeSection, /已上传 PDF，但尚未提取文字，暂不能生成全文对照/);
   assert.match(resumeSection, /data-rec-action="view-resume"/);
   assert.match(resumeSection, /synthetic-resume\.pdf/);
   assert.doesNotMatch(resumeSection, /data-rec-translation-block|data-rec-action="translate-reading"|rec-original-text/);
   assert.ok(!resumeSection.includes('Synthetic summary only'), 'summary must not be substituted for the missing resume');
+  assert.equal((html.match(/data-rec-action="translate-reading"/g) || []).length, 0, 'Internal summaries do not create a substitute AI entry point');
 });
 
 test('missing originals and attachments remain clearly marked instead of claiming a complete resume', () => {
@@ -615,6 +672,10 @@ test('missing originals and attachments remain clearly marked instead of claimin
   assert.match(html, /Original resume text is missing\. The experience summary is not a full resume/);
   assert.match(html, /No PDF attachment/);
   assert.doesNotMatch(html, /data-rec-action="view-resume"/);
+  const resume = resumeSectionHtml(html);
+  assert.doesNotMatch(resume, /data-rec-translation-block|data-rec-action="translate-reading"|rec-original-text/);
+  assert.ok(!resume.includes('Synthetic sales summary.'), 'Internal experience is not promoted to a missing original resume');
+  assert.doesNotMatch(html, /data-rec-action="translate-reading"/);
 });
 
 test('mixed Chinese/English originals default to Chinese comparison and expose both target languages', () => {

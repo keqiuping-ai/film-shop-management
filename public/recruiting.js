@@ -156,7 +156,7 @@
     const output = block.querySelector('.rec-translated-text'), pane = block.querySelector('.rec-translation-pane');
     output.textContent = text;
     output.hidden = !text;
-    if (pane) pane.hidden = !text;
+    if (pane) pane.hidden = block.dataset.recSource === 'resume' ? false : !text;
     const grid = block.querySelector('.rec-bilingual-grid');
     if (grid) grid.dataset.recHasTranslation = text ? 'true' : 'false';
   }
@@ -213,7 +213,7 @@
 
   function changeReadingLanguage(selectElement) {
     const block = selectElement.closest('[data-rec-translation-block]');
-    if (!block || !['zh', 'en'].includes(selectElement.value)) return;
+    if (!block || block.dataset.recSource === 'resume' || !['zh', 'en'].includes(selectElement.value)) return;
     readingRequests.delete(block);
     block.dataset.recLanguage = selectElement.value;
     const original = block.querySelector('.rec-original-text')?.textContent || '';
@@ -558,6 +558,50 @@
     } catch { dialogError(tr('浏览器未允许自动复制，请手动选择题目。', 'The browser blocked copying. Select the questions manually.')); }
   }
 
+  // Resume source and its translation stay separate from internal notes and scores.
+  // Never substitute an imported summary for missing original resume text.
+  function resumeComparisonHtml(c) {
+    const text = String(c.resumeText || ''), hasText = Boolean(text.trim());
+    const snapshot = hasText ? readingSnapshot(c.id, text, 'zh') : { text:'', done:0, complete:false };
+    const unavailable = hasText ? translationUnavailable() : tr('补充简历原文后可翻译。', 'Add the original resume text to translate.');
+    let resumeLink = '';
+    try {
+      const url = new URL(c.resumeUrl);
+      if (url.protocol === 'https:') resumeLink = `<a class="btn" href="${h(url.href)}" target="_blank" rel="noopener noreferrer">${tr('打开简历 / 作品来源', 'Open resume / portfolio source')}</a>`;
+    } catch {}
+    const attachments = `<div class="rec-attachment">${c.resume ? `${action('view-resume', c.id, tr('查看 PDF 原件', 'View original PDF'))}<span class="rec-note">${h(c.resume.name)}</span>` : `<span class="rec-note">${tr('尚无 PDF 附件', 'No PDF attachment')}</span>`}${resumeLink}</div>`;
+    const source = hasText ? `<div class="rec-readable-text rec-original-text" dir="auto">${h(text)}</div>` : `<p class="rec-note">${c.resume
+      ? tr('已上传 PDF，但尚未提取文字，暂不能生成全文对照。可查看 PDF 原件；编辑档案可补充提取后的原文。', 'A PDF is uploaded, but text has not been extracted, so full-text translation is unavailable. View the PDF or add its extracted text through Edit profile.')
+      : tr('尚无简历原文。经验摘要不能替代完整简历，请补充原文或附件。', 'Original resume text is missing. The experience summary is not a full resume. Add the original text or an attachment.')}</p>`;
+    const buttonText = snapshot.complete ? tr('查看已完成译文', 'Show completed translation') : snapshot.done ? tr('继续翻译', 'Continue translation') : tr('AI 翻译', 'AI translation');
+    return `<section class="rec-profile-section rec-resume-section" data-rec-source="resume" ${hasText ? `data-rec-translation-block data-rec-id="${h(c.id)}" data-rec-language="zh"` : ''}>
+      <div class="rec-bilingual-grid rec-resume-comparison" data-rec-has-translation="${snapshot.text ? 'true' : 'false'}">
+        <div class="rec-resume-source"><div class="rec-resume-column-heading"><h3>${tr('简历原文', 'Original resume')}</h3><p class="rec-note">${tr('已保存的简历文本 · 原文保留', 'Saved resume text · original wording preserved')}</p></div>${attachments}${source}</div>
+        <div class="rec-translation-pane"><div class="rec-resume-column-heading"><h3 class="rec-translation-title">${tr('AI 中文翻译', 'AI Chinese translation')}</h3><p class="rec-note">${tr('仅翻译左侧简历，不是 AI 分析或评分。', 'Translation of the resume on the left, not AI analysis or scoring.')}</p></div>
+          <div class="rec-translation-toolbar"><button class="btn" type="button" ${hasText ? 'data-rec-action="translate-reading"' : ''} ${unavailable ? 'disabled' : ''}>${buttonText}</button><span class="rec-note rec-translation-status" role="status">${h(unavailable || readingLabel(snapshot))}</span></div>
+          <div class="rec-readable-text rec-translated-text" dir="auto" aria-live="polite" ${snapshot.text ? '' : 'hidden'}>${h(snapshot.text)}</div>
+        </div>
+      </div>
+    </section>`;
+  }
+
+  function internalCandidateNotesHtml(c) {
+    const fields = [
+      ['experience', tr('经历整理（内部摘要）', 'Experience summary (internal)')],
+      ['dealershipResources', tr('经销商资源与开发计划（内部记录）', 'Dealership resources & outreach plan (internal)')],
+      ['notes', tr('跟进备注（内部记录）', 'Follow-up notes (internal)')]
+    ];
+    const records = fields.filter(([key]) => String(c[key] || '').trim()).map(([key, title]) =>
+      `<section class="rec-internal-record" data-rec-record="${key}"><h4>${h(title)}</h4><div class="rec-readable-text" dir="auto">${h(c[key])}</div></section>`).join('');
+    return `<details class="rec-profile-fold"><summary>${tr('内部整理与跟进（非简历原文）', 'Internal notes (not the resume)')}</summary><div class="rec-profile-fold-body"><p class="rec-note">${tr('这里保留已有整理与跟进记录，不属于简历原文或逐字译文；未标明来源的内容不推定为候选人原话或 AI 分析。', 'These saved summaries and follow-up notes are not the original resume or a literal translation. Unattributed content is not assumed to be candidate wording or AI analysis.')}</p>${records || `<p class="rec-note">${tr('暂无内部记录。', 'No internal notes yet.')}</p>`}</div></details>`;
+  }
+
+  function internalInterviewRecordsHtml(c) {
+    const scores = dimensions.filter(([key]) => c.scores?.[key] != null).map(([key, zh, en]) =>
+      `<div class="rec-score-row"><span>${h(tr(zh, en))}</span><strong>${h(c.scores[key])} / 10</strong></div>`).join('');
+    return `<details class="rec-profile-fold"><summary>${tr('面试记录与评分（内部参考）', 'Interview records & scores (internal reference)')}</summary><div class="rec-profile-fold-body"><p class="rec-note">${tr('评分和面试记录独立于简历及译文，仅供人工招聘决策参考。', 'Interview notes and scores are separate from the resume and translation, and are advisory for human review.')}</p>${interviewScorecardsHtml(c)}${scores ? `<section class="rec-internal-record"><h4>${tr('已保存的六维评分', 'Saved six-dimension scores')}</h4>${scores}</section>` : ''}${String(c.scoreNotes || '').trim() ? `<section class="rec-internal-record"><h4>${tr('评分依据与待核实事项', 'Score evidence & items to verify')}</h4><div class="rec-readable-text" dir="auto">${h(c.scoreNotes)}</div></section>` : ''}</div></details>`;
+  }
+
   function openCandidateProfile(id) {
     if (!checkIdentity()) return;
     const c = findCandidate(id); if (!c) return;
@@ -570,9 +614,7 @@
     ];
     const phoneLink = /^[+\d\s().-]+$/.test(c.phone || '') ? `<a class="btn" href="tel:${h(c.phone.replace(/[^+\d]/g, ''))}">${tr('拨打电话', 'Call')}</a>` : '';
     const emailLink = action('email-messages', id, tr('邮件邀约 / 记录', 'Email invitation / history'));
-    let resumeLink = '';
-    try { const url = new URL(c.resumeUrl); if (url.protocol === 'https:') resumeLink = `<a class="btn" href="${h(url.href)}" target="_blank" rel="noopener noreferrer">${tr('打开简历 / 作品来源', 'Open resume / portfolio source')}</a>`; } catch {}
-    const html = `<div class="rec-dialog rec-profile" data-rec-dialog="profile" data-rec-id="${h(id)}"><div id="recDialogError" class="rec-alert" role="alert"></div><header class="rec-person-summary"><div><h2>${h(c.name)}</h2><p>${h(c.position || missing)}</p>${pill(c.status)}</div><div class="rec-actions">${action('messages', id, tr('短信往来 / 查看回复', 'Messages / replies'))}${canEdit() ? action('candidate', id, tr('编辑基本资料', 'Edit profile')) : ''}</div></header>${onlineWorkflowHtml(c)}<div class="rec-profile-section-title"><h3>${tr('候选人资料', 'Candidate profile')}</h3><span>${tr('基本信息 · 中英文简历 · 面试记录', 'Contact details · bilingual resume · interview notes')}</span></div><dl class="rec-profile-facts">${facts.map(([name, content]) => `<div class="rec-profile-fact"><dt>${h(name)}</dt><dd class="${content ? '' : 'rec-missing rec-profile-fact-missing'}">${h(content || missing)}</dd></div>`).join('')}</dl>${applicationDatesHtml(c)}<div class="rec-profile-contact-row"><div class="rec-actions">${phoneLink}${emailLink}</div><p class="rec-note">${tr('联系方式按档案原文显示；Indeed 转发邮箱不是候选人的私人邮箱。打开邮件客户端不会自动发信。', 'Contact details are shown as recorded. An Indeed relay address is not a personal email. Opening an email app does not send email.')}</p></div>${interviewScorecardsHtml(c)}${bilingualBlock(id, '经验与经历概览 / Experience overview', c.experience)}${bilingualBlock(id, '经销商资源与开发计划 / Dealership resources & outreach plan', c.dealershipResources)}${bilingualBlock(id, '跟进备注 / Follow-up notes', c.notes)}<section class="rec-profile-section rec-resume-section">${c.resumeText?.trim() ? `<div class="rec-resume-pair">${bilingualBlock(id, '已保存简历原文与对照 / Saved resume text & translation', c.resumeText, 'zh')}</div>` : `<h3>简历原文 / Original resume</h3><p class="rec-missing">${c.resume ? tr('已上传 PDF，但尚未提取文字，暂不能生成全文对照。可查看 PDF 原件；编辑档案可补充提取后的原文。', 'A PDF is uploaded, but text has not been extracted, so full-text translation is unavailable. View the PDF or add its extracted text through Edit profile.') : tr('尚无简历原文。上方经验摘要不能替代完整简历，请补充原文或附件。', 'Original resume text is missing. The experience summary is not a full resume. Add the original text or an attachment.')}</p>`}<div class="rec-attachment">${c.resume ? `${action('view-resume', id, tr('查看 PDF 原件', 'View original PDF'))}<span class="rec-note">${h(c.resume.name)}</span>` : `<span class="rec-note">${tr('尚无 PDF 附件', 'No PDF attachment')}</span>`}${resumeLink}</div><p class="rec-note">${tr('以上为已保存原文，不使用 AI 补写缺失履历；编辑档案可补充简历与附件。', 'This is the saved original. AI does not fill missing history. Use Edit profile to add resume text or attachments.')}</p></section><p class="rec-note">${tr('短信联系', 'SMS contact')}: ${c.smsOptedOut ? tr('已退订 · 禁止发送', 'Opted out · blocked') : c.smsConsent ? tr('已有同意记录', 'Consent recorded') : tr('尚无同意记录 · 不能发送', 'No consent recorded · cannot send')} ${h(c.smsConsentNote || '')}</p></div>`;
+    const html = `<div class="rec-dialog rec-profile" data-rec-dialog="profile" data-rec-id="${h(id)}"><div id="recDialogError" class="rec-alert" role="alert"></div><header class="rec-person-summary"><div><h2>${h(c.name)}</h2><p>${h(c.position || missing)}</p>${pill(c.status)}</div><div class="rec-actions">${action('messages', id, tr('短信往来 / 查看回复', 'Messages / replies'))}${canEdit() ? action('candidate', id, tr('编辑基本资料', 'Edit profile')) : ''}</div></header>${onlineWorkflowHtml(c)}<div class="rec-profile-section-title"><h3>${tr('候选人资料', 'Candidate profile')}</h3><span>${tr('基本信息 · 中英文简历 · 面试记录', 'Contact details · bilingual resume · interview notes')}</span></div><dl class="rec-profile-facts">${facts.map(([name, content]) => `<div class="rec-profile-fact"><dt>${h(name)}</dt><dd class="${content ? '' : 'rec-missing rec-profile-fact-missing'}">${h(content || missing)}</dd></div>`).join('')}</dl>${applicationDatesHtml(c)}<div class="rec-profile-contact-row"><div class="rec-actions">${phoneLink}${emailLink}</div><p class="rec-note">${tr('联系方式按档案原文显示；Indeed 转发邮箱不是候选人的私人邮箱。打开邮件客户端不会自动发信。', 'Contact details are shown as recorded. An Indeed relay address is not a personal email. Opening an email app does not send email.')}</p></div>${resumeComparisonHtml(c)}${internalCandidateNotesHtml(c)}${internalInterviewRecordsHtml(c)}<p class="rec-note">${tr('短信联系', 'SMS contact')}: ${c.smsOptedOut ? tr('已退订 · 禁止发送', 'Opted out · blocked') : c.smsConsent ? tr('已有同意记录', 'Consent recorded') : tr('尚无同意记录 · 不能发送', 'No consent recorded · cannot send')} ${h(c.smsConsentNote || '')}</p></div>`;
     openRecruitingModal(tr('应聘者 · 线上邀约与面试', 'Candidate · online interview'), html, null);
     el('modalSave').hidden = true;
   }

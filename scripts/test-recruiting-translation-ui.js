@@ -16,7 +16,7 @@ const hooks = `
   window.__translationTest = {
     init() { checkIdentity(); data = { translation:{ configured:true } }; },
     configure(value) { data.translation.configured = value; },
-    bilingualBlock, translateReading, changeReadingLanguage, readingChunks, readingSnapshot,
+    bilingualBlock, resumeComparisonHtml, translateReading, changeReadingLanguage, readingChunks, readingSnapshot,
     requestTranslation, checkIdentity, translationKey,
     cache:() => [...translationCache.entries()], pending:() => translationPending.size
   };
@@ -65,18 +65,27 @@ function harness(language = 'zh') {
       assert.equal(finished, true, 'Synthetic work must complete without real sleeps');
       if (failure) throw failure;
     },
-    block(text, id = 'synthetic-candidate', targetLanguage = 'zh') {
+    block(text, id = 'synthetic-candidate', targetLanguage = 'zh', sourceType = '') {
       modalOpen = true;
       const elements = {
         '.rec-original-text':node({ textContent:text }), '.rec-translated-text':node({ hidden:true }),
-        '.rec-translation-pane':node({ hidden:true }), '.rec-bilingual-grid':node({ dataset:{ recHasTranslation:'false' } }),
+        '.rec-translation-pane':node({ hidden:sourceType !== 'resume' }), '.rec-bilingual-grid':node({ dataset:{ recHasTranslation:'false' } }),
         '.rec-translation-status':node(), '.rec-translation-title':node()
       };
-      const block = { dataset:{ recId:id, recLanguage:targetLanguage }, isConnected:true, querySelector:selector => elements[selector] || null };
+      const block = { dataset:{ recId:id, recLanguage:targetLanguage, ...(sourceType ? { recSource:sourceType } : {}) }, isConnected:true, querySelector:selector => elements[selector] || null };
       const button = node({ closest:() => block }), select = { value:targetLanguage, closest:() => block };
       elements['[data-rec-action="translate-reading"]'] = button;
       blocks.push(block);
       return { block, button, select, elements, output:elements['.rec-translated-text'], note:elements['.rec-translation-status'], pane:elements['.rec-translation-pane'], grid:elements['.rec-bilingual-grid'] };
+    },
+    resumeBlock(candidate) {
+      const html = ui.resumeComparisonHtml(candidate);
+      const opening = html.match(/<section\b[^>]*\bdata-rec-source="resume"[^>]*>/)?.[0];
+      assert.ok(opening, 'Resume comparisons must declare their source boundary');
+      const id = opening.match(/\bdata-rec-id="([^"]+)"/)?.[1];
+      assert.ok(id, 'The real resume markup supplies the cache identity');
+      assert.match(opening, /\bdata-rec-language="zh"/);
+      return { ...this.block(candidate.resumeText, id, 'zh', 'resume'), html };
     }
   };
 }
@@ -94,6 +103,111 @@ test('initial bilingual sections contain no empty translation message or visible
   }
   assert.doesNotMatch(css, /\.rec-resume-pair \.rec-readable-text\s*\{[^}]*min-height/);
   assert.match(css, /\.rec-translation-pane\[hidden\][^{]*\{\s*display:none!important/);
+});
+
+test('resume comparison starts with its Chinese pane visible but no fabricated translated content', () => {
+  for (const language of ['zh', 'en']) {
+    for (const resumeText of ['Synthetic English resume.', '中文简历', '中文导入说明\nSynthetic English resume.']) {
+      const env = harness(language), view = env.resumeBlock({ id:'resume-first', resumeText });
+      assert.match(view.html, /class="(?=[^"]*\brec-resume-comparison\b)(?=[^"]*\brec-bilingual-grid\b)[^"]*"/);
+      assert.match(view.html, /data-rec-has-translation="false"/);
+      const pane = view.html.match(/<div\b[^>]*class="[^"]*\brec-translation-pane\b[^"]*"[^>]*>/)?.[0];
+      assert.ok(pane, 'The right comparison pane exists before translation');
+      assert.doesNotMatch(pane, /\bhidden\b/);
+      assert.match(view.html, /class="rec-readable-text rec-translated-text"[^>]*\bhidden[^>]*><\/div>/);
+      assert.doesNotMatch(view.html, /data-rec-translation-language/, 'Resume comparison stays Chinese regardless of interface or source language');
+      assert.ok(view.html.includes(escapeHtml(resumeText)), 'The exact resume stays in the original column');
+      assert.equal(env.calls.length, 0, 'Reading a resume never starts AI implicitly');
+    }
+  }
+});
+
+test('resume-specific CSS keeps empty desktop comparisons in two columns and stacks them only on narrow screens', () => {
+  const selector = /\.rec-profile \.rec-resume-comparison\[data-rec-has-translation="false"\]\s*\{([^}]*)\}/g;
+  const rules = [...css.matchAll(selector)];
+  assert.ok(rules.length >= 2, 'Resume comparison has desktop and narrow-screen rules');
+  assert.match(rules[0][1], /grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\)/);
+  assert.match(rules.at(-1)[1], /grid-template-columns:\s*minmax\(0,\s*1fr\)/);
+  assert.ok(css.lastIndexOf('@media(max-width:680px)', rules.at(-1).index) > rules[0].index, 'Single-column resume rule belongs to the narrow-screen section');
+  assert.match(css, /\.rec-bilingual-grid\[data-rec-has-translation="false"\]\s*\{\s*grid-template-columns:minmax\(0,1fr\)/, 'Generic email and SMS comparisons keep their existing empty-pane layout');
+});
+
+test('resume translation uses only resume text and preserves its right pane through partial failure and cached reopening', async () => {
+  const env = harness();
+  const person = { id:'resume-only-source', resumeText:longOriginal, experience:'INTERNAL EXPERIENCE', dealershipResources:'INTERNAL RESOURCES', notes:'INTERNAL FOLLOW-UP' };
+  const original = JSON.stringify(person), view = env.resumeBlock(person);
+  env.reply(async (body, index) => { if (index === 2) throw new Error('Synthetic resume timeout'); return { text:`简历译文 ${body.text.slice(0, 5)}`, targetLanguage:body.targetLanguage }; });
+  const run = env.ui.translateReading(view.button); await flush();
+  assert.equal(view.output.textContent, '简历译文 Alpha');
+  assert.equal(view.output.hidden, false); assert.equal(view.pane.hidden, false);
+  assert.match(view.note.textContent, /部分译文/);
+  await env.finish(run);
+  assert.equal(view.pane.hidden, false); assert.match(view.note.textContent, /Synthetic resume timeout.*已保留 1\/3 段/);
+  const reopened = env.resumeBlock(person);
+  assert.match(reopened.html, /部分译文.*1\/3/); assert.match(reopened.html, /简历译文 Alpha/);
+  assert.doesNotMatch(reopened.html, /class="[^"]*rec-translation-pane[^>]*\bhidden/);
+  await env.finish(env.ui.translateReading(reopened.button));
+  assert.equal(env.calls.length, 4, 'Retry reuses the completed first part');
+  assert.equal(env.calls.filter(call => call.body.text.startsWith('Alpha')).length, 1);
+  assert.equal(env.calls.filter((call, index) => index !== 1).map(call => call.body.text).join(''), person.resumeText);
+  assert.ok(env.calls.every(call => !/INTERNAL (?:EXPERIENCE|RESOURCES|FOLLOW-UP)/.test(call.body.text)));
+  assert.equal(reopened.pane.hidden, false); assert.match(reopened.output.textContent, /Alpha[\s\S]*Bravo[\s\S]*Charl/);
+  const completed = env.ui.resumeComparisonHtml(person);
+  assert.match(completed, /data-rec-has-translation="true"/); assert.match(completed, /译文已完成/);
+  assert.equal(JSON.stringify(person), original, 'Reading and translating do not rewrite any saved profile fields');
+});
+
+test('first-part resume failure retains the right-hand workspace without empty result text or a language change', async () => {
+  const env = harness(), view = env.resumeBlock({ id:'resume-failure', resumeText:'Synthetic resume text.' });
+  env.reply(async () => { throw new Error('Synthetic unavailable'); });
+  await env.ui.translateReading(view.button);
+  assert.equal(view.pane.hidden, false); assert.equal(view.output.hidden, true); assert.equal(view.output.textContent, '');
+  assert.match(view.note.textContent, /可点击重试/); assert.equal(view.button.textContent, '重试翻译');
+  view.select.value = 'en'; env.ui.changeReadingLanguage(view.select);
+  assert.equal(view.block.dataset.recLanguage, 'zh', 'Resume comparisons cannot be changed to English');
+  assert.equal(view.pane.hidden, false); assert.equal(view.output.hidden, true); assert.equal(view.output.textContent, '');
+  assert.equal(view.grid.dataset.recHasTranslation, 'false');
+  assert.equal(env.calls.length, 1, 'Changing the language does not start AI');
+});
+
+test('leading whitespace chunks never collapse the resume comparison while its first real translation is pending', async () => {
+  const env = harness(), pending = deferred();
+  const resumeText = `${'\n'.repeat(2500)}Synthetic resume after blank lines.`;
+  const view = env.resumeBlock({ id:'resume-blank-lines', resumeText });
+  env.reply(() => pending.promise);
+  const run = env.ui.translateReading(view.button); await flush();
+  assert.equal(env.calls.length, 1, 'Whitespace-only chunks do not call AI');
+  assert.equal(view.pane.hidden, false); assert.equal(view.output.hidden, true); assert.equal(view.output.textContent, '');
+  assert.equal(view.grid.dataset.recHasTranslation, 'false');
+  assert.equal(view.elements['.rec-original-text'].textContent, resumeText);
+  pending.resolve({ text:'空行之后的合成简历译文', targetLanguage:'zh' }); await run;
+  assert.equal(view.pane.hidden, false); assert.equal(view.output.hidden, false);
+});
+
+test('resume ignores unsupported language changes during translation and reopening reads the same Chinese cache', async () => {
+  const env = harness(), pending = deferred(), view = env.resumeBlock({ id:'resume-language', resumeText:'Original resume 资料' });
+  env.reply(() => pending.promise);
+  const run = env.ui.translateReading(view.button); await flush();
+  view.select.value = 'en'; env.ui.changeReadingLanguage(view.select);
+  assert.equal(view.block.dataset.recLanguage, 'zh');
+  assert.equal(view.pane.hidden, false); assert.equal(view.output.hidden, true);
+  pending.resolve({ text:'合成中文简历', targetLanguage:'zh' }); await run;
+  assert.equal(view.output.textContent, '合成中文简历'); assert.equal(view.output.hidden, false); assert.equal(view.pane.hidden, false);
+  const reopened = env.ui.resumeComparisonHtml({ id:'resume-language', resumeText:'Original resume 资料' });
+  assert.match(reopened, /合成中文简历/); assert.match(reopened, /data-rec-language="zh"/);
+  assert.equal(env.calls.length, 1);
+});
+
+test('resume requests stop rendering and scheduling when their profile source or candidate context changes', async () => {
+  for (const change of [view => { view.block.isConnected = false; }, view => { view.block.dataset.recId = 'another-candidate'; }, view => { view.elements['.rec-original-text'].textContent = 'Edited original resume'; }]) {
+    const env = harness(), pending = deferred(), view = env.resumeBlock({ id:'resume-context', resumeText:longOriginal });
+    env.reply(() => pending.promise);
+    const run = env.ui.translateReading(view.button); await flush(); change(view);
+    pending.resolve({ text:'旧上下文译文', targetLanguage:'zh' }); await env.finish(run);
+    assert.equal(env.calls.length, 1, 'An obsolete context never proceeds to later chunks');
+    assert.equal(view.output.textContent, '', 'Late content must not appear in another source or profile');
+    assert.equal(view.output.hidden, true); assert.equal(view.pane.hidden, false);
+  }
 });
 
 test('chunks preserve every source character and stay within 2400 without splitting surrogate pairs', () => {

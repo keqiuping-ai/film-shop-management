@@ -106,9 +106,8 @@
 .rec-email-dialog button:disabled { opacity:.48; cursor:not-allowed; }
 @media(max-width:800px) { .rec-email-compose-grid { grid-template-columns:1fr; } .rec-email-compose-grid textarea { min-height:150px; } }
 .rec-dialog .rec-subtitle { margin:0 0 12px; font-weight:650; color:#305f60; font-size:14px; }
-.rec-profile { grid-template-columns:repeat(2,minmax(0,1fr)); align-items:start; gap:10px; }
+.rec-profile { grid-template-columns:minmax(0,1fr); align-items:start; gap:10px; }
 .rec-profile > * { grid-column:1/-1; min-width:0; }
-.rec-profile > .rec-profile-section:not(.rec-resume-section) { grid-column:auto; }
 .rec-profile .rec-person-summary { padding:12px 14px; }
 .rec-profile .rec-person-summary h2 { margin:0; color:#234e4e; font-size:21px; }
 .rec-profile .rec-person-summary .btn { padding:8px 11px; font-size:12px; }
@@ -252,6 +251,36 @@
 .rec-profile .rec-resume-pair .rec-profile-section { padding:0; }
 .rec-profile .rec-resume-pair .rec-readable-text { padding:10px; font-size:16px; line-height:1.65; }
 .rec-profile .rec-translation-toolbar .rec-translation-language,.rec-profile .rec-translation-toolbar .btn,.rec-profile .rec-translation-toolbar .rec-translation-status { margin:0; }
+/* Resume comparison keeps its place and equal columns before and after translation. */
+.rec-profile .rec-resume-section { padding:12px; }
+.rec-profile .rec-resume-comparison,
+.rec-profile .rec-resume-comparison[data-rec-has-translation="false"] { grid-template-columns:repeat(2,minmax(0,1fr)); gap:0; align-items:start; }
+.rec-profile .rec-resume-comparison > .rec-resume-source { padding-right:12px; }
+.rec-profile .rec-resume-comparison > .rec-translation-pane { border-left:1px solid #dfe9e5; padding-left:12px; }
+.rec-profile .rec-resume-column-heading { display:grid; gap:3px; margin-bottom:8px; min-width:0; }
+.rec-profile .rec-resume-column-heading h3,
+.rec-profile .rec-resume-column-heading h4 { margin:0; color:#285853; font-size:15px; line-height:1.4; }
+.rec-profile .rec-resume-column-heading small { color:#738589; font-size:11px; line-height:1.45; overflow-wrap:anywhere; }
+.rec-profile .rec-resume-comparison .rec-attachment,
+.rec-profile .rec-resume-comparison .rec-translation-toolbar { margin:0 0 8px; padding:0; min-width:0; gap:6px 8px; }
+.rec-profile .rec-resume-comparison .rec-attachment .btn { margin:0; }
+.rec-profile .rec-resume-comparison .rec-attachment .rec-note,
+.rec-profile .rec-resume-comparison .rec-translation-status { overflow-wrap:anywhere; }
+.rec-profile .rec-resume-comparison .rec-readable-text { max-height:60vh; overflow:auto; padding:10px 12px; border-radius:8px; background:#f7faf9; scrollbar-gutter:stable; font-size:15px; line-height:1.7; }
+.rec-profile .rec-resume-comparison .rec-missing { margin:0; padding:8px 10px; font-size:12px; line-height:1.55; }
+/* Supplemental records are compact, opt-in details, not competing reading panels. */
+.rec-profile details.rec-profile-fold { padding:9px 12px; border-radius:9px; background:#fff; }
+.rec-profile .rec-profile-fold > summary { font-size:13px; line-height:1.5; overflow-wrap:anywhere; }
+.rec-profile .rec-profile-fold > summary:focus-visible { outline:3px solid #157c80; outline-offset:3px; border-radius:3px; }
+.rec-profile .rec-profile-fold[open] > summary { margin-bottom:10px; }
+.rec-profile .rec-profile-fold-body { display:grid; gap:10px; min-width:0; }
+.rec-profile .rec-profile-fold-body > * { min-width:0; }
+.rec-profile .rec-profile-fold-body > .rec-profile-section { padding:0; border:0; border-radius:0; }
+.rec-profile .rec-internal-record { min-width:0; padding:0; }
+.rec-profile .rec-internal-record + .rec-internal-record { padding-top:10px; border-top:1px solid #e7eeeb; }
+.rec-profile .rec-internal-record h4 { margin:0 0 5px; color:#607974; font-size:12px; line-height:1.5; }
+.rec-profile .rec-internal-record .rec-readable-text { font-size:13px; line-height:1.6; }
+.rec-profile .rec-internal-record .rec-missing { margin:0; padding:0; border:0; border-radius:0; background:transparent; font-size:12px; }
 @media(max-width:1050px) { .rec-hero { align-items:flex-start; } .rec-stats{gap:9px}.rec-stat{padding:13px}.rec-table th,.rec-table td{padding:13px}.rec-hero h2{font-size:22px}.rec-table-scroll{overflow:auto;}.rec-profile-facts{grid-template-columns:repeat(2,minmax(0,1fr))}.rec-kit-layout{grid-template-columns:230px minmax(0,1fr)}.rec-kit-summary{grid-template-columns:repeat(2,minmax(0,1fr))} }
 @media(max-width:680px) { .rec-hero{padding:20px; flex-direction:column}.rec-stats{grid-template-columns:repeat(2,minmax(0,1fr))}.rec-board-head{padding:14px}.rec-filters{width:100%}.rec-filters input{width:100%}.rec-form-grid,.rec-score-grid{grid-template-columns:1fr}.rec-appointment{align-items:flex-start; flex-wrap:wrap}.rec-appointment-time{min-width:82px}.rec-timeline{padding:12px}.rec-person-summary{align-items:flex-start}.rec-hero h2{font-size:21px} }
 @media(max-width:680px) { .rec-profile-facts,.rec-bilingual-grid{grid-template-columns:1fr}.rec-bilingual-grid > div + div{border-left:0;border-top:1px solid #dfe9e5;padding-left:0;padding-top:15px}.rec-profile-section,.rec-compose-step{padding:13px}.rec-bubble{max-width:100%;width:100%}.rec-threads{padding:12px}.rec-resume-original{max-height:420px} }
@@ -260,8 +289,6 @@
 @media(max-width:800px) { .rec-interview-control-grid{grid-template-columns:1fr}.rec-interview-control{padding:13px}.rec-interview-control-grid .btn{width:100%} }
 @media(max-width:1100px) {
   .rec-workflow-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
-  .rec-profile > .rec-profile-section:not(.rec-resume-section) .rec-bilingual-grid { grid-template-columns:1fr; }
-  .rec-profile > .rec-profile-section:not(.rec-resume-section) .rec-bilingual-grid > div + div { border-left:0; border-top:1px solid #dfe9e5; padding-left:0; padding-top:8px; }
 }
 @media(max-width:800px) {
   .rec-online-workflow { padding:11px; }
@@ -273,4 +300,9 @@
   .rec-profile .rec-bilingual-grid > div + div { padding-left:0; padding-top:8px; }
   .rec-profile .rec-kit-summary { grid-template-columns:1fr; }
   .rec-profile .rec-profile-section .btn { min-height:38px; }
+  .rec-profile .rec-resume-comparison,
+  .rec-profile .rec-resume-comparison[data-rec-has-translation="false"] { grid-template-columns:minmax(0,1fr); gap:12px; }
+  .rec-profile .rec-resume-comparison > .rec-resume-source { padding-right:0; }
+  .rec-profile .rec-resume-comparison > .rec-translation-pane { border-left:0; border-top:1px solid #dfe9e5; padding-left:0; padding-top:12px; }
+  .rec-profile .rec-resume-comparison .rec-readable-text { max-height:60vh; padding:9px 10px; font-size:15px; }
 }
