@@ -2354,10 +2354,24 @@ async function fetchAiJson(url, options, timeoutMs = 45_000) {
     const text = await response.text();
     let value = {};
     try { value = text ? JSON.parse(text) : {}; } catch { value = { error: { message: text.slice(0, 300) } }; }
-    if (!response.ok) throw new Error(value?.error?.message || `AI service returned ${response.status}`);
+    if (!response.ok) {
+      // Keep existing callers' error wording/behavior. These allowlisted tags let
+      // recruiting classify failures without forwarding provider text or bodies.
+      const error = new Error(value?.error?.message || `AI service returned ${response.status}`);
+      error.aiErrorKind = 'http';
+      error.aiProviderStatus = response.status;
+      for (const [source, target] of [['code', 'aiProviderCode'], ['type', 'aiProviderType']]) {
+        const tag = value?.error?.[source];
+        if (typeof tag === 'string' && /^[a-z][a-z0-9_]{0,63}$/.test(tag)) error[target] = tag;
+      }
+      throw error;
+    }
     return value;
   } catch (error) {
-    if (controller.signal.aborted) throw new Error('AI 服务响应超时，请稍后重试');
+    if (controller.signal.aborted) throw Object.assign(new Error('AI 服务响应超时，请稍后重试'), { aiErrorKind:'timeout' });
+    if (error && typeof error === 'object' && !error.aiErrorKind) {
+      try { error.aiErrorKind = 'network'; } catch {}
+    }
     throw error;
   } finally {
     clearTimeout(timer);

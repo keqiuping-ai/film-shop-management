@@ -4,6 +4,7 @@
 // production records are read or written, and no real SMS or API calls occur.
 const assert = require('node:assert/strict');
 const { createRecruitingTranslation, MAX_TEXT_LENGTH, MAX_REQUESTS_PER_WINDOW, MAX_CONCURRENT } = require('../lib/recruiting-translation');
+const { createRecruitingTranslator } = require('../lib/recruiting-openai');
 const { createRecruitingService } = require('../lib/recruiting');
 let checks = 0;
 function check(actual, expected, label) { assert.deepEqual(actual, expected, label); checks++; }
@@ -72,16 +73,30 @@ async function main() {
   check((await fixture({ translationConfigured:() => false }).request('POST', '/api/recruiting/translate', { text:'test', targetLanguage:'en' })).body.code, 'TRANSLATION_NOT_CONFIGURED', 'unconfigured translation response');
 
   const secretSentinel = 'private-provider-detail-do-not-echo';
-  for (const [code, status] of [['PROVIDER_ERROR', 502], ['__proto__', 502], ['constructor', 502], ['TRANSLATION_TIMEOUT', 504], ['TRANSLATION_INCOMPLETE', 502], ['TRANSLATION_FACT_MISMATCH', 502], ['TRANSLATION_NOT_ENGLISH', 502], ['TRANSLATION_NOT_CONFIGURED', 503]]) {
+  for (const [code, status] of [['PROVIDER_ERROR', 502], ['__proto__', 502], ['constructor', 502], ['TRANSLATION_TIMEOUT', 504], ['TRANSLATION_INCOMPLETE', 502], ['TRANSLATION_FACT_MISMATCH', 502], ['TRANSLATION_NOT_ENGLISH', 502], ['TRANSLATION_NOT_CONFIGURED', 503], ['TRANSLATION_AUTH_FAILED', 503], ['TRANSLATION_QUOTA_EXCEEDED', 503], ['TRANSLATION_PROVIDER_RATE_LIMIT', 429], ['TRANSLATION_NETWORK_ERROR', 503]]) {
     const failing = fixture({ translateText:async () => { throw Object.assign(new Error(secretSentinel), { code, statusCode:status }); } });
     const response = await failing.request('POST', '/api/recruiting/translate', { text:'test', targetLanguage:'en' });
     check(response.status, status, 'safe adapter status retained');
+    check(response.body.code, code.startsWith('TRANSLATION_') ? code : 'TRANSLATION_FAILED', 'safe adapter code retained');
     check(JSON.stringify(response).includes(secretSentinel), false, 'provider detail sanitized');
     check(failing.stats().writes + failing.stats().smsCalls, 0, 'failure does not save/send');
   }
   for (const result of ['', '  ', {}, { text:null }, 'x'.repeat(180001)]) {
     const response = await fixture({ translateText:async () => result }).request('POST', '/api/recruiting/translate', { text:'test', targetLanguage:'en' });
     check(response.body.code, 'TRANSLATION_FAILED', 'invalid provider output rejected');
+  }
+
+  for (const upstreamStatus of [401, 403]) {
+    const translator = createRecruitingTranslator({
+      getConfig:() => ({ apiKey:'synthetic-only', model:'synthetic-model', baseUrl:'https://fixture.invalid' }),
+      requestJson:async () => { throw Object.assign(new Error(secretSentinel), { aiErrorKind:'http', aiProviderStatus:upstreamStatus, aiProviderCode:'invalid_api_key' }); }
+    });
+    const authFailure = fixture({ translateText:translator });
+    const response = await authFailure.request('POST', '/api/recruiting/translate', { text:'Resume', targetLanguage:'zh' });
+    check(response.status, 503, 'provider authentication error cannot become local HTTP 401/logout');
+    check(response.body.code, 'TRANSLATION_AUTH_FAILED', 'full adapter and recruiting route preserve safe classification');
+    check(JSON.stringify(response).includes(secretSentinel), false, 'route never reflects provider authentication details');
+    check(authFailure.stats().writes + authFailure.stats().smsCalls, 0, 'provider authentication errors never save data or send SMS');
   }
 
   let now = 1000; let calls = 0;
@@ -104,6 +119,18 @@ async function main() {
   await rejects(() => concurrent.translate({ text:'test', targetLanguage:'en' }, { id:'user-new' }), 429, 'TRANSLATION_BUSY');
   pending.resolve('English'); await Promise.all(active);
   check((await concurrent.translate({ text:'test', targetLanguage:'en' }, { id:'user-new' })).text, 'English', 'concurrent slots released');
+
+  for (const code of ['TRANSLATION_TIMEOUT', 'TRANSLATION_AUTH_FAILED', 'TRANSLATION_QUOTA_EXCEEDED', 'TRANSLATION_PROVIDER_RATE_LIMIT', 'TRANSLATION_NETWORK_ERROR']) {
+    let fail = true;
+    const recovering = createRecruitingTranslation({ translationConfigured:() => true, translateText:async () => {
+      if (fail) throw Object.assign(new Error(secretSentinel), { code });
+      return 'Recovered translation';
+    } });
+    const failed = await Promise.allSettled(Array.from({ length:MAX_CONCURRENT }, (_, i) => recovering.translate({ text:'test', targetLanguage:'en' }, { id:`recovery-${i}` })));
+    check(failed.every(result => result.status === 'rejected' && result.reason.code === code), true, 'all provider failures preserve safe classification');
+    fail = false;
+    check((await recovering.translate({ text:'test', targetLanguage:'en' }, { id:'recovery-0' })).text, 'Recovered translation', 'failure releases same-user and global concurrency slots');
+  }
 
   for (const message of ['请来面试', 'Hello，时间是11am', '𠀀', 'Chinese name 王']) {
     const sms = fixture();

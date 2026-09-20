@@ -653,7 +653,8 @@ test('changing a mixed original back to Chinese resets only its comparison and p
   env.emit('change', { target: select });
   assert.equal(block.dataset.recLanguage, 'zh');
   assert.equal(elements['.rec-translation-title'].textContent, '中文对照 / Chinese translation');
-  assert.match(elements['.rec-translated-text'].textContent, /尚未翻译/);
+  assert.equal(elements['.rec-translated-text'].textContent, '');
+  assert.equal(elements['.rec-translated-text'].hidden, true, 'a language without actual translated content has no placeholder box');
   assert.doesNotMatch(elements['.rec-translated-text'].textContent, /Previous synthetic translation/);
   assert.equal(elements['.rec-original-text'].textContent, mixed);
   assert.equal(elements['[data-rec-action="translate-reading"]'].disabled, false);

@@ -12,6 +12,7 @@ const os = require('node:os');
 const path = require('node:path');
 const vm = require('node:vm');
 const { spawn } = require('node:child_process');
+const { protectFacts } = require('../lib/recruiting-openai');
 
 const ROOT = path.resolve(__dirname, '..');
 const DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'quad-recruiting-test-'));
@@ -116,7 +117,10 @@ async function startProvider() {
       }
       const source = JSON.parse(body.messages[1].content).sourceText;
       const en = body.messages[0].content.includes('American English');
-      const translated = en ? 'Please come to 3212 Santa Monica Blvd at 10:00 for your interview.' : source === DEMO_RESUME_TEXT ? DEMO_RESUME_ZH : `中文对照：${source}`;
+      const tokens = source.match(/_+RECRUIT_FACT_[A-Z]+__/g) || [];
+      if (en) assert.equal(tokens.length, 2, 'Synthetic English reply expects the whole protected time and street number');
+      const translated = en ? `Please come to ${tokens[1]} Santa Monica Blvd at ${tokens[0]} for your interview.`
+        : source === protectFacts(DEMO_RESUME_TEXT).text ? protectFacts(DEMO_RESUME_ZH).text : `中文对照：${source}`;
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ choices: [{ finish_reason: 'stop', message: { content: JSON.stringify({ text: translated }) } }] }));
       return;
@@ -714,10 +718,13 @@ async function run() {
   } }, 200, 'Resume translated into Chinese review text');
   check(chinese.text.includes('中文对照') && chinese.targetLanguage === 'zh', 'Chinese review text returned');
   check(aiCalls.length === 2 && aiCalls.every(call => call.model === 'gpt-5-mini' && call.store === false), 'Existing configured model reused, API storage disabled');
+  check(aiCalls.every(call => !/\d/.test(JSON.parse(call.messages[1].content).sourceText)), 'Numeric facts reach only the local mock as protected placeholders and return restored');
   check(JSON.stringify(readDb()) === beforeTranslate && providerCalls.length === smsBeforeTranslate, 'Translation does not alter original resume, consent, appointments or send messages');
   aiMode = 'failure';
-  const failedTranslation = await expectStatus('/api/recruiting/translate', { token: aiOwner, method: 'POST', body: { text: 'Hello', targetLanguage: 'zh' } }, 502, 'Provider failure reported safely');
+  const failedTranslation = await expectStatus('/api/recruiting/translate', { token: aiOwner, method: 'POST', body: { text: 'Hello', targetLanguage: 'zh' } }, 503, 'Upstream authentication failure is not a local logout response');
+  check(failedTranslation.code === 'TRANSLATION_AUTH_FAILED', 'Provider authentication failure classified safely');
   check(!JSON.stringify(failedTranslation).includes(TEST_AI_KEY), 'Provider error cannot expose credentials');
+  await expectStatus('/api/recruiting', { token:aiOwner }, 200, 'Existing local login remains usable after upstream authentication failure');
   check(JSON.stringify(readDb()) === beforeTranslate && providerCalls.length === smsBeforeTranslate, 'Failed translation leaves original data and SMS untouched');
   aiMode = 'success';
   await expectStatus(sendPath, { token: aiOwner, method: 'POST', body: { text: english.text, clientMessageId: 'translated-preview-test-001' } }, 201, 'Explicitly send English preview to local SMS provider only');

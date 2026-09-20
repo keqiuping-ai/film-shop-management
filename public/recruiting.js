@@ -22,7 +22,9 @@
   let composeContext = null;
   let sharedPhoneTestContext = null;
   const translationCache = new Map(), translationPending = new Map();
-  let translationQueue = Promise.resolve(), translationCacheSize = 0;
+  const readingRequests = new WeakMap();
+  const READING_CHUNK_SIZE = 2400, READING_START_INTERVAL = 5100;
+  let translationQueue = Promise.resolve(), translationCacheSize = 0, translationLastStartedAt = null;
   const hasHan = text => /\p{Script=Han}/u.test(String(text || ''));
   const phoneKey = phone => { const digits = String(phone || '').replace(/\D/g, ''); return digits.length === 10 ? `1${digits}` : digits; };
   const tr = (zh, en) => lang === 'zh' ? zh : en;
@@ -55,74 +57,170 @@
     return !canEdit() ? tr('需要招聘编辑权限才能使用 AI 翻译。', 'Recruiting edit permission is required for AI translation.') : !data?.translation?.configured ? tr('AI 翻译尚未配置。原文仍可阅读；英文草稿可直接生成预览。', 'AI translation is not configured. Originals remain available, and English drafts can still be previewed.') : '';
   }
 
-  async function requestTranslation(candidateId, text, targetLanguage, stillWanted) {
+  function cacheTranslation(key, translated) {
+    const size = JSON.parse(key)[2].length + translated.length;
+    if (translationCache.has(key)) {
+      translationCacheSize -= JSON.parse(key)[2].length + translationCache.get(key).length;
+      translationCache.delete(key);
+    }
+    while (translationCache.size && (translationCache.size >= 100 || translationCacheSize + size > 500000)) {
+      const oldest = translationCache.keys().next().value;
+      translationCacheSize -= JSON.parse(oldest)[2].length + translationCache.get(oldest).length;
+      translationCache.delete(oldest);
+    }
+    if (size <= 500000) { translationCache.set(key, translated); translationCacheSize += size; }
+  }
+
+  async function requestTranslation(candidateId, text, targetLanguage, stillWanted, onState = () => {}, paced = false) {
     if (!checkIdentity()) throw new Error(tr('请重新登录。', 'Please sign in again.'));
     const unavailable = translationUnavailable();
     if (unavailable) throw new Error(unavailable);
     if (!text.trim() || text.length > 60000) throw new Error(tr('翻译原文需为 1–60000 字符，请分段处理过长内容。', 'Translation input must contain 1–60,000 characters. Split longer content.'));
     const key = translationKey(candidateId, text, targetLanguage);
     if (translationCache.has(key)) return translationCache.get(key);
-    if (translationPending.has(key)) return translationPending.get(key);
     const requestedIdentity = identity;
-    const job = translationQueue.catch(() => {}).then(async () => {
-      if (!checkIdentity() || identity !== requestedIdentity || !stillWanted()) throw new Error(tr('已取消过期的翻译请求。', 'The outdated translation request was cancelled.'));
-      const result = await api('/api/recruiting/translate', { method: 'POST', body: JSON.stringify({ text, targetLanguage }), timeoutMs: 110000 });
-      if (!checkIdentity() || identity !== requestedIdentity) throw new Error(tr('登录状态已改变，请重新打开档案。', 'Your sign-in changed. Reopen the profile.'));
-      if (result.targetLanguage !== targetLanguage || typeof result.text !== 'string' || !result.text.trim() || (targetLanguage === 'en' && hasHan(result.text))) throw new Error(tr('未获得完整、有效的翻译，请重试并核对原文。', 'A complete valid translation was not returned. Retry and compare the original.'));
-      const translated = result.text.trim();
-      const size = text.length + translated.length;
-      while (translationCache.size && (translationCache.size >= 100 || translationCacheSize + size > 500000)) {
-        const oldest = translationCache.keys().next().value;
-        translationCacheSize -= JSON.parse(oldest)[2].length + translationCache.get(oldest).length;
-        translationCache.delete(oldest);
+    const subscriber = { stillWanted, onState };
+    let entry = translationPending.get(key);
+    if (!entry) {
+      entry = { state:'queued', subscribers:new Set(), promise:null };
+      const wanted = () => checkIdentity() && identity === requestedIdentity && [...entry.subscribers].some(item => item.stillWanted());
+      const announce = state => {
+        entry.state = state;
+        for (const item of entry.subscribers) if (item.stillWanted()) item.onState(state);
+      };
+      entry.promise = translationQueue.catch(() => {}).then(async () => {
+        if (!wanted()) throw new Error(tr('已取消过期的翻译请求。', 'The outdated translation request was cancelled.'));
+        // Reading chunks are paced against all starts, keeping a long resume below
+        // the server's 12 requests/minute budget. SMS previews remain atomic.
+        const delay = paced && translationLastStartedAt !== null ? Math.max(0, READING_START_INTERVAL - (Date.now() - translationLastStartedAt)) : 0;
+        if (delay) { announce('waiting'); await new Promise(resolve => setTimeout(resolve, delay)); }
+        if (!wanted()) throw new Error(tr('已取消过期的翻译请求。', 'The outdated translation request was cancelled.'));
+        translationLastStartedAt = Date.now(); announce('running');
+        const result = await api('/api/recruiting/translate', { method: 'POST', body: JSON.stringify({ text, targetLanguage }), timeoutMs: 110000 });
+        if (!checkIdentity() || identity !== requestedIdentity) throw new Error(tr('登录状态已改变，请重新打开档案。', 'Your sign-in changed. Reopen the profile.'));
+        if (result.targetLanguage !== targetLanguage || typeof result.text !== 'string' || !result.text.trim() || (targetLanguage === 'en' && hasHan(result.text))) throw new Error(tr('未获得完整、有效的翻译，请重试并核对原文。', 'A complete valid translation was not returned. Retry and compare the original.'));
+        const translated = result.text.trim();
+        cacheTranslation(key, translated);
+        return translated;
+      });
+      translationPending.set(key, entry);
+      // All requests remain serialized; independent subscribers let a reopened
+      // profile reuse an in-flight request without inheriting a stale DOM owner.
+      translationQueue = entry.promise.catch(() => {});
+    }
+    entry.subscribers.add(subscriber);
+    if (stillWanted()) onState(entry.state);
+    try { return await entry.promise; }
+    finally {
+      entry.subscribers.delete(subscriber);
+      if (translationPending.get(key) === entry) translationPending.delete(key);
+    }
+  }
+
+  function readingChunks(text) {
+    const chunks = [];
+    for (let offset = 0; offset < text.length;) {
+      let end = Math.min(offset + READING_CHUNK_SIZE, text.length);
+      if (end < text.length) {
+        const piece = text.slice(offset, end), minimum = Math.floor(READING_CHUNK_SIZE / 2);
+        const paragraph = piece.lastIndexOf('\n\n'), line = piece.lastIndexOf('\n'), space = piece.lastIndexOf(' ');
+        const boundary = paragraph >= minimum ? paragraph + 2 : line >= minimum ? line + 1 : space >= minimum ? space + 1 : 0;
+        if (boundary) end = offset + boundary;
+        else if (/[\uD800-\uDBFF]/.test(text[end - 1])) end--;
       }
-      if (size <= 500000) { translationCache.set(key, translated); translationCacheSize += size; }
-      return translated;
-    });
-    translationPending.set(key, job);
-    // The backend permits one active translation per user. Queue every reading and draft request.
-    translationQueue = job.catch(() => {});
-    try { return await job; }
-    finally { if (translationPending.get(key) === job) translationPending.delete(key); }
+      chunks.push(text.slice(offset, end)); offset = end;
+    }
+    return chunks;
+  }
+
+  function readingSnapshot(candidateId, text, targetLanguage) {
+    const complete = translationCache.get(translationKey(candidateId, text, targetLanguage));
+    const chunks = readingChunks(text), translated = [];
+    if (complete) return { text:complete, done:chunks.length, total:chunks.length, complete:true };
+    for (const chunk of chunks) {
+      const cached = chunk.trim() ? translationCache.get(translationKey(candidateId, chunk, targetLanguage)) : '';
+      if (chunk.trim() && !cached) break;
+      translated.push(cached);
+    }
+    return { text:translated.filter(Boolean).join('\n\n'), done:translated.length, total:chunks.length, complete:translated.length === chunks.length };
+  }
+
+  function readingLabel(snapshot) {
+    return snapshot.complete ? tr('译文已完成 · 请核对数字及联系方式', 'Translation complete · verify numbers and contacts') : snapshot.done ? tr(`部分译文 · 已完成 ${snapshot.done}/${snapshot.total} 段`, `Partial translation · ${snapshot.done}/${snapshot.total} parts complete`) : '';
+  }
+
+  function showReadingTranslation(block, text) {
+    const output = block.querySelector('.rec-translated-text'), pane = block.querySelector('.rec-translation-pane');
+    output.textContent = text;
+    output.hidden = !text;
+    if (pane) pane.hidden = !text;
+    const grid = block.querySelector('.rec-bilingual-grid');
+    if (grid) grid.dataset.recHasTranslation = text ? 'true' : 'false';
   }
 
   function bilingualBlock(candidateId, title, original, preferredLanguage = '') {
     const text = String(original || '');
     if (!text.trim()) return `<section class="rec-profile-section"><h3>${h(title)}</h3><p class="rec-missing">${tr('尚未提供，需向候选人核实。', 'Not provided. Confirm with the candidate.')}</p></section>`;
     const targetLanguage = preferredLanguage || (hasHan(text) && !/[A-Za-z]/.test(text) ? 'en' : 'zh');
-    const cached = translationCache.get(translationKey(candidateId, text, targetLanguage));
+    const snapshot = readingSnapshot(candidateId, text, targetLanguage);
     const unavailable = translationUnavailable();
-    return `<section class="rec-profile-section" data-rec-translation-block data-rec-id="${h(candidateId)}" data-rec-language="${targetLanguage}"><h3>${h(title)}</h3><div class="rec-bilingual-grid"><div><h4>${tr('原始资料 · 原文保留', 'Original · unchanged')}</h4><div class="rec-readable-text rec-original-text" dir="auto">${h(text)}</div></div><div><h4 class="rec-translation-title">${targetLanguage === 'zh' ? '中文对照 / Chinese translation' : '英文对照 / English translation'}</h4><label class="rec-translation-language">${tr('翻译目标语言', 'Translation language')}<select data-rec-translation-language aria-label="${tr('翻译目标语言', 'Translation language')}">${options([['zh', '中文 / Chinese'], ['en', '英文 / English']], targetLanguage)}</select></label><div class="rec-readable-text rec-translated-text" dir="auto" aria-live="polite">${cached ? h(cached) : `<span class="rec-note">${tr('尚未翻译。点击下方按钮生成对照，不会修改原资料或发送消息。', 'Not translated yet. Generate a comparison below; this does not change the record or send a message.')}</span>`}</div><button class="btn" type="button" data-rec-action="translate-reading" ${unavailable ? 'disabled' : ''}>${tr('生成 AI 对照翻译', 'Generate AI translation')}</button><p class="rec-note rec-translation-status" role="status">${h(unavailable || tr('AI 翻译仅供理解，请以原文核实经历、数字及联系方式。', 'AI translation is for reference. Verify experience, numbers and contacts against the original.'))}</p></div></div></section>`;
+    return `<section class="rec-profile-section" data-rec-translation-block data-rec-id="${h(candidateId)}" data-rec-language="${targetLanguage}"><h3>${h(title)}</h3><div class="rec-translation-toolbar"><label class="rec-translation-language">${tr('译为', 'Translate to')}<select data-rec-translation-language aria-label="${tr('翻译目标语言', 'Translation language')}">${options([['zh', '中文 / Chinese'], ['en', '英文 / English']], targetLanguage)}</select></label><button class="btn" type="button" data-rec-action="translate-reading" ${unavailable ? 'disabled' : ''}>${snapshot.done && !snapshot.complete ? tr('继续翻译', 'Continue translation') : snapshot.complete ? tr('查看已完成译文', 'Show completed translation') : tr('AI 翻译', 'AI translation')}</button><span class="rec-note rec-translation-status" role="status">${h(unavailable || readingLabel(snapshot))}</span></div><div class="rec-bilingual-grid" data-rec-has-translation="${snapshot.text ? 'true' : 'false'}"><div><h4>${tr('原始资料 · 原文保留', 'Original · unchanged')}</h4><div class="rec-readable-text rec-original-text" dir="auto">${h(text)}</div></div><div class="rec-translation-pane" ${snapshot.text ? '' : 'hidden'}><h4 class="rec-translation-title">${targetLanguage === 'zh' ? '中文对照 / Chinese translation' : '英文对照 / English translation'}</h4><div class="rec-readable-text rec-translated-text" dir="auto" aria-live="polite" ${snapshot.text ? '' : 'hidden'}>${h(snapshot.text)}</div></div></div></section>`;
   }
 
   async function translateReading(button) {
+    if (!checkIdentity()) return;
     const block = button.closest('[data-rec-translation-block]');
     if (!block || button.disabled) return;
     const text = block.querySelector('.rec-original-text')?.textContent || '';
     const candidateId = block.dataset.recId, targetLanguage = block.dataset.recLanguage;
-    const requestedIdentity = identity;
-    const active = () => block.isConnected && el('modal')?.classList.contains('open') && identity === requestedIdentity && block.dataset.recLanguage === targetLanguage && block.querySelector('.rec-original-text')?.textContent === text;
-    const output = block.querySelector('.rec-translated-text'), note = block.querySelector('.rec-translation-status');
-    button.disabled = true; note.textContent = tr('正在排队 / 翻译，较长资料可能需要约 1 分钟…', 'Queued / translating. Longer documents may take about a minute…');
+    const requestedIdentity = identity, request = {};
+    readingRequests.set(block, request);
+    const active = () => readingRequests.get(block) === request && block.isConnected && el('modal')?.classList.contains('open') && identity === requestedIdentity && block.dataset.recId === candidateId && block.dataset.recLanguage === targetLanguage && block.querySelector('.rec-original-text')?.textContent === text;
+    const note = block.querySelector('.rec-translation-status'), chunks = readingChunks(text), translated = [];
+    button.disabled = true;
     try {
-      const translated = await requestTranslation(candidateId, text, targetLanguage, active);
-      if (!active()) return;
-      output.textContent = translated;
-      note.textContent = tr('AI 翻译 · 原文保持不变；请核对数字、日期及联系方式。', 'AI translation · Original unchanged. Check numbers, dates and contacts.');
-    } catch (err) { if (active()) note.textContent = `${err.message} ${tr('原文仍保留，可稍后重试。', 'The original is preserved. Retry later.')}`; }
-    finally { if (active()) button.disabled = Boolean(translationUnavailable()); }
+      const cached = translationCache.get(translationKey(candidateId, text, targetLanguage));
+      if (cached) { showReadingTranslation(block, cached); note.textContent = readingLabel({ complete:true }); return; }
+      if (!text.trim() || text.length > 60000) throw new Error(tr('资料须为 1–60000 字符。', 'The document must contain 1–60,000 characters.'));
+      for (let index = 0; index < chunks.length; index++) {
+        if (!active()) return;
+        const report = state => {
+          if (!active()) return;
+          const progress = tr(`第 ${index + 1}/${chunks.length} 段`, `Part ${index + 1}/${chunks.length}`);
+          note.textContent = `${progress} · ${state === 'running' ? tr('正在翻译', 'Translating') : state === 'waiting' ? tr('短暂间隔，避免请求过快', 'Brief pause to avoid rate limits') : tr('等待前一项完成', 'Waiting for the previous request')}${translated.length ? tr(' · 下方为部分译文', ' · Partial translation below') : ''}`;
+        };
+        const result = chunks[index].trim() ? await requestTranslation(candidateId, chunks[index], targetLanguage, active, report, true) : '';
+        if (!active()) return;
+        translated.push(result);
+        showReadingTranslation(block, translated.filter(Boolean).join('\n\n'));
+        note.textContent = readingLabel({ complete:index === chunks.length - 1, done:index + 1, total:chunks.length });
+      }
+      cacheTranslation(translationKey(candidateId, text, targetLanguage), translated.filter(Boolean).join('\n\n'));
+    } catch (err) {
+      if (active()) note.textContent = `${err.message} ${translated.length ? tr(`已保留 ${translated.length}/${chunks.length} 段，点击继续翻译重试。`, `${translated.length}/${chunks.length} parts kept. Continue to retry.`) : tr('原文保留，可点击重试。', 'Original preserved. Click to retry.')}`;
+    } finally {
+      if (active()) {
+        button.disabled = Boolean(translationUnavailable());
+        const snapshot = readingSnapshot(candidateId, text, targetLanguage);
+        button.textContent = snapshot.complete ? tr('查看已完成译文', 'Show completed translation') : snapshot.done ? tr('继续翻译', 'Continue translation') : tr('重试翻译', 'Retry translation');
+        readingRequests.delete(block);
+      }
+    }
   }
 
   function changeReadingLanguage(selectElement) {
     const block = selectElement.closest('[data-rec-translation-block]');
     if (!block || !['zh', 'en'].includes(selectElement.value)) return;
+    readingRequests.delete(block);
     block.dataset.recLanguage = selectElement.value;
     const original = block.querySelector('.rec-original-text')?.textContent || '';
-    const translated = translationCache.get(translationKey(block.dataset.recId, original, selectElement.value));
+    const snapshot = readingSnapshot(block.dataset.recId, original, selectElement.value);
     block.querySelector('.rec-translation-title').textContent = selectElement.value === 'zh' ? '中文对照 / Chinese translation' : '英文对照 / English translation';
-    block.querySelector('.rec-translated-text').textContent = translated || tr('此语言尚未翻译。点击下方按钮生成对照；切换语言本身不会调用 AI。', 'This language has not been translated. Use the button below; changing the language does not call AI.');
-    block.querySelector('.rec-translation-status').textContent = translationUnavailable() || tr('原文保持不变；仅按所选语言生成对照。', 'The original stays unchanged; translation uses the selected language.');
-    block.querySelector('[data-rec-action="translate-reading"]').disabled = Boolean(translationUnavailable());
+    showReadingTranslation(block, snapshot.text);
+    block.querySelector('.rec-translation-status').textContent = translationUnavailable() || readingLabel(snapshot);
+    const button = block.querySelector('[data-rec-action="translate-reading"]');
+    button.disabled = Boolean(translationUnavailable());
+    button.textContent = snapshot.complete ? tr('查看已完成译文', 'Show completed translation') : snapshot.done ? tr('继续翻译', 'Continue translation') : tr('AI 翻译', 'AI translation');
   }
 
   function localParts(instant) {
@@ -250,6 +348,7 @@
       if (document.querySelector('[data-rec-dialog]') && identity) closeModal();
       identity = next; data = null; loadedAt = 0; loading = null; error = ''; query = ''; status = ''; scope = ''; candidateSort = 'applied';
       composeContext = null; sharedPhoneTestContext = null; translationCache.clear(); translationPending.clear(); translationCacheSize = 0;
+      translationQueue = Promise.resolve(); translationLastStartedAt = null;
     }
     return Boolean(next);
   }
