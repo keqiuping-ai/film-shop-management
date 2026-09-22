@@ -1276,7 +1276,7 @@ function setInventorySearch(value) {
   const results = document.getElementById('inventorySearchResults');
   const count = document.getElementById('inventorySearchCount');
   if (results && current === 'inventory') {
-    results.innerHTML = productTable(searchedProducts(), true);
+    results.innerHTML = productTable(searchedProducts(), true, 'inventory-stock-table-scroll');
     enhanceEditableTableRows(results);
     if (count) count.textContent = inventorySearchCountText(state.products);
     return;
@@ -5203,7 +5203,7 @@ const views = {
   },
   inventory() {
     return `${panel(lang === 'zh' ? '分店库存范围' : 'Inventory Scope', '', `${inventoryBranchControls()}<p class="note">${lang === 'zh' ? '公司总库存是控制总账；各分店是明细账；无法可靠判断的历史库存只进入“待确认分店”。' : 'Company inventory is the control total. Unknown historical allocations remain pending.'}</p>`)}
-    <div class="panel inventory-document-panel"><div class="panel-head"><div><h3>${lang === 'zh' ? '库存单' : 'Inventory List'}</h3><p class="note">${lang === 'zh' ? '当前库存总表；入库和出库分别在下方单据中处理。' : 'Current stock. Receipts and issues are handled separately below.'}</p></div>${hasPerm('inventoryEdit') ? `<button class="btn primary" onclick="openProduct()">${t('addNew')}</button>` : ''}</div>${inventorySearchBox()}<div id="inventorySearchResults">${productTable(searchedProducts(), true)}</div></div>
+    <div class="panel inventory-document-panel"><div class="panel-head"><div><h3>${lang === 'zh' ? '库存单' : 'Inventory List'}</h3><p class="note">${lang === 'zh' ? '当前库存总表；默认显示约 5 条，更多商品请搜索或在表内滚动。' : 'Current stock. About five rows are visible; search or scroll inside the table for more.'}</p></div>${hasPerm('inventoryEdit') ? `<button class="btn primary" onclick="openProduct()">${t('addNew')}</button>` : ''}</div>${inventorySearchBox()}<div id="inventorySearchResults">${productTable(searchedProducts(), true, 'inventory-stock-table-scroll')}</div></div>
     <div class="panel inventory-workbench-panel"><div class="panel-head"><div><h3>${lang === 'zh' ? '待出库单' : 'Pending Stock-out'}</h3><p class="note">${lang === 'zh' ? '库管工作台：搜索并点开整张销售单，核对客户、付款与库存后确认出库。' : 'Warehouse workbench: open an order to reconcile customer, payment, and inventory before shipment.'}</p></div></div>${inventoryDocumentSearchBox('pending')}${pendingStockOutTable()}</div>
     <div class="panel inventory-workbench-panel"><div class="panel-head"><div><h3>${lang === 'zh' ? '出库单' : 'Stock-out Records'}</h3><p class="note">${lang === 'zh' ? '同一销售单的多个商品合并为一张出库单；点整行查看订单与出库对照。' : 'Multiple items from one sales order are grouped into one stock-out document.'}</p></div></div>${inventoryDocumentSearchBox('out')}${movementTable('out')}</div>
     <div class="panel inventory-workbench-panel"><div class="panel-head"><div><h3>${lang === 'zh' ? '入库单' : 'Stock-in Records'}</h3><p class="note">${lang === 'zh' ? '补货和其他收货只在这里新增入库单；点整行查看完整入库资料。' : 'Create and inspect receiving records here.'}</p></div>${hasPerm('inventoryEdit') ? `<button class="btn primary" onclick="openStockIn()">${lang === 'zh' ? '新增入库单' : 'New Stock-in'}</button>` : ''}</div>${inventoryDocumentSearchBox('in')}${movementTable('in')}</div>
@@ -6074,9 +6074,9 @@ function priceRuleTable() {
   </tbody></table></div>`;
 }
 
-function productTable(rows, actions = false) {
+function productTable(rows, actions = false, scrollClass = '') {
   const costHead = canSeeFinance() ? `<th>${t('cost')}</th>` : '';
-  return `<div class="table-wrap"><table><thead><tr><th>${t('sku')}</th><th>${lang === 'zh' ? '型号 / 规格' : 'Model / specification'}</th><th>${t('productName')}</th><th>${t('category')}</th><th>${t('stock')}</th>${costHead}<th>${t('wholesalePrice')}</th><th>${lang === 'zh' ? '客户端销售' : 'Portal sales'}</th>${actions ? '<th></th>' : ''}</tr></thead><tbody>
+  return `<div class="table-wrap ${escapeHtml(scrollClass)}"><table><thead><tr><th>${t('sku')}</th><th>${lang === 'zh' ? '型号 / 规格' : 'Model / specification'}</th><th>${t('productName')}</th><th>${t('category')}</th><th>${t('stock')}</th>${costHead}<th>${t('wholesalePrice')}</th><th>${lang === 'zh' ? '客户端销售' : 'Portal sales'}</th>${actions ? '<th></th>' : ''}</tr></thead><tbody>
   ${rows.map(p => { const qty = inventoryDisplayQty(p); const lv = Number((state.branchInventory || []).find(row => row.sku === p.sku && row.branchId === 'las-vegas')?.qty || 0); const la = Number((state.branchInventory || []).find(row => row.sku === p.sku && row.branchId === 'los-angeles')?.qty || 0); return `<tr><td>${escapeHtml(p.sku)}</td><td><strong>${escapeHtml(p.model || p.sku)}</strong><br><span class="note">${escapeHtml(p.specification || '—')}</span></td><td>${escapeHtml(p.name)}</td><td>${escapeHtml(p.category)}</td><td>${stockPill({ ...p, qty })} ${Number(qty || 0).toLocaleString()} ${escapeHtml(p.unit)}<br><span class="note">LV ${lv.toLocaleString()} · LA ${la.toLocaleString()}</span></td>${canSeeFinance() ? `<td>${currency.format(Number(p.cost || 0))}</td>` : ''}<td>${Number(p.wholesale || 0) > 0 ? currency.format(Number(p.wholesale)) : (lang === 'zh' ? '联系业务员' : 'Contact sales')}</td><td>${p.portalVisible === false ? (lang === 'zh' ? '隐藏' : 'Hidden') : p.portalPurchasable === false ? (lang === 'zh' ? '仅展示' : 'View only') : (lang === 'zh' ? '允许购买' : 'Purchasable')}</td>${actions ? actionCell('Product','products',p.id) : ''}</tr>`; }).join('')}
   ${rows.length ? '' : `<tr><td colspan="${actions ? (canSeeFinance() ? 9 : 8) : (canSeeFinance() ? 8 : 7)}" class="note">${lang === 'zh' ? '没有库存商品。' : 'No inventory items.'}</td></tr>`}
   </tbody></table></div>`;

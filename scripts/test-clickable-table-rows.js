@@ -34,6 +34,6 @@ assert(salesOrderEditor.includes("['trackingNo'"), 'Tracking number must remain 
 assert(app.includes('enhanceEditableTableRows(container);'), 'Dynamically filtered order rows must retain whole-row click behavior');
 assert(styles.includes('.sales-order-table-wrap { overflow-x: hidden; }'), 'Order list must not require horizontal scrolling');
 assert(styles.includes('.sales-order-table {') && styles.includes('table-layout: fixed;'), 'Order columns must be compressed into the visible width');
-assert(html.includes('/app.js?v=143') && html.includes('/styles.css?v=97'), 'Desktop assets must be cache-busted');
+assert(html.includes('/app.js?v=144') && html.includes('/styles.css?v=98'), 'Desktop assets must be cache-busted');
 
 console.log('Clickable table rows and compact sales order list regression checks passed.');
