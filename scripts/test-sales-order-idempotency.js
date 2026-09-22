@@ -110,7 +110,39 @@ async function run() {
     assert.equal(deleted.response.status, 200, `Owner deletion failed: ${JSON.stringify(deleted.body)}`);
     assert(!deleted.body.salesOrders.some(order => order.id === savedOrder.id), 'Owner must be able to delete an unpaid order without inventory movements');
 
-    console.log('Sales order number, idempotency, save feedback, and owner deletion tests passed.');
+    const duplicateBase = {
+      ...payload,
+      customer: 'Canceled Duplicate Cleanup Customer',
+      paid: payload.items[0].unitPrice,
+      paymentMethod: 'card'
+    };
+    const retainedCreate = await request('/api/salesOrders', owner.token, {
+      method: 'POST',
+      body: JSON.stringify({ ...duplicateBase, status: '已付款', clientRequestId: `${clientRequestId}-retained` })
+    });
+    assert.equal(retainedCreate.response.status, 200, `Retained duplicate creation failed: ${JSON.stringify(retainedCreate.body)}`);
+    const retainedOrder = retainedCreate.body.salesOrders.find(order => order.clientRequestId === `${clientRequestId}-retained`);
+    const canceledCreate = await request('/api/salesOrders', owner.token, {
+      method: 'POST',
+      body: JSON.stringify({ ...duplicateBase, status: '已取消', paymentMethod: '', clientRequestId: `${clientRequestId}-canceled` })
+    });
+    assert.equal(canceledCreate.response.status, 200, `Canceled duplicate creation failed: ${JSON.stringify(canceledCreate.body)}`);
+    const canceledOrder = canceledCreate.body.salesOrders.find(order => order.clientRequestId === `${clientRequestId}-canceled`);
+    const canceledDeleted = await request(`/api/salesOrders/${canceledOrder.id}`, owner.token, { method: 'DELETE' });
+    assert.equal(canceledDeleted.response.status, 200, `Canceled duplicate deletion failed: ${JSON.stringify(canceledDeleted.body)}`);
+    assert(!canceledDeleted.body.salesOrders.some(order => order.id === canceledOrder.id), 'Canceled duplicate must be deleted');
+    assert(canceledDeleted.body.salesOrders.some(order => order.id === retainedOrder.id), 'Paid retained order must remain after duplicate cleanup');
+
+    const protectedCreate = await request('/api/salesOrders', owner.token, {
+      method: 'POST',
+      body: JSON.stringify({ ...duplicateBase, customer: 'Protected Paid Order Customer', status: '已取消', clientRequestId: `${clientRequestId}-protected` })
+    });
+    assert.equal(protectedCreate.response.status, 200, `Protected paid order creation failed: ${JSON.stringify(protectedCreate.body)}`);
+    const protectedOrder = protectedCreate.body.salesOrders.find(order => order.clientRequestId === `${clientRequestId}-protected`);
+    const protectedDelete = await request(`/api/salesOrders/${protectedOrder.id}`, owner.token, { method: 'DELETE' });
+    assert.equal(protectedDelete.response.status, 400, 'Paid canceled order without a retained duplicate must stay protected');
+
+    console.log('Sales order number, idempotency, save feedback, owner deletion, and canceled duplicate cleanup tests passed.');
   } finally {
     child.kill('SIGTERM');
     if (child.exitCode === null) await new Promise(resolve => child.once('exit', resolve));

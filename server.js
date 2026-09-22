@@ -3892,6 +3892,41 @@ function salesOrderTotal(order) {
   return salesOrderItems(order).reduce((sum, line) => sum + Number(line.qty || 0) * Number(line.unitPrice || 0), 0);
 }
 
+function isCanceledSalesOrder(order) {
+  return ['已取消', '取消', 'canceled', 'cancelled'].includes(String(order?.status || '').trim().toLowerCase());
+}
+
+function salesOrderDuplicateSignature(order) {
+  return salesOrderItems(order)
+    .map(line => ({
+      item: String(line.item || '').trim().toLowerCase(),
+      qty: Number(line.qty || 0),
+      unitPrice: Number(line.unitPrice || 0)
+    }))
+    .sort((left, right) => JSON.stringify(left).localeCompare(JSON.stringify(right)))
+    .map(line => `${line.item}|${line.qty}|${line.unitPrice}`)
+    .join('||');
+}
+
+function retainedDuplicateSalesOrder(db, canceledOrder) {
+  if (!isCanceledSalesOrder(canceledOrder)) return null;
+  const customer = String(canceledOrder.customer || '').trim().toLowerCase();
+  const signature = salesOrderDuplicateSignature(canceledOrder);
+  const total = salesOrderTotal(canceledOrder);
+  const paid = Number(canceledOrder.paid || 0);
+  return (db.salesOrders || []).find(order =>
+    order.id !== canceledOrder.id
+    && !isCanceledSalesOrder(order)
+    && salesOrderIsFullyPaid(order)
+    && String(order.date || '').slice(0, 10) === String(canceledOrder.date || '').slice(0, 10)
+    && String(order.branchId || '') === String(canceledOrder.branchId || '')
+    && String(order.customer || '').trim().toLowerCase() === customer
+    && salesOrderDuplicateSignature(order) === signature
+    && Math.abs(salesOrderTotal(order) - total) < 0.001
+    && Math.abs(Number(order.paid || 0) - paid) < 0.001
+  ) || null;
+}
+
 function salesOrderIsFullyPaid(order) {
   const total = salesOrderTotal(order);
   const paid = Number(order?.paid || 0);
@@ -12268,6 +12303,20 @@ async function api(req, res) {
       const order = (db.salesOrders || []).find(row => row.id === recordId);
       if (!order) return send(res, 404, { error: 'Record not found' });
       const hasMovement = (db.movements || []).some(row => row.salesOrderId === recordId);
+      const retainedDuplicate = hasMovement ? null : retainedDuplicateSalesOrder(db, order);
+      if (retainedDuplicate) {
+        db.salesOrders = db.salesOrders.filter(row => row.id !== recordId);
+        audit(db, user, 'delete-canceled-duplicate-sales-order', {
+          collection: 'salesOrders',
+          recordId,
+          recordLabel: order.orderNo || recordLabel(order),
+          snapshot: { ...order },
+          detail: `删除已取消的重复销售单 ${order.orderNo || recordId}；保留 ${retainedDuplicate.orderNo || retainedDuplicate.id}`
+        });
+        writeDb(db);
+        notifyDataChanged('delete-canceled-duplicate-sales-order', recordId);
+        return send(res, 200, sanitizeDbForUser(db, user));
+      }
       if (hasMovement || Number(order.paid || 0) > 0 || ['已出库', 'shipped', 'delivered', 'completed'].includes(String(order.status || '').trim().toLowerCase())) {
         return send(res, 400, { error: '已收款、已产生库存流水或已出库的订单必须保留，不能删除。需要作废时请保留原单并建立退款/退货/冲销记录。' });
       }
