@@ -40,6 +40,12 @@ async function login(email, password) {
   return { ...result.body, data: bootstrap.body.data };
 }
 
+function losAngelesDate() {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Los_Angeles', year: 'numeric', month: '2-digit', day: '2-digit'
+  }).format(new Date());
+}
+
 async function run() {
   const appSource = fs.readFileSync(path.join(root, 'public/app.js'), 'utf8');
   const html = fs.readFileSync(path.join(root, 'public/index.html'), 'utf8');
@@ -47,7 +53,7 @@ async function run() {
   assert(appSource.includes('ownerCanEditIdentity'), 'Product identity fields must be owner-gated in the UI');
   assert(appSource.includes('productCategories(item.category)'), 'Product editor must preserve the current legacy category');
   assert(appSource.includes("options.unshift([current"), 'Unknown legacy categories must remain selectable instead of falling back to the first option');
-  assert(html.includes('/app.js?v=137'), 'Desktop app asset marker must be bumped');
+  assert(html.includes('/app.js?v=138'), 'Desktop app asset marker must be bumped');
 
   const child = spawn(process.execPath, ['server.js'], {
     cwd: root,
@@ -87,7 +93,7 @@ async function run() {
 
     const movement = await request('/api/movements', ownerToken, {
       method: 'POST',
-      body: JSON.stringify({ date: new Date().toISOString().slice(0, 10), branchId, sku, type: 'in', qty: 1, note: 'metadata test' })
+      body: JSON.stringify({ date: losAngelesDate(), branchId, sku, type: 'in', qty: 1, note: 'metadata test' })
     });
     assert.equal(movement.response.status, 200, `Inventory movement failed: ${JSON.stringify(movement.body)}`);
     const referencedProduct = movement.body.products.find(row => row.id === product.id);

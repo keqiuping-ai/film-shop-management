@@ -543,7 +543,7 @@ function portalCustomerSnapshot(db, customer) {
   const names = new Set([customer.businessName, customer.contactName].map(normalizedWarrantyName).filter(Boolean));
   const warranties = (db.warranties || []).filter(item => (phone && normalizedWarrantyPhone(item.phone) === phone) || names.has(normalizedWarrantyName(item.customerName))).sort((a,b)=>String(b.installDate||'').localeCompare(String(a.installDate||''))).map(publicWarrantyRecord);
   const paymentEnvironment = customerStripePaymentEnvironment();
-  return { customer: { ...safePortalCustomer(customer), priceTierName: tier?.name || '批发价' }, tierProgress: portalCustomerTierProgress(db, customer), paymentEnvironment, products: (db.products || []).filter(product => product.portalVisible !== false).map(product => portalProductForCustomer(db, product, customer)), orders: (db.salesOrders || []).filter(order => order.portalCustomerId === customer.id).sort((a, b) => String(b.updatedAt || b.createdAt || '').localeCompare(String(a.updatedAt || a.createdAt || ''))).map(order => ({ id: order.id, date: order.date, status: order.status, paymentStatus: order.paymentStatus || '', items: salesOrderItems(order), subtotal: Number(order.subtotal || 0), shippingFee: Number(order.shippingFee || 0), salesTax: Number(order.salesTax || 0), checkoutTotal: Number(order.checkoutTotal || 0), fulfillment: order.fulfillment || '', customerDemand: order.customerDemand || '', shipping: order.shipping || '', shippingCarrier: order.shippingCarrier || '', trackingNo: order.trackingNo || '', paid: Number(order.paid || 0), paymentMethod: order.paymentMethod || '', createdAt: order.createdAt, updatedAt: order.updatedAt || '', portalMessages: order.portalMessages || [], attachments: order.portalAttachments || [], customPrintedFilm:order.customPrintedFilm === true, customPrintedFilmDescription:order.customPrintedFilmDescription || '', customPrintedFilmMeters:Number(order.customPrintedFilmMeters || 0), customPrintedFilmPattern:order.customPrintedFilmPattern || '', customPrintedFilmVehicle:order.customPrintedFilmVehicle || null })), warranties };
+  return { customer: { ...safePortalCustomer(customer), priceTierName: tier?.name || '批发价' }, tierProgress: portalCustomerTierProgress(db, customer), paymentEnvironment, products: (db.products || []).filter(product => product.portalVisible !== false).map(product => portalProductForCustomer(db, product, customer)), orders: (db.salesOrders || []).filter(order => order.portalCustomerId === customer.id).sort((a, b) => String(b.updatedAt || b.createdAt || '').localeCompare(String(a.updatedAt || a.createdAt || ''))).map(order => ({ id: order.id, orderNo: order.orderNo || '', date: order.date, status: order.status, paymentStatus: order.paymentStatus || '', items: salesOrderItems(order), subtotal: Number(order.subtotal || 0), shippingFee: Number(order.shippingFee || 0), salesTax: Number(order.salesTax || 0), checkoutTotal: Number(order.checkoutTotal || 0), fulfillment: order.fulfillment || '', customerDemand: order.customerDemand || '', shipping: order.shipping || '', shippingCarrier: order.shippingCarrier || '', trackingNo: order.trackingNo || '', paid: Number(order.paid || 0), paymentMethod: order.paymentMethod || '', createdAt: order.createdAt, updatedAt: order.updatedAt || '', portalMessages: order.portalMessages || [], attachments: order.portalAttachments || [], customPrintedFilm:order.customPrintedFilm === true, customPrintedFilmDescription:order.customPrintedFilmDescription || '', customPrintedFilmMeters:Number(order.customPrintedFilmMeters || 0), customPrintedFilmPattern:order.customPrintedFilmPattern || '', customPrintedFilmVehicle:order.customPrintedFilmVehicle || null })), warranties };
 }
 
 function seedDb() {
@@ -3715,6 +3715,41 @@ function validateReimbursement(item) {
 function reimbursementNumber() {
   const day = new Date().toISOString().slice(0, 10).replaceAll('-', '');
   return `ER-${day}-${String(id()).replace(/[^a-zA-Z0-9]/g, '').slice(-6).toUpperCase()}`;
+}
+
+function salesOrderNumber(db, order) {
+  const date = /^\d{4}-\d{2}-\d{2}$/.test(String(order?.date || ''))
+    ? String(order.date)
+    : dateInTimezone(db.settings?.timezone || 'America/Los_Angeles', 0);
+  const day = date.replaceAll('-', '');
+  const branchId = String(order?.branchId || '').toLowerCase();
+  const branchCode = branchId.includes('vegas') ? 'LV' : branchId.includes('angeles') ? 'LA' : 'HQ';
+  const seed = String(order?.id || id()).replace(/[^a-zA-Z0-9]/g, '').slice(-6).toUpperCase() || '000001';
+  const prefix = `SO-${day}-${branchCode}`;
+  let candidate = `${prefix}-${seed}`;
+  let suffix = 1;
+  const existing = new Set((db.salesOrders || []).map(row => String(row.orderNo || '').toUpperCase()).filter(Boolean));
+  while (existing.has(candidate.toUpperCase())) candidate = `${prefix}-${seed}-${suffix++}`;
+  return candidate;
+}
+
+function applySalesOrderNumberMigration() {
+  const migrationVersion = 'sales-order-number-2026-09-21-v1';
+  const db = readDb();
+  if (db.salesOrderNumberMigrationVersion === migrationVersion) return;
+  let changed = 0;
+  (db.salesOrders || []).forEach(order => {
+    if (String(order.orderNo || '').trim()) return;
+    order.orderNo = salesOrderNumber(db, order);
+    changed += 1;
+  });
+  db.salesOrderNumberMigrationVersion = migrationVersion;
+  db.salesOrderNumberMigrationAt = new Date().toISOString();
+  audit(db, { id: 'system', name: 'System' }, 'migrate-sales-order-number', {
+    collection: 'salesOrders', detail: `为 ${changed} 张历史零售/批发订单补充唯一订单号`
+  });
+  writeDb(db);
+  console.log(`Sales order number migration assigned ${changed} order numbers.`);
 }
 
 function minimumSalePrice(product) {
@@ -8064,6 +8099,7 @@ async function api(req, res) {
       if (!items.length) items.push({ item: 'CUSTOM-CUSTOMER-REQUEST', qty: 1, unitPrice: 0 });
       const now = new Date().toISOString();
       const order = { id: id(), date: dateInTimezone(db.settings?.timezone || 'America/Los_Angeles', 0), type: 'wholesale-us', customer: customer.businessName || customer.contactName, salesRep: customer.salesRep || '', preparedBy: '客户客户端', items, item: items[0].item, qty: items[0].qty, unitPrice: items[0].unitPrice, status: '待客服确认', shipping: '', trackingNo: '', paid: 0, paymentMethod: '', note: customerDemand, customerDemand, portalCustomerId: customer.id, portalRequestId: requestId, portalSource: true, portalNew: true, portalAttachments: Array.isArray(body.attachments) ? body.attachments.slice(0, 10) : [], portalMessages: [{ id: id(), sender: 'customer', senderName: customer.contactName || customer.businessName, text: customerDemand || 'The customer submitted a new order.', createdAt: now }], createdAt: now };
+      order.orderNo = salesOrderNumber(db, order);
       db.salesOrders.push(order);
       audit(db, { id: `customer-${customer.id}`, name: customer.businessName || customer.contactName }, 'create-customer-portal-order', { collection: 'salesOrders', recordId: order.id, recordLabel: order.customer, detail: `客户客户端提交新订单 ${order.customer}` });
       writeDb(db); notifyDataChanged('customer-portal-order', order.id);
@@ -11539,6 +11575,11 @@ async function api(req, res) {
       item.updatedAt = now;
     }
     if (collection === 'salesOrders') {
+      item.clientRequestId = String(item.clientRequestId || '').trim().slice(0, 160);
+      const duplicateRequest = item.clientRequestId && (db.salesOrders || []).find(order =>
+        String(order.clientRequestId || '') === item.clientRequestId && String(order.preparedByUserId || '') === String(user.id || '')
+      );
+      if (duplicateRequest) return send(res, 200, sanitizeDbForUser(db, user));
       item.portalCustomerId = String(item.portalCustomerId || '').trim().slice(0, 160);
       item.salesRep = String(item.salesRep || '').trim();
       item.recipientName = String(item.recipientName || '').trim().slice(0, 160);
@@ -11559,6 +11600,7 @@ async function api(req, res) {
       appendPaymentTransaction(item, 0, user);
       item.preparedBy = String(item.preparedBy || user.name || '').trim();
       item.preparedByUserId = user.id;
+      item.orderNo = salesOrderNumber(db, item);
       item.createdAt = new Date().toISOString();
       item.updatedAt = item.createdAt;
       if (String(item.status || '').trim() === '已出库') item.shippedAt = item.shippedAt || item.createdAt;
@@ -11815,6 +11857,8 @@ async function api(req, res) {
     if (collection === 'salesOrders') {
       const previousStatus = String(db[collection][idx].status || '').trim();
       const previousOrder = db[collection][idx];
+      next.orderNo = String(previousOrder.orderNo || salesOrderNumber(db, previousOrder));
+      next.clientRequestId = String(previousOrder.clientRequestId || '').trim().slice(0, 160);
       next.portalCustomerId = String(next.portalCustomerId || '').trim().slice(0, 160);
       if (previousOrder.portalSource === true && !next.portalCustomerId && previousOrder.portalCustomerId) {
         next.portalCustomerId = String(previousOrder.portalCustomerId).trim().slice(0, 160);
@@ -11967,6 +12011,7 @@ async function api(req, res) {
       if (existingReimbursement.status !== '待审批') return send(res, 400, { error: '已审批的报销记录需要保留，不能删除' });
     }
     if (collection === 'salesOrders') {
+      if (user.role !== 'owner') return send(res, 403, { error: '只有老板账号可以删除零售/批发订单' });
       const order = (db.salesOrders || []).find(row => row.id === recordId);
       if (!order) return send(res, 404, { error: 'Record not found' });
       const hasMovement = (db.movements || []).some(row => row.salesOrderId === recordId);
@@ -12265,6 +12310,7 @@ applyJobSalesRepMigration();
 applyJobCommissionPeopleMigration();
 applySalesOrderSalesRepMigration();
 applyCustomPrintedFilmSalesOrderMigration();
+applySalesOrderNumberMigration();
 applyAccountingLinkageMigration();
 applyPromotedConversationMerge();
 applyCustomerConversationPromotionEligibilityMigration();

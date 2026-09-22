@@ -6194,13 +6194,13 @@ function workshopMovementTable() {
 function salesOrderTable() {
   const query = ['owner', 'manager'].includes(user?.role) ? normalizeSearchText(salesOrderSearch) : '';
   const rows = sortByDateDesc(branchScopedRows(state.salesOrders || [])).filter(order => !query || [
-    order.date, order.type, salesOrderTypeName(order.type), order.customer, order.customerAddress, order.customerContact,
+    order.orderNo, order.date, order.type, salesOrderTypeName(order.type), order.customer, order.customerAddress, order.customerContact,
     order.salesRep, order.preparedBy, salesOrderItemsSummary(order), order.paymentMethod,
     paymentMethodName(order.paymentMethod || ''), order.shipping, order.trackingNo, order.status
   ].map(normalizeSearchText).join('|').includes(query));
-  return `<div class="table-wrap"><table><thead><tr><th>${t('date')}</th><th>${t('type')}</th><th>${t('customer')}</th><th>${t('orderSalesRep')}</th><th>${t('preparedBy')}</th><th>${t('item')}</th><th>${t('qty')}</th><th>${lang === 'zh' ? '总额' : 'Total'}</th><th>${t('paid')}</th><th>${t('paymentMethod')}</th><th>${t('orderTrackingNo')}</th><th>${t('balance')}</th><th>${t('status')}</th><th></th></tr></thead><tbody>
-  ${rows.map(o => { const c = orderCalc(o); return `<tr class="${o.portalNew || o.portalCustomerUnread ? 'portal-new-order' : ''}"><td>${o.date}${o.portalNew ? '<span class="portal-new-badge">客户新单</span>' : o.portalCustomerUnread ? '<span class="portal-new-badge">新留言</span>' : o.portalSource ? '<span class="pill info">客户客户端</span>' : ''}</td><td>${salesOrderTypeName(o.type)}</td><td>${escapeHtml(o.customer)}</td><td>${escapeHtml(o.salesRep || '')}</td><td>${escapeHtml(o.preparedBy || '')}</td><td class="sales-order-items-cell">${escapeHtml(salesOrderItemsSummary(o))}</td><td>${salesOrderTotalQty(o)}</td><td>${currency.format(c.total)}</td><td>${currency.format(Number(o.paid || 0))}</td><td>${escapeHtml(paymentMethodName(o.paymentMethod || ''))}</td><td>${escapeHtml(o.trackingNo || '')}</td><td>${currency.format(c.balance)}</td><td>${statusPill(o.status)}</td>${actionCell('SalesOrder','salesOrders',o.id)}</tr>`; }).join('')}
-  ${rows.length ? '' : `<tr><td colspan="14" class="note">${lang === 'zh' ? '没有找到匹配的零售批发订单。' : 'No matching retail / wholesale orders.'}</td></tr>`}
+  return `<div class="table-wrap"><table><thead><tr><th>${lang === 'zh' ? '订单号' : 'Order No.'}</th><th>${t('date')}</th><th>${t('type')}</th><th>${t('customer')}</th><th>${t('orderSalesRep')}</th><th>${t('preparedBy')}</th><th>${t('item')}</th><th>${t('qty')}</th><th>${lang === 'zh' ? '总额' : 'Total'}</th><th>${t('paid')}</th><th>${t('paymentMethod')}</th><th>${t('orderTrackingNo')}</th><th>${t('balance')}</th><th>${t('status')}</th><th></th></tr></thead><tbody>
+  ${rows.map(o => { const c = orderCalc(o); return `<tr class="${o.portalNew || o.portalCustomerUnread ? 'portal-new-order' : ''}"><td><strong>${escapeHtml(o.orderNo || '—')}</strong></td><td>${o.date}${o.portalNew ? '<span class="portal-new-badge">客户新单</span>' : o.portalCustomerUnread ? '<span class="portal-new-badge">新留言</span>' : o.portalSource ? '<span class="pill info">客户客户端</span>' : ''}</td><td>${salesOrderTypeName(o.type)}</td><td>${escapeHtml(o.customer)}</td><td>${escapeHtml(o.salesRep || '')}</td><td>${escapeHtml(o.preparedBy || '')}</td><td class="sales-order-items-cell">${escapeHtml(salesOrderItemsSummary(o))}</td><td>${salesOrderTotalQty(o)}</td><td>${currency.format(c.total)}</td><td>${currency.format(Number(o.paid || 0))}</td><td>${escapeHtml(paymentMethodName(o.paymentMethod || ''))}</td><td>${escapeHtml(o.trackingNo || '')}</td><td>${currency.format(c.balance)}</td><td>${statusPill(o.status)}</td>${actionCell('SalesOrder','salesOrders',o.id)}</tr>`; }).join('')}
+  ${rows.length ? '' : `<tr><td colspan="15" class="note">${lang === 'zh' ? '没有找到匹配的零售批发订单。' : 'No matching retail / wholesale orders.'}</td></tr>`}
   </tbody></table></div>`;
 }
 
@@ -9004,7 +9004,8 @@ function actionCell(prefix, collection, id) {
   const editPerm = collectionPermission(collection, 'edit');
   const deletePerm = collectionPermission(collection, 'delete');
   const edit = editPerm && hasPerm(editPerm) ? `<button class="icon-btn" title="${t('edit')}" onclick="event.stopPropagation(); open${prefix}('${id}')">✎</button>` : '';
-  const del = deletePerm && hasPerm(deletePerm) ? `<button class="icon-btn" title="${t('delete')}" onclick="event.stopPropagation(); removeItem('${collection}','${id}')">×</button>` : '';
+  const canDelete = deletePerm && hasPerm(deletePerm) && (collection !== 'salesOrders' || user?.role === 'owner');
+  const del = canDelete ? `<button class="icon-btn" title="${t('delete')}" onclick="event.stopPropagation(); removeItem('${collection}','${id}')">×</button>` : '';
   return `<td><div class="mini-actions">${edit}${del}</div></td>`;
 }
 
@@ -9573,7 +9574,7 @@ function openMovement(preset = {}) {
     if (data.type === 'out' && data.qty > currentQty) {
       return alert(`${t('overStockOut')}：${data.sku} ${t('currentStock')} ${currentQty}，${t('out')} ${data.qty}`);
     }
-    saveRecord('movements', null, data);
+    return saveRecord('movements', null, data);
   });
   setupMovementStockGuard();
 }
@@ -9871,7 +9872,7 @@ function openCustomerServiceRep(id) {
   ]), () => {
     const data = numeric(readForm(['name','role','plan','invitePay','closePay','arrivalTarget','closeTarget','minCloseAmount','active','ruleDetail','note']), ['invitePay','closePay','arrivalTarget','closeTarget','minCloseAmount']);
     data.active = data.active === 'true';
-    saveRecord('customerServiceReps', id, data);
+    return saveRecord('customerServiceReps', id, data);
   });
 }
 
@@ -9988,6 +9989,7 @@ function portalCustomerOrderOptions(selectedId = '') {
 
 function openSalesOrder(id) {
   const item = state.salesOrders.find(x => x.id === id) || { date: today(), branchId: defaultBranchId(), type: 'retail-us', customer: '', customerAddress: '', customerContact: '', recipientName: '', customerPhone: '', customerEmail: '', salesRep: '', preparedBy: user?.name || '', notes: '', item: '', qty: 1, unitPrice: 0, status: '待收款', shipping: '', trackingNo: '', paid: 0, paymentMethod: '' };
+  const clientRequestId = String(item.clientRequestId || (!id ? `desktop-sales-order-${Date.now()}-${Math.random().toString(36).slice(2, 12)}` : ''));
   if (id && item.portalSource && (item.portalNew || item.portalCustomerUnread)) markPortalOrderRead(id);
   const lines = salesOrderLineItems(item);
   const editableSalesStatuses = salesStatusOptions().filter(option => {
@@ -9996,6 +9998,7 @@ function openSalesOrder(id) {
   });
   const party = salesOrderPartyDetails(item);
   const fields = [
+    ['orderNo',lang === 'zh' ? '订单号' : 'Order No.','readonly',item.orderNo || (lang === 'zh' ? '保存后自动生成' : 'Generated after saving')],
     ['date',t('date'),'date',item.date], ['branchId',lang === 'zh' ? '所属分店' : 'Branch','select',item.branchId || '',branchOptions()], ['type',t('type'),'select',item.type, salesOrderTypeOptions()],
     ['portalCustomerId',lang === 'zh' ? '关联B端客户账号' : 'Linked dealer account','select',item.portalCustomerId || '',portalCustomerOrderOptions(item.portalCustomerId)],
     ['salesRep',t('orderSalesRep'),'text',item.salesRep || ''], ['status',t('status'),'select',item.status, editableSalesStatuses], ['paid',`${t('paid')} $`,'number',item.paid],
@@ -10020,7 +10023,7 @@ function openSalesOrder(id) {
   </div>`;
   openModal(
     id ? (lang === 'zh' ? '编辑零售/批发订单' : 'Edit Sales Order') : (lang === 'zh' ? '新增零售/批发订单' : 'New Sales Order'),
-    formHtml(fields.slice(0, 3)) + partyFields + formHtml(fields.slice(3)) + lineTable + portalOrderConversationHtml(item),
+    formHtml(fields.slice(0, 4)) + partyFields + formHtml(fields.slice(4)) + lineTable + portalOrderConversationHtml(item),
     () => {
       const data = numeric(readForm(['date','branchId','type','portalCustomerId','customer','recipientName','customerPhone','customerEmail','customerAddress','salesRep','status','paid','paymentMethod','shipping','shippingCarrier','trackingNo','preparedBy','notes']), ['paid']);
       data.customerContact = [data.recipientName, data.customerPhone, data.customerEmail].filter(Boolean).join(' · ');
@@ -10029,6 +10032,7 @@ function openSalesOrder(id) {
       data.item = first.item || '';
       data.qty = Number(first.qty || 0);
       data.unitPrice = Number(first.unitPrice || 0);
+      data.clientRequestId = clientRequestId;
       if (!id) {
         const dateError = validateTodayEntryDate(data.date);
         if (dateError) return alert(dateError);
@@ -10139,7 +10143,7 @@ function openShipment(id) {
   ]), () => {
     const data = readForm(['method','branchId','items','sku','qty','supplier','contact','trackingNo','shipFrom','departDate','etaPort','etaLasVegas','arrivedDate','status','note']);
     if (!data.items.trim()) return alert(lang === 'zh' ? '货物内容不能为空。' : 'Items are required.');
-    saveRecord('shipments', id, data);
+    return saveRecord('shipments', id, data);
   });
 }
 
@@ -10197,7 +10201,7 @@ function openSchedule(id) {
     ['note',t('note'),'textarea',item.note || '', null, 'wide']
   ]), () => {
     const data = readForm(['date','branchId','employeeId','type','shift','reason','note']);
-    saveRecord('schedules', id, data);
+    return saveRecord('schedules', id, data);
   });
 }
 
@@ -10218,7 +10222,7 @@ function openExpense(id) {
     const data = readForm(['date','branchId','category','vendor','adPlacement','adStartDate','adEndDate','amount','recurring','note']);
     data.amount = Number(data.amount || 0);
     data.recurring = data.recurring === 'true';
-    saveRecord('expenses', id, data);
+    return saveRecord('expenses', id, data);
   });
 }
 
@@ -10466,7 +10470,45 @@ function prepareEmployeeAccountForm(isEdit, item) {
   setTimeout(clearNewEmployeeFields, 250);
 }
 
+function setModalSaveState(type = 'idle') {
+  const button = document.getElementById('modalSave');
+  if (!button) return;
+  button.dataset.saveState = type;
+  button.disabled = type === 'saving' || type === 'success';
+  button.textContent = type === 'saving'
+    ? (lang === 'zh' ? '正在保存…' : 'Saving…')
+    : type === 'success'
+      ? (lang === 'zh' ? '✓ 保存完成' : '✓ Saved')
+      : t('save');
+}
+
+async function runModalSave(onSave) {
+  if (typeof onSave !== 'function') return;
+  const modal = document.getElementById('modal');
+  setModalSaveState('saving');
+  try {
+    const result = onSave();
+    const settled = result && typeof result.then === 'function' ? await result : result;
+    if (settled?.saved === false) return;
+    if (modal?.classList.contains('open')) {
+      if (settled?.saved === true) {
+        setModalSaveState('success');
+        if (!settled.feedbackShown) showActionFeedback(lang === 'zh' ? '保存成功' : 'Saved successfully');
+      } else {
+        setModalSaveState('idle');
+      }
+    } else if (!settled?.feedbackShown) {
+      showActionFeedback(lang === 'zh' ? '保存成功' : 'Saved successfully');
+    }
+  } catch (err) {
+    setModalSaveState('idle');
+    showActionFeedback(`${lang === 'zh' ? '保存失败：' : 'Save failed: '}${err.message || err}`, 'error');
+    alert(err.message || err);
+  }
+}
+
 async function saveRecord(collection, id, data) {
+  setModalSaveState('saving');
   try {
     const body = await api(`/api/${collection}${id ? `/${id}` : ''}`, {
       method: id ? 'PUT' : 'POST',
@@ -10474,10 +10516,17 @@ async function saveRecord(collection, id, data) {
     });
     state = body;
     broadcastDataChange();
+    setModalSaveState('success');
+    showActionFeedback(lang === 'zh' ? '保存成功' : 'Saved successfully');
+    await new Promise(resolve => setTimeout(resolve, 550));
     closeModal();
     render();
+    return { saved: true, feedbackShown: true };
   } catch (err) {
+    setModalSaveState('idle');
+    showActionFeedback(`${lang === 'zh' ? '保存失败：' : 'Save failed: '}${err.message || err}`, 'error');
     alert(err.message);
+    return { saved: false, feedbackShown: true };
   }
 }
 
@@ -11390,10 +11439,11 @@ function openModal(title, html, onSave) {
     deleteButton.onclick = null;
   }
   document.getElementById('modalBody').innerHTML = html;
-  document.getElementById('modalSave').onclick = onSave;
+  document.getElementById('modalSave').onclick = onSave === closeModal ? closeModal : () => runModalSave(onSave);
   document.getElementById('modalSave').hidden = false;
   document.getElementById('modalSave').disabled = false;
   document.getElementById('modalSave').textContent = t('save');
+  document.getElementById('modalSave').dataset.saveState = 'idle';
   const cancel = document.querySelector('.dialog footer .btn[onclick="closeModal()"]');
   if (cancel) cancel.textContent = t('cancel');
   document.getElementById('modal').classList.add('open');
@@ -11461,7 +11511,7 @@ function salesOrderMovementOptions(sku = '') {
   });
   return [['', lang === 'zh' ? '不关联订单' : 'No related order'], ...pendingOrders.map(({ order, line }) => [
     order.id,
-    `${order.date} · ${order.customer || ''} · ${line.item} · ${Number(line.qty || 0)}`
+    `${order.orderNo || order.date} · ${order.customer || ''} · ${line.item} · ${Number(line.qty || 0)}`
   ])];
 }
 function leadSourceOptions() { return ['Yelp','Google Maps','Meta / Facebook','Meta / Instagram','Instagram','Website','Phone Call','Walk-in','Referral','Other']; }
