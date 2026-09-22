@@ -1274,12 +1274,14 @@ function setInventorySearch(value) {
   const count = document.getElementById('inventorySearchCount');
   if (results && current === 'inventory') {
     results.innerHTML = productTable(searchedProducts(), true);
+    enhanceEditableTableRows(results);
     if (count) count.textContent = inventorySearchCountText(state.products);
     return;
   }
   if (results && current === 'inventoryAlerts') {
     const alertRows = stockAlertProducts();
     results.innerHTML = inventoryAlertTable(true, null, true);
+    enhanceEditableTableRows(results);
     if (count) count.textContent = inventorySearchCountText(alertRows);
     return;
   }
@@ -1302,6 +1304,7 @@ function setCustomerCenterSearch(value) {
   const count = document.getElementById('customerCenterSearchCount');
   if (results && current === 'customerCenter') {
     results.innerHTML = customerCenterTable(searchedCustomerCenterRows());
+    enhanceEditableTableRows(results);
     if (count) count.textContent = customerCenterSearchCountText();
     return;
   }
@@ -1316,6 +1319,7 @@ function setProspectSearch(value) {
   const count = document.getElementById('prospectSearchCount');
   if (results && current === 'prospects') {
     results.innerHTML = prospectTable(searchedProspectRows());
+    enhanceEditableTableRows(results);
     if (count) count.textContent = prospectSearchCountText();
     return;
   }
@@ -5578,16 +5582,31 @@ function enhanceExpandablePanels() {
   });
 }
 
+function editableTableRowButton(row) {
+  const buttons = [...row.querySelectorAll('button')];
+  const pencilButton = buttons.find(button => button.classList.contains('icon-btn') && button.textContent.trim() === '✎');
+  if (pencilButton) return pencilButton;
+  const openLabels = new Set(['编辑', 'edit', '管理', 'manage', '查看', 'view']);
+  return buttons.find(button => {
+    const label = String(button.textContent || '').trim().toLowerCase();
+    const handler = String(button.getAttribute('onclick') || '');
+    return openLabels.has(label) && /(?:^|;)\s*open[A-Z][A-Za-z0-9_]*\s*\(/.test(handler);
+  }) || null;
+}
+
+const editableTableObserverRoots = new WeakSet();
+
 function enhanceEditableTableRows(root = document) {
   if (!root) return;
   root.querySelectorAll('table tbody tr').forEach(row => {
-    if (row.classList.contains('click-row') || row.classList.contains('editable-row')) return;
-    const editButton = [...row.querySelectorAll('button.icon-btn')].find(button => button.textContent.trim() === '✎');
+    if (row.classList.contains('click-row') || row.classList.contains('clickable-row') || row.classList.contains('editable-row')) return;
+    const editButton = editableTableRowButton(row);
     if (!editButton) return;
     row.classList.add('editable-row');
     row.tabIndex = 0;
+    row.title = lang === 'zh' ? '点击任意空白栏目打开' : 'Click any non-action cell to open';
     row.addEventListener('click', event => {
-      if (event.target.closest('button, a, input, select, textarea, label, [role="button"]')) return;
+      if (event.target.closest('button, a, input, select, textarea, label, [role="button"], [contenteditable="true"]')) return;
       editButton.click();
     });
     row.addEventListener('keydown', event => {
@@ -5596,6 +5615,10 @@ function enhanceEditableTableRows(root = document) {
       editButton.click();
     });
   });
+  if (root.id === 'view' && !editableTableObserverRoots.has(root)) {
+    editableTableObserverRoots.add(root);
+    new MutationObserver(() => enhanceEditableTableRows(root)).observe(root, { childList: true, subtree: true });
+  }
 }
 
 function openPanelZoom(panelEl) {
@@ -6198,16 +6221,19 @@ function salesOrderTable() {
     order.salesRep, order.preparedBy, salesOrderItemsSummary(order), order.paymentMethod,
     paymentMethodName(order.paymentMethod || ''), order.shipping, order.trackingNo, order.status
   ].map(normalizeSearchText).join('|').includes(query));
-  return `<div class="table-wrap"><table><thead><tr><th>${lang === 'zh' ? '订单号' : 'Order No.'}</th><th>${t('date')}</th><th>${t('type')}</th><th>${t('customer')}</th><th>${t('orderSalesRep')}</th><th>${t('preparedBy')}</th><th>${t('item')}</th><th>${t('qty')}</th><th>${lang === 'zh' ? '总额' : 'Total'}</th><th>${t('paid')}</th><th>${t('paymentMethod')}</th><th>${t('orderTrackingNo')}</th><th>${t('balance')}</th><th>${t('status')}</th><th></th></tr></thead><tbody>
-  ${rows.map(o => { const c = orderCalc(o); return `<tr class="${o.portalNew || o.portalCustomerUnread ? 'portal-new-order' : ''}"><td><strong>${escapeHtml(o.orderNo || '—')}</strong></td><td>${o.date}${o.portalNew ? '<span class="portal-new-badge">客户新单</span>' : o.portalCustomerUnread ? '<span class="portal-new-badge">新留言</span>' : o.portalSource ? '<span class="pill info">客户客户端</span>' : ''}</td><td>${salesOrderTypeName(o.type)}</td><td>${escapeHtml(o.customer)}</td><td>${escapeHtml(o.salesRep || '')}</td><td>${escapeHtml(o.preparedBy || '')}</td><td class="sales-order-items-cell">${escapeHtml(salesOrderItemsSummary(o))}</td><td>${salesOrderTotalQty(o)}</td><td>${currency.format(c.total)}</td><td>${currency.format(Number(o.paid || 0))}</td><td>${escapeHtml(paymentMethodName(o.paymentMethod || ''))}</td><td>${escapeHtml(o.trackingNo || '')}</td><td>${currency.format(c.balance)}</td><td>${statusPill(o.status)}</td>${actionCell('SalesOrder','salesOrders',o.id)}</tr>`; }).join('')}
-  ${rows.length ? '' : `<tr><td colspan="15" class="note">${lang === 'zh' ? '没有找到匹配的零售批发订单。' : 'No matching retail / wholesale orders.'}</td></tr>`}
+  return `<div class="table-wrap sales-order-table-wrap"><table class="sales-order-table"><thead><tr><th>${lang === 'zh' ? '订单号' : 'Order No.'}</th><th>${t('date')}</th><th>${t('type')}</th><th>${t('customer')}</th><th>${t('orderSalesRep')}</th><th>${t('preparedBy')}</th><th>${t('item')}</th><th>${t('qty')}</th><th>${lang === 'zh' ? '总额' : 'Total'}</th><th>${t('paid')}</th><th>${t('paymentMethod')}</th><th>${t('balance')}</th><th>${t('status')}</th><th></th></tr></thead><tbody>
+  ${rows.map(o => { const c = orderCalc(o); return `<tr class="${o.portalNew || o.portalCustomerUnread ? 'portal-new-order' : ''}"><td><strong>${escapeHtml(o.orderNo || '—')}</strong></td><td>${o.date}${o.portalNew ? '<span class="portal-new-badge">客户新单</span>' : o.portalCustomerUnread ? '<span class="portal-new-badge">新留言</span>' : o.portalSource ? '<span class="pill info">客户客户端</span>' : ''}</td><td>${salesOrderTypeName(o.type)}</td><td>${escapeHtml(o.customer)}</td><td>${escapeHtml(o.salesRep || '')}</td><td>${escapeHtml(o.preparedBy || '')}</td><td class="sales-order-items-cell">${escapeHtml(salesOrderItemsSummary(o))}</td><td>${salesOrderTotalQty(o)}</td><td>${currency.format(c.total)}</td><td>${currency.format(Number(o.paid || 0))}</td><td>${escapeHtml(paymentMethodName(o.paymentMethod || ''))}</td><td>${currency.format(c.balance)}</td><td>${statusPill(o.status)}</td>${actionCell('SalesOrder','salesOrders',o.id)}</tr>`; }).join('')}
+  ${rows.length ? '' : `<tr><td colspan="14" class="note">${lang === 'zh' ? '没有找到匹配的零售批发订单。' : 'No matching retail / wholesale orders.'}</td></tr>`}
   </tbody></table></div>`;
 }
 
 function updateSalesOrderSearch(value) {
   salesOrderSearch = String(value || '');
   const container = document.getElementById('salesOrderTableContainer');
-  if (container) container.innerHTML = salesOrderTable();
+  if (container) {
+    container.innerHTML = salesOrderTable();
+    enhanceEditableTableRows(container);
+  }
 }
 
 function retailWholesaleSalesTable(orders = []) {

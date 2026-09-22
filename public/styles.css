@@ -878,7 +878,10 @@ th {
   white-space: nowrap;
 }
 tr:hover td { background: #fbfcfd; }
-.click-row { cursor: pointer; }
+.click-row,
+.clickable-row { cursor: pointer; }
+.click-row:hover td,
+.clickable-row:hover td { background: #eef8fa; }
 .editable-row { cursor: pointer; }
 .editable-row:hover td { background: #eef8fa; }
 .editable-row:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; }
@@ -887,6 +890,34 @@ tr:hover td { background: #fbfcfd; }
   font-weight: 800;
 }
 .table-wrap { overflow: auto; border: 1px solid var(--line); border-radius: 8px; }
+.sales-order-table-wrap { overflow-x: hidden; }
+.sales-order-table {
+  min-width: 0;
+  table-layout: fixed;
+  font-size: 12px;
+}
+.sales-order-table th,
+.sales-order-table td {
+  padding: 8px 6px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.sales-order-table th:nth-child(1) { width: 10%; }
+.sales-order-table th:nth-child(2) { width: 8%; }
+.sales-order-table th:nth-child(3) { width: 6%; }
+.sales-order-table th:nth-child(4) { width: 10%; }
+.sales-order-table th:nth-child(5),
+.sales-order-table th:nth-child(6) { width: 8%; }
+.sales-order-table th:nth-child(7) { width: 12%; }
+.sales-order-table th:nth-child(8) { width: 4%; }
+.sales-order-table th:nth-child(9),
+.sales-order-table th:nth-child(10),
+.sales-order-table th:nth-child(12) { width: 6%; }
+.sales-order-table th:nth-child(11) { width: 7%; }
+.sales-order-table th:nth-child(13) { width: 7%; }
+.sales-order-table th:nth-child(14) { width: 6%; }
+.sales-order-table .mini-actions { gap: 3px; }
+.sales-order-table .icon-btn { width: 28px; height: 28px; }
 .pill {
   display: inline-flex;
   align-items: center;

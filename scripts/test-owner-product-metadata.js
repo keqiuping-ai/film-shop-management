@@ -53,7 +53,7 @@ async function run() {
   assert(appSource.includes('ownerCanEditIdentity'), 'Product identity fields must be owner-gated in the UI');
   assert(appSource.includes('productCategories(item.category)'), 'Product editor must preserve the current legacy category');
   assert(appSource.includes("options.unshift([current"), 'Unknown legacy categories must remain selectable instead of falling back to the first option');
-  assert(html.includes('/app.js?v=138'), 'Desktop app asset marker must be bumped');
+  assert(html.includes('/app.js?v=139'), 'Desktop app asset marker must be bumped');
 
   const child = spawn(process.execPath, ['server.js'], {
     cwd: root,
