@@ -3888,6 +3888,26 @@ function salesOrderHasCompleteShipment(db, order) {
   });
 }
 
+function salesOrderTotal(order) {
+  return salesOrderItems(order).reduce((sum, line) => sum + Number(line.qty || 0) * Number(line.unitPrice || 0), 0);
+}
+
+function salesOrderIsFullyPaid(order) {
+  const total = salesOrderTotal(order);
+  const paid = Number(order?.paid || 0);
+  const paymentStatus = String(order?.paymentStatus || '').trim().toLowerCase();
+  const status = String(order?.status || '').trim();
+  if (total <= 0) return ['已付清', '已付款', '待出库', '已付款待出库'].includes(status);
+  return paid + 0.001 >= total || ['paid', '已收清', '已付清', '已付款'].includes(paymentStatus);
+}
+
+function salesOrderCanShip(db, order) {
+  if (!order || salesOrderHasCompleteShipment(db, order)) return false;
+  const status = String(order.status || '').trim().toLowerCase();
+  if (['已取消', '取消', 'canceled', 'cancelled', '已退款', 'refunded'].includes(status)) return false;
+  return salesOrderItems(order).some(line => !isCustomPrintedFilmSku(line.item)) && salesOrderIsFullyPaid(order);
+}
+
 function appendPaymentTransaction(order, previousPaid, user) {
   const nextPaid = Number(order.paid || 0);
   const beforePaid = Number(previousPaid || 0);
@@ -11323,12 +11343,80 @@ async function api(req, res) {
     return send(res, 200, sanitizeDbForUser(db, user));
   }
 
+  const shipSalesOrderMatch = url.pathname.match(/^\/api\/sales-orders\/([^/]+)\/ship$/);
+  if (shipSalesOrderMatch && req.method === 'POST') {
+    if (!canAccess(user, 'inventoryEdit')) return send(res, 403, { error: '没有库存出库权限' });
+    const order = (db.salesOrders || []).find(row => row.id === shipSalesOrderMatch[1]);
+    if (!order) return send(res, 404, { error: '找不到这张销售单' });
+    if (!canAccessCollectionBranch(db, user, 'salesOrders', order.branchId)) return send(res, 403, { error: '你没有这张销售单所属分店的数据权限' });
+    if (salesOrderHasCompleteShipment(db, order)) return send(res, 200, sanitizeDbForUser(db, user));
+    if (!salesOrderCanShip(db, order)) return send(res, 400, { error: '只有已经付清并且尚未出库的销售单才能确认出库' });
+
+    const body = await readBody(req);
+    const fulfillmentBranchIds = Array.isArray(order.fulfillmentBranchIds) && order.fulfillmentBranchIds.length
+      ? order.fulfillmentBranchIds.map(String)
+      : [order.branchId].filter(Boolean).map(String);
+    const branchId = String(body.branchId || order.branchId || fulfillmentBranchIds[0] || '').trim();
+    if (!branchId) return send(res, 400, { error: '这张销售单没有出库分店，请先在销售单中选择所属分店' });
+    if (fulfillmentBranchIds.length && !fulfillmentBranchIds.includes(branchId)) return send(res, 400, { error: '所选出库分店不属于这张销售单的备货仓库' });
+    if (!canAccessBranch(db, user, branchId)) return send(res, 403, { error: '你没有这个分店的库存出库权限' });
+
+    const lines = salesOrderItems(order).filter(line => !isCustomPrintedFilmSku(line.item));
+    const requirements = [];
+    for (const line of lines) {
+      const product = (db.products || []).find(row => row.sku === line.item);
+      if (!product) return send(res, 400, { error: `找不到商品 ${line.item}，不能确认出库` });
+      const shippedQty = (db.movements || []).filter(row => !row.reversedAt && row.type === 'out' && row.salesOrderId === order.id && String(row.sku) === line.item)
+        .reduce((sum, row) => sum + Number(row.qty || 0), 0);
+      const remainingQty = Math.max(0, Number(line.qty || 0) - shippedQty);
+      if (!remainingQty) continue;
+      const companyQty = Number(product.qty || 0);
+      const branchQty = branchStockQty(db, line.item, branchId);
+      if (companyQty < remainingQty) return send(res, 400, { error: `${line.item} 公司库存不足：现有 ${companyQty}，待出库 ${remainingQty}` });
+      if (branchQty < remainingQty) return send(res, 400, { error: `${line.item} 当前分店库存不足：现有 ${branchQty}，待出库 ${remainingQty}` });
+      requirements.push({ product, line, qty: remainingQty });
+    }
+    if (!requirements.length) return send(res, 200, sanitizeDbForUser(db, user));
+
+    const now = new Date().toISOString();
+    const movementDate = dateInTimezone(db.settings?.entryTimezone || db.settings?.timezone || 'America/Los_Angeles', 0);
+    const shipmentId = id();
+    const shipmentNo = `CK-${movementDate.replaceAll('-', '')}-${shipmentId.slice(0, 6).toUpperCase()}`;
+    const createdMovements = requirements.map(({ product, qty }) => ({
+      id: id(), date: movementDate, branchId, sku: product.sku, type: 'out', qty,
+      salesOrderId: order.id, salesOrderNo: order.orderNo || '', shipmentId, shipmentNo,
+      note: `销售单 ${order.orderNo || order.id} 整单确认出库`, createdAt: now,
+      createdBy: user.name || user.email || '', createdByUserId: user.id
+    }));
+    createdMovements.forEach(movement => db.movements.push(movement));
+    requirements.forEach(({ product, qty }) => { product.qty = Number(product.qty || 0) - qty; });
+    order.status = '已出库';
+    order.inventoryStatus = '已出库';
+    order.shippedAt = now;
+    order.shippedDate = movementDate;
+    order.shippedBy = user.name || user.email || '';
+    order.shippedByUserId = user.id;
+    order.shipmentId = shipmentId;
+    order.shipmentNo = shipmentNo;
+    order.shippedMovementIds = createdMovements.map(row => row.id);
+    order.updatedAt = now;
+    releaseOrderInventoryReservations(db, order.id, 'shipped');
+    audit(db, user, 'ship-sales-order', {
+      collection: 'salesOrders', recordId: order.id, recordLabel: order.orderNo || order.customer,
+      before: { status: '待出库' }, after: { status: '已出库', shipmentNo },
+      detail: `${shipmentNo} · ${requirements.map(row => `${row.product.sku} × ${row.qty}`).join('；')}`
+    });
+    writeDb(db);
+    notifyDataChanged('ship-sales-order', order.id);
+    return send(res, 200, sanitizeDbForUser(db, user));
+  }
+
   const reverseMovementMatch = url.pathname.match(/^\/api\/movements\/([^/]+)\/reverse$/);
   if (reverseMovementMatch && req.method === 'POST') {
     if (!canAccess(user, 'inventoryEdit')) return send(res, 403, { error: '没有库存修改权限' });
     const movementId = reverseMovementMatch[1];
     const movement = (db.movements || []).find(row => row.id === movementId);
-    if (!movement) return send(res, 404, { error: '找不到这条出入库流水' });
+    if (!movement) return send(res, 404, { error: '找不到这张库存单据' });
     if (movement.reversedAt) return send(res, 400, { error: '这条入库流水已经撤销，不能重复操作' });
     if (movement.type !== 'in') return send(res, 400, { error: '目前只允许撤销误操作的入库流水；出库请通过对应订单处理' });
     if (movement.shipmentReceiptId || movement.shipmentId || movement.receiptNo) {
@@ -12252,7 +12340,7 @@ function validateMovement(db, movement) {
     if (!order) return '找不到关联的零售批发订单';
     const fulfillmentBranchIds = Array.isArray(order.fulfillmentBranchIds) && order.fulfillmentBranchIds.length ? order.fulfillmentBranchIds : [order.branchId].filter(Boolean);
     if (fulfillmentBranchIds.length && movement.branchId && !fulfillmentBranchIds.includes(movement.branchId)) return '出库分店必须属于订单的备货仓库';
-    if (order.status !== '待出库') return '只有待出库订单可以通过库存出库自动改为已出库';
+    if (!salesOrderCanShip(db, order)) return '只有已经付清并且尚未出库的销售单才能出库';
     const orderLine = salesOrderItems(order).find(line => String(line.item) === String(movement.sku || ''));
     if (!orderLine) return '出库SKU必须和关联订单的某一行商品一致';
     const shippedQty = (db.movements || []).filter(row => row.type === 'out' && row.salesOrderId === order.id && String(row.sku) === String(movement.sku)).reduce((sum,row)=>sum+Number(row.qty||0),0);
@@ -12277,7 +12365,7 @@ function applyMovement(db, movement) {
   product.qty = Number(product.qty || 0) + (movement.type === 'in' ? qty : -qty);
   if (movement.type === 'out' && movement.salesOrderId) {
     const order = db.salesOrders.find(o => o.id === movement.salesOrderId);
-    if (order && order.status === '待出库') {
+    if (order && salesOrderIsFullyPaid(order)) {
       const physicalLines = salesOrderItems(order).filter(line => !isCustomPrintedFilmSku(line.item));
       const shippedQtyBySku = new Map();
       (db.movements || []).filter(row => row.type === 'out' && row.salesOrderId === order.id).forEach(row => shippedQtyBySku.set(String(row.sku || ''),Number(shippedQtyBySku.get(String(row.sku || ''))||0)+Number(row.qty||0)));

@@ -53,7 +53,7 @@ async function run() {
   assert(appSource.includes("✓ 保存完成"), 'Modal save button must show a completed state');
   assert(appSource.includes("collection !== 'salesOrders' || user?.role === 'owner'"), 'Sales order delete action must be owner-only in the UI');
   assert(appSource.includes("订单号"), 'Sales order table must display the order number');
-  assert(html.includes('/app.js?v=141'), 'Desktop app asset marker must include the employee verification release');
+  assert(html.includes('/app.js?v=142'), 'Desktop app asset marker must include the inventory document workflow release');
 
   const child = spawn(process.execPath, ['server.js'], {
     cwd: root,

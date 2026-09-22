@@ -207,7 +207,7 @@ const dict = {
     installersSub: '不同师傅、不同项目的工费公式',
     pricing: '车型定价',
     pricingSub: '车型级别、套餐、材料成本和工时',
-    inventory: '库存出入库',
+    inventory: '库存管理',
     inventorySub: '卷料、零售品、批发库存和流水',
     workshopInventory: '贴膜间库存',
     workshopInventorySub: '从大仓领料到贴膜间，按米登记施工消耗',
@@ -5200,10 +5200,14 @@ const views = {
   },
   inventory() {
     return `${panel(lang === 'zh' ? '分店库存范围' : 'Inventory Scope', '', `${inventoryBranchControls()}<p class="note">${lang === 'zh' ? '公司总库存是控制总账；各分店是明细账；无法可靠判断的历史库存只进入“待确认分店”。' : 'Company inventory is the control total. Unknown historical allocations remain pending.'}</p>`)}
-    ${panel(t('inventoryAlerts'), `<button class="btn" onclick="setPage('inventoryAlerts')">${t('viewAll')}</button>`, inventoryAlertTable(false, 8))}
-    <div class="split" style="margin-top:14px">
-      <div class="panel"><div class="panel-head"><h3>${t('inventory')}</h3>${hasPerm('inventoryEdit') ? `<button class="btn primary" onclick="openProduct()">${t('addNew')}</button>` : ''}</div>${inventorySearchBox()}<div id="inventorySearchResults">${productTable(searchedProducts(), true)}</div></div>
-      <div class="panel"><div class="panel-head"><h3>${lang === 'zh' ? '出入库流水' : 'Inventory Movements'}</h3>${hasPerm('inventoryEdit') ? `<button class="btn primary" onclick="openMovement()">${t('addNew')}</button>` : ''}</div>${movementTable()}</div>
+    <div class="panel inventory-document-panel"><div class="panel-head"><div><h3>${lang === 'zh' ? '库存单' : 'Inventory List'}</h3><p class="note">${lang === 'zh' ? '当前库存总表；入库和出库分别在下方单据中处理。' : 'Current stock. Receipts and issues are handled separately below.'}</p></div>${hasPerm('inventoryEdit') ? `<button class="btn primary" onclick="openProduct()">${t('addNew')}</button>` : ''}</div>${inventorySearchBox()}<div id="inventorySearchResults">${productTable(searchedProducts(), true)}</div></div>
+    <div class="split inventory-document-grid" style="margin-top:14px">
+      <div class="panel"><div class="panel-head"><div><h3>${lang === 'zh' ? '待出库单' : 'Pending Stock-out'}</h3><p class="note">${lang === 'zh' ? '只显示已付清、尚未出库的销售单。确认后整单扣减库存。' : 'Fully paid sales orders awaiting stock-out.'}</p></div></div>${pendingStockOutTable()}</div>
+      <div class="panel"><div class="panel-head"><h3>${lang === 'zh' ? '出库单' : 'Stock-out Records'}</h3></div>${movementTable('out')}</div>
+    </div>
+    <div class="split inventory-document-grid" style="margin-top:14px">
+      <div class="panel"><div class="panel-head"><div><h3>${lang === 'zh' ? '入库单' : 'Stock-in Records'}</h3><p class="note">${lang === 'zh' ? '补货和其他收货只在这里新增入库单。' : 'Create receiving records here.'}</p></div>${hasPerm('inventoryEdit') ? `<button class="btn primary" onclick="openStockIn()">${lang === 'zh' ? '新增入库单' : 'New Stock-in'}</button>` : ''}</div>${movementTable('in')}</div>
+      <div class="panel low-stock-bottom"><div class="panel-head"><div><h3>${t('inventoryAlerts')}</h3><p class="note">${lang === 'zh' ? '需要紧急补库的低库存商品。' : 'Low-stock items requiring replenishment.'}</p></div><button class="btn" onclick="setPage('inventoryAlerts')">${t('viewAll')}</button></div>${inventoryAlertTable(false, 8)}</div>
     </div>
     <div class="panel" style="margin-top:14px"><div class="panel-head"><h3>${lang === 'zh' ? '跨店调拨与异常' : 'Branch Transfers & Exceptions'}</h3>${hasPerm('inventoryEdit') ? `<button class="btn primary" onclick="openBranchTransfer()">${lang === 'zh' ? '新增调拨单' : 'New Transfer'}</button>` : ''}</div>${branchTransferTable()}</div>`;
   },
@@ -6150,25 +6154,83 @@ function inventoryAlertTable(actions = true, limit = null, useSearch = false) {
   </tbody></table></div>`;
 }
 
-function movementTable() {
-  const rows = sortByDateDesc(state.movements || []).slice(0, 60);
+function salesOrderIsFullyPaidForStockOut(order) {
+  const calc = orderCalc(order);
+  const paymentStatus = String(order.paymentStatus || '').trim().toLowerCase();
+  const status = String(order.status || '').trim();
+  if (calc.total <= 0) return ['已付清', '已付款', '待出库', '已付款待出库'].includes(status);
+  return Number(order.paid || 0) + 0.001 >= calc.total || ['paid', '已收清', '已付清', '已付款'].includes(paymentStatus);
+}
+
+function salesOrderHasPhysicalStock(order) {
+  return salesOrderLineItems(order).some(line => !isCustomPrintedFilmSku(line.item));
+}
+
+function salesOrderHasCompleteStockOutForUi(order) {
+  const lines = salesOrderLineItems(order).filter(line => !isCustomPrintedFilmSku(line.item));
+  return Boolean(lines.length) && lines.every(line => {
+    const shipped = (state.movements || []).filter(row => !row.reversedAt && row.type === 'out' && row.salesOrderId === order.id && String(row.sku) === line.item)
+      .reduce((sum, row) => sum + Number(row.qty || 0), 0);
+    return shipped + 0.001 >= Number(line.qty || 0);
+  });
+}
+
+function pendingStockOutOrders() {
+  const finished = new Set(['已出库', 'shipped', 'delivered', 'completed', '已完成', '已取消', '取消', 'canceled', 'cancelled', '已退款', 'refunded']);
+  return sortByDateDesc((state.salesOrders || []).filter(order => {
+    if (finished.has(String(order.status || '').trim().toLowerCase())) return false;
+    if (!salesOrderHasPhysicalStock(order) || salesOrderHasCompleteStockOutForUi(order) || !salesOrderIsFullyPaidForStockOut(order)) return false;
+    return true;
+  }));
+}
+
+function pendingStockOutTable() {
+  const rows = pendingStockOutOrders();
+  return `<div class="table-wrap"><table class="pending-stockout-table"><thead><tr><th>${lang === 'zh' ? '销售单号' : 'Sales order'}</th><th>${t('customer')}</th><th>${lang === 'zh' ? '商品明细' : 'Items'}</th><th>${lang === 'zh' ? '已收 / 总额' : 'Paid / Total'}</th><th>${lang === 'zh' ? '出库分店' : 'Warehouse'}</th><th></th></tr></thead><tbody>
+  ${rows.map(order => {
+    const calc = orderCalc(order);
+    const branchId = String(order.branchId || order.fulfillmentBranchIds?.[0] || defaultBranchId());
+    const branch = Object.fromEntries(branchOptions(false))[branchId] || branchId || '—';
+    const items = salesOrderLineItems(order).filter(line => !isCustomPrintedFilmSku(line.item)).map(line => `${escapeHtml(line.item)} × ${Number(line.qty || 0).toLocaleString()}`).join('<br>');
+    return `<tr><td><strong>${escapeHtml(order.orderNo || order.id)}</strong><br><span class="note">${escapeHtml(order.date || '')}</span></td><td>${escapeHtml(order.customer || '')}</td><td>${items}</td><td><strong>${currency.format(Number(order.paid || 0))}</strong><br><span class="note">${currency.format(calc.total)}</span></td><td>${escapeHtml(branch)}</td><td>${hasPerm('inventoryEdit') ? `<button class="btn primary stockout-confirm" onclick="confirmSalesOrderStockOut('${escapeJs(order.id)}','${escapeJs(branchId)}','${escapeJs(order.orderNo || order.id)}',this)">${lang === 'zh' ? '确认出库' : 'Confirm stock-out'}</button>` : ''}</td></tr>`;
+  }).join('')}
+  ${rows.length ? '' : `<tr><td colspan="6" class="note">${lang === 'zh' ? '目前没有已付清、等待出库的销售单。' : 'No fully paid sales orders are awaiting stock-out.'}</td></tr>`}
+  </tbody></table></div>`;
+}
+
+async function confirmSalesOrderStockOut(orderId, branchId, orderNo, button) {
+  if (!confirm(lang === 'zh'
+    ? `确认将销售单 ${orderNo} 整单出库吗？\n确认后会立即扣减库存，不能重复出库。`
+    : `Ship sales order ${orderNo}? Inventory will be deducted immediately and cannot be deducted twice.`)) return;
+  if (button) { button.disabled = true; button.textContent = lang === 'zh' ? '正在出库…' : 'Processing…'; }
+  try {
+    state = await api(`/api/sales-orders/${encodeURIComponent(orderId)}/ship`, { method:'POST', body:JSON.stringify({ branchId }) });
+    broadcastDataChange();
+    showActionFeedback(lang === 'zh' ? `销售单 ${orderNo} 已确认出库，库存已扣减` : `Sales order ${orderNo} shipped and inventory deducted`);
+    render();
+  } catch (error) {
+    if (button) { button.disabled = false; button.textContent = lang === 'zh' ? '确认出库' : 'Confirm stock-out'; }
+    showActionFeedback(`${lang === 'zh' ? '出库失败：' : 'Stock-out failed: '}${error.message}`, 'error');
+    alert(error.message);
+  }
+}
+
+function movementTable(type = '') {
+  const rows = sortByDateDesc((state.movements || []).filter(row => !type || row.type === type)).slice(0, 60);
   const canReverse = hasPerm('inventoryEdit');
-  return `<div class="table-wrap"><table><thead><tr><th>${t('date')}</th><th>${t('sku')}</th><th>${t('type')}</th><th>${t('qty')}</th><th>${t('note')}</th>${canReverse ? '<th></th>' : ''}</tr></thead><tbody>
+  return `<div class="table-wrap"><table><thead><tr><th>${lang === 'zh' ? '单号' : 'Document No.'}</th><th>${t('date')}</th><th>${t('sku')}</th><th>${t('qty')}</th><th>${t('note')}</th>${canReverse && type !== 'out' ? '<th></th>' : ''}</tr></thead><tbody>
   ${rows.map(m => {
     const reversed = Boolean(m.reversedAt);
-    const type = reversed
-      ? `<span class="pill">${lang === 'zh' ? '已撤销' : 'Reversed'}</span>`
-      : m.type === 'in'
-        ? `<span class="pill good">${t('in')}</span>`
-        : `<span class="pill warn">${t('out')}</span>`;
     const note = reversed
       ? `${escapeHtml(m.note || '')}${m.note ? '<br>' : ''}<span class="note">${lang === 'zh' ? '误操作已撤销，库存已同步修正' : 'Mistaken entry reversed; stock corrected'}</span>`
       : escapeHtml(m.note || '');
-    const action = canReverse
+    const action = canReverse && type !== 'out'
       ? `<td>${m.type === 'in' && !reversed ? `<button class="btn" onclick="reverseMovement('${escapeJs(m.id)}','${escapeJs(m.sku)}',${Number(m.qty || 0)})">${lang === 'zh' ? '撤销误入库' : 'Reverse mistaken entry'}</button>` : ''}</td>`
       : '';
-    return `<tr><td>${escapeHtml(m.date || '')}</td><td>${escapeHtml(m.sku)}</td><td>${type}</td><td>${Number(m.qty || 0).toLocaleString()}</td><td>${note}</td>${action}</tr>`;
+    const documentNo = m.type === 'out' ? (m.shipmentNo || m.salesOrderNo || m.salesOrderId || '—') : (m.receiptNo || `RK-${String(m.id || '').slice(0, 8).toUpperCase()}`);
+    return `<tr><td><strong>${escapeHtml(documentNo)}</strong>${reversed ? `<br><span class="pill">${lang === 'zh' ? '已撤销' : 'Reversed'}</span>` : ''}</td><td>${escapeHtml(m.date || '')}</td><td>${escapeHtml(m.sku)}</td><td>${Number(m.qty || 0).toLocaleString()}</td><td>${note}</td>${action}</tr>`;
   }).join('')}
+  ${rows.length ? '' : `<tr><td colspan="${canReverse && type !== 'out' ? 6 : 5}" class="note">${type === 'out' ? (lang === 'zh' ? '还没有出库单。' : 'No stock-out records.') : (lang === 'zh' ? '还没有入库单。' : 'No stock-in records.')}</td></tr>`}
   </tbody></table></div>`;
 }
 
@@ -9001,7 +9063,7 @@ function collectionName(collection) {
     jobs: t('jobs'),
     installers: t('installers'),
     products: t('inventory'),
-    movements: lang === 'zh' ? '出入库流水' : 'Inventory Movements',
+    movements: lang === 'zh' ? '库存单据' : 'Inventory Documents',
     workshopMovements: t('workshopLedger'),
     priceRules: t('pricing'),
     salesOrders: t('orders'),
@@ -9604,7 +9666,7 @@ function openProduct(id) {
 }
 
 function openMovement(preset = {}) {
-  openModal(lang === 'zh' ? '新增出入库流水' : 'New Inventory Movement', formHtml([
+  openModal(preset.type === 'in' ? (lang === 'zh' ? '新增入库单' : 'New Stock-in') : (lang === 'zh' ? '新增出库单' : 'New Stock-out'), formHtml([
     ['date',t('date'),'date',today()], ['branchId',lang === 'zh' ? '所属分店' : 'Branch','select',preset.branchId || (inventoryBranchFilter !== 'all' ? inventoryBranchFilter : '') || defaultBranchId(),branchOptions(false)], ['sku','SKU','select',preset.sku || state.products[0]?.sku || '', state.products.map(p => p.sku)], ['type',t('type'),'select',preset.type || 'out', [['in',t('in')],['out',t('out')]]],
     ['qty',t('qty'),'number',preset.qty || 0], ['salesOrderId',t('relatedOrder'),'select',preset.salesOrderId || '', salesOrderMovementOptions(preset.sku)], ['note',t('note'),'text',preset.note || '']
   ]) + `<div class="wide stock-hint" id="movementStockHint"></div>`, () => {
@@ -9624,7 +9686,30 @@ function openMovement(preset = {}) {
   setupMovementStockGuard();
 }
 
+function openStockIn(preset = {}) {
+  openModal(lang === 'zh' ? '新增入库单' : 'New Stock-in Record', formHtml([
+    ['date',t('date'),'date',today()],
+    ['branchId',lang === 'zh' ? '入库分店' : 'Receiving branch','select',preset.branchId || (inventoryBranchFilter !== 'all' ? inventoryBranchFilter : '') || defaultBranchId(),branchOptions(false)],
+    ['sku','SKU','select',preset.sku || state.products[0]?.sku || '', state.products.map(product => [product.sku, `${product.sku} · ${product.name || ''}`])],
+    ['qty',t('qty'),'number',preset.qty || 0],
+    ['note',t('note'),'textarea',preset.note || '',null,'wide']
+  ]), () => {
+    const data = numeric(readForm(['date','branchId','sku','qty','note']), ['qty']);
+    data.type = 'in';
+    data.salesOrderId = '';
+    const dateError = validateTodayEntryDate(data.date);
+    if (dateError) return alert(dateError);
+    if (data.qty <= 0) return alert(lang === 'zh' ? '入库数量必须大于 0。' : 'Stock-in quantity must be greater than 0.');
+    return saveRecord('movements', null, data);
+  });
+}
+
 function openMovementForSku(sku, type = 'in', qty = 1) {
+  if (type === 'in') return openStockIn({
+    sku,
+    qty,
+    note: lang === 'zh' ? '低库存补货入库' : 'Low-stock replenishment'
+  });
   openMovement({
     sku,
     type,
