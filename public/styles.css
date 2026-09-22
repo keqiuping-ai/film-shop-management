@@ -628,6 +628,27 @@ textarea { min-height: 78px; resize: vertical; }
 .avatar-camera-badge { position: absolute; right: -3px; bottom: 2px; width: 28px; height: 28px; display: grid; place-items: center; border-radius: 50%; background: var(--accent); color: #fff; border: 3px solid #fff; font-size: 13px; }
 .avatar-upload-btn { min-height: 44px; display: inline-flex; align-items: center; cursor: pointer; }
 .avatar-upload-status { flex: 1 1 100%; color: var(--accent); font-size: 12px; font-weight: 700; }
+.employee-verification-section { margin: 4px 0 16px; padding: 16px; border: 1px solid #b9dce2; border-radius: 10px; background: #f6fbfc; }
+.employee-verification-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 12px; }
+.employee-verification-heading h3 { margin: 0 0 4px; font-size: 18px; }
+.employee-verification-heading p, .employee-document-vault p { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
+.employee-verification-notice { margin-bottom: 14px; padding: 11px 13px; border-left: 4px solid #d59b24; border-radius: 6px; background: #fff8e8; color: #6f5420; font-size: 12px; line-height: 1.55; }
+.employee-verification-grid { margin-bottom: 4px; }
+.employee-document-vault { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 10px 16px; padding-top: 12px; border-top: 1px solid #d5e7ea; }
+.employee-document-upload { position: relative; overflow: hidden; cursor: pointer; }
+.employee-document-upload input { position: absolute; inline-size: 1px; block-size: 1px; opacity: 0; pointer-events: none; }
+.employee-document-status { grid-column: 1 / -1; min-height: 18px; color: var(--accent); font-size: 12px; font-weight: 700; }
+.employee-document-list { display: grid; gap: 8px; }
+.employee-document-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 12px; border: 1px solid #d7e4e7; border-radius: 8px; background: #fff; }
+.employee-document-row strong, .employee-document-row small { display: block; overflow-wrap: anywhere; }
+.employee-document-row small { margin-top: 3px; color: var(--muted); }
+.employee-document-actions { display: flex; gap: 7px; flex: 0 0 auto; }
+@media (max-width: 720px) {
+  .employee-document-vault { grid-template-columns: 1fr; }
+  .employee-document-row { align-items: flex-start; flex-direction: column; }
+  .employee-document-actions { width: 100%; }
+  .employee-document-actions .btn { flex: 1; }
+}
 .prospect-dialog-section {
   margin: 4px 0 14px;
 }

@@ -22,11 +22,13 @@ const EMPLOYEE_ACTIVITY_FILE = path.join(DATA_DIR, 'employee-activity.json');
 const BACKUP_DIR = path.join(DATA_DIR, 'backups');
 const CUSTOMER_MEDIA_DIR = path.join(DATA_DIR, 'customer-media');
 const MEDIA_UPLOAD_PARTS_DIR = path.join(DATA_DIR, 'media-upload-parts');
+const EMPLOYEE_DOCUMENTS_DIR = path.join(DATA_DIR, 'employee-verification-documents');
 const SESSION_SECRET_FILE = path.join(DATA_DIR, 'session-secret');
 const CONFIG_FILE = path.join(ROOT, 'server-config.json');
 const VERSION_FILE = path.join(ROOT, 'version.json');
 const MAX_MESSAGE_ATTACHMENT_BYTES = 20 * 1024 * 1024;
 const MAX_AVATAR_DATA_URL_BYTES = 2 * 1024 * 1024;
+const MAX_EMPLOYEE_DOCUMENT_BYTES = 8 * 1024 * 1024;
 const MAX_CUSTOMER_VIDEO_SOURCE_BYTES = 200 * 1024 * 1024;
 const MAX_CLOUD_IMAGE_BYTES = 20 * 1024 * 1024;
 const MAX_CLOUD_FILE_BYTES = 20 * 1024 * 1024;
@@ -1548,9 +1550,31 @@ function effectivePermissions(user) {
   return { ...defaultPermissions(user.role), ...(user.permissions || {}) };
 }
 
-function safeUser(user) {
-  const { passwordHash, ...safe } = user;
+function safeUser(user, options = {}) {
+  const {
+    passwordHash,
+    legalName,
+    i9Status,
+    i9CompletedAt,
+    workAuthorizationExpiresAt,
+    employmentDocuments,
+    ...safe
+  } = user;
   safe.permissions = effectivePermissions(user);
+  if (options.includeEmployment === true) {
+    safe.legalName = String(legalName || user.name || '');
+    safe.i9Status = String(i9Status || 'not-started');
+    safe.i9CompletedAt = String(i9CompletedAt || '');
+    safe.workAuthorizationExpiresAt = String(workAuthorizationExpiresAt || '');
+    safe.employmentDocuments = (employmentDocuments || []).map(document => ({
+      id: document.id,
+      fileName: document.fileName,
+      mimeType: document.mimeType,
+      size: Number(document.size || 0),
+      uploadedAt: document.uploadedAt,
+      uploadedBy: document.uploadedBy
+    }));
+  }
   return safe;
 }
 
@@ -1561,12 +1585,74 @@ function messageUsersFor(db, user) {
   return (db.users || []).filter(item => item.active !== false).map(safeUser);
 }
 
+function safeAuditLogForUser(row, user) {
+  if (user?.role === 'owner' || row?.collection !== 'users') return row;
+  const privateFields = new Set(['legalName', 'i9Status', 'i9CompletedAt', 'workAuthorizationExpiresAt', 'employmentDocuments']);
+  const { before, after, snapshot, ...safe } = row;
+  safe.changedFields = (row.changedFields || []).filter(change => !privateFields.has(change.field));
+  return safe;
+}
+
 function normalizeAvatarDataUrl(value) {
   const avatar = String(value || '').trim();
   if (!avatar) return '';
   if (!/^data:image\/(png|jpe?g|webp);base64,/i.test(avatar)) return null;
   if (Buffer.byteLength(avatar, 'utf8') > MAX_AVATAR_DATA_URL_BYTES) return null;
   return avatar;
+}
+
+function normalizeEmploymentVerification(user, input = {}) {
+  user.legalName = String(input.legalName || user.legalName || user.name || '').trim().slice(0, 160);
+  const allowedStatuses = new Set(['not-started', 'pending', 'verified', 'reverification-needed', 'not-required']);
+  user.i9Status = allowedStatuses.has(String(input.i9Status || '')) ? String(input.i9Status) : (user.i9Status || 'not-started');
+  user.i9CompletedAt = /^\d{4}-\d{2}-\d{2}$/.test(String(input.i9CompletedAt || '')) ? String(input.i9CompletedAt) : '';
+  user.workAuthorizationExpiresAt = /^\d{4}-\d{2}-\d{2}$/.test(String(input.workAuthorizationExpiresAt || '')) ? String(input.workAuthorizationExpiresAt) : '';
+  user.employmentDocuments = Array.isArray(user.employmentDocuments) ? user.employmentDocuments : [];
+}
+
+function employeeDocumentPayload(value) {
+  const dataUrl = String(value || '');
+  const match = dataUrl.match(/^data:(image\/(?:png|jpe?g|webp|heic)|application\/pdf);base64,([A-Za-z0-9+/=]+)$/i);
+  if (!match) return { error: '只支持 JPG、PNG、WebP、HEIC 或 PDF 文件' };
+  let data;
+  try { data = Buffer.from(match[2], 'base64'); } catch { return { error: '证件文件无法读取' }; }
+  if (!data.length || data.length > MAX_EMPLOYEE_DOCUMENT_BYTES) return { error: '证件文件必须小于 8MB' };
+  const mimeType = match[1].toLowerCase().replace('image/jpg', 'image/jpeg');
+  const signatureValid = mimeType === 'application/pdf'
+    ? data.subarray(0, 5).toString('ascii') === '%PDF-'
+    : mimeType === 'image/png'
+      ? data.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))
+      : mimeType === 'image/jpeg'
+        ? data[0] === 0xff && data[1] === 0xd8 && data[2] === 0xff
+        : mimeType === 'image/webp'
+          ? data.subarray(0, 4).toString('ascii') === 'RIFF' && data.subarray(8, 12).toString('ascii') === 'WEBP'
+          : mimeType === 'image/heic'
+            ? data.subarray(4, 8).toString('ascii') === 'ftyp'
+            : false;
+  if (!signatureValid) return { error: '文件内容与扩展格式不一致，请重新导出后上传' };
+  const extension = ({ 'image/png': '.png', 'image/jpeg': '.jpg', 'image/webp': '.webp', 'image/heic': '.heic', 'application/pdf': '.pdf' })[mimeType];
+  return { data, mimeType, extension };
+}
+
+function includesEmploymentVerificationInput(input = {}) {
+  return ['legalName', 'i9Status', 'i9CompletedAt', 'workAuthorizationExpiresAt', 'employmentDocuments']
+    .some(key => Object.prototype.hasOwnProperty.call(input, key));
+}
+
+function encryptEmployeeDocument(data) {
+  const key = crypto.createHash('sha256').update(`${readSessionSecret()}:quad-employee-documents:v1`).digest();
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
+  const encrypted = Buffer.concat([cipher.update(data), cipher.final()]);
+  return Buffer.concat([Buffer.from('QED1'), iv, cipher.getAuthTag(), encrypted]);
+}
+
+function decryptEmployeeDocument(data) {
+  if (!Buffer.isBuffer(data) || data.length < 33 || data.subarray(0, 4).toString('ascii') !== 'QED1') throw new Error('证件文件加密格式无效');
+  const key = crypto.createHash('sha256').update(`${readSessionSecret()}:quad-employee-documents:v1`).digest();
+  const decipher = crypto.createDecipheriv('aes-256-gcm', key, data.subarray(4, 16));
+  decipher.setAuthTag(data.subarray(16, 32));
+  return Buffer.concat([decipher.update(data.subarray(32)), decipher.final()]);
 }
 
 function personalNoteVisibleTo(item, user) {
@@ -1618,7 +1704,9 @@ function sanitizeDbForUser(db, user, options = {}) {
   delete safeSettings.metaWebhookVerifyTokenEncrypted;
   return {
     settings: safeSettings,
-    users: p.usersManage || p.schedulesView || p.reportsView ? db.users.map(safeUser) : [safeUser(user)],
+    users: p.usersManage || p.schedulesView || p.reportsView
+      ? db.users.map(item => safeUser(item, { includeEmployment: user?.role === 'owner' }))
+      : [safeUser(user)],
     messageUsers: messageUsersFor(db, user),
     messages: messagesForUser(db, user),
     voiceCalls: voiceCallsForUser(db, user),
@@ -1673,7 +1761,9 @@ function sanitizeDbForUser(db, user, options = {}) {
     branchInventory: p.inventoryView ? branchInventorySnapshot(db, user) : [],
     branchTransfers: p.inventoryView ? branchTransferVisibleRecords(db, user, db.branchTransfers || []) : [],
     branchTransferExceptions: p.inventoryView ? branchTransferVisibleRecords(db, user, db.branchTransferExceptions || []) : [],
-    auditLogs: !fastLogin && (p.usersManage || p.reportsView) ? db.auditLogs.filter(row => p.recruitingView || !String(row.action || '').includes('recruiting')) : [],
+    auditLogs: !fastLogin && (p.usersManage || p.reportsView)
+      ? db.auditLogs.filter(row => p.recruitingView || !String(row.action || '').includes('recruiting')).map(row => safeAuditLogForUser(row, user))
+      : [],
     employeeActivity: !fastLogin && (p.usersManage || p.reportsView) ? (db.employeeActivity || []) : [],
     deferredBootstrapData: fastLogin,
     permissions: p
@@ -11456,6 +11546,71 @@ async function api(req, res) {
     return send(res, 200, sanitizeDbForUser(db, user));
   }
 
+  const employeeDocumentMatch = url.pathname.match(/^\/api\/users\/([^/]+)\/employment-documents(?:\/([^/]+))?$/);
+  if (employeeDocumentMatch) {
+    if (user.role !== 'owner') return send(res, 403, { error: '只有老板账号可以管理员工证件资料' });
+    const employeeId = decodeURIComponent(employeeDocumentMatch[1]);
+    const documentId = employeeDocumentMatch[2] ? decodeURIComponent(employeeDocumentMatch[2]) : '';
+    const employee = db.users.find(item => item.id === employeeId && item.role !== 'owner');
+    if (!employee) return send(res, 404, { error: '找不到员工账号' });
+    employee.employmentDocuments = Array.isArray(employee.employmentDocuments) ? employee.employmentDocuments : [];
+    if (req.method === 'POST' && !documentId) {
+      const body = await readBody(req);
+      const parsed = employeeDocumentPayload(body.dataUrl);
+      if (parsed.error) return send(res, 400, { error: parsed.error });
+      const document = {
+        id: id(),
+        fileName: path.basename(String(body.fileName || `employment-document${parsed.extension}`)).slice(0, 180),
+        mimeType: parsed.mimeType,
+        size: parsed.data.length,
+        storageName: `${crypto.randomBytes(20).toString('hex')}.vault`,
+        encryptedAtRest: true,
+        uploadedAt: new Date().toISOString(),
+        uploadedBy: user.name || user.email || '老板'
+      };
+      fs.mkdirSync(EMPLOYEE_DOCUMENTS_DIR, { recursive: true, mode: 0o700 });
+      fs.writeFileSync(path.join(EMPLOYEE_DOCUMENTS_DIR, document.storageName), encryptEmployeeDocument(parsed.data), { mode: 0o600 });
+      employee.employmentDocuments.push(document);
+      audit(db, user, 'upload-employee-verification-document', {
+        collection: 'users', recordId: employee.id, recordLabel: employee.name,
+        detail: `为员工 ${employee.name || employee.email} 上传 I-9/身份核验文件`
+      });
+      writeDb(db);
+      notifyDataChanged('employee-verification-document-uploaded', employee.id);
+      return send(res, 200, sanitizeDbForUser(db, user));
+    }
+    const documentIndex = employee.employmentDocuments.findIndex(item => item.id === documentId);
+    if (documentIndex < 0) return send(res, 404, { error: '找不到证件文件' });
+    const document = employee.employmentDocuments[documentIndex];
+    if (!/^[a-f0-9]{40}\.vault$/i.test(String(document.storageName || ''))) return send(res, 404, { error: '证件文件不存在' });
+    const filePath = path.join(EMPLOYEE_DOCUMENTS_DIR, document.storageName);
+    if (req.method === 'GET') {
+      if (!fs.existsSync(filePath)) return send(res, 404, { error: '证件文件不存在' });
+      let decrypted;
+      try { decrypted = decryptEmployeeDocument(fs.readFileSync(filePath)); } catch { return send(res, 500, { error: '证件文件无法解密，请检查服务器密钥备份' }); }
+      res.writeHead(200, {
+        'Content-Type': document.mimeType || 'application/octet-stream',
+        'Content-Length': decrypted.length,
+        'Content-Disposition': `inline; filename*=UTF-8''${encodeURIComponent(document.fileName || 'document')}`,
+        'Cache-Control': 'private, no-store',
+        'X-Content-Type-Options': 'nosniff'
+      });
+      return res.end(decrypted);
+    }
+    if (req.method === 'DELETE') {
+      try { fs.unlinkSync(filePath); } catch (error) { if (error.code !== 'ENOENT') throw error; }
+      employee.employmentDocuments.splice(documentIndex, 1);
+      audit(db, user, 'delete-employee-verification-document', {
+        collection: 'users', recordId: employee.id, recordLabel: employee.name,
+        detail: `删除员工 ${employee.name || employee.email} 的 I-9/身份核验文件`
+      });
+      writeDb(db);
+      notifyDataChanged('employee-verification-document-deleted', employee.id);
+      return send(res, 200, sanitizeDbForUser(db, user));
+    }
+    return send(res, 405, { error: 'Method not allowed' });
+  }
+
   const match = url.pathname.match(/^\/api\/([a-zA-Z]+)(?:\/([^/]+))?$/);
   if (!match) return send(res, 404, { error: 'Not found' });
   const [, collection, recordId] = match;
@@ -11477,6 +11632,7 @@ async function api(req, res) {
     if (branchError) return send(res, 400, { error: branchError });
     if (collection === 'users') {
       if (item.role === 'owner') return send(res, 400, { error: '不能在员工账号里新增老板账号' });
+      if (includesEmploymentVerificationInput(body) && user.role !== 'owner') return send(res, 403, { error: '只有老板账号可以管理法定姓名和 I-9 资料' });
       const error = validateUserInput(db, item, null, true);
       if (error) return send(res, 400, { error });
       item.name = String(item.name || '').trim();
@@ -11491,6 +11647,10 @@ async function api(req, res) {
       item.branchIds = [...new Set([item.defaultBranchId, ...(Array.isArray(item.branchIds) ? item.branchIds : [])].map(value => String(value || '').trim()).filter(Boolean))];
       if (item.branchIds.some(branchId => !customerBranches(db).some(branch => branch.id === branchId))) return send(res, 400, { error: '员工分店权限中包含不存在的分店' });
       item.permissions = { ...defaultPermissions(item.role), ...(body.permissions || {}) };
+      if (user.role === 'owner') {
+        item.employmentDocuments = [];
+        normalizeEmploymentVerification(item, body);
+      }
     }
     if (collection === 'movements') {
       const error = validateMovement(db, item);
@@ -11724,6 +11884,7 @@ async function api(req, res) {
     }
     const next = { ...db[collection][idx], ...body, id: recordId };
     if (collection === 'users') {
+      if (includesEmploymentVerificationInput(body) && user.role !== 'owner') return send(res, 403, { error: '只有老板账号可以管理法定姓名和 I-9 资料' });
       const error = validateUserInput(db, next, recordId, false, body);
       if (error) return send(res, 400, { error });
       next.name = String(next.name || '').trim();
@@ -11734,6 +11895,10 @@ async function api(req, res) {
       if (body.password) next.passwordHash = hashPassword(body.password);
       delete next.password;
       next.permissions = { ...defaultPermissions(next.role), ...(body.permissions || {}) };
+      if (user.role === 'owner') {
+        next.employmentDocuments = Array.isArray(db[collection][idx].employmentDocuments) ? db[collection][idx].employmentDocuments : [];
+        normalizeEmploymentVerification(next, body);
+      }
       next.defaultBranchId = String(next.defaultBranchId || '').trim();
       next.branchIds = [...new Set([next.defaultBranchId, ...(Array.isArray(next.branchIds) ? next.branchIds : [])].map(value => String(value || '').trim()).filter(Boolean))];
       if (next.branchIds.some(branchId => !customerBranches(db).some(branch => branch.id === branchId))) return send(res, 400, { error: '员工分店权限中包含不存在的分店' });

@@ -10382,6 +10382,99 @@ function printReimbursement(id) {
   win.document.close();
 }
 
+function employeeVerificationDocumentsHtml(item) {
+  const documents = Array.isArray(item?.employmentDocuments) ? item.employmentDocuments : [];
+  if (!documents.length) return `<p class="note">${lang === 'zh' ? '尚未上传证件副本。上传并非普遍强制；如公司选择留存，应对同类员工执行一致政策。' : 'No document copy uploaded. Copies are not generally required; if retained, use a consistent policy.'}</p>`;
+  return `<div class="employee-document-list">${documents.map(document => `<div class="employee-document-row">
+    <div><strong>${escapeHtml(document.fileName || 'Document')}</strong><small>${Math.ceil(Number(document.size || 0) / 1024)} KB · ${escapeHtml(document.uploadedAt ? new Date(document.uploadedAt).toLocaleString() : '')}</small></div>
+    <div class="employee-document-actions"><button class="btn" type="button" onclick="viewEmployeeVerificationDocument('${escapeHtml(item.id)}','${escapeHtml(document.id)}')">${lang === 'zh' ? '查看' : 'View'}</button><button class="btn danger" type="button" onclick="deleteEmployeeVerificationDocument('${escapeHtml(item.id)}','${escapeHtml(document.id)}')">${lang === 'zh' ? '删除' : 'Delete'}</button></div>
+  </div>`).join('')}</div>`;
+}
+
+function employmentVerificationEditor(item, isEdit) {
+  if (user?.role !== 'owner') return '';
+  const statuses = [
+    ['not-started', lang === 'zh' ? '尚未开始' : 'Not started'],
+    ['pending', lang === 'zh' ? '资料核验中' : 'Pending review'],
+    ['verified', lang === 'zh' ? '已完成 I-9 核验' : 'I-9 verified'],
+    ['reverification-needed', lang === 'zh' ? '需要重新核验' : 'Reverification needed'],
+    ['not-required', lang === 'zh' ? '不适用' : 'Not applicable']
+  ];
+  return `<section class="employee-verification-section">
+    <div class="employee-verification-heading"><div><h3>${lang === 'zh' ? '法定姓名与 I-9 身份核验' : 'Legal name and I-9 verification'}</h3><p>${lang === 'zh' ? '仅老板可见。用于入职身份与工作授权记录，不替代正式 Form I-9。' : 'Owner-only. Records identity/work authorization checks and does not replace Form I-9.'}</p></div><span class="pill">${lang === 'zh' ? '敏感资料' : 'Sensitive'}</span></div>
+    <div class="employee-verification-notice">${lang === 'zh' ? '员工可以自行选择 Form I-9 可接受文件；不要要求某一种证件、额外证件或在此填写社会安全号码。证件副本为可选项，除非适用的 E-Verify 规则要求留存。' : 'The employee chooses acceptable Form I-9 documents. Do not request a specific or extra document, and do not enter Social Security numbers here. Copies are optional unless an applicable E-Verify rule requires retention.'}</div>
+    <div class="form-grid employee-verification-grid">
+      <label>${lang === 'zh' ? '法定全名 *' : 'Full legal name *'}<input id="employeeLegalName" type="text" value="${escapeHtml(item.legalName || item.name || '')}" autocomplete="off"></label>
+      <label>${lang === 'zh' ? 'I-9 状态' : 'I-9 status'}<select id="employeeI9Status">${statuses.map(option => `<option value="${option[0]}" ${String(item.i9Status || 'not-started') === option[0] ? 'selected' : ''}>${option[1]}</option>`).join('')}</select></label>
+      <label>${lang === 'zh' ? 'I-9 完成日期' : 'I-9 completion date'}<input id="employeeI9CompletedAt" type="date" value="${escapeHtml(item.i9CompletedAt || '')}"></label>
+      <label>${lang === 'zh' ? '工作授权到期日（如适用）' : 'Work authorization expiration (if applicable)'}<input id="employeeWorkAuthorizationExpiresAt" type="date" value="${escapeHtml(item.workAuthorizationExpiresAt || '')}"></label>
+    </div>
+    <div class="employee-document-vault">
+      <div><strong>${lang === 'zh' ? '证件副本保险库（可选）' : 'Document copy vault (optional)'}</strong><p>${lang === 'zh' ? '支持 JPG、PNG、WebP、HEIC、PDF，单个不超过 8MB。文件加密保存，仅老板账号可以查看或删除。' : 'JPG, PNG, WebP, HEIC, or PDF up to 8MB. Files are encrypted at rest and only the owner account can view or delete them.'}</p></div>
+      ${isEdit ? `<label class="btn employee-document-upload">${lang === 'zh' ? '上传证件文件' : 'Upload document'}<input type="file" accept="image/jpeg,image/png,image/webp,image/heic,application/pdf" onchange="uploadEmployeeVerificationDocument('${escapeHtml(item.id)}',event)"></label>` : `<span class="note">${lang === 'zh' ? '先保存新员工账号，再上传证件。' : 'Save the new employee first, then upload a document.'}</span>`}
+      <div id="employeeDocumentStatus" class="employee-document-status" role="status" aria-live="polite"></div>
+      <div id="employeeDocumentList" class="wide">${isEdit ? employeeVerificationDocumentsHtml(item) : ''}</div>
+    </div>
+  </section>`;
+}
+
+async function uploadEmployeeVerificationDocument(employeeId, event) {
+  const file = event?.target?.files?.[0];
+  if (!file) return;
+  const status = document.getElementById('employeeDocumentStatus');
+  if (file.size > 8 * 1024 * 1024) {
+    if (status) status.textContent = lang === 'zh' ? '文件超过 8MB，无法上传。' : 'The file exceeds 8MB.';
+    event.target.value = '';
+    return;
+  }
+  try {
+    if (status) status.textContent = lang === 'zh' ? '正在安全上传…' : 'Uploading securely…';
+    const dataUrl = await readFileAsDataUrl(file);
+    state = await api(`/api/users/${encodeURIComponent(employeeId)}/employment-documents`, { method: 'POST', body: JSON.stringify({ fileName: file.name, dataUrl }), timeoutMs: 30000 });
+    const saved = (state.users || []).find(item => item.id === employeeId);
+    const list = document.getElementById('employeeDocumentList');
+    if (list && saved) list.innerHTML = employeeVerificationDocumentsHtml(saved);
+    if (status) status.textContent = lang === 'zh' ? '✓ 证件文件已安全保存，仅老板可访问。' : '✓ Document saved. Owner access only.';
+  } catch (error) {
+    if (status) status.textContent = `${lang === 'zh' ? '上传失败' : 'Upload failed'}：${error.message}`;
+  } finally {
+    event.target.value = '';
+  }
+}
+
+async function viewEmployeeVerificationDocument(employeeId, documentId) {
+  const preview = window.open('', '_blank');
+  try {
+    const response = await fetch(`/api/users/${encodeURIComponent(employeeId)}/employment-documents/${encodeURIComponent(documentId)}`, { headers: { Authorization: `Bearer ${token}` } });
+    if (!response.ok) {
+      const body = await response.json().catch(() => ({}));
+      throw new Error(body.error || (lang === 'zh' ? '无法打开证件文件' : 'Could not open document'));
+    }
+    const objectUrl = URL.createObjectURL(await response.blob());
+    if (preview) preview.location = objectUrl;
+    else window.location.href = objectUrl;
+    setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
+  } catch (error) {
+    preview?.close();
+    alert(error.message);
+  }
+}
+
+async function deleteEmployeeVerificationDocument(employeeId, documentId) {
+  if (!confirm(lang === 'zh' ? '确认永久删除这份证件副本？此操作无法恢复。' : 'Permanently delete this document copy? This cannot be undone.')) return;
+  const status = document.getElementById('employeeDocumentStatus');
+  try {
+    if (status) status.textContent = lang === 'zh' ? '正在删除…' : 'Deleting…';
+    state = await api(`/api/users/${encodeURIComponent(employeeId)}/employment-documents/${encodeURIComponent(documentId)}`, { method: 'DELETE' });
+    const saved = (state.users || []).find(item => item.id === employeeId);
+    const list = document.getElementById('employeeDocumentList');
+    if (list && saved) list.innerHTML = employeeVerificationDocumentsHtml(saved);
+    if (status) status.textContent = lang === 'zh' ? '✓ 证件副本已删除。' : '✓ Document deleted.';
+  } catch (error) {
+    if (status) status.textContent = `${lang === 'zh' ? '删除失败' : 'Delete failed'}：${error.message}`;
+  }
+}
+
 function openUser(id, presetRole = 'frontdesk') {
   const initialBranchId = ownerBranchFilter && ownerBranchFilter !== 'all' ? ownerBranchFilter : 'las-vegas';
   const item = state.users.find(x => x.id === id) || { name: '', phone: '', email: '', role: presetRole, active: true, defaultBranchId: initialBranchId, branchIds: [initialBranchId] };
@@ -10398,8 +10491,8 @@ function openUser(id, presetRole = 'frontdesk') {
     ['employeeBranchIds',lang === 'zh' ? '可以访问的分店' : 'Accessible branches','multi',item.branchIds || [],branchOptions(false)],
     ['employeeAccountActive',t('status'),'select',String(item.active), [['true',t('enabled')],['false',t('disabled')]]],
     ['employeeAccountSecret',id ? t('newPassword') : (lang === 'zh' ? '临时密码' : 'Temporary Password'),'password','']
-  ]) + permissionEditor(permissions), async () => {
-    const raw = readForm(['employeeAccountName','employeeAccountPhone','employeeAccountLogin','employeeAccountRole','employeeDefaultBranchId','employeeBranchIds','employeeAccountActive','employeeAccountSecret']);
+  ]) + employmentVerificationEditor(item, Boolean(id)) + permissionEditor(permissions), async () => {
+    const raw = readForm(['employeeAccountName','employeeAccountPhone','employeeAccountLogin','employeeAccountRole','employeeDefaultBranchId','employeeBranchIds','employeeAccountActive','employeeAccountSecret','employeeLegalName','employeeI9Status','employeeI9CompletedAt','employeeWorkAuthorizationExpiresAt']);
     const data = {
       name: raw.employeeAccountName,
       phone: String(raw.employeeAccountPhone || '').trim().slice(0, 80),
@@ -10411,10 +10504,17 @@ function openUser(id, presetRole = 'frontdesk') {
       password: raw.employeeAccountSecret,
       avatarDataUrl: document.getElementById('employeeAvatarDataUrl')?.value || ''
     };
+    if (user?.role === 'owner') {
+      data.legalName = String(raw.employeeLegalName || '').trim();
+      data.i9Status = raw.employeeI9Status || 'not-started';
+      data.i9CompletedAt = raw.employeeI9CompletedAt || '';
+      data.workAuthorizationExpiresAt = raw.employeeWorkAuthorizationExpiresAt || '';
+    }
     data.active = data.active === 'true';
     data.permissions = readPermissions();
     if (!data.password) delete data.password;
     if (!data.name.trim()) return showEmployeeAccountSaveError(lang === 'zh' ? '员工姓名不能为空。' : 'Employee name is required.', 'employeeAccountName');
+    if (user?.role === 'owner' && !data.legalName) return showEmployeeAccountSaveError(lang === 'zh' ? '请填写员工证件上的法定全名。' : 'Enter the employee full legal name.', 'employeeLegalName');
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(data.email.trim())) return showEmployeeAccountSaveError(lang === 'zh' ? '员工邮箱格式不正确。' : 'Employee email is invalid.', 'employeeAccountLogin');
     if (!id && !data.password) return showEmployeeAccountSaveError(lang === 'zh' ? '新增员工必须设置临时密码。' : 'A temporary password is required for new employees.', 'employeeAccountSecret');
     if (data.password && data.password.length < 8) return showEmployeeAccountSaveError(lang === 'zh' ? '密码至少 8 位。' : 'Password must be at least 8 characters.', 'employeeAccountSecret');
