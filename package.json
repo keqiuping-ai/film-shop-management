@@ -20,6 +20,7 @@
     "test:product-metadata": "node scripts/test-owner-product-metadata.js",
     "test:sales-order-save": "node scripts/test-sales-order-idempotency.js",
     "test:clickable-rows": "node scripts/test-clickable-table-rows.js",
+    "test:portal-price-search": "node scripts/test-portal-special-price-search.js",
     "test:recruiting": "node --test scripts/test-recruiting-openai.js && node scripts/test-recruiting-translation-unit.js && node --test scripts/test-recruiting-translation-ui.js && node scripts/test-recruiting-dates.js && node scripts/test-recruiting-interview-kits.js && node scripts/test-recruiting-ui.js && node scripts/test-recruiting-sms-ui.js && node --test scripts/test-recruiting-email.js scripts/test-recruiting-email-ui.js && node --test scripts/test-recruiting-message-read.js && node --test scripts/test-recruiting-video.js scripts/test-recruiting-interview-ai.js scripts/test-recruiting-voice.js scripts/test-recruiting-voice-ui.js scripts/test-recruiting-auto-transcript.js scripts/test-recruiting-auto-ui.js && node --test scripts/test-recruiting-test-sms.js && node scripts/test-recruiting.js"
   },
   "engines": {
