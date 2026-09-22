@@ -44,6 +44,11 @@ async function run() {
   assert(appSource.includes("'入库单'"), 'Inventory page must include a separate stock-in document');
   assert(appSource.includes("'库存单'"), 'Inventory page must label the stock list as inventory document');
   assert(!appSource.includes('<h3>${lang === \'zh\' ? \'出入库流水\''), 'Inventory page must not keep the mixed movement title');
+  assert(appSource.includes('inventory-workbench-panel'), 'Inventory documents must use full-width stacked workbench panels');
+  assert(appSource.includes('inventory-document-table-scroll'), 'Inventory document tables must use a bounded vertical scroll area');
+  assert(appSource.includes('openPendingStockOutDocument'), 'Pending stock-out rows must open a full document review');
+  assert(appSource.includes('stockOutLineReconciliation'), 'Pending stock-out must compare order, shipped, and branch inventory quantities');
+  assert(appSource.includes('openStockOutDocument'), 'Stock-out rows must open a grouped document detail');
 
   const child = spawn(process.execPath, ['server.js'], {
     cwd:root,
