@@ -5,3 +5,5 @@
 
 .delete-message{border:0;background:transparent;padding:3px 6px;min-height:28px;font-size:12px;color:#97635f}.delete-message:hover{color:#b52f2f;text-decoration:underline}.delete-message:focus-visible{outline:2px solid #1b6c66;outline-offset:2px}
 .side-title{flex-wrap:wrap;gap:8px}.side-title .install-button{margin-left:auto;padding:7px 10px;font-size:12px;color:#1b6c66;border-color:#bfdad2;white-space:nowrap}.auth-install{display:block;width:100%;margin:16px 0 20px;color:#1b6c66;background:#edf7f2;border-color:#bfdad2}.install-steps{padding-left:24px;line-height:1.8}.install-steps li{margin-bottom:12px}.install-tip{padding:12px;background:#edf7f2;border-radius:8px}.install-button:disabled{opacity:.65;cursor:default}
+
+#resetUserId,#resetLink{width:100%;font:inherit;border:1px solid #d4ded8;border-radius:9px;padding:12px;background:#fff;color:#223c32}#resetLink{font-size:13px;overflow-wrap:anywhere;resize:vertical}.auth-footer{display:flex;flex-wrap:wrap;gap:12px;justify-content:center}

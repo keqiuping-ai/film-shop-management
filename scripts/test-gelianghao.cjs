@@ -123,3 +123,80 @@ test('real LiveKit SDK produces audio-only namespaced short-lived grants',async(
  const claims=JSON.parse(Buffer.from(result.token.split('.')[1],'base64url').toString());assert.equal(claims.sub,'glh-friend-fixture');assert.equal(claims.video.room,'glh-room-fixture');assert.deepEqual(claims.video.canPublishSources,['microphone']);assert.equal(claims.video.canPublishData,false);assert.ok(claims.exp-Math.floor(Date.now()/1000)<=300);
  }finally{keys.forEach((k,i)=>{if(saved[i]===undefined)delete process.env[k];else process.env[k]=saved[i];});}
 });
+
+async function recoveryFixture(t){
+ const dir=fs.mkdtempSync(path.join(os.tmpdir(),'glh-recovery-'));let mod=factory(dir);
+ const server=http.createServer((req,res)=>mod.handle(req,res));await new Promise(r=>server.listen(0,'127.0.0.1',r));
+ const base=`http://127.0.0.1:${server.address().port}/gelianghao/api`,cookies={};
+ const db=new DatabaseSync(path.join(dir,'gelianghao/chat.sqlite'));
+ t.after(async()=>{mod.close();db.close();server.closeAllConnections();await new Promise(r=>server.close(r));fs.rmSync(dir,{recursive:true,force:true});});
+ async function request(w,p,data,headers={}){const r=await fetch(base+p,{method:data===undefined?'GET':'POST',headers:{Cookie:cookies[w]||'','Content-Type':'application/json',...headers},body:data===undefined?undefined:JSON.stringify(data)});if(r.headers.get('set-cookie'))cookies[w]=r.headers.get('set-cookie').split(';')[0];return {status:r.status,headers:r.headers,...await r.json()};}
+ const admin=(await request('admin','/setup',{name:'Admin',username:'testadmin',password:'test-password-admin',ownerPassword:'test-owner-only'})).user;
+ const invite=await request('admin','/invites',{});
+ const friend=(await request('friend','/register',{name:'Friend',username:'testfriend',password:'test-password-friend',invite:invite.code})).user;
+ return {request,cookies,db,admin,friend,base,restart(){mod.close();mod=factory(dir);}};
+}
+test('password recovery: administrator reauthentication, token rotation, atomic single use and session revocation',async t=>{
+ const {request:r,cookies,db,friend,base,restart}=await recoveryFixture(t);
+ const issue={userId:friend.id,adminPassword:'test-password-admin',identityConfirmed:true};
+ assert.equal((await r('anon','/password-reset/issue',issue)).status,401);
+ assert.equal((await r('friend','/password-reset/issue',issue)).status,403);
+ assert.equal((await r('admin','/password-reset/issue',issue,{Origin:'https://evil.example'})).status,403);
+ assert.equal((await r('admin','/password-reset/issue',{...issue,adminPassword:'wrong'})).status,403);
+ assert.equal((await r('admin','/password-reset/issue',{...issue,identityConfirmed:false})).status,400);
+ const first=await r('admin','/password-reset/issue',issue);assert.equal(first.status,201);assert.match(first.token,/^[a-f0-9]{64}$/);
+ const row=db.prepare('SELECT * FROM password_resets WHERE user_id=?').get(friend.id);
+ assert.notEqual(row.token_hash,first.token);assert.equal(row.token_hash,crypto.createHash('sha256').update(first.token).digest('hex'));
+ assert.ok(row.expires>Date.now()+14*60000&&row.expires<=Date.now()+15*60000);
+ assert.equal((await r('friend','/me')).status,200); // Issuance must not log anyone out.
+ const second=await r('admin','/password-reset/issue',issue);
+ assert.equal((await r('anon','/password-reset/check',{token:first.token})).status,400);
+ restart();
+ assert.equal((await r('anon','/password-reset/check',{token:second.token})).username,'testfriend');
+ const reset={token:second.token,password:'changed-friend-password',confirmPassword:'changed-friend-password'};
+ assert.equal((await r('anon','/password-reset/complete',{...reset,password:'short',confirmPassword:'short'})).status,400);
+ assert.equal((await r('anon','/password-reset/complete',{...reset,confirmPassword:'different'})).status,400);
+ assert.equal((await r('anon','/password-reset/complete',reset,{'Sec-Fetch-Site':'cross-site'})).status,403);
+ await r('other','/login',{username:'testfriend',password:'test-password-friend'});
+ const stream=await fetch(base+'/events',{headers:{Cookie:cookies.friend}}),reader=stream.body.getReader();await reader.read();
+ const results=await Promise.all([r('anon','/password-reset/complete',reset),r('anon','/password-reset/complete',reset)]);
+ assert.deepEqual(results.map(x=>x.status).sort(),[200,400]);
+ assert.ok(results.every(x=>!x.headers.has('set-cookie'))); // No automatic login after recovery.
+ assert.equal((await reader.read()).done,true);
+ assert.equal((await r('friend','/me')).status,401);assert.equal((await r('other','/me')).status,401);
+ assert.equal((await r('admin','/me')).status,200);
+ assert.equal((await r('friend','/login',{username:'testfriend',password:'test-password-friend'})).status,401);
+ assert.equal((await r('friend','/login',{username:'testfriend',password:reset.password})).status,200);
+ assert.equal(db.prepare('SELECT COUNT(*) n FROM password_resets').get().n,0);
+ const pending=await r('admin','/password-reset/issue',issue);
+ await r('friend','/password',{oldPassword:reset.password,password:'changed-again-password'});
+ assert.equal((await r('anon','/password-reset/check',{token:pending.token})).status,400);
+ for(let i=0;i<4;i++)assert.equal((await r('admin','/password-reset/issue',issue)).status,201);
+ assert.equal((await r('admin','/password-reset/issue',issue)).status,429);
+});
+test('password recovery: owner credential verification, admin-only recovery, expiration and no account takeover',async t=>{
+ const {request:r,db}=await recoveryFixture(t);
+ const proof={username:'testadmin',ownerEmail:'owner@example.test',ownerPassword:'test-owner-only'};
+ assert.equal((await r('anon','/password-reset/owner',{...proof,ownerPassword:'wrong'})).status,403);
+ assert.equal((await r('anon','/password-reset/owner',{...proof,username:'testfriend'})).status,400);
+ assert.equal((await r('anon','/password-reset/owner',{...proof,username:'missing'})).status,400);
+ const expired=await r('anon','/password-reset/owner',proof);assert.equal(expired.status,201);
+ db.prepare('UPDATE password_resets SET expires=?').run(Date.now()-1);
+ const stale={token:expired.token,password:'new-admin-password',confirmPassword:'new-admin-password'};
+ assert.equal((await r('anon','/password-reset/check',stale)).status,400);
+ assert.equal((await r('anon','/password-reset/complete',stale)).status,400);
+ const valid=await r('anon','/password-reset/owner',proof);assert.equal(valid.status,201);
+ assert.equal((await r('anon','/password-reset/complete',{...stale,token:valid.token})).status,200);
+ assert.equal((await r('admin','/me')).status,401);
+ assert.equal((await r('admin','/login',{username:'testadmin',password:'new-admin-password'})).status,200);
+ assert.equal((await r('friend','/me')).status,200);
+ assert.equal((await r('anon','/password-reset/owner',proof)).status,429);
+});
+test('password recovery: malformed tokens, server password rules and rate limiting',async t=>{
+ const {request:r}=await recoveryFixture(t);
+ for(const token of [null,{},'short','a'.repeat(64)]){
+  const result=await r('anon','/password-reset/check',{token});assert.equal(result.status,400);assert.match(result.error,/链接无效或已过期/);
+ }
+ for(let i=0;i<36;i++)assert.equal((await r('anon','/password-reset/check',{token:'b'.repeat(64)})).status,400);
+ assert.equal((await r('anon','/password-reset/check',{token:'b'.repeat(64)})).status,429);
+});
