@@ -16,6 +16,7 @@
     "test:portal-links": "node scripts/test-portal-customer-link-reconciliation.js",
     "test:yelp-import": "node scripts/test-yelp-partial-import.js",
     "test:customer-address-reply": "node scripts/test-customer-address-reply.js",
+    "test:appointment-visibility": "node scripts/test-customer-appointment-visibility.js",
     "test:sales-customer-review": "node scripts/test-sales-customer-review-detail.js",
     "test:product-metadata": "node scripts/test-owner-product-metadata.js",
     "test:sales-order-save": "node scripts/test-sales-order-idempotency.js",

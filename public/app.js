@@ -1261,7 +1261,7 @@ function setPage(page) {
 
 const COMPANY_SCOPE_PAGES = new Set([
   'modules', 'clock', 'leave', 'warranties', 'pricing', 'customerTasks', 'aiRules', 'aiBoss',
-  'fieldSales', 'customerCenter', 'recruiting', 'customerNurture', 'replyLibrary', 'shipments', 'portalCustomers',
+  'fieldSales', 'customerCenter', 'prospects', 'recruiting', 'customerNurture', 'replyLibrary', 'shipments', 'portalCustomers',
   'personalNotes', 'audit', 'settings'
 ]);
 
@@ -7194,37 +7194,21 @@ function customerPhoneMatchKey(value) {
 
 function prospectHasGeneratedJob(item) {
   if (item.convertedJobId && (state.jobs || []).some(job => job.id === item.convertedJobId && !job.deletedAt)) return true;
-  const promotedProspectId = item.promotedProspectId || '';
-  if (promotedProspectId && (state.jobs || []).some(job => job.sourceProspectId === promotedProspectId && !job.deletedAt)) return true;
-  const phoneKey = customerPhoneMatchKey(item.phone);
-  const prospectDate = String(item.date || item.appointmentDate || '').slice(0, 10);
-  const nameKey = normalizeCustomerLookupText(item.customer || '');
-  const vehicleKey = normalizeCustomerLookupText(item.vehicle || '');
-  return (state.jobs || []).some(job => {
-    if (job.sourceProspectId === item.id) return true;
-    const jobPhoneKey = customerPhoneMatchKey(job.phone);
-    const phoneMatches = Boolean(phoneKey && jobPhoneKey && jobPhoneKey === phoneKey);
-    const jobNameKey = normalizeCustomerLookupText(job.customer || '');
-    const jobVehicleKey = normalizeCustomerLookupText(job.vehicle || '');
-    const nameMatches = Boolean(nameKey && jobNameKey && nameKey === jobNameKey);
-    const vehicleMatches = Boolean(vehicleKey && jobVehicleKey && (vehicleKey.includes(jobVehicleKey) || jobVehicleKey.includes(vehicleKey)));
-    const identityMatches = phoneMatches || (nameMatches && (!vehicleKey || !jobVehicleKey || vehicleMatches));
-    if (!identityMatches) return false;
-    const jobDate = String(job.date || job.scheduleDate || job.createdAt || '').slice(0, 10);
-    return !prospectDate || !jobDate || jobDate >= prospectDate;
-  });
+  const sourceIds = new Set([item.id, item.promotedProspectId].filter(Boolean));
+  return (state.jobs || []).some(job => !job.deletedAt && sourceIds.has(job.sourceProspectId));
 }
 
 function sortedProspectRows() {
   const grouped = new Map();
-  for (const item of branchScopedRows(state.prospects || []).filter(row => ['已预约', '已到店'].includes(String(row.status || '')))) {
+  for (const item of branchScopedRows(state.prospects || [])
+    .filter(row => ['已预约', '已到店'].includes(String(row.status || '')))
+    .filter(row => !prospectHasGeneratedJob(row))) {
     const phoneKey = customerPhoneMatchKey(item.phone);
     const key = phoneKey ? `phone:${phoneKey}` : `id:${item.id}`;
     if (!grouped.has(key)) grouped.set(key, []);
     grouped.get(key).push(item);
   }
   return [...grouped.values()]
-    .filter(group => !group.some(item => prospectHasGeneratedJob(item)))
     .map(mergeAppointmentProspectGroup)
     .sort((a, b) => {
       const appointmentDiff = new Date(`${a.appointmentDate || '9999-12-31'}T${a.appointmentTime || '23:59'}`).getTime()

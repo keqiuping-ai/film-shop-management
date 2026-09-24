@@ -5661,14 +5661,29 @@ function isCustomerConversationPromotionEligible(item) {
 }
 
 function promoteEligibleCustomerConversation(db, item, user) {
-  if (!item || item.promotedProspectId || !isCustomerConversationPromotionEligible(item)) return null;
-  const existing = (db.prospects || []).find(row => row.promotedFromConversationId === item.id);
+  if (!item || !isCustomerConversationPromotionEligible(item)) return null;
+  const now = new Date().toISOString();
+  const existing = (db.prospects || []).find(row => row.id === item.promotedProspectId)
+    || (db.prospects || []).find(row => row.promotedFromConversationId === item.id);
   if (existing) {
+    const previousMessages = Array.isArray(existing.conversationMessages) ? existing.conversationMessages : [];
+    const preserved = {
+      id: existing.id,
+      promotedFromConversationId: item.id,
+      createdAt: existing.createdAt || now,
+      createdBy: existing.createdBy || user.name || user.email,
+      createdByUserId: existing.createdByUserId || user.id,
+      convertedJobId: existing.convertedJobId || item.convertedJobId,
+      convertedJobAt: existing.convertedJobAt || item.convertedJobAt
+    };
+    Object.assign(existing, item, preserved, { updatedAt: now });
+    delete existing.promotedProspectId;
+    delete existing.promotedAt;
+    mergeConversationMessages(existing, { conversationMessages: previousMessages });
     item.promotedProspectId = existing.id;
-    item.promotedAt = item.promotedAt || existing.createdAt || new Date().toISOString();
+    item.promotedAt = item.promotedAt || existing.createdAt || now;
     return existing;
   }
-  const now = new Date().toISOString();
   const promoted = {
     ...item,
     id: id(),
@@ -5769,6 +5784,32 @@ function applyCustomerConversationPromotionEligibilityMigration() {
   });
   writeDb(db);
   console.log(`Customer conversation promotion eligibility fixed: ${restored}.`);
+}
+
+function applyCustomerAppointmentVisibilityRepairMigration() {
+  const migrationVersion = 'customer-appointment-visibility-repair-2026-09-25-v1';
+  const db = readDb();
+  if (db.customerAppointmentVisibilityRepairVersion === migrationVersion) return;
+  createDatabaseBackup(db, 'manual', { id: 'system', name: 'System' });
+  let repaired = 0;
+  let created = 0;
+  for (const source of (db.customerConversations || [])) {
+    if (!isCustomerConversationPromotionEligible(source)) continue;
+    const previousId = source.promotedProspectId || '';
+    const previousTarget = (db.prospects || []).find(row => row.id === previousId || row.promotedFromConversationId === source.id);
+    const promoted = promoteEligibleCustomerConversation(db, source, { id: 'system', name: 'System', email: '' });
+    if (!promoted) continue;
+    if (!previousTarget) created += 1;
+    if (!previousTarget || previousId !== promoted.id) repaired += 1;
+  }
+  db.customerAppointmentVisibilityRepairVersion = migrationVersion;
+  db.customerAppointmentVisibilityRepairAt = new Date().toISOString();
+  audit(db, { id: 'system', name: 'System' }, 'repair-customer-appointment-visibility', {
+    collection: 'prospects',
+    detail: `修复 ${repaired} 条预约关联，恢复 ${created} 条缺失的预约客户资料`
+  });
+  writeDb(db);
+  console.log(`Customer appointment visibility repaired: ${repaired}; recreated: ${created}.`);
 }
 
 function applyImportedCustomerEncodingMigration() {
@@ -12616,6 +12657,7 @@ applySalesOrderNumberMigration();
 applyAccountingLinkageMigration();
 applyPromotedConversationMerge();
 applyCustomerConversationPromotionEligibilityMigration();
+applyCustomerAppointmentVisibilityRepairMigration();
 applyImportedCustomerEncodingMigration();
 applyCustomerConversationDuplicateMerge();
 applyYelpLeadFormMessageMigration();

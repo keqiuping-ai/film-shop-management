@@ -44,7 +44,7 @@ async function run() {
   assert(appSource.includes('法定姓名与 I-9 身份核验'), 'Owner employee editor must show the I-9 section');
   assert(appSource.includes("user?.role !== 'owner'"), 'Sensitive section must be owner-gated in the UI');
   assert(appSource.includes('员工可以自行选择 Form I-9 可接受文件'), 'UI must warn against document over-requesting');
-  assert(html.includes('/app.js?v=144') && html.includes('/styles.css?v=98'), 'Desktop assets must be cache-busted');
+  assert(html.includes('/app.js?v=145') && html.includes('/styles.css?v=98'), 'Desktop assets must be cache-busted');
 
   const child = spawn(process.execPath, ['server.js'], {
     cwd: root,
