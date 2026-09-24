@@ -28,6 +28,6 @@ assert.match(mobileCss, /@media \(max-width:620px\)[\s\S]*\.mobile-dialog\.sales
   'phone review must use the full screen');
 assert.ok(mobileHtml.includes('/mobile.css?v=61'));
 assert.ok(mobileHtml.includes('/mobile.js?v=67'));
-assert.ok(serviceWorker.includes('film-shop-v122-sales-customer-review-detail'));
+assert.ok(serviceWorker.includes('film-shop-v123-internal-message-stability'));
 
 console.log('Field sales customer review detail tests passed.');

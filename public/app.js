@@ -92,6 +92,7 @@ let deferredDataSyncTimer = null;
 let activeMessageUserId = '';
 let messageThreadResizeObserver = null;
 let messageThreadLatestTimers = [];
+let internalMessageRefreshPromise = null;
 let messageTimeZoneTimer = null;
 let sidebarTimeZoneTimer = null;
 let internalMessagePendingImage = null;
@@ -1005,6 +1006,7 @@ async function logout() {
   localStorage.removeItem('filmShopCloud.token');
   state = null;
   user = null;
+  activeMessageUserId = '';
   stopAutoSync();
   stopRealtimeSync();
   stopPersonalReminderChecks();
@@ -1027,6 +1029,7 @@ async function sync(options = {}) {
   const internalMessageModalOpen = Boolean(document.getElementById('modal')?.classList.contains('message-modal-open'));
   const internalThread = document.getElementById('messageThread');
   const internalThreadScrollTop = internalThread?.scrollTop || 0;
+  const internalThreadScrollAnchor = captureMessageThreadScrollAnchor(internalThread);
   const internalThreadNearBottom = internalThread ? internalThread.scrollHeight - internalThread.scrollTop - internalThread.clientHeight < 80 : true;
   const sidebarWasActive = Boolean(document.activeElement?.closest?.('.prospect-workspace-sidebar'));
   captureProspectWorkspaceDraft();
@@ -1037,7 +1040,19 @@ async function sync(options = {}) {
     const body = await api('/api/bootstrap', { timeoutMs: 120000 });
     const previousUnreadIds = knownUnreadMessageIds;
     user = body.user;
-    state = body.data;
+    const nextState = body.data;
+    const visibleMessagesBeforeSync = messageThreadMessagesForState(state, messageUserAtStart);
+    const visibleMessagesAfterSync = messageThreadMessagesForState(nextState, messageUserAtStart);
+    const retainedVisibleMessageSnapshot = Boolean(
+      internalMessageModalOpen
+      && visibleMessagesBeforeSync.length
+      && !visibleMessagesAfterSync.length
+    );
+    if (retainedVisibleMessageSnapshot) {
+      nextState.messages = state.messages;
+      nextState.messageUsers = state.messageUsers;
+    }
+    state = nextState;
     lastDataRevision = String(body.revision || lastDataRevision || '');
     // The bootstrap request can take long enough for the operator to keep typing.
     // Capture the live value immediately before rendering so an older snapshot
@@ -1074,9 +1089,11 @@ async function sync(options = {}) {
       setTimeout(() => {
         const refreshedThread = document.getElementById('messageThread');
         if (!refreshedThread) return;
-        refreshedThread.scrollTop = internalThreadNearBottom ? refreshedThread.scrollHeight : internalThreadScrollTop;
+        if (internalThreadNearBottom) refreshedThread.scrollTop = refreshedThread.scrollHeight;
+        else restoreMessageThreadScrollAnchor(refreshedThread, internalThreadScrollAnchor, internalThreadScrollTop);
       }, 0);
       markMessagesRead(activeMessageUserId);
+      if (retainedVisibleMessageSnapshot) void refreshInternalMessages();
     }
     const refreshedReplyInput = document.getElementById('prospectReplyInput');
     if (refreshedReplyInput && liveReplyRevision === prospectReplyRevision) refreshedReplyInput.value = liveReplyDraft;
@@ -1870,12 +1887,80 @@ function openMessages(selectedUserId = '') {
   uiNavigationRevision += 1;
   const users = messageUsers();
   const firstUnread = unreadMessages()[0];
-  const nextMessageUserId = selectedUserId || activeMessageUserId || (firstUnread?.scope === 'group' ? GROUP_CHAT_ID : firstUnread?.fromUserId) || GROUP_CHAT_ID;
+  const rememberedMessageUserId = rememberedInternalMessageThread(users);
+  const nextMessageUserId = selectedUserId || activeMessageUserId || rememberedMessageUserId || (firstUnread?.scope === 'group' ? GROUP_CHAT_ID : firstUnread?.fromUserId) || GROUP_CHAT_ID;
   if (activeMessageUserId && nextMessageUserId !== activeMessageUserId) clearInternalMessagePendingImage();
   activeMessageUserId = nextMessageUserId;
+  resolveActiveMessageThread(users);
+  rememberInternalMessageThread(activeMessageUserId);
   const title = lang === 'zh' ? '站内留言' : 'Messages';
   renderMessageModal(title, { forceLatest:true });
-  if (activeMessageUserId) markMessagesRead(activeMessageUserId, { forceLatest:true });
+  if (activeMessageUserId) {
+    void markMessagesRead(activeMessageUserId, { forceLatest:true })
+      .finally(() => refreshInternalMessages());
+  }
+}
+
+function internalMessageThreadStorageKey() {
+  return `filmShopCloud.internalMessageThread.${user?.id || user?.email || 'anonymous'}`;
+}
+
+function rememberInternalMessageThread(threadId) {
+  if (!threadId || !user) return;
+  try { localStorage.setItem(internalMessageThreadStorageKey(), threadId); } catch {}
+}
+
+function rememberedInternalMessageThread(users = messageUsers()) {
+  let remembered = '';
+  try { remembered = String(localStorage.getItem(internalMessageThreadStorageKey()) || ''); } catch {}
+  if ([GROUP_CHAT_ID, CUSTOMER_CODEX_ID].includes(remembered)) return remembered === CUSTOMER_CODEX_ID ? GROUP_CHAT_ID : remembered;
+  if (users.some(item => item.id === remembered)) return remembered;
+  return messageThreadMessagesForState(state, remembered).length ? remembered : '';
+}
+
+function messageThreadMessagesForState(snapshot, threadId) {
+  const messages = Array.isArray(snapshot?.messages) ? snapshot.messages : [];
+  if (!threadId) return [];
+  if (threadId === GROUP_CHAT_ID) return messages.filter(message => message.groupId === 'all-staff');
+  if (threadId === CUSTOMER_CODEX_ID) return messages.filter(message => message.groupId === CUSTOMER_CODEX_GROUP_ID);
+  return messages.filter(message =>
+    (message.fromUserId === user?.id && message.toUserId === threadId)
+    || (message.fromUserId === threadId && message.toUserId === user?.id)
+  );
+}
+
+function resolveActiveMessageThread(users = messageUsers()) {
+  if (!activeMessageUserId || activeMessageUserId === CUSTOMER_CODEX_ID) activeMessageUserId = GROUP_CHAT_ID;
+  if (activeMessageUserId !== GROUP_CHAT_ID) {
+    const contactExists = users.some(item => item.id === activeMessageUserId);
+    const historyExists = messageThreadMessagesForState(state, activeMessageUserId).length > 0;
+    if (!contactExists && !historyExists) activeMessageUserId = GROUP_CHAT_ID;
+  }
+  rememberInternalMessageThread(activeMessageUserId);
+  return activeMessageUserId;
+}
+
+async function refreshInternalMessages() {
+  if (!token || !state) return;
+  if (internalMessageRefreshPromise) return internalMessageRefreshPromise;
+  const threadId = activeMessageUserId;
+  internalMessageRefreshPromise = (async () => {
+    try {
+      const result = await api('/api/messages', { timeoutMs: 30000 });
+      if (!state || activeMessageUserId !== threadId) return;
+      state.messages = Array.isArray(result.messages) ? result.messages : state.messages;
+      state.messageUsers = Array.isArray(result.users) ? result.users : state.messageUsers;
+      if (document.getElementById('modal')?.classList.contains('message-modal-open') && !internalMessageInputActive()) {
+        renderMessageModal();
+      }
+      updateMessageBadge();
+    } catch (error) {
+      console.warn('Internal message refresh failed', error);
+    } finally {
+      internalMessageRefreshPromise = null;
+    }
+  })();
+  return internalMessageRefreshPromise;
 }
 
 function messageTimeInZone(timeZone) {
@@ -1953,7 +2038,7 @@ function keepNewlyOpenedMessageThreadAtLatest(list) {
   const followLatest = () => {
     if (list.dataset.followLatest === 'true') scrollMessageThreadToLatest(list);
   };
-  [0, 60, 180, 400, 800, 1400, 2200].forEach(delay => {
+  [0, 80, 180].forEach(delay => {
     messageThreadLatestTimers.push(setTimeout(followLatest, delay));
   });
   list.querySelectorAll('img, video').forEach(media => {
@@ -1971,12 +2056,35 @@ function keepNewlyOpenedMessageThreadAtLatest(list) {
   }, { passive:true });
 }
 
+function captureMessageThreadScrollAnchor(list) {
+  if (!list) return null;
+  const listTop = list.getBoundingClientRect().top;
+  const row = [...list.querySelectorAll('.message-row[data-message-id]')]
+    .find(item => item.getBoundingClientRect().bottom > listTop + 1);
+  if (!row) return null;
+  return { id: row.dataset.messageId || '', offset: row.getBoundingClientRect().top - listTop };
+}
+
+function restoreMessageThreadScrollAnchor(list, anchor, fallbackScrollTop = 0) {
+  if (!list) return;
+  const row = anchor?.id
+    ? [...list.querySelectorAll('.message-row[data-message-id]')].find(item => item.dataset.messageId === anchor.id)
+    : null;
+  if (!row) {
+    list.scrollTop = fallbackScrollTop;
+    return;
+  }
+  const currentOffset = row.getBoundingClientRect().top - list.getBoundingClientRect().top;
+  list.scrollTop += currentOffset - Number(anchor.offset || 0);
+}
+
 function renderMessageModal(title = (lang === 'zh' ? '站内留言' : 'Messages'), options = {}) {
   const users = messageUsers();
-  if (!activeMessageUserId) activeMessageUserId = GROUP_CHAT_ID;
+  resolveActiveMessageThread(users);
   const previousThread = document.getElementById('messageThread');
   const sameConversation = previousThread?.dataset.conversationId === activeMessageUserId;
   const previousScrollTop = sameConversation ? previousThread.scrollTop : 0;
+  const previousScrollAnchor = sameConversation ? captureMessageThreadScrollAnchor(previousThread) : null;
   const previousDistanceFromBottom = sameConversation
     ? previousThread.scrollHeight - previousThread.clientHeight - previousThread.scrollTop
     : 0;
@@ -1995,7 +2103,7 @@ function renderMessageModal(title = (lang === 'zh' ? '站内留言' : 'Messages'
     const list = document.getElementById('messageThread');
     if (!list || list.dataset.conversationId !== activeMessageUserId) return;
     if (list.dataset.followLatest === 'true') scrollMessageThreadToLatest(list);
-    else list.scrollTop = previousScrollTop;
+    else restoreMessageThreadScrollAnchor(list, previousScrollAnchor, previousScrollTop);
   };
   const list = document.getElementById('messageThread');
   if (list) {
@@ -2029,12 +2137,12 @@ function renderMessageModal(title = (lang === 'zh' ? '站内留言' : 'Messages'
 function messageModalHtml(users) {
   const thread = conversationMessages(activeMessageUserId);
   const isGroup = activeMessageUserId === GROUP_CHAT_ID;
-  const activeUser = isGroup ? null : (users.find(item => item.id === activeMessageUserId) || users[0]);
-  if (!isGroup && activeUser) activeMessageUserId = activeUser.id;
-  if (!isGroup && !activeUser) activeMessageUserId = GROUP_CHAT_ID;
-  const activeName = activeMessageUserId === GROUP_CHAT_ID
+  const activeUser = isGroup ? null : users.find(item => item.id === activeMessageUserId);
+  const historicalMessage = !isGroup && !activeUser ? thread.find(message => message.fromUserId === activeMessageUserId || message.toUserId === activeMessageUserId) : null;
+  const historicalName = historicalMessage?.fromUserId === activeMessageUserId ? historicalMessage.fromName : historicalMessage?.toName;
+  const activeName = isGroup
     ? (lang === 'zh' ? '全体员工群聊' : 'All Staff Group')
-    : messageUserDisplayName(activeUser);
+    : (activeUser ? messageUserDisplayName(activeUser) : (historicalName || (lang === 'zh' ? '历史联系人' : 'Previous contact')));
   const groupUnread = unreadCountFromUser(GROUP_CHAT_ID);
   const mentionedMe = currentUserHasUnreadMention();
   return `<div class="message-layout">
@@ -2177,7 +2285,7 @@ function messageBubbleHtml(message) {
   const readStatus = mine
     ? ` · <span class="message-read-status ${(message.scope === 'group' ? (message.readByUserIds || []).length > 1 : message.readAt) ? 'read' : 'unread'}">${(message.scope === 'group' ? (message.readByUserIds || []).length > 1 : message.readAt) ? (lang === 'zh' ? '已读' : 'Read') : (lang === 'zh' ? '未读' : 'Unread')}</span>`
     : '';
-  return `<div class="message-row ${mine ? 'mine' : 'theirs'}">
+  return `<div class="message-row ${mine ? 'mine' : 'theirs'}" data-message-id="${escapeHtml(message.id || '')}">
     <div class="message-row-avatar">${userAvatarHtml(sender, 'small')}</div>
     <div class="message-bubble ${mine ? 'mine' : 'theirs'} ${attachmentOnly ? 'attachment-only' : ''}">
       ${message.pending ? (message.failed ? `<button class="message-retry" type="button" onclick="retryInternalMessageUpload('${message.id}')">${lang === 'zh' ? '重试' : 'Retry'}</button>` : '') : `<button class="message-delete" type="button" title="${lang === 'zh' ? '删除/撤销' : 'Delete'}" onclick="deleteMessage('${message.id}')">×</button>`}
@@ -2257,6 +2365,7 @@ async function selectMessageUser(id) {
   if (id !== activeMessageUserId) clearInternalMessagePendingImage();
   uiNavigationRevision += 1;
   activeMessageUserId = id;
+  rememberInternalMessageThread(id);
   renderMessageModal(undefined, { forceLatest:true });
   await markMessagesRead(id, { forceLatest:true });
 }
