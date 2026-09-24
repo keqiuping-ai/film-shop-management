@@ -52,6 +52,26 @@ function tokenClaims(result) {
 }
 
 const videoPath = action => `/api/recruiting/interviews/interview-1/video-${action}`;
+
+test('completed interviews can persist final analysis without rejoining or replacing saved answers', async () => {
+  const env = fixture(async () => ({ summary:'Saved post-interview review', scores:{ salesAbility:8 }, mode:'final' }), { snapshotReads:true });
+  env.db.recruitingInterviews[0].status = 'completed';
+  env.db.recruitingInterviews[0].aiInterview = { transcript:[{id:'answer',speaker:'candidate',text:'Synthetic original answer'}] };
+  const result = await env.call('handleAdmin', videoPath('analyze'), 'POST', {mode:'final'});
+  assert.equal(result.status, 200);
+  const persisted = JSON.parse(JSON.stringify(env.db));
+  assert.equal(persisted.recruitingInterviews[0].aiInterview.analysis.scores.salesAbility, 8);
+  assert.equal(persisted.recruitingInterviews[0].aiInterview.transcript[0].text, 'Synthetic original answer');
+  assert.equal(persisted.recruitingInterviews[0].status, 'completed');
+});
+
+test('cancelled interviews retain old evidence and cannot generate a new analysis', async () => {
+  let called = false;
+  const env = fixture(async () => { called = true; return {}; });
+  env.db.recruitingInterviews[0].status = 'cancelled';
+  assert.equal((await env.call('handleAdmin', videoPath('analyze'), 'POST', {mode:'final'})).status, 409);
+  assert.equal(called, false);
+});
 const hasFixturePermission = (actor, permission) => Boolean(actor?.permissions?.includes(permission));
 const editor = { id:'synthetic-editor-a', name:'Synthetic Interviewer A', permissions:['recruitingView', 'recruitingEdit'] };
 const otherEditor = { id:'synthetic-editor-b', name:'Synthetic Interviewer B', permissions:['recruitingView', 'recruitingEdit'] };

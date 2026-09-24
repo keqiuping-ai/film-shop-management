@@ -100,6 +100,43 @@ function candidate(id, fields = {}) {
   };
 }
 
+test('saved video answers and AI scores are reviewable in candidate profile without rejoining the room', () => {
+  const env = harness();
+  const meetings = [{ id:'closed-video', candidateId:'one', startsAt:'2026-09-17T17:00:00Z', status:'completed', aiInterview:{
+    transcript:[{ speaker:'candidate', speakerName:'Synthetic one', text:'ORIGINAL <answer>', translationZh:'中文回答对照', createdAt:'2026-09-17T17:05:00Z' }],
+    analysis:{ summary:'Saved analysis', scores:{ salesAbility:8, technicalSkill:null }, evidence:['Original evidence'], generatedAt:'2026-09-17T17:30:00Z', mode:'final' }
+  } }];
+  env.fixture([candidate('one'), candidate('other')], {}, meetings);
+  env.ui.openCandidateProfile('one');
+  const html = env.modals.at(-1).html;
+  assert.match(html, /ORIGINAL &lt;answer&gt;/);
+  assert.match(html, /中文回答对照/);
+  assert.match(html, /Saved analysis/);
+  assert.match(html, /8 \/ 10/);
+  assert.match(html, /证据不足，未评分/);
+  assert.match(env.ui.candidateTable(), /已有 AI 参考评分/);
+  env.ui.openCandidateProfile('other');
+  assert.doesNotMatch(env.modals.at(-1).html, /ORIGINAL|Saved analysis/);
+  env.fixture([candidate('one')], {}, JSON.parse(JSON.stringify(meetings)));
+  env.ui.openCandidateProfile('one');
+  assert.match(env.modals.at(-1).html, /Saved analysis/);
+});
+
+test('saved candidate answers without analysis are distinguished from missing answers and unrated candidates', () => {
+  const env = harness();
+  env.fixture([candidate('one')], {}, [{ id:'video', candidateId:'one', aiInterview:{transcript:[{speaker:'candidate',text:'Saved answer'}]} }]);
+  assert.match(env.ui.candidateTable(), /回答已保存 · 待生成评分/);
+  env.ui.openCandidateProfile('one');
+  assert.match(env.modals.at(-1).html, /尚未生成 AI 评分/);
+  assert.match(env.modals.at(-1).html, /Saved answer/);
+});
+
+test('human question scores are visible in list without overwriting six-dimension or AI scores', () => {
+  const env = harness();
+  env.fixture([candidate('one', {interviewScorecards:[{templateId:'wholesale_quick_6',scores:{sales_case:7}}]})]);
+  assert.match(env.ui.candidateTable(), /已有逐题人工评分/);
+});
+
 function verified(id, appliedAt, fields = {}) {
   return candidate(id, { appliedAt, applicationDateNote: 'Synthetic original application timestamp', ...fields });
 }

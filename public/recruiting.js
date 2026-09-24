@@ -307,6 +307,56 @@
     return scores.length ? { number: (scores.reduce((sum, score) => sum + score, 0) / scores.length).toFixed(1), count: scores.length } : null;
   }
 
+  function videoRecords(candidateId) {
+    return interviews().filter(row => row.candidateId === candidateId && row.aiInterview)
+      .sort((a, b) => Date.parse(b.startsAt || 0) - Date.parse(a.startsAt || 0));
+  }
+
+  function savedVideoStatus(candidateId) {
+    const person = findCandidate(candidateId);
+    if (person?.interviewScorecards?.some(card => Object.values(card.scores || {}).some(value => Number.isFinite(value) && value >= 1 && value <= 10))) return tr('已有逐题人工评分 · 点开查看', 'Human question scores saved · open to review');
+    const records = videoRecords(candidateId);
+    const scored = records.find(row => Object.values(row.aiInterview.analysis?.scores || {}).some(value => Number.isFinite(value)));
+    if (scored) return tr('已有 AI 参考评分 · 点开查看', 'AI advisory scores saved · open to review');
+    if (records.some(row => row.aiInterview.transcript?.some(item => item.speaker === 'candidate'))) return tr('回答已保存 · 待生成评分', 'Answers saved · scoring pending');
+    if (records.length) return tr('尚无候选人回答', 'No candidate answers saved');
+    return tr('尚未评分', 'Not rated');
+  }
+
+  function videoRecordsHtml(candidate) {
+    const records = videoRecords(candidate.id);
+    if (!records.length) return '';
+    const scoreLabels = { technicalSkill:'施工技术 / Technical skill', salesAbility:'销售能力 / Sales ability', communication:'业务沟通 / Communication', problemSolving:'问题解决 / Problem solving', execution:'执行力 / Execution', roleFit:'岗位匹配 / Role fit' };
+    const list = values => (values || []).map(value => `<li>${h(value)}</li>`).join('');
+    return `<section class="rec-profile-section"><h3>${tr('已保存的视频面试记录与 AI 参考评分', 'Saved video interview records & AI advisory scores')}</h3><p class="rec-note">${tr('回答原文、中文译文和 AI 分析分开展示；AI 评分不会覆盖人工评分。这里保存的是转写文字，不是可回放的录音。', 'Original answers, translations and AI analysis are separate. AI scores never replace human scores. These are saved transcripts, not playable audio recordings.')}</p>${records.map(meeting => {
+      const state = meeting.aiInterview, rows = state.transcript || [], analysis = state.analysis;
+      return `<details class="rec-profile-fold" open><summary>${h(when(meeting.startsAt))} · ${rows.length} ${tr('条文字记录', 'transcript entries')}</summary><div class="rec-profile-fold-body"><h4>${tr('AI 分析（不是候选人原话）', 'AI analysis (not candidate wording)')}</h4>${analysis ? `<p class="rec-note">${h(recordedWhen(analysis.generatedAt))} · ${h(analysis.generatedBy || '')} · ${analysis.mode === 'next' ? tr('阶段分析', 'Interim analysis') : tr('总结分析', 'Summary analysis')}</p><div class="rec-readable-text">${h(analysis.summary || '')}</div><div class="rec-score-grid">${Object.entries(scoreLabels).map(([key, title]) => `<div>${h(title)}: <strong>${Number.isFinite(analysis.scores?.[key]) ? h(analysis.scores[key]) + ' / 10' : tr('证据不足，未评分', 'Insufficient evidence; not scored')}</strong></div>`).join('')}</div><ul>${list(analysis.evidence)}</ul><h4>${tr('待核实事项', 'Open questions')}</h4><ul>${list(analysis.openQuestions)}</ul><ul>${list(analysis.limitations)}</ul>${(analysis.questionReviews || []).map(review => `<details><summary>${h(review.question || review.turnId)} · ${review.score == null ? tr('未评分', 'Not scored') : h(review.score) + ' / 10'}</summary><p>${h(review.answerSummary)}</p><ul>${list(review.evidence)}${list(review.strengths)}${list(review.openQuestions)}</ul></details>`).join('')}` : `<p class="rec-note">${tr('尚未生成 AI 评分；不代表记录丢失。', 'AI scoring has not been generated; this does not mean records were lost.')}</p>`}<p class="rec-note">${tr('文字记录已在服务器保存，可刷新后重新打开。', 'Transcript entries are saved on the server and can be reopened after refresh.')}</p>${rows.length ? `<details><summary>${tr('查看全部原文与中文译文', 'View all originals and Chinese translations')}</summary>${rows.map(row => `<article class="rec-internal-record"><h4>${h(row.speakerName || '')} · ${h(row.speaker === 'candidate' ? tr('候选人回答', 'Candidate answer') : ['ai', 'assistant'].includes(row.speaker) || row.source === 'openai_speech' ? tr('AI 提问（不计入回答）', 'AI question (not an answer)') : tr('面试官', 'Interviewer'))} · ${h(recordedWhen(row.createdAt))}</h4>${row.questionText ? `<p>${h(row.questionText)}</p>` : ''}<div class="rec-readable-text">${h(row.text || '')}</div>${row.translationZh ? `<p class="rec-note">${tr('中文译文', 'Chinese translation')}</p><div class="rec-readable-text">${h(row.translationZh)}</div>` : ''}</article>`).join('')}</details>` : `<p class="rec-missing">${tr('这场面试没有已保存的回答。不能据此生成评分。', 'No saved answers for this interview. Scores cannot be generated from missing answers.')}</p>`}</div></details>`;
+    }).join('')}</section>`;
+  }
+
+  function videoReviewActions(candidate) {
+    if (!canEdit()) return '';
+    return videoRecords(candidate.id).filter(row => row.aiInterview.transcript?.some(item => item.speaker === 'candidate' && item.text?.trim()))
+      .map(row => `<p>${h(when(row.startsAt))} ${action('analyze-saved-interview', row.id, tr('根据已保存回答生成 / 更新 AI 评分', 'Generate / update AI scores from saved answers'))}</p>`).join('');
+  }
+
+  async function analyzeSavedInterview(id, button) {
+    const meeting = interviews().find(row => row.id === id);
+    if (!meeting || !canEdit() || !checkIdentity() || busy) return;
+    const requestedIdentity = identity;
+    busy = true; button.disabled = true;
+    button.textContent = tr('正在分析已保存回答…', 'Analyzing saved answers…');
+    try {
+      await api(`/api/recruiting/interviews/${encodeURIComponent(id)}/video-analyze`, { method:'POST', body:JSON.stringify({ mode:'final' }), timeoutMs:180000 });
+      if (!checkIdentity() || identity !== requestedIdentity) return;
+      const refreshed = await load(true);
+      if (!refreshed) throw new Error(tr('分析请求已完成，但刷新失败，请重新打开档案核实。', 'Analysis completed but refresh failed. Reopen the profile to verify.'));
+      if (document.querySelector('[data-rec-dialog="profile"]')?.dataset.recId === meeting.candidateId) openCandidateProfile(meeting.candidateId);
+    } catch (cause) {
+      if (identity === requestedIdentity) dialogError(cause.message || tr('分析未完成；原文保留，请刷新查看后重试。', 'Analysis incomplete; original answers are preserved. Refresh before retrying.'));
+    } finally { busy = false; button.disabled = false; button.textContent = tr('根据已保存回答生成 / 更新 AI 评分', 'Generate / update AI scores from saved answers'); }
+  }
+
   function nextInterview(candidateId, mode = '') {
     const live = interviews().filter(item => item.candidateId === candidateId && (!mode || interviewMode(item) === mode) && ['scheduled', 'confirmed', 'arrived'].includes(item.status));
     const upcoming = live.filter(item => Date.parse(item.startsAt) >= Date.now()).sort((a, b) => Date.parse(a.startsAt) - Date.parse(b.startsAt));
@@ -406,7 +456,7 @@
     return `<p class="rec-order-note">${candidateSort === 'created' ? tr('按录入系统时间最近优先；录入时间不代表申请时间。', 'Sorted by latest system entry, not application date.') : tr('已核实申请日期最近优先；同日先列已知时刻，只有日期不推算时刻。申请日期未核实者单独列后，按录入时间最近优先。', 'Verified application dates, newest first. Within a day, known times appear first; date-only records have no assumed time. Unverified applications follow, sorted by latest system entry.')}</p><div class="rec-table-scroll"><table class="rec-table"><thead><tr><th>${tr('应聘者', 'Candidate')}</th><th>${tr('岗位 / 来源', 'Position / source')}</th><th>${tr('进展', 'Progress')}</th><th>${tr('申请时间 · 洛杉矶', 'Applied · Pacific')}</th><th>${tr('录入系统 · 洛杉矶', 'Entered · Pacific')}</th><th>${tr('面试时间 · 洛杉矶', 'Interview · Pacific')}</th><th>${tr('评分', 'Score')}</th><th>${tr('操作', 'Actions')}</th></tr></thead><tbody>${rows.map((item, index) => {
       const meeting = nextInterview(item.id), score = average(item), info = applicationInfo(item);
       const unknownBoundary = candidateSort === 'applied' && !info.verified && (index === 0 || applicationInfo(rows[index - 1]).verified);
-      return `${unknownBoundary ? `<tr class="rec-date-group"><th colspan="8">${tr('以下申请时间尚未核实 · 按录入系统时间排序，不代表最近投递', 'Application dates below are unverified · sorted by system entry, not recent application')}</th></tr>` : ''}<tr class="rec-candidate-row" tabindex="0" data-rec-action="profile" data-rec-id="${h(item.id)}" aria-label="${h(tr('查看应聘者档案：', 'View candidate profile: ') + item.name)}" aria-haspopup="dialog"><td><div class="rec-person"><span class="rec-avatar">${h(String(item.name || '?').trim().split(/\s+/).map(part => part[0]).slice(0, 2).join('').toUpperCase())}</span><div><button type="button" data-rec-action="profile" data-rec-id="${h(item.id)}">${h(item.name)}</button><span class="rec-muted">${h(item.phone || item.email || tr('联系方式待补充', 'Contact details needed'))}</span>${needsReply(item) ? `<span class="rec-pill warn">${tr('有新回复', 'Reply received')}</span>` : ''}</div></div></td><td>${h(item.position || '—')}<span class="rec-muted">${h(item.source || '—')}${item.location ? ` · ${h(item.location)}` : ''}</span></td><td>${pill(item.status)}</td><td class="rec-date-cell">${info.verified ? `<time datetime="${h(info.raw)}">${h(applicationWhen(info))}</time><span class="rec-muted">${tr('有来源依据', 'Source recorded')}</span>` : `<span class="rec-unverified-date">${tr('申请时间未核实', 'Application date unverified')}</span><span class="rec-muted">${tr('仅按录入时间辅助排序', 'System entry used for ordering only')}</span>`}</td><td class="rec-date-cell"><time datetime="${h(item.createdAt || '')}">${h(recordedWhen(item.createdAt))}</time><span class="rec-muted">${tr('录入 ≠ 投递', 'Entry ≠ application')}</span></td><td>${meeting ? `${h(when(meeting.startsAt))}<span class="rec-muted">${h(label(interviewStates, meeting.status))}</span>` : '<span class="rec-muted">—</span>'}</td><td>${score ? `<span class="rec-score">${score.number}<small> / 10</small></span><span class="rec-muted">${score.count}/6 ${tr('项已评', 'rated')}</span>` : `<span class="rec-muted">${tr('待面试', 'Not rated')}</span>`}</td><td><div class="rec-actions"><button class="rec-text-button" data-rec-action="messages" data-rec-id="${h(item.id)}">${tr('短信', 'SMS')}</button><button class="rec-text-button" data-rec-action="email-messages" data-rec-id="${h(item.id)}">${tr('邮件', 'Email')}</button>${canEdit() ? `<button class="rec-text-button" data-rec-action="${meeting ? 'edit-interview' : 'schedule'}" data-rec-id="${h(meeting?.id || item.id)}">${meeting ? tr('查看预约', 'Review interview') : tr('预约', 'Schedule')}</button>` : ''}</div></td></tr>`;
+      return `${unknownBoundary ? `<tr class="rec-date-group"><th colspan="8">${tr('以下申请时间尚未核实 · 按录入系统时间排序，不代表最近投递', 'Application dates below are unverified · sorted by system entry, not recent application')}</th></tr>` : ''}<tr class="rec-candidate-row" tabindex="0" data-rec-action="profile" data-rec-id="${h(item.id)}" aria-label="${h(tr('查看应聘者档案：', 'View candidate profile: ') + item.name)}" aria-haspopup="dialog"><td><div class="rec-person"><span class="rec-avatar">${h(String(item.name || '?').trim().split(/\s+/).map(part => part[0]).slice(0, 2).join('').toUpperCase())}</span><div><button type="button" data-rec-action="profile" data-rec-id="${h(item.id)}">${h(item.name)}</button><span class="rec-muted">${h(item.phone || item.email || tr('联系方式待补充', 'Contact details needed'))}</span>${needsReply(item) ? `<span class="rec-pill warn">${tr('有新回复', 'Reply received')}</span>` : ''}</div></div></td><td>${h(item.position || '—')}<span class="rec-muted">${h(item.source || '—')}${item.location ? ` · ${h(item.location)}` : ''}</span></td><td>${pill(item.status)}</td><td class="rec-date-cell">${info.verified ? `<time datetime="${h(info.raw)}">${h(applicationWhen(info))}</time><span class="rec-muted">${tr('有来源依据', 'Source recorded')}</span>` : `<span class="rec-unverified-date">${tr('申请时间未核实', 'Application date unverified')}</span><span class="rec-muted">${tr('仅按录入时间辅助排序', 'System entry used for ordering only')}</span>`}</td><td class="rec-date-cell"><time datetime="${h(item.createdAt || '')}">${h(recordedWhen(item.createdAt))}</time><span class="rec-muted">${tr('录入 ≠ 投递', 'Entry ≠ application')}</span></td><td>${meeting ? `${h(when(meeting.startsAt))}<span class="rec-muted">${h(label(interviewStates, meeting.status))}</span>` : '<span class="rec-muted">—</span>'}</td><td>${score ? `<span class="rec-score">${score.number}<small> / 10</small></span><span class="rec-muted">${score.count}/6 ${tr('项已评', 'rated')}</span>` : `<span class="rec-muted">${h(savedVideoStatus(item.id))}</span>`}</td><td><div class="rec-actions"><button class="rec-text-button" data-rec-action="messages" data-rec-id="${h(item.id)}">${tr('短信', 'SMS')}</button><button class="rec-text-button" data-rec-action="email-messages" data-rec-id="${h(item.id)}">${tr('邮件', 'Email')}</button>${canEdit() ? `<button class="rec-text-button" data-rec-action="${meeting ? 'edit-interview' : 'schedule'}" data-rec-id="${h(meeting?.id || item.id)}">${meeting ? tr('查看预约', 'Review interview') : tr('预约', 'Schedule')}</button>` : ''}</div></td></tr>`;
     }).join('')}</tbody></table></div>`;
   }
 
@@ -597,6 +647,10 @@
   }
 
   function internalInterviewRecordsHtml(c) {
+    return videoRecordsHtml(c) + videoReviewActions(c) + manualInterviewRecordsHtml(c);
+  }
+
+  function manualInterviewRecordsHtml(c) {
     const scores = dimensions.filter(([key]) => c.scores?.[key] != null).map(([key, zh, en]) =>
       `<div class="rec-score-row"><span>${h(tr(zh, en))}</span><strong>${h(c.scores[key])} / 10</strong></div>`).join('');
     return `<details class="rec-profile-fold"><summary>${tr('面试记录与评分（内部参考）', 'Interview records & scores (internal reference)')}</summary><div class="rec-profile-fold-body"><p class="rec-note">${tr('评分和面试记录独立于简历及译文，仅供人工招聘决策参考。', 'Interview notes and scores are separate from the resume and translation, and are advisory for human review.')}</p>${interviewScorecardsHtml(c)}${scores ? `<section class="rec-internal-record"><h4>${tr('已保存的六维评分', 'Saved six-dimension scores')}</h4>${scores}</section>` : ''}${String(c.scoreNotes || '').trim() ? `<section class="rec-internal-record"><h4>${tr('评分依据与待核实事项', 'Score evidence & items to verify')}</h4><div class="rec-readable-text" dir="auto">${h(c.scoreNotes)}</div></section>` : ''}</div></details>`;
@@ -1297,6 +1351,7 @@
       case 'refresh': load(true); break;
       case 'candidate': openCandidate(id); break;
       case 'profile': openCandidateProfile(id); break;
+      case 'analyze-saved-interview': analyzeSavedInterview(id, button); break;
       case 'interview-kit': openInterviewKit(id, button.dataset.recTemplateId || ''); break;
       case 'copy-interview-kit-zh': copyInterviewKit(button, 'zh'); break;
       case 'copy-interview-kit-en': copyInterviewKit(button, 'en'); break;

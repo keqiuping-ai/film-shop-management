@@ -115,7 +115,13 @@ async function startProvider() {
         res.end(JSON.stringify({ error: { message: `Provider echoed ${TEST_AI_KEY}` } }));
         return;
       }
-      const source = JSON.parse(body.messages[1].content).sourceText;
+      const parsedSource = JSON.parse(body.messages[1].content);
+      if (Array.isArray(parsedSource.transcript)) {
+        res.writeHead(200, { 'Content-Type':'application/json' });
+        res.end(JSON.stringify({choices:[{finish_reason:'stop',message:{content:JSON.stringify({summary:'SYNTHETIC INTERVIEW SUMMARY',scores:{salesAbility:8},evidence:['Synthetic trial order'],openQuestions:['Verify amount'],questionReviews:[]})}}]}));
+        return;
+      }
+      const source = parsedSource.sourceText;
       const en = body.messages[0].content.includes('American English');
       const tokens = source.match(/_+RECRUIT_FACT_[A-Z]+__/g) || [];
       if (en) assert.equal(tokens.length, 2, 'Synthetic English reply expects the whole protected time and street number');
@@ -733,6 +739,26 @@ async function run() {
   await testReminderService();
   testSmsOptOutEventOrdering();
   testPacificTimeConversion();
+
+  // A completed room must be reviewable independently of the video connection.
+  // Seed only this isolated temporary database, then exercise real HTTP persistence.
+  await stopServer();
+  const reviewDb = JSON.parse(fs.readFileSync(DB_PATH, 'utf8'));
+  reviewDb.recruitingInterviews.push({id:'synthetic-completed-review',candidateId:second.id,startsAt:new Date().toISOString(),status:'completed',mode:'online',aiInterview:{transcript:[
+    {id:'synthetic-saved-answer',speaker:'candidate',speakerName:'DEMO / Jordan Installer',text:'SYNTHETIC ORIGINAL: I won a trial order.',translationZh:'模拟中文：我获得一个试单。',createdAt:new Date().toISOString()}
+  ]}});
+  fs.writeFileSync(DB_PATH, JSON.stringify(reviewDb));
+  await startServer();
+  const reviewOwner = await login('owner');
+  await expectStatus('/api/recruiting/interviews/synthetic-completed-review/video-analyze', {token:reviewOwner,method:'POST',body:{mode:'final'}}, 200, 'Completed interview can be scored after leaving the room');
+  await stopServer(); await startServer();
+  const afterRestart = await login('owner');
+  const restored = await expectStatus('/api/recruiting', {token:afterRestart}, 200, 'Interview records load after actual server restart');
+  const review = restored.interviews.find(row => row.id === 'synthetic-completed-review');
+  check(review.aiInterview.transcript[0].text.includes('SYNTHETIC ORIGINAL'), 'Original answer survives restart');
+  check(review.aiInterview.transcript[0].translationZh === '模拟中文：我获得一个试单。', 'Chinese translation survives restart');
+  check(review.aiInterview.analysis.scores.salesAbility === 8, 'AI scores survive restart and return to recruiting center');
+  check(review.status === 'completed', 'Review never reopens completed interview');
 
   console.log(`Recruiting integration tests passed: ${checks} checks. All SMS used loopback fixtures; production data untouched.`);
   if (PREVIEW) {
