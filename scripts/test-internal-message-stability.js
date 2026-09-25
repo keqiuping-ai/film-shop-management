@@ -50,8 +50,8 @@ async function run() {
   assert.match(appSource, /captureMessageThreadScrollAnchor/, 'Message refresh must preserve the visible message anchor');
   assert.match(appSource, /\[0, 80, 180\]\.forEach/, 'Late timers must not keep moving the thread after the user starts reading');
   assert.match(appSource, /api\('\/api\/messages', \{ timeoutMs: 30000 \}\)/, 'Open chat must refresh from the dedicated durable messages endpoint');
-  assert(indexSource.includes('/app.js?v=146'), 'Desktop app asset marker must be bumped');
-  assert(serviceWorker.includes('film-shop-v123-internal-message-stability'), 'Service worker cache must be bumped');
+  assert(indexSource.includes('/app.js?v=147'), 'Desktop app asset marker must be bumped');
+  assert(serviceWorker.includes('film-shop-v124-customer-selection'), 'Service worker cache must be bumped');
 
   child = spawn(process.execPath, ['server.js'], {
     cwd: root,

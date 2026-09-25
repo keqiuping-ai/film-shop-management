@@ -652,6 +652,81 @@ textarea { min-height: 78px; resize: vertical; }
 .prospect-dialog-section {
   margin: 4px 0 14px;
 }
+.existing-customer-picker {
+  margin: 0 0 16px;
+  padding: 14px;
+  border: 1px solid #b9dce2;
+  border-radius: 10px;
+  background: #f5fbfc;
+}
+.existing-customer-picker-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 10px;
+}
+.existing-customer-picker-head strong,
+.existing-customer-picker-head small { display: block; }
+.existing-customer-picker-head strong { color: var(--ink); font-size: 15px; }
+.existing-customer-picker-head small { margin-top: 4px; color: var(--muted); line-height: 1.45; }
+.existing-customer-search-wrap { position: relative; }
+.existing-customer-search-results {
+  display: none;
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 5px);
+  right: 0;
+  left: 0;
+  max-height: 310px;
+  overflow: auto;
+  border: 1px solid #bfd5da;
+  border-radius: 9px;
+  background: #fff;
+  box-shadow: 0 14px 34px rgba(15, 23, 42, .16);
+}
+.existing-customer-search-results.open { display: block; }
+.existing-customer-result {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 11px 13px;
+  border: 0;
+  border-bottom: 1px solid #e5ecef;
+  background: #fff;
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+}
+.existing-customer-result:last-child { border-bottom: 0; }
+.existing-customer-result:hover,
+.existing-customer-result.active { background: #eaf7f9; }
+.existing-customer-result span,
+.existing-customer-result strong,
+.existing-customer-result small { display: block; }
+.existing-customer-result small { margin-top: 3px; color: var(--muted); }
+.existing-customer-result em { flex: 0 0 auto; color: var(--accent); font-size: 11px; font-style: normal; font-weight: 750; }
+.existing-customer-empty { padding: 13px; color: var(--muted); }
+.existing-customer-selection {
+  display: grid;
+  gap: 3px;
+  margin-top: 10px;
+  padding: 9px 11px;
+  border-radius: 7px;
+  background: #e9f5ef;
+  color: #246748;
+  line-height: 1.4;
+}
+.existing-customer-selection span,
+.existing-customer-selection small { color: #4f6f63; }
+@media (max-width: 720px) {
+  .existing-customer-picker-head,
+  .existing-customer-result { align-items: stretch; flex-direction: column; }
+  .existing-customer-picker-head .btn { width: 100%; }
+  .existing-customer-result em { flex-basis: auto; }
+}
 .prospect-conversation {
   border: 1px solid #d7e3ec;
   border-radius: 10px;

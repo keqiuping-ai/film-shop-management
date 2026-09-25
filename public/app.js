@@ -122,6 +122,7 @@ let aiCoachStream = null;
 let aiCoachChunks = [];
 let customerTaskFilter = 'all';
 let prospectSearch = '';
+let prospectFormExistingSelection = null;
 let warrantySearch = '';
 let warrantyDraftPhotos = [];
 const prospectWorkspaceDrafts = new Map();
@@ -10112,6 +10113,7 @@ function openWorkshopConsumeBatch() {
 }
 
 function openProspect(id, collection = 'prospects') {
+  prospectFormExistingSelection = null;
   const item = (state[collection] || []).find(x => x.id === id) || {
     date: today(),
     source: 'Yelp',
@@ -10132,10 +10134,11 @@ function openProspect(id, collection = 'prospects') {
     conversationMessages: [],
     note: ''
   };
+  const isNewCustomerConversation = collection === 'customerConversations' && !id;
   const mainFields = [
     ['date',t('date'),'date',item.date],
     ['source',t('source'),'select',item.source || 'Yelp', leadSourceOptions()],
-    ['customer',t('customer'),'text',item.customer],
+    ['customer',isNewCustomerConversation ? `${t('customer')} *` : t('customer'),'text',item.customer],
     ['phone',lang === 'zh' ? '电话' : 'Phone','text',item.phone],
     ['vehicle',t('vehicle'),'text',item.vehicle],
     ['need',t('vehicleNeed'),'text',item.need],
@@ -10152,19 +10155,34 @@ function openProspect(id, collection = 'prospects') {
     ['chatTranslation',lang === 'zh' ? '中文整理' : 'Chinese Summary','textarea',item.chatTranslation || '', null, 'wide raw-conversation-field'],
     ['note',t('note'),'textarea',item.note || '', null, 'wide']
   ];
-  const conversationPanel = `<div class="wide prospect-dialog-section">${prospectConversationPreview(item)}</div>`;
+  const conversationPanel = `<div id="prospectDialogConversation" class="wide prospect-dialog-section">${prospectConversationPreview(item)}</div>`;
   const recordLabel = collection === 'customerConversations' ? (lang === 'zh' ? '客户交流' : 'Customer Conversation') : (lang === 'zh' ? '预约到店客户' : 'Appointment / Arrival Customer');
-  openModal(id ? `${lang === 'zh' ? '编辑' : 'Edit'} ${recordLabel}` : `${lang === 'zh' ? '新增' : 'New'} ${recordLabel}`, formHtml(mainFields) + conversationPanel + formHtml(detailFields), () => {
+  const existingCustomerPicker = isNewCustomerConversation ? existingCustomerPickerHtml() : '';
+  openModal(id ? `${lang === 'zh' ? '编辑' : 'Edit'} ${recordLabel}` : `${lang === 'zh' ? '新增' : 'New'} ${recordLabel}`, existingCustomerPicker + formHtml(mainFields) + conversationPanel + formHtml(detailFields), () => {
     const data = readForm(['date','source','customer','phone','vehicle','need','service','appointmentDate','appointmentTime','ownerId','intentLevel','status','intentReason','chatContext','chatTranslation','note']);
     const rep = (state.customerServiceReps || []).find(x => x.id === data.ownerId);
     data.ownerName = rep ? rep.name : '';
-    data.conversationMessages = item.conversationMessages || [];
+    data.customer = String(data.customer || '').trim();
+    data.conversationMessages = prospectFormExistingSelection?.conversationMessages || item.conversationMessages || [];
     ['importSource','sourceDevice','externalId','profileUrl','createdAt','importedAt'].forEach(key => {
-      if (item[key]) data[key] = item[key];
+      const sourceValue = prospectFormExistingSelection?.[key] || item[key];
+      if (sourceValue) data[key] = sourceValue;
     });
+    if (isNewCustomerConversation && !data.customer) return alert(lang === 'zh' ? '新增客户必须填写客户姓名，不能只填写电话。' : 'Customer name is required for a new customer.');
     if (!data.customer && !data.phone) return alert(lang === 'zh' ? '客户姓名或电话至少填写一个。' : 'Please enter at least a customer name or phone.');
-    return saveRecord(collection, id, data);
+    return saveRecord(collection, id, data, {
+      openSavedCustomer: isNewCustomerConversation,
+      selectedCustomer: prospectFormExistingSelection
+    });
   });
+  if (isNewCustomerConversation) {
+    const customerInput = document.getElementById('customer');
+    if (customerInput) {
+      customerInput.required = true;
+      customerInput.setAttribute('aria-required', 'true');
+    }
+    renderExistingCustomerSearch('');
+  }
   const jobAction = document.getElementById('modalHeaderAction');
   const existingJob = collection === 'prospects' && id
     ? (state.jobs || []).find(job => job.id === item.convertedJobId || job.sourceProspectId === item.id)
@@ -10177,6 +10195,138 @@ function openProspect(id, collection = 'prospects') {
       : (lang === 'zh' ? '创建施工单' : 'Create job');
     jobAction.onclick = () => openJobFromProspect(item.id);
   }
+}
+
+function existingCustomerLookupEntries() {
+  const rows = [
+    ...(state.customerConversations || []).map(item => ({ ...item, _collection: 'customerConversations' })),
+    ...(state.prospects || []).map(item => ({ ...item, _collection: 'prospects' })),
+    ...(state.jobs || []).map(item => ({
+      ...item,
+      customer: item.customer || item.customerName || '',
+      phone: item.phone || item.customerPhone || '',
+      vehicle: item.vehicle || [item.vehicleYear, item.vehicleMake, item.vehicleModel].filter(Boolean).join(' '),
+      _collection: 'jobs'
+    })),
+    ...(state.warranties || []).map(item => ({
+      ...item,
+      customer: item.customer || item.customerName || '',
+      phone: item.phone || item.customerPhone || '',
+      vehicle: item.vehicle || [item.vehicleYear, item.vehicleMake, item.vehicleModel].filter(Boolean).join(' '),
+      _collection: 'warranties'
+    }))
+  ].filter(item => String(item.customer || '').trim());
+  const grouped = new Map();
+  rows.forEach(item => {
+    const sourcePriority = ({ customerConversations: 4, prospects: 3, jobs: 2, warranties: 1 })[item._collection] || 0;
+    const phoneKey = customerPhoneMatchKey(item.phone || '');
+    const nameKey = normalizeCustomerLookupText(item.customer || '');
+    const vehicleKey = normalizeCustomerLookupText(item.vehicle || '');
+    const identity = phoneKey ? `phone:${phoneKey}` : `name:${nameKey}|vehicle:${vehicleKey}`;
+    if (!identity || identity === 'name:|vehicle:') return;
+    const existing = grouped.get(identity);
+    const activityAt = String(item.updatedAt || item.importedAt || item.createdAt || item.date || '');
+    if (!existing) {
+      grouped.set(identity, {
+        key: identity,
+        customer: String(item.customer || '').trim(),
+        phone: String(item.phone || '').trim(),
+        vehicle: String(item.vehicle || '').trim(),
+        historyCount: 1,
+        messageCount: Array.isArray(item.conversationMessages) ? item.conversationMessages.length : 0,
+        latestAt: activityAt,
+        sourcePriority,
+        item
+      });
+      return;
+    }
+    existing.historyCount += 1;
+    existing.messageCount += Array.isArray(item.conversationMessages) ? item.conversationMessages.length : 0;
+    existing.customer ||= String(item.customer || '').trim();
+    existing.phone ||= String(item.phone || '').trim();
+    existing.vehicle ||= String(item.vehicle || '').trim();
+    if (sourcePriority > existing.sourcePriority
+      || (sourcePriority === existing.sourcePriority && activityAt > existing.latestAt)
+      || (!existing.item.conversationMessages?.length && item.conversationMessages?.length)) {
+      existing.latestAt = activityAt;
+      existing.sourcePriority = sourcePriority;
+      existing.item = { ...item, customer: existing.customer, phone: existing.phone, vehicle: existing.vehicle };
+    }
+  });
+  return [...grouped.values()].sort((a, b) => b.latestAt.localeCompare(a.latestAt));
+}
+
+function existingCustomerPickerHtml() {
+  return `<section class="existing-customer-picker wide">
+    <div class="existing-customer-picker-head">
+      <div><strong>${lang === 'zh' ? '查找现有客户' : 'Find an existing customer'}</strong><small>${lang === 'zh' ? '按姓名、电话或车型搜索；选择后会自动带入客户资料和历史记录。' : 'Search by name, phone, or vehicle. Selecting a customer fills their profile and history.'}</small></div>
+      <button class="btn" type="button" onclick="clearExistingCustomerSelection()">${lang === 'zh' ? '按新客户录入' : 'Enter as new'}</button>
+    </div>
+    <div class="existing-customer-search-wrap">
+      <input id="existingCustomerSearch" type="search" autocomplete="off" placeholder="${lang === 'zh' ? '输入姓名、电话或车型…' : 'Name, phone, or vehicle…'}" oninput="renderExistingCustomerSearch(this.value)" onfocus="renderExistingCustomerSearch(this.value)" onkeydown="handleExistingCustomerSearchKey(event)">
+      <div id="existingCustomerSearchResults" class="existing-customer-search-results"></div>
+    </div>
+    <div id="existingCustomerSelection" class="existing-customer-selection">${lang === 'zh' ? '尚未选择现有客户；可继续手动新增。' : 'No existing customer selected; you can continue entering a new customer.'}</div>
+  </section>`;
+}
+
+function renderExistingCustomerSearch(query = '') {
+  const results = document.getElementById('existingCustomerSearchResults');
+  if (!results) return;
+  const keyword = normalizeCustomerLookupText(query);
+  const rows = existingCustomerLookupEntries().filter(row => !keyword || normalizeCustomerLookupText([
+    row.customer, row.phone, row.vehicle, row.item.need, row.item.service, row.item.note
+  ].join(' ')).includes(keyword)).slice(0, 12);
+  results.innerHTML = rows.length ? rows.map((row, index) => `<button type="button" class="existing-customer-result${index === 0 ? ' active' : ''}" data-customer-key="${escapeHtml(row.key)}" onmousedown="event.preventDefault();selectExistingCustomerForProspect(this.dataset.customerKey)">
+    <span><strong>${escapeHtml(row.customer)}</strong><small>${escapeHtml([row.phone, row.vehicle].filter(Boolean).join(' · ') || (lang === 'zh' ? '暂无电话和车型' : 'No phone or vehicle'))}</small></span>
+    <em>${lang === 'zh' ? `${row.historyCount} 条资料 · ${row.messageCount} 条消息` : `${row.historyCount} records · ${row.messageCount} messages`}</em>
+  </button>`).join('') : `<div class="existing-customer-empty">${lang === 'zh' ? '没有找到现有客户，可继续手动新增。' : 'No existing customer found. Continue entering a new customer.'}</div>`;
+  results.classList.add('open');
+}
+
+function handleExistingCustomerSearchKey(event) {
+  if (event.key === 'Escape') return document.getElementById('existingCustomerSearchResults')?.classList.remove('open');
+  if (event.key !== 'Enter') return;
+  event.preventDefault();
+  document.querySelector('#existingCustomerSearchResults .existing-customer-result.active')?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+}
+
+function setProspectFormField(id, value) {
+  const field = document.getElementById(id);
+  if (field && value !== undefined && value !== null && String(value) !== '') field.value = String(value);
+}
+
+function selectExistingCustomerForProspect(key) {
+  const row = existingCustomerLookupEntries().find(entry => entry.key === key);
+  if (!row) return;
+  const item = row.item;
+  prospectFormExistingSelection = { ...item, _lookupKey: key, _collection: item._collection };
+  setProspectFormField('customer', row.customer);
+  setProspectFormField('phone', row.phone);
+  setProspectFormField('vehicle', row.vehicle);
+  ['source','need','service','ownerId','intentLevel','intentReason','chatContext','chatTranslation','note'].forEach(id => setProspectFormField(id, item[id]));
+  const selection = document.getElementById('existingCustomerSelection');
+  if (selection) selection.innerHTML = `<strong>✓ ${escapeHtml(row.customer)}</strong><span>${escapeHtml([row.phone, row.vehicle].filter(Boolean).join(' · '))}</span><small>${lang === 'zh' ? `已带入 ${row.historyCount} 条历史资料和 ${row.messageCount} 条交流消息；保存后会打开此客户。` : `${row.historyCount} history records and ${row.messageCount} messages loaded. The saved customer will open next.`}</small>`;
+  const search = document.getElementById('existingCustomerSearch');
+  if (search) search.value = row.customer;
+  const conversation = document.getElementById('prospectDialogConversation');
+  if (conversation) conversation.innerHTML = prospectConversationPreview(item);
+  document.getElementById('existingCustomerSearchResults')?.classList.remove('open');
+}
+
+function clearExistingCustomerSelection() {
+  prospectFormExistingSelection = null;
+  ['customer','phone','vehicle','need','intentReason','chatContext','chatTranslation','note'].forEach(id => {
+    const field = document.getElementById(id);
+    if (field) field.value = '';
+  });
+  const search = document.getElementById('existingCustomerSearch');
+  if (search) search.value = '';
+  const selection = document.getElementById('existingCustomerSelection');
+  if (selection) selection.textContent = lang === 'zh' ? '已切换为手动新增客户；客户姓名为必填。' : 'Switched to a new customer. Customer name is required.';
+  const conversation = document.getElementById('prospectDialogConversation');
+  if (conversation) conversation.innerHTML = prospectConversationPreview({ conversationMessages: [] });
+  renderExistingCustomerSearch('');
 }
 
 function openLead(id) {
@@ -10973,20 +11123,35 @@ async function runModalSave(onSave) {
   }
 }
 
-async function saveRecord(collection, id, data) {
+async function saveRecord(collection, id, data, options = {}) {
   setModalSaveState('saving');
   try {
+    const previousIds = new Set((state[collection] || []).map(row => row.id));
     const body = await api(`/api/${collection}${id ? `/${id}` : ''}`, {
       method: id ? 'PUT' : 'POST',
       body: JSON.stringify(data)
     });
     state = body;
+    let savedRecord = id ? (state[collection] || []).find(row => row.id === id) : null;
+    if (!savedRecord) savedRecord = (state[collection] || []).find(row => !previousIds.has(row.id));
+    if (!savedRecord && options.selectedCustomer?._collection === collection) {
+      savedRecord = (state[collection] || []).find(row => row.id === options.selectedCustomer.id);
+    }
+    if (!savedRecord && collection === 'customerConversations') {
+      const phoneKey = customerPhoneMatchKey(data.phone || '');
+      const nameKey = normalizeCustomerLookupText(data.customer || '');
+      savedRecord = [...(state[collection] || [])]
+        .filter(row => (phoneKey && customerPhoneMatchKey(row.phone || '') === phoneKey)
+          || (nameKey && normalizeCustomerLookupText(row.customer || '') === nameKey))
+        .sort((a, b) => String(b.updatedAt || b.createdAt || '').localeCompare(String(a.updatedAt || a.createdAt || '')))[0];
+    }
     broadcastDataChange();
     setModalSaveState('success');
     showActionFeedback(lang === 'zh' ? '保存成功' : 'Saved successfully');
     await new Promise(resolve => setTimeout(resolve, 550));
     closeModal();
     render();
+    if (options.openSavedCustomer && savedRecord?.id) openProspectWorkspace(collection, savedRecord.id);
     return { saved: true, feedbackShown: true };
   } catch (err) {
     setModalSaveState('idle');

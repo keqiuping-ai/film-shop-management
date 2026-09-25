@@ -11931,6 +11931,11 @@ async function api(req, res) {
     }
     if (collection === 'prospects' || collection === 'customerConversations') {
       const now = new Date().toISOString();
+      item.customer = String(item.customer || '').trim().slice(0, 160);
+      item.phone = String(item.phone || '').trim().slice(0, 80);
+      if (collection === 'customerConversations' && !item.customer) {
+        return send(res, 400, { error: '新增客户必须填写客户姓名，不能只填写电话' });
+      }
       enrichCustomerIdentity(db, item);
       item.createdAt = item.createdAt || now;
       item.importedAt = item.importedAt || now;
