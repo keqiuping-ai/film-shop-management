@@ -50,8 +50,13 @@ async function run() {
   assert.match(appSource, /captureMessageThreadScrollAnchor/, 'Message refresh must preserve the visible message anchor');
   assert.match(appSource, /\[0, 80, 180\]\.forEach/, 'Late timers must not keep moving the thread after the user starts reading');
   assert.match(appSource, /api\('\/api\/messages', \{ timeoutMs: 30000 \}\)/, 'Open chat must refresh from the dedicated durable messages endpoint');
-  assert(indexSource.includes('/app.js?v=147'), 'Desktop app asset marker must be bumped');
-  assert(serviceWorker.includes('film-shop-v124-customer-selection'), 'Service worker cache must be bumped');
+  assert.match(appSource, /const internalMessageSendQueue = new Map\(\)/, 'Text sends must use a queue that survives state replacement');
+  assert.match(appSource, /internalMessageSendQueue\.set\(pendingId, pendingMessage\)/, 'Text must be rendered optimistically before the request finishes');
+  assert.match(appSource, /正在发送…/, 'Pending text must show a visible sending status');
+  assert.match(appSource, /visibleMessagesBeforeRefresh\.length && !visibleMessagesAfterRefresh\.length/, 'Transient empty refreshes must preserve a visible thread');
+  assert.match(appSource, /visibleMessagesBeforeRead\.length && !visibleMessagesAfterRead\.length/, 'A transient empty read response must preserve a visible thread');
+  assert(indexSource.includes('/app.js?v=148'), 'Desktop app asset marker must be bumped');
+  assert(serviceWorker.includes('film-shop-v125-message-send-stability'), 'Service worker cache must be bumped');
 
   child = spawn(process.execPath, ['server.js'], {
     cwd: root,

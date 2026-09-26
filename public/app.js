@@ -100,6 +100,10 @@ let internalMessagePendingImage = null;
 // stay separate from the server snapshot so realtime refreshes cannot make an
 // in-flight upload disappear.
 const internalMessageUploadQueue = new Map();
+// Keep optimistic text sends outside the server snapshot. Bootstrap, read-state
+// updates and message polling may replace `state` while a slow send is still in
+// flight; a separate queue keeps the just-sent bubble visible until confirmed.
+const internalMessageSendQueue = new Map();
 let activeProspectWorkspaceId = '';
 let prospectWorkspaceReadOnly = false;
 let prospectWorkspaceSyncTimer = null;
@@ -1949,8 +1953,17 @@ async function refreshInternalMessages() {
     try {
       const result = await api('/api/messages', { timeoutMs: 30000 });
       if (!state || activeMessageUserId !== threadId) return;
-      state.messages = Array.isArray(result.messages) ? result.messages : state.messages;
-      state.messageUsers = Array.isArray(result.users) ? result.users : state.messageUsers;
+      const incomingMessages = Array.isArray(result.messages) ? result.messages : null;
+      const visibleMessagesBeforeRefresh = messageThreadMessagesForState(state, threadId);
+      const visibleMessagesAfterRefresh = messageThreadMessagesForState({ messages: incomingMessages || [] }, threadId);
+      // A transient empty response must never erase a thread that is already on
+      // screen. Keep the durable local snapshot and let the next poll reconcile.
+      if (incomingMessages && !(visibleMessagesBeforeRefresh.length && !visibleMessagesAfterRefresh.length)) {
+        state.messages = incomingMessages;
+      }
+      if (Array.isArray(result.users) && (result.users.length || !(state.messageUsers || []).length)) {
+        state.messageUsers = result.users;
+      }
       if (document.getElementById('modal')?.classList.contains('message-modal-open') && !internalMessageInputActive()) {
         renderMessageModal();
       }
@@ -2250,12 +2263,16 @@ window.getQuadCallContext = () => ({ user, state });
 window.setQuadCallState = value => { state = value; };
 
 function conversationMessages(otherUserId) {
-  const queued = [...internalMessageUploadQueue.values()];
-  const withQueued = messages => [...messages, ...queued.filter(message => {
+  const queued = [...internalMessageSendQueue.values(), ...internalMessageUploadQueue.values()];
+  const withQueued = messages => {
+    const persistedRequestIds = new Set(messages.map(message => String(message.clientRequestId || '')).filter(Boolean));
+    return [...messages, ...queued.filter(message => {
+      if (persistedRequestIds.has(String(message.clientRequestId || message.id || ''))) return false;
     if (otherUserId === GROUP_CHAT_ID) return message.groupId === 'all-staff';
     if (otherUserId === CUSTOMER_CODEX_ID) return message.groupId === CUSTOMER_CODEX_GROUP_ID;
     return message.toUserId === otherUserId;
-  })];
+    })];
+  };
   if (otherUserId === GROUP_CHAT_ID) {
     return withQueued((state.messages || []).filter(message => message.groupId === 'all-staff'))
       .sort((a, b) => String(a.createdAt || '').localeCompare(String(b.createdAt || '')));
@@ -2289,12 +2306,12 @@ function messageBubbleHtml(message) {
   return `<div class="message-row ${mine ? 'mine' : 'theirs'}" data-message-id="${escapeHtml(message.id || '')}">
     <div class="message-row-avatar">${userAvatarHtml(sender, 'small')}</div>
     <div class="message-bubble ${mine ? 'mine' : 'theirs'} ${attachmentOnly ? 'attachment-only' : ''}">
-      ${message.pending ? (message.failed ? `<button class="message-retry" type="button" onclick="retryInternalMessageUpload('${message.id}')">${lang === 'zh' ? '重试' : 'Retry'}</button>` : '') : `<button class="message-delete" type="button" title="${lang === 'zh' ? '删除/撤销' : 'Delete'}" onclick="deleteMessage('${message.id}')">×</button>`}
+      ${message.pending ? (message.failed ? `<button class="message-retry" type="button" onclick="${message.queueType === 'text' ? 'retryInternalMessageSend' : 'retryInternalMessageUpload'}('${message.id}')">${lang === 'zh' ? '重试' : 'Retry'}</button>` : '') : `<button class="message-delete" type="button" title="${lang === 'zh' ? '删除/撤销' : 'Delete'}" onclick="deleteMessage('${message.id}')">×</button>`}
       <div class="message-sender-name">${escapeHtml(mine ? (user?.name || (lang === 'zh' ? '我' : 'Me')) : (message.fromName || ''))}</div>
       ${message.text ? `<div class="message-text">${escapeHtml(message.text || '')}</div>` : ''}
       ${aiTranslation ? `<div class="message-ai-translation" lang="${translationLanguage}"><span>${translationLabel}</span>${escapeHtml(aiTranslation)}</div>` : ''}
       ${messageAttachmentHtml(message.attachment)}
-      <small>${escapeHtml(time)}${message.pending ? ` · ${message.failed ? (lang === 'zh' ? '发送失败，可重试' : 'Failed, tap retry') : (lang === 'zh' ? 'AI 翻译并发送中…' : 'AI translating and sending…')}` : readStatus}</small>
+      <small>${escapeHtml(time)}${message.pending ? ` · ${message.failed ? (lang === 'zh' ? '发送失败，可重试' : 'Failed, tap retry') : (message.queueType === 'upload' ? (lang === 'zh' ? '正在上传并发送…' : 'Uploading and sending…') : (lang === 'zh' ? '正在发送…' : 'Sending…'))}` : readStatus}</small>
     </div>
   </div>`;
 }
@@ -2415,12 +2432,21 @@ async function markMessagesRead(fromUserId, options = {}) {
     renderMessageModal(undefined, { forceLatest:Boolean(options.forceLatest) });
   }
   try {
-    state = await api('/api/messages/read', {
+    const messagesBeforeRead = state.messages;
+    const usersBeforeRead = state.messageUsers;
+    const nextState = await api('/api/messages/read', {
       method: 'PUT',
       body: JSON.stringify(fromUserId === GROUP_CHAT_ID
         ? { groupId: 'all-staff' }
         : (fromUserId === CUSTOMER_CODEX_ID ? { groupId: CUSTOMER_CODEX_GROUP_ID } : { fromUserId }))
     });
+    const visibleMessagesBeforeRead = messageThreadMessagesForState({ messages: messagesBeforeRead }, fromUserId);
+    const visibleMessagesAfterRead = messageThreadMessagesForState(nextState, fromUserId);
+    if (visibleMessagesBeforeRead.length && !visibleMessagesAfterRead.length) {
+      nextState.messages = messagesBeforeRead;
+      nextState.messageUsers = usersBeforeRead;
+    }
+    state = nextState;
     updateMessageBadge();
     if (document.getElementById('modal')?.classList.contains('open') && !internalMessageInputActive()) {
       renderMessageModal(undefined, { forceLatest:Boolean(options.forceLatest) });
@@ -2437,7 +2463,7 @@ async function sendInternalMessage() {
   if (!activeMessageUserId || (!text && !pendingImage?.file)) return;
   input.value = '';
   if (!pendingImage?.file) {
-    await postInternalMessage({ text, restoreTextOnError: true });
+    await postInternalMessage({ text });
     return;
   }
   const file = pendingImage.file;
@@ -2454,7 +2480,7 @@ function queueInternalMessageUpload({ file, kind, text = '', previewUrl = '', re
   const pendingId = `upload-${Date.now()}-${Math.random().toString(36).slice(2)}`;
   const localUrl = previewUrl || URL.createObjectURL(file);
   internalMessageUploadQueue.set(pendingId, {
-    id: pendingId, pending: true, failed: false, file, kind, localUrl,
+    id: pendingId, clientRequestId: pendingId, queueType: 'upload', pending: true, failed: false, file, kind, localUrl,
     scope: isGroup ? 'group' : 'direct', groupId: isGroup ? groupId : '',
     fromUserId: user?.id, fromName: user?.name || user?.email || '',
     toUserId: isGroup ? '' : recipientId, text: String(text || '').trim(),
@@ -2504,7 +2530,7 @@ function retryInternalMessageUpload(pendingId) {
   void runInternalMessageUpload(pendingId);
 }
 
-async function postInternalMessage({ text = '', attachment = null, restoreTextOnError = false }) {
+async function postInternalMessage({ text = '', attachment = null }) {
   if (!activeMessageUserId || (!String(text || '').trim() && !attachment)) return false;
   const recipientId = activeMessageUserId;
   const isGroup = recipientId === GROUP_CHAT_ID || recipientId === CUSTOMER_CODEX_ID;
@@ -2512,6 +2538,8 @@ async function postInternalMessage({ text = '', attachment = null, restoreTextOn
   const pendingId = `pending-${Date.now()}-${Math.random().toString(36).slice(2)}`;
   const pendingMessage = {
     id: pendingId,
+    clientRequestId: pendingId,
+    queueType: 'text',
     pending: true,
     scope: isGroup ? 'group' : 'direct',
     groupId: isGroup ? groupId : '',
@@ -2524,29 +2552,44 @@ async function postInternalMessage({ text = '', attachment = null, restoreTextOn
     readAt: '',
     readByUserIds: isGroup ? [user?.id] : []
   };
-  state.messages = [...(state.messages || []), pendingMessage];
+  internalMessageSendQueue.set(pendingId, pendingMessage);
   renderMessageModal(undefined, { forceLatest:true });
+  return runInternalMessageSend(pendingId);
+}
+
+async function runInternalMessageSend(pendingId) {
+  const pendingMessage = internalMessageSendQueue.get(pendingId);
+  if (!pendingMessage) return false;
+  pendingMessage.failed = false;
+  pendingMessage.error = '';
+  if (document.getElementById('messageThread')) renderMessageModal(undefined, { forceLatest:true });
   try {
-    state = await api('/api/messages', {
+    const result = await api('/api/messages', {
       method: 'POST',
-      body: JSON.stringify(isGroup
-        ? { groupId, text: String(text || '').trim(), attachment, clientRequestId: pendingId }
-        : { toUserId: recipientId, text: String(text || '').trim(), attachment, clientRequestId: pendingId })
+      body: JSON.stringify(pendingMessage.scope === 'group'
+        ? { groupId: pendingMessage.groupId, text: pendingMessage.text, attachment: pendingMessage.attachment, clientRequestId: pendingId }
+        : { toUserId: pendingMessage.toUserId, text: pendingMessage.text, attachment: pendingMessage.attachment, clientRequestId: pendingId })
     });
+    state = result;
+    internalMessageSendQueue.delete(pendingId);
     broadcastDataChange();
     if (!internalMessageInputActive()) renderMessageModal(undefined, { forceLatest:true });
     updateMessageBadge();
     return true;
   } catch (err) {
-    state.messages = (state.messages || []).filter(message => message.id !== pendingId);
-    if (restoreTextOnError) {
-      const input = document.getElementById('messageText');
-      if (input && !input.value) input.value = String(text || '');
-    }
-    renderMessageModal();
-    alert(err.message);
+    pendingMessage.failed = true;
+    pendingMessage.error = String(err?.message || err || '');
+    if (document.getElementById('messageThread')) renderMessageModal(undefined, { forceLatest:true });
     return false;
   }
+}
+
+function retryInternalMessageSend(pendingId) {
+  const queued = internalMessageSendQueue.get(pendingId);
+  if (!queued) return;
+  queued.failed = false;
+  renderMessageModal(undefined, { forceLatest:true });
+  void runInternalMessageSend(pendingId);
 }
 
 async function sendMessageFile(file, kind) {

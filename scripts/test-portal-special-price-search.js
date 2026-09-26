@@ -29,6 +29,6 @@ assert(editorBlock.includes('搜索 SKU、型号、名称或规格'), 'Chinese s
 assert(editorBlock.includes("document.querySelectorAll('.portal-price-input')"), 'Saving must still collect visible and filtered-out price inputs');
 assert(styles.includes('.portal-special-price-search'), 'Special price search controls must be styled');
 assert(styles.includes('.portal-special-price-table tr[hidden]{display:none}'), 'Filtered rows must be visually hidden');
-assert(html.includes('/app.js?v=147') && html.includes('/styles.css?v=99'), 'Desktop assets must be cache-busted');
+assert(html.includes('/app.js?v=148') && html.includes('/styles.css?v=99'), 'Desktop assets must be cache-busted');
 
 console.log('Portal customer special-price SKU/model/name search checks passed.');
