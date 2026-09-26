@@ -17,6 +17,9 @@ let lastUserInputAt = 0;
 let markReadTimer = null;
 const chatDrafts = new Map();
 const mobileMessageUploadQueue = new Map();
+// Text sends must survive background bootstrap/read refreshes just like file
+// uploads. Keep them outside `state` until the server confirms the message.
+const mobileMessageSendQueue = new Map();
 let leaveDraft = {};
 let reimbursementDraft = {};
 let reimbursementAttachments = [];
@@ -470,7 +473,8 @@ async function sync(options = {}) {
   if (document.hidden && !options.force) return;
   try {
     syncInFlight = true;
-    state = await api('/api/mobile/bootstrap');
+    const nextState = await api('/api/mobile/bootstrap');
+    state = preserveMobileMessageSnapshot(nextState, activeUserId);
     user = state.user;
     renderAuth();
     render({ preserveActiveInput: !options.force });
@@ -836,12 +840,16 @@ function selectNextUnreadConversation() {
 }
 
 function conversation(otherUserId) {
-  const queued = [...mobileMessageUploadQueue.values()];
-  const withQueued = messages => [...messages, ...queued.filter(message => {
-    if (otherUserId === GROUP_CHAT_ID) return message.groupId === 'all-staff';
-    if (otherUserId === CUSTOMER_CODEX_ID) return message.groupId === CUSTOMER_CODEX_GROUP_ID;
-    return message.toUserId === otherUserId;
-  })];
+  const queued = [...mobileMessageSendQueue.values(), ...mobileMessageUploadQueue.values()];
+  const withQueued = messages => {
+    const persistedRequestIds = new Set(messages.map(message => String(message.clientRequestId || '')).filter(Boolean));
+    return [...messages, ...queued.filter(message => {
+      if (persistedRequestIds.has(String(message.clientRequestId || message.id || ''))) return false;
+      if (otherUserId === GROUP_CHAT_ID) return message.groupId === 'all-staff';
+      if (otherUserId === CUSTOMER_CODEX_ID) return message.groupId === CUSTOMER_CODEX_GROUP_ID;
+      return message.toUserId === otherUserId;
+    })];
+  };
   if (otherUserId === GROUP_CHAT_ID) {
     return withQueued((state.messages || []).filter(message => message.groupId === 'all-staff'))
       .sort((a, b) => String(a.createdAt || '').localeCompare(String(b.createdAt || '')));
@@ -988,11 +996,11 @@ function messageHtml(message) {
     ? (lang === 'zh' ? 'AI 英文' : 'AI English')
     : (lang === 'zh' ? 'AI 中文' : 'AI Chinese');
   return `<div class="message-line ${mine ? 'mine' : ''}">${!mine ? avatarHtml(sender) : ''}<div class="bubble ${mine ? 'mine' : ''}">
-    ${mine ? (message.pending ? (message.failed ? `<button class="mobile-message-retry" onclick="retryMobileMessageUpload('${message.id}')">${lang === 'zh' ? '重试' : 'Retry'}</button>` : '') : `<button class="delete" onclick="deleteMessage('${message.id}')">×</button>`) : ''}
+    ${mine ? (message.pending ? (message.failed ? `<button class="mobile-message-retry" onclick="${message.queueType === 'text' ? 'retryMobileMessageSend' : 'retryMobileMessageUpload'}('${message.id}')">${lang === 'zh' ? '重试' : 'Retry'}</button>` : '') : `<button class="delete" onclick="deleteMessage('${message.id}')">×</button>`) : ''}
     ${message.text ? `<div class="mobile-message-text">${escapeHtml(message.text || '')}</div>` : ''}
     ${aiTranslation ? `<div class="mobile-message-ai-translation" lang="${translationLanguage}"><span>${translationLabel}</span>${escapeHtml(aiTranslation)}</div>` : ''}
     ${messageAttachmentHtml(message.attachment)}
-    <small>${mine ? t('self') : escapeHtml(message.fromName || '')} · ${fmtDateTime(message.createdAt)}${message.pending ? ` · ${message.failed ? (lang === 'zh' ? '发送失败' : 'Failed') : (lang === 'zh' ? '后台发送中…' : 'Sending in background…')}` : read}</small>
+    <small>${mine ? t('self') : escapeHtml(message.fromName || '')} · ${fmtDateTime(message.createdAt)}${message.pending ? ` · ${message.failed ? (lang === 'zh' ? '发送失败，可重试' : 'Failed, tap retry') : (message.queueType === 'upload' ? (lang === 'zh' ? '正在上传并发送…' : 'Uploading and sending…') : (lang === 'zh' ? '正在发送…' : 'Sending…'))}` : read}</small>
   </div>${mine ? avatarHtml(user) : ''}</div>`;
 }
 
@@ -1069,7 +1077,7 @@ async function markRead(fromUserId) {
         ? { groupId: 'all-staff' }
         : (fromUserId === CUSTOMER_CODEX_ID ? { groupId: CUSTOMER_CODEX_GROUP_ID } : { fromUserId }))
     });
-    state = { ...state, ...body };
+    state = preserveMobileMessageSnapshot({ ...state, ...body }, fromUserId);
     renderAuth();
     render({ preserveActiveInput: true });
   } catch (err) {
@@ -1085,18 +1093,85 @@ async function sendMessage() {
   input.value = '';
   chatDrafts.delete(draftUserId);
   lastUserInputAt = 0;
+  queueMobileTextMessage(text, draftUserId);
+}
+
+function mobileMessagesForState(snapshot, otherUserId) {
+  const messages = Array.isArray(snapshot?.messages) ? snapshot.messages : [];
+  if (!otherUserId) return [];
+  if (otherUserId === GROUP_CHAT_ID) return messages.filter(message => message.groupId === 'all-staff');
+  if (otherUserId === CUSTOMER_CODEX_ID) return messages.filter(message =>
+    message.groupId === CUSTOMER_CODEX_GROUP_ID ||
+    message.fromUserId === CUSTOMER_CODEX_ID ||
+    message.toUserId === CUSTOMER_CODEX_ID
+  );
+  return messages.filter(message =>
+    (message.fromUserId === user?.id && message.toUserId === otherUserId) ||
+    (message.fromUserId === otherUserId && message.toUserId === user?.id)
+  );
+}
+
+function preserveMobileMessageSnapshot(nextState, threadId = activeUserId) {
+  if (!state || !nextState || !threadId) return nextState;
+  const visibleBefore = mobileMessagesForState(state, threadId);
+  const visibleAfter = mobileMessagesForState(nextState, threadId);
+  if (!visibleBefore.length || visibleAfter.length) return nextState;
+  return {
+    ...nextState,
+    messages: state.messages,
+    messageUsers: Array.isArray(nextState.messageUsers) && nextState.messageUsers.length
+      ? nextState.messageUsers
+      : state.messageUsers
+  };
+}
+
+function queueMobileTextMessage(text, targetUserId) {
+  if (!String(text || '').trim() || !targetUserId) return;
+  const isGroup = targetUserId === GROUP_CHAT_ID || targetUserId === CUSTOMER_CODEX_ID;
+  const groupId = targetUserId === CUSTOMER_CODEX_ID ? CUSTOMER_CODEX_GROUP_ID : 'all-staff';
+  const pendingId = `mobile-text-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  mobileMessageSendQueue.set(pendingId, {
+    id: pendingId, clientRequestId: pendingId, queueType: 'text', pending: true, failed: false,
+    scope: isGroup ? 'group' : 'direct', groupId: isGroup ? groupId : '',
+    fromUserId: user?.id, fromName: user?.name || user?.email || '',
+    toUserId: isGroup ? '' : targetUserId, text: String(text || '').trim(), attachment: null,
+    createdAt: new Date().toISOString(), readAt: '', readByUserIds: isGroup ? [user?.id] : []
+  });
+  render({ preserveActiveInput: false });
+  void runMobileMessageSend(pendingId);
+}
+
+async function runMobileMessageSend(pendingId) {
+  const queued = mobileMessageSendQueue.get(pendingId);
+  if (!queued) return;
+  queued.failed = false;
+  queued.error = '';
+  if (tab === 'chat' && !chatListMode) render({ preserveActiveInput: false });
   try {
-    await postMessage({ text });
-    chatDrafts.delete(draftUserId);
-    const currentInput = document.getElementById('messageText');
-    if (currentInput && activeUserId === draftUserId) currentInput.value = '';
-    render({ preserveActiveInput: false });
+    const result = await api('/api/messages', {
+      method: 'POST',
+      body: JSON.stringify(queued.scope === 'group'
+        ? { groupId: queued.groupId, text: queued.text, clientRequestId: pendingId }
+        : { toUserId: queued.toUserId, text: queued.text, clientRequestId: pendingId })
+    });
+    state = { ...state, ...result };
+    mobileMessageSendQueue.delete(pendingId);
+    chatDrafts.delete(queued.scope === 'group' ? (queued.groupId === CUSTOMER_CODEX_GROUP_ID ? CUSTOMER_CODEX_ID : GROUP_CHAT_ID) : queued.toUserId);
+    renderAuth();
+    if (tab === 'chat' && !messageRecorder && !messageVoiceStarting) render({ preserveActiveInput: false });
   } catch (err) {
-    chatDrafts.set(draftUserId, text);
-    const currentInput = document.getElementById('messageText');
-    if (currentInput && activeUserId === draftUserId) currentInput.value = text;
-    alert(err.message);
+    queued.failed = true;
+    queued.error = String(err?.message || err || '');
+    if (tab === 'chat' && !chatListMode) render({ preserveActiveInput: false });
   }
+}
+
+function retryMobileMessageSend(pendingId) {
+  const queued = mobileMessageSendQueue.get(pendingId);
+  if (!queued) return;
+  queued.failed = false;
+  render({ preserveActiveInput: false });
+  void runMobileMessageSend(pendingId);
 }
 
 function fileToDataUrl(file) {
@@ -1160,7 +1235,7 @@ function queueMobileMessageUpload(file, kind, targetUserId) {
   const pendingId = `mobile-upload-${Date.now()}-${Math.random().toString(36).slice(2)}`;
   const localUrl = URL.createObjectURL(file);
   mobileMessageUploadQueue.set(pendingId, {
-    id: pendingId, pending: true, failed: false, file, kind, localUrl,
+    id: pendingId, clientRequestId: pendingId, queueType: 'upload', pending: true, failed: false, file, kind, localUrl,
     scope: isGroup ? 'group' : 'direct', groupId: isGroup ? groupId : '',
     fromUserId: user?.id, fromName: user?.name || user?.email || '',
     toUserId: isGroup ? '' : targetUserId, text: '',
@@ -1198,7 +1273,7 @@ async function runMobileMessageUpload(pendingId) {
     });
     URL.revokeObjectURL(queued.localUrl);
     mobileMessageUploadQueue.delete(pendingId);
-    state = await api('/api/mobile/bootstrap');
+    state = preserveMobileMessageSnapshot(await api('/api/mobile/bootstrap'), activeUserId);
     renderAuth();
     if (tab === 'chat' && !messageRecorder && !messageVoiceStarting) render({ preserveActiveInput: true });
   } catch (err) {

@@ -39,6 +39,8 @@ async function stopServer() {
 
 async function run() {
   const appSource = fs.readFileSync(path.join(root, 'public', 'app.js'), 'utf8');
+  const mobileSource = fs.readFileSync(path.join(root, 'public', 'mobile.js'), 'utf8');
+  const mobileHtml = fs.readFileSync(path.join(root, 'public', 'mobile.html'), 'utf8');
   const indexSource = fs.readFileSync(path.join(root, 'public', 'index.html'), 'utf8');
   const serviceWorker = fs.readFileSync(path.join(root, 'public', 'sw.js'), 'utf8');
 
@@ -56,7 +58,12 @@ async function run() {
   assert.match(appSource, /visibleMessagesBeforeRefresh\.length && !visibleMessagesAfterRefresh\.length/, 'Transient empty refreshes must preserve a visible thread');
   assert.match(appSource, /visibleMessagesBeforeRead\.length && !visibleMessagesAfterRead\.length/, 'A transient empty read response must preserve a visible thread');
   assert(indexSource.includes('/app.js?v=148'), 'Desktop app asset marker must be bumped');
-  assert(serviceWorker.includes('film-shop-v125-message-send-stability'), 'Service worker cache must be bumped');
+  assert.match(mobileSource, /const mobileMessageSendQueue = new Map\(\)/, 'Mobile text sends must survive bootstrap replacement');
+  assert.match(mobileSource, /mobileMessageSendQueue\.set\(pendingId/, 'Mobile text must render optimistically');
+  assert.match(mobileSource, /正在发送…/, 'Mobile pending text must show sending status');
+  assert.match(mobileSource, /preserveMobileMessageSnapshot/, 'Mobile refreshes must preserve a visible non-empty thread');
+  assert(mobileHtml.includes('/mobile.js?v=68'), 'Mobile app asset marker must be bumped');
+  assert(serviceWorker.includes('film-shop-v126-mobile-message-send-stability'), 'Service worker cache must be bumped');
 
   child = spawn(process.execPath, ['server.js'], {
     cwd: root,
