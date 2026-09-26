@@ -21,6 +21,7 @@
   let recordingContext = null;
   let recordingDestination = null;
   const recordingSources = new Map();
+  const translationSidecars = new Map();
   const declinedCallerUntil = new Map();
 
   const context = () => window.getQuadCallContext?.() || {};
@@ -49,6 +50,136 @@
   const setAutoRecordEnabled = enabled => {
     try { localStorage.setItem(autoRecordKey(), enabled ? '1' : '0'); } catch {}
   };
+  const translationLanguageKey = () => `filmShopCloud.callTranslationLanguage.${me()?.id || 'device'}`;
+  const preferredTranslationLanguage = () => {
+    try {
+      const value = String(localStorage.getItem(translationLanguageKey()) || 'off');
+      return ['off', 'zh', 'en', 'es', 'pt'].includes(value) ? value : 'off';
+    } catch { return 'off'; }
+  };
+  const translationLanguageName = value => ({ zh:'中文', en:'English', es:'Español', pt:'Português' }[value] || (zh() ? '关闭' : 'Off'));
+
+  function updateTranslationStatus(message, tone = '') {
+    const status = document.getElementById('quadCallTranslationStatus');
+    if (!status) return;
+    status.textContent = message || '';
+    status.dataset.tone = tone;
+  }
+
+  function updateTranslationTranscript(kind, delta, participantIdentity = '') {
+    const target = document.getElementById(kind === 'source' ? 'quadCallSourceTranscript' : 'quadCallTranslatedTranscript');
+    if (!target || !delta) return;
+    const currentSpeaker = target.dataset.participant || '';
+    if (currentSpeaker && currentSpeaker !== participantIdentity) target.textContent = '';
+    target.dataset.participant = participantIdentity;
+    target.textContent = `${target.textContent || ''}${delta}`.slice(-800);
+    const transcript = document.getElementById('quadCallTranslationTranscript');
+    if (transcript) transcript.hidden = false;
+  }
+
+  function setOriginalAudioMuted(muted, participantIdentity = '') {
+    document.querySelectorAll('#quadCallRemoteAudio audio[data-participant-identity]').forEach(element => {
+      if (!participantIdentity || element.dataset.participantIdentity === participantIdentity) element.muted = muted;
+    });
+  }
+
+  function stopTranslationSidecar(key) {
+    const sidecar = translationSidecars.get(key);
+    if (!sidecar) return;
+    try {
+      if (sidecar.events?.readyState === 'open') sidecar.events.send(JSON.stringify({ type:'session.close' }));
+    } catch {}
+    setTimeout(() => {
+      try { sidecar.pc?.close(); } catch {}
+      try { sidecar.track?.stop(); } catch {}
+      try { sidecar.audio?.remove(); } catch {}
+    }, 250);
+    translationSidecars.delete(key);
+  }
+
+  function stopAllTranslationSidecars() {
+    [...translationSidecars.keys()].forEach(stopTranslationSidecar);
+    setOriginalAudioMuted(false);
+  }
+
+  async function startTranslationTrack(mediaStreamTrack, participantIdentity = '') {
+    const targetLanguage = preferredTranslationLanguage();
+    if (!mediaStreamTrack || targetLanguage === 'off') return;
+    const key = `${participantIdentity || 'remote'}:${mediaStreamTrack.id}`;
+    if (translationSidecars.has(key)) return;
+    const sidecar = { pc:null, events:null, track:null, audio:null, participantIdentity, sourceTrackId:mediaStreamTrack.id };
+    translationSidecars.set(key, sidecar);
+    try {
+      updateTranslationStatus(zh() ? `正在连接 ${translationLanguageName(targetLanguage)} 实时翻译…` : `Connecting live ${translationLanguageName(targetLanguage)} translation…`);
+      const secret = await request('/api/realtime-translation/session', {
+        method:'POST', body:JSON.stringify({ targetLanguage })
+      });
+      if (preferredTranslationLanguage() !== targetLanguage || !translationSidecars.has(key)) return stopTranslationSidecar(key);
+      const pc = new RTCPeerConnection();
+      sidecar.pc = pc;
+      sidecar.track = mediaStreamTrack.clone();
+      const sourceStream = new MediaStream([sidecar.track]);
+      pc.addTrack(sidecar.track, sourceStream);
+      const translatedAudio = new Audio();
+      translatedAudio.autoplay = true;
+      translatedAudio.playsInline = true;
+      translatedAudio.dataset.translationParticipant = participantIdentity;
+      sidecar.audio = translatedAudio;
+      document.getElementById('quadCallRemoteAudio')?.appendChild(translatedAudio);
+      pc.ontrack = event => {
+        translatedAudio.srcObject = event.streams[0];
+        translatedAudio.play().catch(() => updateTranslationStatus(zh() ? '请点一下通话画面以播放翻译语音' : 'Tap the call screen to play translated audio', 'warning'));
+      };
+      const events = pc.createDataChannel('oai-events');
+      sidecar.events = events;
+      events.onopen = () => updateTranslationStatus(zh() ? `实时翻译已开启：${translationLanguageName(targetLanguage)}` : `Live translation: ${translationLanguageName(targetLanguage)}`, 'ready');
+      events.onmessage = ({ data }) => {
+        try {
+          const event = JSON.parse(data);
+          if (event.type === 'session.input_transcript.delta') updateTranslationTranscript('source', event.delta, participantIdentity);
+          if (event.type === 'session.output_transcript.delta') updateTranslationTranscript('translated', event.delta, participantIdentity);
+          if (event.type === 'error') updateTranslationStatus(zh() ? `实时翻译暂时不可用：${event.error?.message || '未知错误'}` : `Translation unavailable: ${event.error?.message || 'Unknown error'}`, 'error');
+        } catch {}
+      };
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+      const answer = await fetch('https://api.openai.com/v1/realtime/translations/calls', {
+        method:'POST',
+        headers:{ Authorization:`Bearer ${secret.value}`, 'Content-Type':'application/sdp' },
+        body:offer.sdp
+      });
+      if (!answer.ok) throw new Error((await answer.text()).slice(0, 220) || `OpenAI ${answer.status}`);
+      await pc.setRemoteDescription({ type:'answer', sdp:await answer.text() });
+      setOriginalAudioMuted(true, participantIdentity);
+    } catch (error) {
+      stopTranslationSidecar(key);
+      setOriginalAudioMuted(false, participantIdentity);
+      updateTranslationStatus(zh() ? `实时翻译连接失败：${error.message || error}` : `Live translation failed: ${error.message || error}`, 'error');
+    }
+  }
+
+  async function setTranslationLanguage(value) {
+    const targetLanguage = ['zh', 'en', 'es', 'pt'].includes(String(value)) ? String(value) : 'off';
+    try { localStorage.setItem(translationLanguageKey(), targetLanguage); } catch {}
+    stopAllTranslationSidecars();
+    const source = document.getElementById('quadCallSourceTranscript');
+    const translated = document.getElementById('quadCallTranslatedTranscript');
+    if (source) source.textContent = '';
+    if (translated) translated.textContent = '';
+    const transcript = document.getElementById('quadCallTranslationTranscript');
+    if (transcript) transcript.hidden = targetLanguage === 'off';
+    if (targetLanguage === 'off') {
+      updateTranslationStatus(zh() ? '实时翻译已关闭' : 'Live translation is off');
+      return;
+    }
+    updateTranslationStatus(zh() ? `正在连接 ${translationLanguageName(targetLanguage)} 实时翻译…` : `Connecting ${translationLanguageName(targetLanguage)} translation…`);
+    const tracks = [];
+    room?.remoteParticipants?.forEach(participant => participant.audioTrackPublications.forEach(publication => {
+      if (publication.track?.mediaStreamTrack) tracks.push([publication.track.mediaStreamTrack, participant.identity]);
+    }));
+    if (!tracks.length) updateTranslationStatus(zh() ? '实时翻译已准备，等待对方说话' : 'Translation ready; waiting for the other speaker');
+    await Promise.all(tracks.map(([track, identity]) => startTranslationTrack(track, identity)));
+  }
 
   function ensureLayer() {
     let layer = document.getElementById('quadCallLayer');
@@ -194,14 +325,25 @@
   function renderCall(call, statusText) {
     const layer = ensureLayer();
     const automatic = autoRecordEnabled();
+    const translationLanguage = preferredTranslationLanguage();
     layer.innerHTML = `<div class="quad-call-backdrop"><section class="quad-call-card active">
       <button class="quad-call-minimize" onclick="QuadCalls.toggleMinimize()">—</button>
       <div class="quad-call-quality" id="quadCallQuality">● ${esc(statusText || (zh() ? '正在连接…' : 'Connecting…'))}</div>
       <div class="quad-call-avatar">🎧</div><h2 id="quadCallName">${esc(nameFor(call))}</h2><time id="quadCallTime">00:00</time>
       <div id="quadCallRecording" style="${call.recording ? '' : 'display:none'};color:#ff6b6b;font-weight:800;margin:.5rem 0">🔴 ${zh() ? 'AI 正在自动记录' : 'AI is recording automatically'}</div>
+      <div class="quad-call-translation-controls"><label>${zh() ? '我需要听到' : 'Translate others to'}<select id="quadCallTranslationLanguage" onchange="QuadCalls.setTranslationLanguage(this.value)">
+        <option value="off" ${translationLanguage === 'off' ? 'selected' : ''}>${zh() ? '关闭实时翻译' : 'Translation off'}</option>
+        <option value="zh" ${translationLanguage === 'zh' ? 'selected' : ''}>中文</option>
+        <option value="en" ${translationLanguage === 'en' ? 'selected' : ''}>English</option>
+        <option value="es" ${translationLanguage === 'es' ? 'selected' : ''}>Español</option>
+        <option value="pt" ${translationLanguage === 'pt' ? 'selected' : ''}>Português</option>
+      </select></label><small id="quadCallTranslationStatus">${translationLanguage === 'off' ? (zh() ? '选择语言后，远端语音将发送到 OpenAI 实时翻译' : 'Choose a language to translate remote audio with OpenAI') : (zh() ? '实时翻译将在接通后自动连接' : 'Translation will connect after answer')}</small></div>
+      <div class="quad-call-translation-transcript" id="quadCallTranslationTranscript" ${translationLanguage === 'off' ? 'hidden' : ''}><div><b>${zh() ? '对方原话' : 'Original'}</b><span id="quadCallSourceTranscript"></span></div><div><b>${zh() ? '实时译文' : 'Translation'}</b><span id="quadCallTranslatedTranscript"></span></div></div>
       <div id="quadCallRemoteAudio"></div>
       <footer><button id="quadMute" onclick="QuadCalls.toggleMute()">🎙️<br>${zh() ? '静音' : 'Mute'}</button>${call.callerUserId === me()?.id ? `<button id="quadRecord" onclick="QuadCalls.toggleAutoRecord()">${automatic ? '🔴' : '⚪️'}<br>${automatic ? (zh() ? '自动记录' : 'Auto record') : (zh() ? 'AI记录' : 'AI record')}</button>` : ''}<button onclick="QuadCalls.pickParticipants(true)">➕<br>${zh() ? '添加成员' : 'Add'}</button><button class="quad-call-end" onclick="QuadCalls.end()">📞<br>${zh() ? '挂断' : 'End'}</button></footer>
     </section></div>`;
+    const audioHost = document.getElementById('quadCallRemoteAudio');
+    translationSidecars.forEach(sidecar => { if (sidecar.audio && audioHost && !sidecar.audio.isConnected) audioHost.appendChild(sidecar.audio); });
   }
 
   async function join(call) {
@@ -213,9 +355,11 @@
       if (track.kind !== LivekitClient.Track.Kind.Audio) return;
       const element = track.attach(); element.autoplay = true; element.dataset.participantIdentity = participant.identity; document.getElementById('quadCallRemoteAudio')?.appendChild(element);
       connectRecordingTrack(track.mediaStreamTrack);
+      if (preferredTranslationLanguage() !== 'off') startTranslationTrack(track.mediaStreamTrack, participant.identity);
     });
     room.on(LivekitClient.RoomEvent.TrackUnsubscribed, track => {
       track.detach().forEach(element => element.remove());
+      [...translationSidecars.entries()].filter(([, sidecar]) => sidecar.sourceTrackId === track.mediaStreamTrack?.id).forEach(([key]) => stopTranslationSidecar(key));
     });
     room.on(LivekitClient.RoomEvent.ParticipantConnected, () => markAnswered());
     room.on(LivekitClient.RoomEvent.ParticipantDisconnected, participant => {
@@ -417,9 +561,9 @@
   async function transcribeAndSummarize(callId, dataUrl) {
     try {
       const transcript = await request('/api/ai-boss/transcribe', { method:'POST', body:JSON.stringify({ dataUrl, language:zh() ? 'zh' : 'en' }) });
-      const result = await request(`/api/voice-calls/${encodeURIComponent(callId)}/summary`, { method:'POST', body:JSON.stringify({ notes:transcript.text, createTask:true }) });
+      const result = await request(`/api/voice-calls/${encodeURIComponent(callId)}/summary`, { method:'POST', body:JSON.stringify({ notes:transcript.text, createTask:false }) });
       if (result.data) replaceStore(result.data);
-      showAiComplete(Boolean(result.task));
+      showAiComplete(callId);
     } catch (error) {
       showSummary(callId, zh() ? `自动整理失败：${error.message || error}。可以在这里补充通话要点。` : `Automatic summary failed: ${error.message || error}. Add call notes here.`);
     }
@@ -427,16 +571,15 @@
 
   function showAiProcessing() {
     activeCall = null;
-    ensureLayer().innerHTML = `<div class="quad-call-backdrop"><section class="quad-call-card summary"><div class="quad-call-pulse">🤖</div><h2>${zh() ? 'AI 正在自动整理' : 'AI is organizing the call'}</h2><p>${zh() ? '正在生成通话记录和督办任务，无需再操作。' : 'Creating call notes and a supervision task. No action is needed.'}</p></section></div>`;
+    ensureLayer().innerHTML = `<div class="quad-call-backdrop"><section class="quad-call-card summary"><div class="quad-call-pulse">🤖</div><h2>${zh() ? 'AI 正在整理通话记录' : 'AI is organizing the call'}</h2><p>${zh() ? '正在保存通话分析；不会自动生成督办任务。' : 'Saving the call analysis. No task will be created automatically.'}</p></section></div>`;
   }
 
-  function showAiComplete(taskCreated) {
-    ensureLayer().innerHTML = `<div class="quad-call-backdrop"><section class="quad-call-card summary"><div class="quad-call-pulse">✅</div><h2>${zh() ? 'AI 已自动记录' : 'AI notes saved'}</h2><p>${taskCreated ? (zh() ? '通话记录和督办任务已经生成。' : 'Call notes and a supervision task were created.') : (zh() ? '通话记录已经保存。' : 'Call notes were saved.')}</p></section></div>`;
-    setTimeout(() => close(), 1800);
+  function showAiComplete(callId) {
+    ensureLayer().innerHTML = `<div class="quad-call-backdrop"><section class="quad-call-card summary"><button class="quad-call-close" onclick="QuadCalls.close()">×</button><div class="quad-call-pulse">✅</div><h2>${zh() ? '通话分析已保存' : 'Call analysis saved'}</h2><p>${zh() ? '系统没有自动创建任务。请核对后再决定是否生成督办任务。' : 'No task was created automatically. Review first, then create one only if needed.'}</p><footer><button onclick="QuadCalls.close()">${zh() ? '完成' : 'Done'}</button><button class="quad-call-accept" onclick="QuadCalls.createTaskFromCall('${callId}')">${zh() ? '确认生成督办任务' : 'Create task'}</button></footer></section></div>`;
   }
 
   function finishLocal(clear = true) {
-    clearInterval(timer); timer = null; stopIncomingAlerts(activeCall?.id); clearTimeout(ringTimeout); ringTimeout = null; callStartedAt = 0; if (room) { const old = room; room = null; old.disconnect().catch?.(() => {}); }
+    clearInterval(timer); timer = null; stopIncomingAlerts(activeCall?.id); clearTimeout(ringTimeout); ringTimeout = null; callStartedAt = 0; stopAllTranslationSidecars(); if (room) { const old = room; room = null; old.disconnect().catch?.(() => {}); }
     if (clear) activeCall = null; closePicker(); ensureLayer().innerHTML = '';
   }
 
@@ -456,16 +599,25 @@
     layer.innerHTML = `<div class="quad-call-backdrop"><section class="quad-call-card summary"><button class="quad-call-close" onclick="QuadCalls.close()">×</button>
       <h2>${zh() ? '整理通话结果' : 'Summarize call'}</h2><p>${esc(message || (zh() ? '这次通话没有开启自动记录，可以输入要点让 AI 整理。' : 'Auto recording was not enabled for this call. Enter notes for AI follow-up.'))}</p>
       <textarea id="quadCallNotes" placeholder="${zh() ? '例：张三明天下午5点前核对仓库并回报结果…' : 'Call notes…'}"></textarea>
-      <label><input id="quadCallCreateTask" type="checkbox" checked> ${zh() ? '同时生成智能督办任务' : 'Create a supervision task'}</label>
-      <footer><button onclick="QuadCalls.close()">${zh() ? '稍后' : 'Later'}</button><button class="quad-call-accept" onclick="QuadCalls.summarize('${callId}')">${zh() ? 'AI 整理' : 'AI summarize'}</button></footer>
+      <p class="quad-call-safe-note">${zh() ? '保存后只生成 AI 分析，不会自动创建任务。' : 'This saves AI analysis only and does not create a task.'}</p>
+      <footer><button onclick="QuadCalls.close()">${zh() ? '稍后' : 'Later'}</button><button class="quad-call-accept" onclick="QuadCalls.summarize('${callId}')">${zh() ? '保存 AI 分析' : 'Save AI analysis'}</button></footer>
     </section></div>`;
   }
 
   async function summarize(callId) {
     const notes = document.getElementById('quadCallNotes')?.value.trim(); if (!notes) return alert(zh() ? '请先输入通话要点' : 'Enter call notes');
     try {
-      const result = await request(`/api/voice-calls/${encodeURIComponent(callId)}/summary`, { method:'POST', body:JSON.stringify({ notes, createTask:document.getElementById('quadCallCreateTask')?.checked !== false }) });
-      if (result.data) replaceStore(result.data); close(); alert(result.task ? (zh() ? '已生成通话摘要和智能督办任务' : 'Summary and task created') : (zh() ? '通话摘要已保存' : 'Summary saved'));
+      const result = await request(`/api/voice-calls/${encodeURIComponent(callId)}/summary`, { method:'POST', body:JSON.stringify({ notes, createTask:false }) });
+      if (result.data) replaceStore(result.data); showAiComplete(callId);
+    } catch (error) { alert(error.message || error); }
+  }
+
+  async function createTaskFromCall(callId) {
+    try {
+      const result = await request(`/api/voice-calls/${encodeURIComponent(callId)}/summary`, { method:'POST', body:JSON.stringify({ createTask:true }) });
+      if (result.data) replaceStore(result.data);
+      close();
+      alert(result.task ? (zh() ? '督办任务已生成' : 'Task created') : (zh() ? '没有生成任务' : 'No task was created'));
     } catch (error) { alert(error.message || error); }
   }
 
@@ -541,7 +693,7 @@
     if ('Notification' in window && Notification.permission === 'default') await Notification.requestPermission();
   }
 
-  window.QuadCalls = { start, accept, decline, end, toggleMute, toggleMinimize, toggleAutoRecord, summarize, showSummary, close, poll, enableNotifications, pickParticipants, confirmParticipants, restoreCall, closePicker,
+  window.QuadCalls = { start, accept, decline, end, toggleMute, toggleMinimize, toggleAutoRecord, setTranslationLanguage, summarize, createTaskFromCall, showSummary, close, poll, enableNotifications, pickParticipants, confirmParticipants, restoreCall, closePicker,
     startDirect: userId => start(userId),
     startGroup: () => pickParticipants(false) };
   window.addEventListener('quad-voice-call', receiveVoiceEvent);

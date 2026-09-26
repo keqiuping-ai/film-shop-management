@@ -43,6 +43,8 @@ async function run() {
   const mobileHtml = fs.readFileSync(path.join(root, 'public', 'mobile.html'), 'utf8');
   const indexSource = fs.readFileSync(path.join(root, 'public', 'index.html'), 'utf8');
   const serviceWorker = fs.readFileSync(path.join(root, 'public', 'sw.js'), 'utf8');
+  const realtimeSource = fs.readFileSync(path.join(root, 'public', 'realtime-calls.js'), 'utf8');
+  const serverSource = fs.readFileSync(path.join(root, 'server.js'), 'utf8');
 
   assert.match(appSource, /selectedUserId \|\| activeMessageUserId \|\| rememberedMessageUserId \|\| \(firstUnread/, 'Remembered conversation must be considered before unread fallback');
   const renderMessageModalSource = appSource.slice(appSource.indexOf('function renderMessageModal'), appSource.indexOf('function messageModalHtml'));
@@ -57,13 +59,21 @@ async function run() {
   assert.match(appSource, /正在发送…/, 'Pending text must show a visible sending status');
   assert.match(appSource, /visibleMessagesBeforeRefresh\.length && !visibleMessagesAfterRefresh\.length/, 'Transient empty refreshes must preserve a visible thread');
   assert.match(appSource, /visibleMessagesBeforeRead\.length && !visibleMessagesAfterRead\.length/, 'A transient empty read response must preserve a visible thread');
-  assert(indexSource.includes('/app.js?v=148'), 'Desktop app asset marker must be bumped');
+  assert(indexSource.includes('/app.js?v=149'), 'Desktop app asset marker must be bumped');
   assert.match(mobileSource, /const mobileMessageSendQueue = new Map\(\)/, 'Mobile text sends must survive bootstrap replacement');
   assert.match(mobileSource, /mobileMessageSendQueue\.set\(pendingId/, 'Mobile text must render optimistically');
   assert.match(mobileSource, /正在发送…/, 'Mobile pending text must show sending status');
   assert.match(mobileSource, /preserveMobileMessageSnapshot/, 'Mobile refreshes must preserve a visible non-empty thread');
-  assert(mobileHtml.includes('/mobile.js?v=68'), 'Mobile app asset marker must be bumped');
-  assert(serviceWorker.includes('film-shop-v126-mobile-message-send-stability'), 'Service worker cache must be bumped');
+  assert(mobileHtml.includes('/mobile.js?v=69'), 'Mobile app asset marker must be bumped');
+  assert(serviceWorker.includes('film-shop-v127-chat-ai-realtime-translation'), 'Service worker cache must be bumped');
+  assert.match(appSource, /openInternalMessageAnalysis/, 'Desktop chat must expose the saved AI analysis panel');
+  assert.match(mobileSource, /openMobileMessageAnalysis/, 'Mobile chat must expose the saved AI analysis panel');
+  assert.match(serverSource, /detail:`AI 分析 \$\{targetDate\} 聊天；未自动创建任务`/, 'Chat analysis must be persisted without automatically creating a task');
+  assert(serverSource.includes('用户明确确认后从聊天 AI 分析生成督办任务'), 'Task creation must require an explicit action');
+  assert.match(serverSource, /realtime\/translations\/client_secrets/, 'Server must issue a short-lived Realtime translation secret');
+  assert.match(realtimeSource, /gpt-realtime|realtime\/translations\/calls/, 'Call client must use the dedicated Realtime translation endpoint');
+  assert.match(realtimeSource, /notes:transcript\.text, createTask:false/, 'Automatic call summary must not create a task');
+  assert.match(realtimeSource, /setTranslationLanguage/, 'Call UI must expose target-language selection');
 
   child = spawn(process.execPath, ['server.js'], {
     cwd: root,

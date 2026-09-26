@@ -939,6 +939,7 @@ function chatHtml() {
         onlostpointercapture="finishVoiceMessage(event)"
         oncontextmenu="event.preventDefault()"
         aria-label="${lang === 'zh' ? '按住说话，松开发送' : 'Hold to talk, release to send'}">${lang === 'zh' ? '🎙️ 按住说话' : '🎙️ Hold to talk'}</button>
+      <button class="message-ai-button" type="button" onclick="openMobileMessageAnalysis()">✨ ${lang === 'zh' ? 'AI 分析' : 'AI analysis'}</button>
       <input class="hidden" id="mobileImageInput" type="file" accept="image/*" onchange="sendMessageFile(this.files[0], 'image'); this.value='';" />
       <input class="hidden" id="mobileVideoInput" type="file" accept="video/*" onchange="sendMessageFile(this.files[0], 'video'); this.value='';" />
       <input class="hidden" id="mobileFileInput" type="file" onchange="sendMessageFile(this.files[0], 'file'); this.value='';" />
@@ -949,6 +950,55 @@ function chatHtml() {
       </div>
     </section>
   </div>`;
+}
+
+function currentMobileMessageAnalysis() {
+  return (state?.messageAnalyses || []).filter(item => item.threadId === activeUserId).sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')))[0] || null;
+}
+
+function mobileAnalysisList(items) {
+  const rows = Array.isArray(items) ? items.filter(Boolean) : [];
+  return rows.length ? `<ul>${rows.map(item => `<li>${escapeHtml(typeof item === 'string' ? item : (item.title || item.text || item.description || JSON.stringify(item)))}</li>`).join('')}</ul>` : `<p class="hint">${lang === 'zh' ? '暂无' : 'None'}</p>`;
+}
+
+function renderMobileMessageAnalysis(analysis = currentMobileMessageAnalysis(), busyText = '') {
+  let layer = document.getElementById('messageAiAnalysisLayer');
+  if (!layer) { layer = document.createElement('div'); layer.id = 'messageAiAnalysisLayer'; document.body.appendChild(layer); }
+  const task = analysis?.suggestedTask || {};
+  layer.innerHTML = `<div class="message-ai-analysis-backdrop"><section class="message-ai-analysis-card"><button class="message-ai-close" onclick="closeMobileMessageAnalysis()">×</button>
+    <h2>✨ ${lang === 'zh' ? '聊天 AI 分析' : 'Chat AI analysis'}</h2>
+    ${busyText ? `<div class="message-ai-busy">${escapeHtml(busyText)}</div>` : ''}
+    ${analysis ? `<div class="message-ai-meta">${escapeHtml(analysis.threadName || '')} · ${escapeHtml(analysis.date || '')}</div>
+      <section><h3>${lang === 'zh' ? '摘要' : 'Summary'}</h3><p>${escapeHtml(analysis.summary || '')}</p></section>
+      <section><h3>${lang === 'zh' ? '重点' : 'Key points'}</h3>${mobileAnalysisList(analysis.keyPoints)}</section>
+      <section><h3>${lang === 'zh' ? '决定' : 'Decisions'}</h3>${mobileAnalysisList(analysis.decisions)}</section>
+      <section><h3>${lang === 'zh' ? '行动项' : 'Action items'}</h3>${mobileAnalysisList(analysis.actionItems)}</section>
+      ${task.title ? `<section class="message-ai-task"><h3>${lang === 'zh' ? '任务建议（尚未创建）' : 'Suggested task (not created)'}</h3><strong>${escapeHtml(task.title)}</strong><p>${escapeHtml(task.description || '')}</p></section>` : ''}
+      <footer><button onclick="runMobileMessageAnalysis()">${lang === 'zh' ? '重新分析当天聊天' : 'Analyze today again'}</button>${task.title ? `<button class="primary" ${analysis.taskId ? 'disabled' : ''} onclick="createTaskFromMobileMessageAnalysis('${analysis.id}')">${analysis.taskId ? (lang === 'zh' ? '督办任务已生成' : 'Task created') : (lang === 'zh' ? '确认生成督办任务' : 'Create task')}</button>` : ''}</footer>`
+      : `<p>${lang === 'zh' ? '这里保存当天聊天的 AI 摘要。分析不会自动生成任务。' : 'AI summaries for today are saved here. Analysis does not create tasks.'}</p><footer><button class="primary" onclick="runMobileMessageAnalysis()">${lang === 'zh' ? 'AI 分析当天聊天' : 'Analyze today'}</button></footer>`}
+  </section></div>`;
+}
+
+function openMobileMessageAnalysis() { renderMobileMessageAnalysis(); }
+function closeMobileMessageAnalysis() { document.getElementById('messageAiAnalysisLayer')?.remove(); }
+
+async function runMobileMessageAnalysis() {
+  renderMobileMessageAnalysis(currentMobileMessageAnalysis(), lang === 'zh' ? '正在分析并保存…' : 'Analyzing and saving…');
+  try {
+    const result = await api('/api/messages/analysis', { method:'POST', body:JSON.stringify({ threadId:activeUserId }) });
+    if (result.data) state = result.data;
+    renderMobileMessageAnalysis(result.analysis);
+  } catch (error) { renderMobileMessageAnalysis(currentMobileMessageAnalysis()); alert(error.message || error); }
+}
+
+async function createTaskFromMobileMessageAnalysis(id) {
+  if (!confirm(lang === 'zh' ? '确认根据这份聊天分析生成督办任务？' : 'Create a task from this chat analysis?')) return;
+  renderMobileMessageAnalysis(currentMobileMessageAnalysis(), lang === 'zh' ? '正在生成督办任务…' : 'Creating task…');
+  try {
+    const result = await api(`/api/messages/analysis/${encodeURIComponent(id)}/task`, { method:'POST', body:'{}' });
+    if (result.data) state = result.data;
+    renderMobileMessageAnalysis(result.analysis);
+  } catch (error) { renderMobileMessageAnalysis(currentMobileMessageAnalysis()); alert(error.message || error); }
 }
 
 function filterChatList(value) {

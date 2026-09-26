@@ -606,6 +606,7 @@ function seedDb() {
     personalNotes: [],
     aiBossTasks: [],
     aiBossProfiles: [],
+    messageAnalyses: [],
     voiceCalls: [],
     reimbursements: [],
     salesAccounts: [],
@@ -1709,6 +1710,7 @@ function sanitizeDbForUser(db, user, options = {}) {
       : [safeUser(user)],
     messageUsers: messageUsersFor(db, user),
     messages: messagesForUser(db, user),
+    messageAnalyses: messageAnalysesForUser(db, user),
     voiceCalls: voiceCallsForUser(db, user),
     personalNotes: (db.personalNotes || []).filter(item => personalNoteVisibleTo(item, user)).map(item => personalNoteForUser(db, item, user)),
     aiBossTasks: aiBossTasksForUser(db, user),
@@ -1791,6 +1793,14 @@ function voiceCallsForUser(db, user) {
   const userId = user?.id || '';
   return (db.voiceCalls || [])
     .filter(call => call.callerUserId === userId || (call.participantUserIds || []).includes(userId))
+    .sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')))
+    .slice(0, 100);
+}
+
+function messageAnalysesForUser(db, user) {
+  const userId = String(user?.id || '');
+  return (db.messageAnalyses || [])
+    .filter(item => item.groupId === 'all-staff' || (item.participantUserIds || []).includes(userId))
     .sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')))
     .slice(0, 100);
 }
@@ -2414,6 +2424,7 @@ function mobileSnapshot(db, user) {
     users: db.users.filter(item => item.active !== false).map(safeUser),
     messageUsers: messageUsersFor(db, user),
     messages: messagesForUser(db, user),
+    messageAnalyses: messageAnalysesForUser(db, user),
     voiceCalls: voiceCallsForUser(db, user),
     unread: unreadMessageCount(db, user),
     canApproveLeave: approver,
@@ -3604,6 +3615,60 @@ async function createAiBossDraft(db, sourceText, requestedProvider) {
     body: JSON.stringify({ model: process.env.OPENAI_TASK_MODEL || 'gpt-5.6', messages: [{ role: 'user', content: prompt }], response_format: { type: 'json_object' } })
   });
   return { provider, draft: parseAiBossDraft(value?.choices?.[0]?.message?.content) };
+}
+
+function normalizeMessageAnalysis(value = {}) {
+  const cleanList = input => (Array.isArray(input) ? input : [])
+    .map(item => String(item || '').trim().slice(0, 500))
+    .filter(Boolean)
+    .slice(0, 12);
+  const suggested = value.suggestedTask && typeof value.suggestedTask === 'object' ? value.suggestedTask : {};
+  return {
+    summary: String(value.summary || '').trim().slice(0, 4000),
+    keyPoints: cleanList(value.keyPoints),
+    decisions: cleanList(value.decisions),
+    actionItems: cleanList(value.actionItems),
+    suggestedTask: {
+      title: String(suggested.title || '').trim().slice(0, 180),
+      description: String(suggested.description || '').trim().slice(0, 4000),
+      assigneeUserId: String(suggested.assigneeUserId || '').trim(),
+      dueAt: String(suggested.dueAt || '').trim(),
+      priority: ['低', '普通', '高', '紧急'].includes(suggested.priority) ? suggested.priority : '普通',
+      acceptanceCriteria: String(suggested.acceptanceCriteria || '').trim().slice(0, 2000)
+    }
+  };
+}
+
+async function createInternalMessageAnalysis(db, user, rows, targetDate) {
+  const apiKey = openAiCustomerReplyKey(db);
+  if (!apiKey) throw new Error('OpenAI API Key 尚未配置');
+  const people = (db.users || []).filter(item => item.active !== false).map(item => ({
+    id: item.id,
+    name: item.name || item.email,
+    role: item.role
+  }));
+  const transcript = rows.slice(-200).map(message => {
+    const attachment = message.attachment?.kind ? ` [${message.attachment.kind}]` : '';
+    return `${message.createdAt || ''} | ${message.fromName || message.fromUserId || '员工'}: ${String(message.text || '').trim()}${attachment}`;
+  }).join('\n').slice(-24000);
+  const prompt = `你是 QUaD 员工内部沟通分析助手。请分析 ${targetDate} 当天的聊天，只总结已有内容，不虚构事实，不自动创建任务。\n可选员工：${JSON.stringify(people)}\n聊天记录：\n${transcript}\n\n只返回 JSON 对象，字段必须是 summary, keyPoints, decisions, actionItems, suggestedTask。keyPoints、decisions、actionItems 为字符串数组。suggestedTask 只是一份供人工确认的建议，字段为 title, description, assigneeUserId, dueAt, priority, acceptanceCriteria；没有明确任务时所有字符串留空。priority 只能为低、普通、高、紧急。`;
+  const model = String(process.env.OPENAI_TASK_MODEL || customerAiReplyModel(db) || 'gpt-5.6').trim();
+  const value = await fetchAiJson(`${String(process.env.OPENAI_API_BASE_URL || 'https://api.openai.com/v1').replace(/\/+$/, '')}/chat/completions`, {
+    method: 'POST',
+    headers: { 'Content-Type':'application/json', Authorization:`Bearer ${apiKey}` },
+    body: JSON.stringify({
+      model,
+      messages: [{ role:'user', content:prompt }],
+      response_format: { type:'json_object' },
+      max_completion_tokens: 1800,
+      ...(/^gpt-5(?:\.|-|$)/i.test(model) ? { reasoning_effort:'minimal' } : {})
+    })
+  }, 45_000);
+  return {
+    provider: 'openai',
+    model,
+    analysis: normalizeMessageAnalysis(parseAiBossDraft(value?.choices?.[0]?.message?.content))
+  };
 }
 
 async function createFieldSalesAnalysis(visit, requestedProvider = '') {
@@ -10906,6 +10971,115 @@ async function api(req, res) {
     }
   }
 
+  if (req.method === 'POST' && url.pathname === '/api/realtime-translation/session') {
+    const apiKey = openAiCustomerReplyKey(db);
+    if (!apiKey) return send(res, 503, { error: 'OpenAI 实时翻译尚未配置' });
+    const body = await readBody(req);
+    const targetLanguage = String(body.targetLanguage || '').trim().toLowerCase();
+    if (!['zh', 'en', 'es', 'pt'].includes(targetLanguage)) return send(res, 400, { error: '请选择中文、英语、西班牙语或葡萄牙语' });
+    try {
+      const safetyIdentifier = crypto.createHash('sha256').update(`quad-realtime:${user.id}`).digest('hex');
+      const response = await fetch('https://api.openai.com/v1/realtime/translations/client_secrets', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+          'OpenAI-Safety-Identifier': safetyIdentifier
+        },
+        body: JSON.stringify({
+          session: {
+            model: process.env.OPENAI_REALTIME_TRANSLATION_MODEL || 'gpt-realtime-translate',
+            audio: { output: { language: targetLanguage } }
+          }
+        }),
+        signal: AbortSignal.timeout(20_000)
+      });
+      const value = await response.json().catch(() => ({}));
+      if (!response.ok) return send(res, response.status >= 500 ? 502 : response.status, { error: String(value?.error?.message || value?.message || `OpenAI 实时翻译连接失败 (${response.status})`).slice(0, 300) });
+      const clientSecret = String(value?.value || value?.client_secret?.value || '').trim();
+      if (!clientSecret) return send(res, 502, { error: 'OpenAI 没有返回可用的实时翻译凭证' });
+      return send(res, 200, { value:clientSecret, expiresAt:value?.expires_at || value?.client_secret?.expires_at || null, targetLanguage });
+    } catch (error) {
+      return send(res, 502, { error:`实时翻译连接失败：${String(error.message || error).slice(0, 220)}` });
+    }
+  }
+
+  if (req.method === 'POST' && url.pathname === '/api/messages/analysis') {
+    const body = await readBody(req);
+    const threadId = String(body.threadId || '').trim();
+    const timezone = db.settings?.timezone || 'America/Los_Angeles';
+    const targetDate = String(body.date || dateInTimezone(timezone, 0)).slice(0, 10);
+    if (!threadId) return send(res, 400, { error:'请选择要分析的聊天' });
+    let rows = messagesForUser(db, user);
+    let participantUserIds = [];
+    let groupId = '';
+    let threadName = '';
+    if (threadId === 'all-staff') {
+      groupId = 'all-staff';
+      participantUserIds = (db.users || []).filter(item => item.active !== false).map(item => item.id);
+      threadName = '全体员工群聊';
+      rows = rows.filter(message => message.groupId === 'all-staff');
+    } else {
+      const other = (db.users || []).find(item => item.id === threadId);
+      const hasHistory = rows.some(message => (message.fromUserId === user.id && message.toUserId === threadId) || (message.fromUserId === threadId && message.toUserId === user.id));
+      if (!other && !hasHistory) return send(res, 404, { error:'找不到这个聊天联系人' });
+      participantUserIds = [user.id, threadId];
+      threadName = other?.name || other?.email || '历史联系人';
+      rows = rows.filter(message => (message.fromUserId === user.id && message.toUserId === threadId) || (message.fromUserId === threadId && message.toUserId === user.id));
+    }
+    rows = rows.filter(message => instantDateInTimezone(message.createdAt, timezone) === targetDate);
+    if (!rows.length) return send(res, 400, { error:`${targetDate} 没有可分析的聊天内容` });
+    try {
+      const result = await createInternalMessageAnalysis(db, user, rows, targetDate);
+      const now = new Date().toISOString();
+      const analysis = {
+        id:id(), threadId, threadName, groupId, participantUserIds:[...new Set(participantUserIds)], date:targetDate,
+        summary:result.analysis.summary, keyPoints:result.analysis.keyPoints, decisions:result.analysis.decisions,
+        actionItems:result.analysis.actionItems, suggestedTask:result.analysis.suggestedTask,
+        sourceMessageIds:rows.map(message => message.id).filter(Boolean), provider:result.provider, model:result.model,
+        createdByUserId:user.id, createdByName:user.name || user.email, createdAt:now, taskId:''
+      };
+      db.messageAnalyses = [analysis, ...(db.messageAnalyses || [])].slice(0, 500);
+      audit(db, user, 'analyze-internal-message-thread', { collection:'messageAnalyses', recordId:analysis.id, recordLabel:threadName, detail:`AI 分析 ${targetDate} 聊天；未自动创建任务` });
+      writeDb(db);
+      notifyDataChanged('message-analysis-created', analysis.id, analysis.participantUserIds);
+      return send(res, 201, { analysis, data:sanitizeDbForUser(db, user) });
+    } catch (error) {
+      return send(res, 502, { error:`聊天 AI 分析失败：${String(error.message || error).slice(0, 220)}` });
+    }
+  }
+
+  const messageAnalysisTaskMatch = url.pathname.match(/^\/api\/messages\/analysis\/([^/]+)\/task$/);
+  if (req.method === 'POST' && messageAnalysisTaskMatch) {
+    const analysis = (db.messageAnalyses || []).find(item => item.id === messageAnalysisTaskMatch[1]);
+    if (!analysis || !(analysis.groupId === 'all-staff' || (analysis.participantUserIds || []).includes(user.id))) return send(res, 404, { error:'找不到这份聊天分析' });
+    if (analysis.taskId) {
+      const existing = (db.aiBossTasks || []).find(item => item.id === analysis.taskId);
+      if (existing) return send(res, 200, { task:existing, analysis, data:sanitizeDbForUser(db, user) });
+    }
+    const draft = analysis.suggestedTask || {};
+    if (!String(draft.title || '').trim()) return send(res, 400, { error:'这份分析没有建议任务，请先核对聊天内容后手动交办' });
+    const assignee = (db.users || []).find(item => item.id === String(draft.assigneeUserId || '') && item.active !== false) || user;
+    const now = new Date().toISOString();
+    const task = {
+      id:id(), title:String(draft.title).slice(0,180), description:String(draft.description || analysis.summary).slice(0,4000),
+      sourceText:analysis.summary, createdByUserId:user.id, createdByName:user.name || user.email,
+      assigneeUserId:assignee.id, assigneeName:assignee.name || assignee.email, helperUserIds:[], helperNames:[],
+      dueAt:normalizeAiBossDraftDueAt(db, draft.dueAt), priority:['低','普通','高','紧急'].includes(draft.priority) ? draft.priority : '普通',
+      difficulty:3, acceptanceCriteria:String(draft.acceptanceCriteria || '').slice(0,2000), aiReason:'由员工明确点击聊天 AI 分析中的“生成督办任务”创建',
+      status:'pending', progressUpdates:[], createdAt:now, updatedAt:now, acceptedAt:'', completedAt:'', verifiedAt:'', messageAnalysisId:analysis.id
+    };
+    db.aiBossTasks = db.aiBossTasks || [];
+    db.aiBossTasks.push(task);
+    analysis.taskId = task.id;
+    analysis.taskCreatedAt = now;
+    analysis.taskCreatedByUserId = user.id;
+    audit(db, user, 'create-task-from-message-analysis', { collection:'aiBossTasks', recordId:task.id, recordLabel:task.title, detail:'用户明确确认后从聊天 AI 分析生成督办任务' });
+    writeDb(db);
+    notifyDataChanged('message-analysis-task-created', task.id, analysis.participantUserIds);
+    return send(res, 201, { task, analysis, data:sanitizeDbForUser(db, user) });
+  }
+
   const voiceCallMatch = url.pathname.match(/^\/api\/voice-calls(?:\/([^/]+))?(?:\/(token|summary))?$/);
   if (voiceCallMatch) {
     const callId = String(voiceCallMatch[1] || '');
@@ -11036,14 +11210,14 @@ async function api(req, res) {
     }
     if (req.method === 'POST' && operation === 'summary') {
       if (!['ended', 'active'].includes(call.status)) return send(res, 409, { error: '请在通话接通或结束后整理内容' });
-      const body = await readBody(req); const notes = String(body.notes || '').trim().slice(0, 8000);
+      const body = await readBody(req); const notes = String(body.notes || (body.createTask === true ? call.summary : '') || '').trim().slice(0, 8000);
       if (!notes) return send(res, 400, { error: '请先输入本次通话的要点；系统不会在未告知双方的情况下录音' });
       try {
-        const result = await createAiBossDraft(db, `这是员工内部通话记录。请整理通话结论，并生成需要督办的任务：\n${notes}`, String(body.provider || ''));
+        const result = await createAiBossDraft(db, `这是员工内部通话记录。请整理通话结论，并提供一份供人工确认的后续任务建议；除非用户另行确认，系统不会自动创建任务：\n${notes}`, String(body.provider || ''));
         const draft = result.draft || {};
         call.summary = String(draft.description || notes).slice(0, 4000); call.summaryProvider = result.provider; call.summaryAt = new Date().toISOString();
         let task = null;
-        if (body.createTask !== false) {
+        if (body.createTask === true) {
           const assignee = (db.users || []).find(row => row.id === String(draft.assigneeUserId || body.assigneeUserId || '') && row.active !== false)
             || (db.users || []).find(row => row.id === call.answeredByUserId && row.active !== false)
             || user;

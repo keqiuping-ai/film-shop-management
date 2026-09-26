@@ -2189,6 +2189,7 @@ function messageModalHtml(users) {
           <button class="btn message-hold-voice" id="messageVoiceBtn" type="button"
             onclick="toggleVoiceMessageRecording(event)"
             oncontextmenu="event.preventDefault()">${lang === 'zh' ? '点击录音（最长60秒）' : 'Tap to record (60 sec max)'}</button>
+          <button class="btn message-ai-button" type="button" onclick="openInternalMessageAnalysis()">✨ ${lang === 'zh' ? 'AI 分析' : 'AI analysis'}</button>
           ${isGroup || messageUserCanCall(activeUser) ? `<button class="btn quad-call-tool-button" type="button" onclick="QuadCalls.enableNotifications(); ${isGroup ? 'QuadCalls.startGroup()' : `QuadCalls.startDirect('${activeUser?.id || ''}')`}">📞 ${lang === 'zh' ? '语音通话' : 'Voice call'}</button>` : ''}
           <input class="hidden" id="messageImageInput" type="file" accept="image/*" onchange="sendMessageFile(this.files[0], 'image'); this.value='';" />
           <input class="hidden" id="messageVideoInput" type="file" accept="video/*" onchange="sendMessageFile(this.files[0], 'video'); this.value='';" />
@@ -2204,6 +2205,55 @@ function messageModalHtml(users) {
       </div>
     </div>
   </div>`;
+}
+
+function currentMessageAnalysis() {
+  return (state?.messageAnalyses || []).filter(item => item.threadId === activeMessageUserId).sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')))[0] || null;
+}
+
+function messageAnalysisList(items) {
+  const rows = Array.isArray(items) ? items.filter(Boolean) : [];
+  return rows.length ? `<ul>${rows.map(item => `<li>${escapeHtml(typeof item === 'string' ? item : (item.title || item.text || item.description || JSON.stringify(item)))}</li>`).join('')}</ul>` : `<p class="note">${lang === 'zh' ? '暂无' : 'None'}</p>`;
+}
+
+function renderInternalMessageAnalysis(analysis = currentMessageAnalysis(), busyText = '') {
+  let layer = document.getElementById('messageAiAnalysisLayer');
+  if (!layer) { layer = document.createElement('div'); layer.id = 'messageAiAnalysisLayer'; document.body.appendChild(layer); }
+  const task = analysis?.suggestedTask || {};
+  layer.innerHTML = `<div class="message-ai-analysis-backdrop"><section class="message-ai-analysis-card"><button class="message-ai-close" onclick="closeInternalMessageAnalysis()">×</button>
+    <h2>✨ ${lang === 'zh' ? '聊天 AI 分析' : 'Chat AI analysis'}</h2>
+    ${busyText ? `<div class="message-ai-busy">${escapeHtml(busyText)}</div>` : ''}
+    ${analysis ? `<div class="message-ai-meta">${escapeHtml(analysis.threadName || '')} · ${escapeHtml(analysis.date || '')}</div>
+      <section><h3>${lang === 'zh' ? '摘要' : 'Summary'}</h3><p>${escapeHtml(analysis.summary || '')}</p></section>
+      <section><h3>${lang === 'zh' ? '重点' : 'Key points'}</h3>${messageAnalysisList(analysis.keyPoints)}</section>
+      <section><h3>${lang === 'zh' ? '决定' : 'Decisions'}</h3>${messageAnalysisList(analysis.decisions)}</section>
+      <section><h3>${lang === 'zh' ? '行动项' : 'Action items'}</h3>${messageAnalysisList(analysis.actionItems)}</section>
+      ${task.title ? `<section class="message-ai-task"><h3>${lang === 'zh' ? '任务建议（尚未创建）' : 'Suggested task (not created)'}</h3><strong>${escapeHtml(task.title)}</strong><p>${escapeHtml(task.description || '')}</p></section>` : ''}
+      <footer><button class="btn" onclick="runInternalMessageAnalysis()">${lang === 'zh' ? '重新分析当天聊天' : 'Analyze today again'}</button>${task.title ? `<button class="btn primary" ${analysis.taskId ? 'disabled' : ''} onclick="createTaskFromMessageAnalysis('${analysis.id}')">${analysis.taskId ? (lang === 'zh' ? '督办任务已生成' : 'Task created') : (lang === 'zh' ? '确认生成督办任务' : 'Create task')}</button>` : ''}</footer>`
+      : `<p>${lang === 'zh' ? '这里保存当天聊天的 AI 摘要。分析不会自动生成任务。' : 'AI summaries for today are saved here. Analysis does not create tasks.'}</p><footer><button class="btn primary" onclick="runInternalMessageAnalysis()">${lang === 'zh' ? 'AI 分析当天聊天' : 'Analyze today'}</button></footer>`}
+  </section></div>`;
+}
+
+function openInternalMessageAnalysis() { renderInternalMessageAnalysis(); }
+function closeInternalMessageAnalysis() { document.getElementById('messageAiAnalysisLayer')?.remove(); }
+
+async function runInternalMessageAnalysis() {
+  renderInternalMessageAnalysis(currentMessageAnalysis(), lang === 'zh' ? '正在分析并保存…' : 'Analyzing and saving…');
+  try {
+    const result = await api('/api/messages/analysis', { method:'POST', body:JSON.stringify({ threadId:activeMessageUserId }) });
+    if (result.data) state = result.data;
+    renderInternalMessageAnalysis(result.analysis);
+  } catch (error) { renderInternalMessageAnalysis(currentMessageAnalysis()); alert(error.message || error); }
+}
+
+async function createTaskFromMessageAnalysis(id) {
+  if (!confirm(lang === 'zh' ? '确认根据这份聊天分析生成督办任务？' : 'Create a task from this chat analysis?')) return;
+  renderInternalMessageAnalysis(currentMessageAnalysis(), lang === 'zh' ? '正在生成督办任务…' : 'Creating task…');
+  try {
+    const result = await api(`/api/messages/analysis/${encodeURIComponent(id)}/task`, { method:'POST', body:'{}' });
+    if (result.data) state = result.data;
+    renderInternalMessageAnalysis(result.analysis);
+  } catch (error) { renderInternalMessageAnalysis(currentMessageAnalysis()); alert(error.message || error); }
 }
 
 function internalMessagePendingImageHtml() {
