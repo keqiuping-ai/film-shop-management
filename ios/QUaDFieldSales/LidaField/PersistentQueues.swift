@@ -6,10 +6,12 @@ actor PersistentQueues {
         let planId: String
         let relativePath: String
         let createdAt: Date
+        var ownerIdentifier: String? = nil
     }
 
     static let shared = PersistentQueues()
     private let manager = FileManager.default
+    private var activeOwnerIdentifier: String?
 
     private var baseDirectory: URL {
         let root = manager.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
@@ -42,25 +44,71 @@ actor PersistentQueues {
         return directory.appendingPathComponent("meeting-\(UUID().uuidString).m4a")
     }
 
-    func recordings() -> [RecordingSegment] { read([RecordingSegment].self, from: recordingManifest) ?? [] }
-    func locations() -> [QueuedLocation] { read([QueuedLocation].self, from: locationManifest) ?? [] }
+    func activate(ownerIdentifier: String?, claimUnowned: Bool = false) throws {
+        activeOwnerIdentifier = ownerIdentifier
+        guard let ownerIdentifier, claimUnowned else { return }
+
+        var recordingItems = allRecordings()
+        var recordingChanged = false
+        for index in recordingItems.indices where recordingItems[index].ownerIdentifier == nil {
+            recordingItems[index].ownerIdentifier = ownerIdentifier
+            recordingChanged = true
+        }
+        if recordingChanged { try write(recordingItems, to: recordingManifest) }
+
+        var locationItems = allLocations()
+        var locationChanged = false
+        for index in locationItems.indices where locationItems[index].ownerIdentifier == nil {
+            locationItems[index].ownerIdentifier = ownerIdentifier
+            locationChanged = true
+        }
+        if locationChanged { try write(locationItems, to: locationManifest) }
+
+        var activeItems = allActiveRecordings()
+        var activeChanged = false
+        for index in activeItems.indices where activeItems[index].ownerIdentifier == nil {
+            activeItems[index].ownerIdentifier = ownerIdentifier
+            activeChanged = true
+        }
+        if activeChanged { try write(activeItems, to: activeRecordingManifest) }
+    }
+
+    func recordings() -> [RecordingSegment] {
+        guard let activeOwnerIdentifier else { return [] }
+        return allRecordings().filter { $0.ownerIdentifier == activeOwnerIdentifier }
+    }
+
+    func locations() -> [QueuedLocation] {
+        guard let activeOwnerIdentifier else { return [] }
+        return allLocations().filter { $0.ownerIdentifier == activeOwnerIdentifier }
+    }
 
     func appendRecording(_ segment: RecordingSegment) throws {
-        var items = recordings()
+        var items = allRecordings()
         guard !items.contains(where: { $0.id == segment.id }) else { return }
-        items.append(segment)
+        var ownedSegment = segment
+        if ownedSegment.ownerIdentifier == nil {
+            ownedSegment.ownerIdentifier = activeOwnerIdentifier
+        }
+        items.append(ownedSegment)
         try write(items, to: recordingManifest)
     }
 
     func registerActiveRecording(id: UUID, planId: String, relativePath: String, createdAt: Date) throws {
-        var items = read([ActiveRecording].self, from: activeRecordingManifest) ?? []
+        var items = allActiveRecordings()
         guard !items.contains(where: { $0.id == id }) else { return }
-        items.append(ActiveRecording(id: id, planId: planId, relativePath: relativePath, createdAt: createdAt))
+        items.append(ActiveRecording(
+            id: id,
+            planId: planId,
+            relativePath: relativePath,
+            createdAt: createdAt,
+            ownerIdentifier: activeOwnerIdentifier
+        ))
         try write(items, to: activeRecordingManifest)
     }
 
     func finalizeActiveRecording(id: UUID, byteCount: Int) throws {
-        var activeItems = read([ActiveRecording].self, from: activeRecordingManifest) ?? []
+        var activeItems = allActiveRecordings()
         guard let active = activeItems.first(where: { $0.id == id }) else { return }
         if byteCount > 0 {
             try appendRecording(RecordingSegment(
@@ -69,7 +117,8 @@ actor PersistentQueues {
                 relativePath: active.relativePath,
                 createdAt: active.createdAt,
                 byteCount: byteCount,
-                attempts: 0
+                attempts: 0,
+                ownerIdentifier: active.ownerIdentifier
             ))
         } else {
             try? manager.removeItem(at: recordingURL(name: active.relativePath))
@@ -79,7 +128,7 @@ actor PersistentQueues {
     }
 
     func abandonActiveRecording(id: UUID) throws {
-        var activeItems = read([ActiveRecording].self, from: activeRecordingManifest) ?? []
+        var activeItems = allActiveRecordings()
         guard let active = activeItems.first(where: { $0.id == id }) else { return }
         activeItems.removeAll { $0.id == id }
         try write(activeItems, to: activeRecordingManifest)
@@ -88,7 +137,7 @@ actor PersistentQueues {
 
     @discardableResult
     func recoverInterruptedRecordings() throws -> Int {
-        let activeItems = read([ActiveRecording].self, from: activeRecordingManifest) ?? []
+        let activeItems = allActiveRecordings().filter { $0.ownerIdentifier == activeOwnerIdentifier }
         var recovered = 0
         for active in activeItems {
             let url = recordingURL(name: active.relativePath)
@@ -100,19 +149,22 @@ actor PersistentQueues {
                     relativePath: active.relativePath,
                     createdAt: active.createdAt,
                     byteCount: size,
-                    attempts: 0
+                    attempts: 0,
+                    ownerIdentifier: active.ownerIdentifier
                 ))
                 recovered += 1
             } else {
                 try? manager.removeItem(at: url)
             }
         }
-        try write([ActiveRecording](), to: activeRecordingManifest)
+        let recoveredIDs = Set(activeItems.map(\.id))
+        let remaining = allActiveRecordings().filter { !recoveredIDs.contains($0.id) }
+        try write(remaining, to: activeRecordingManifest)
         return recovered
     }
 
     func removeRecording(_ id: UUID) throws {
-        var items = recordings()
+        var items = allRecordings()
         guard let segment = items.first(where: { $0.id == id }) else { return }
         items.removeAll { $0.id == id }
         try write(items, to: recordingManifest)
@@ -120,7 +172,7 @@ actor PersistentQueues {
     }
 
     func reconcileRecordingSize(_ id: UUID, byteCount: Int) throws {
-        var items = recordings()
+        var items = allRecordings()
         guard let index = items.firstIndex(where: { $0.id == id }) else { return }
         items[index].byteCount = byteCount
         items[index].lastError = nil
@@ -128,7 +180,7 @@ actor PersistentQueues {
     }
 
     func markRecordingFailed(_ id: UUID, reason: String) throws {
-        var items = recordings()
+        var items = allRecordings()
         guard let index = items.firstIndex(where: { $0.id == id }) else { return }
         items[index].attempts += 1
         items[index].lastError = reason
@@ -136,16 +188,32 @@ actor PersistentQueues {
     }
 
     func appendLocation(_ point: QueuedLocation) throws {
-        var items = locations()
+        var items = allLocations()
         guard !items.contains(where: { $0.id == point.id }) else { return }
-        items.append(point)
+        var ownedPoint = point
+        if ownedPoint.ownerIdentifier == nil {
+            ownedPoint.ownerIdentifier = activeOwnerIdentifier
+        }
+        items.append(ownedPoint)
         try write(items, to: locationManifest)
     }
 
     func removeLocation(_ id: UUID) throws {
-        var items = locations()
+        var items = allLocations()
         items.removeAll { $0.id == id }
         try write(items, to: locationManifest)
+    }
+
+    private func allRecordings() -> [RecordingSegment] {
+        read([RecordingSegment].self, from: recordingManifest) ?? []
+    }
+
+    private func allLocations() -> [QueuedLocation] {
+        read([QueuedLocation].self, from: locationManifest) ?? []
+    }
+
+    private func allActiveRecordings() -> [ActiveRecording] {
+        read([ActiveRecording].self, from: activeRecordingManifest) ?? []
     }
 
     private func read<T: Decodable>(_ type: T.Type, from url: URL) -> T? {

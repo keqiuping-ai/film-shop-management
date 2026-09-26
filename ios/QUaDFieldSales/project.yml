@@ -28,7 +28,7 @@ targets:
       properties:
         CFBundleDisplayName: QUaD Field Sales
         CFBundleShortVersionString: 2.2.2
-        CFBundleVersion: "50"
+        CFBundleVersion: "51"
         ITSAppUsesNonExemptEncryption: false
         UILaunchScreen: {}
         NSMicrophoneUsageDescription: 用于将现场沟通语音转换为会议纪要；语音会分段安全保存并同步至公司系统。

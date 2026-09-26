@@ -4460,6 +4460,7 @@ function fieldSalesPeopleOptions(selected = '') {
 
 function setFieldSalesUserFilter(value) {
   fieldSalesUserFilter = value || 'all';
+  fieldSalesExpandedEmployeeId = fieldSalesUserFilter === 'all' ? '' : fieldSalesUserFilter;
   render();
 }
 
@@ -4474,7 +4475,9 @@ function setFieldSalesEmployeeDate(personId, value) {
 }
 
 function toggleFieldSalesEmployeeLane(personId) {
-  fieldSalesExpandedEmployeeId = fieldSalesExpandedEmployeeId === personId ? '' : personId;
+  const closing = fieldSalesExpandedEmployeeId === personId;
+  fieldSalesExpandedEmployeeId = closing ? '' : personId;
+  fieldSalesUserFilter = closing ? 'all' : personId;
   render();
 }
 
@@ -4637,6 +4640,41 @@ function fieldSalesRouteWorldPoint(latitude, longitude, zoom) {
   };
 }
 
+function fieldSalesRouteDistanceMeters(a, b) {
+  const lat1 = Number(a?.latitude) * Math.PI / 180;
+  const lat2 = Number(b?.latitude) * Math.PI / 180;
+  const dLat = lat2 - lat1;
+  const dLng = (Number(b?.longitude) - Number(a?.longitude)) * Math.PI / 180;
+  const value = Math.sin(dLat / 2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2;
+  return 6371000 * 2 * Math.atan2(Math.sqrt(value), Math.sqrt(Math.max(0, 1 - value)));
+}
+
+function fieldSalesRouteStops(points) {
+  const stops = [];
+  let start = 0;
+  const finish = end => {
+    if (end <= start) return;
+    const firstAt = new Date(points[start]?.collectedAt || '').getTime();
+    const lastAt = new Date(points[end]?.collectedAt || '').getTime();
+    if (!Number.isFinite(firstAt) || !Number.isFinite(lastAt) || lastAt - firstAt < 4 * 60 * 1000) return;
+    const cluster = points.slice(start, end + 1);
+    stops.push({
+      latitude: cluster.reduce((sum, item) => sum + Number(item.latitude), 0) / cluster.length,
+      longitude: cluster.reduce((sum, item) => sum + Number(item.longitude), 0) / cluster.length,
+      startedAt: points[start].collectedAt,
+      endedAt: points[end].collectedAt,
+      minutes: Math.max(1, Math.round((lastAt - firstAt) / 60000))
+    });
+  };
+  for (let index = 1; index < points.length; index += 1) {
+    if (fieldSalesRouteDistanceMeters(points[start], points[index]) <= 100) continue;
+    finish(index - 1);
+    start = index;
+  }
+  finish(points.length - 1);
+  return stops;
+}
+
 function fieldSalesEmployeeRouteMap(personId, data, selectedDate) {
   const rawPoints = (data.locationPoints || [])
     .filter(item => item.userId === personId && (item.businessDate || fieldSalesRouteDateKey(item.collectedAt)) === selectedDate)
@@ -4683,9 +4721,16 @@ function fieldSalesEmployeeRouteMap(personId, data, selectedDate) {
     const point = fieldSalesRouteWorldPoint(lat, lng, zoom);
     return `<circle class="visit" cx="${(point.x - left).toFixed(2)}" cy="${(point.y - top).toFixed(2)}" r="6"><title>${escapeHtml(visit.businessName || '')}</title></circle>`;
   }).join('');
+  const stopMarkers = fieldSalesRouteStops(rawPoints).map(stop => {
+    const point = fieldSalesRouteWorldPoint(stop.latitude, stop.longitude, zoom);
+    const title = lang === 'zh'
+      ? `停留约 ${stop.minutes} 分钟 · ${fieldSalesDateTime(stop.startedAt)} 至 ${fieldSalesDateTime(stop.endedAt)}`
+      : `Stopped about ${stop.minutes} min · ${fieldSalesDateTime(stop.startedAt)} to ${fieldSalesDateTime(stop.endedAt)}`;
+    return `<circle class="stop" cx="${(point.x - left).toFixed(2)}" cy="${(point.y - top).toFixed(2)}" r="6"><title>${escapeHtml(title)}</title></circle>`;
+  }).join('');
   const directionsUrl = `https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(`${first.latitude},${first.longitude}`)}&destination=${encodeURIComponent(`${last.latitude},${last.longitude}`)}&travelmode=driving`;
   return `<div class="field-sales-route">
-    <div class="field-sales-route-map"><div class="field-sales-route-tiles">${tileImages.join('')}</div><svg viewBox="0 0 ${width} ${height}" role="img" aria-label="${lang === 'zh' ? '业务员行动轨迹' : 'Salesperson route'}"><polyline points="${line}"></polyline>${visitMarkers}<circle class="start" cx="${screenPoints[0].x.toFixed(2)}" cy="${screenPoints[0].y.toFixed(2)}" r="7"><title>${lang === 'zh' ? '起点' : 'Start'}</title></circle><circle class="end" cx="${screenPoints[screenPoints.length - 1].x.toFixed(2)}" cy="${screenPoints[screenPoints.length - 1].y.toFixed(2)}" r="7"><title>${lang === 'zh' ? '终点' : 'End'}</title></circle></svg><small class="field-sales-route-attribution">© OpenStreetMap</small></div>
+    <div class="field-sales-route-map"><div class="field-sales-route-tiles">${tileImages.join('')}</div><svg viewBox="0 0 ${width} ${height}" role="img" aria-label="${lang === 'zh' ? '业务员行动轨迹' : 'Salesperson route'}"><polyline points="${line}"></polyline>${stopMarkers}${visitMarkers}<circle class="start" cx="${screenPoints[0].x.toFixed(2)}" cy="${screenPoints[0].y.toFixed(2)}" r="7"><title>${lang === 'zh' ? '起点' : 'Start'}</title></circle><circle class="end" cx="${screenPoints[screenPoints.length - 1].x.toFixed(2)}" cy="${screenPoints[screenPoints.length - 1].y.toFixed(2)}" r="7"><title>${lang === 'zh' ? '终点' : 'End'}</title></circle></svg><small class="field-sales-route-attribution">© OpenStreetMap</small></div>
     <footer><span>${lang === 'zh' ? `${rawPoints.length} 个定位点 · ${fieldSalesDateTime(first.collectedAt)} 至 ${fieldSalesDateTime(last.collectedAt)}` : `${rawPoints.length} points · ${fieldSalesDateTime(first.collectedAt)} to ${fieldSalesDateTime(last.collectedAt)}`}</span><a class="btn" href="${directionsUrl}" target="_blank" rel="noopener">${lang === 'zh' ? '在地图中打开' : 'Open in Maps'}</a></footer>
   </div>`;
 }
@@ -4856,7 +4901,9 @@ function fieldSalesManagementView() {
   const reports = fieldSalesFiltered(data.dailyReports || [], 'userId');
   const trials = fieldSalesFiltered(data.trialRolls || [], 'userId');
   const checkInAttempts = fieldSalesFiltered(data.checkInAttempts || [], 'userId');
-  const plans = fieldSalesFiltered(data.visitPlans || [], 'userId');
+  const plans = fieldSalesUserFilter === 'all'
+    ? (data.visitPlans || [])
+    : (data.visitPlans || []).filter(item => (item.assignedUserId || item.userId) === fieldSalesUserFilter);
   const trips = fieldSalesFiltered(data.trips || [], 'userId');
   const clockRecords = fieldSalesFiltered(state.clockRecords || [], 'userId');
   const day = today();
@@ -5111,7 +5158,9 @@ function selectAttendanceEmployee(userId) { attendanceSelectedUserId = userId; r
 
 function desktopClockTable(records) {
   if (!records.length) return `<div class="empty-state">${lang === 'zh' ? '暂无打卡记录' : 'No clock records'}</div>`;
-  return `<div class="table-wrap"><table><thead><tr><th>${lang === 'zh' ? '员工' : 'Employee'}</th><th>${lang === 'zh' ? '类型' : 'Type'}</th><th>${lang === 'zh' ? '时间' : 'Time'}</th><th>${lang === 'zh' ? '位置' : 'Location'}</th><th>${lang === 'zh' ? '门店范围' : 'Office range'}</th></tr></thead><tbody>${records.map(item => `<tr><td>${escapeHtml(item.userName || '')}</td><td>${item.type === 'in' ? (lang === 'zh' ? '上班' : 'In') : (lang === 'zh' ? '下班' : 'Out')}</td><td>${escapeHtml(formatAppDateTime(item.at))}</td><td>${item.mapUrl ? `<a href="${escapeHtml(item.mapUrl)}" target="_blank" rel="noopener">${escapeHtml(item.address || `${item.lat}, ${item.lng}`)}</a>` : escapeHtml(item.address || '—')}</td><td>${item.officeMatched ? `${lang === 'zh' ? '✅ 范围内' : '✅ In range'}${item.officeLocationName ? `<br><span class="note">${escapeHtml(item.officeLocationName)}</span>` : ''}` : (lang === 'zh' ? '⚠️ 范围外' : '⚠️ Out of range')}</td></tr>`).join('')}</tbody></table></div>`;
+  const visibleRecords = records.slice(0, 200);
+  const remaining = Math.max(0, records.length - visibleRecords.length);
+  return `<div class="table-wrap"><table><thead><tr><th>${lang === 'zh' ? '员工' : 'Employee'}</th><th>${lang === 'zh' ? '类型' : 'Type'}</th><th>${lang === 'zh' ? '时间' : 'Time'}</th><th>${lang === 'zh' ? '位置' : 'Location'}</th><th>${lang === 'zh' ? '门店范围' : 'Office range'}</th></tr></thead><tbody>${visibleRecords.map(item => `<tr><td>${escapeHtml(item.userName || '')}</td><td>${item.type === 'in' ? (lang === 'zh' ? '上班' : 'In') : (lang === 'zh' ? '下班' : 'Out')}</td><td>${escapeHtml(formatAppDateTime(item.at))}</td><td>${item.mapUrl ? `<a href="${escapeHtml(item.mapUrl)}" target="_blank" rel="noopener">${escapeHtml(item.address || `${item.lat}, ${item.lng}`)}</a>` : escapeHtml(item.address || '—')}</td><td>${item.officeMatched ? `${lang === 'zh' ? '✅ 范围内' : '✅ In range'}${item.officeLocationName ? `<br><span class="note">${escapeHtml(item.officeLocationName)}</span>` : ''}` : (lang === 'zh' ? '⚠️ 范围外' : '⚠️ Out of range')}</td></tr>`).join('')}</tbody></table>${remaining ? `<p class="note">${lang === 'zh' ? `还有 ${remaining} 条更早记录，请先选择具体业务员缩小范围。` : `${remaining} older records are hidden. Select one salesperson to narrow the list.`}</p>` : ''}</div>`;
 }
 
 async function desktopClock(type) {

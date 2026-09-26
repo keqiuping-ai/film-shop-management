@@ -12,6 +12,7 @@ final class LocationTracker: NSObject, ObservableObject, @preconcurrency CLLocat
     private var lastQueuedAt = Date.distantPast
     private var oneShotContinuation: CheckedContinuation<CLLocation, Error>?
     private var oneShotTimeoutTask: Task<Void, Never>?
+    private var samplingTask: Task<Void, Never>?
     private let maximumUsableAccuracyM: CLLocationAccuracy = 1_000
     private var customerLocationCache: [String: CLLocation] = [:]
     var onPoint: ((QueuedLocation) -> Void)?
@@ -159,18 +160,37 @@ final class LocationTracker: NSObject, ObservableObject, @preconcurrency CLLocat
     }
 
     func start(shiftId: String) {
+        if self.shiftId == shiftId, isTracking { return }
+        samplingTask?.cancel()
         self.shiftId = shiftId
+        lastQueuedAt = .distantPast
         requestAuthorization()
         manager.startUpdatingLocation()
         isTracking = true
         status = "上班中 · 手机综合定位持续记录"
+        samplingTask = Task { [weak self] in
+            guard let self else { return }
+            await queueLatestLocation(force: true)
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(300))
+                guard !Task.isCancelled, isTracking else { return }
+                await queueLatestLocation(force: true)
+            }
+        }
     }
 
     func stop() {
+        samplingTask?.cancel()
+        samplingTask = nil
         manager.stopUpdatingLocation()
         shiftId = nil
         isTracking = false
         status = "已下班"
+    }
+
+    func recordCurrentLocation(_ location: CLLocation) async {
+        lastLocation = location
+        await queueLocation(location, collectedAt: Date(), force: true)
     }
 
     func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
@@ -188,23 +208,38 @@ final class LocationTracker: NSObject, ObservableObject, @preconcurrency CLLocat
                 status = "已收到手机位置，正在等待系统改善定位精度"
             }
         }
-        guard let shiftId,
-              isUsable(location, maximumAge: 120),
-              Date().timeIntervalSince(lastQueuedAt) >= 300 else { return }
-        lastQueuedAt = Date()
+        guard isUsable(location, maximumAge: 120) else { return }
         Task { [weak self] in
-            guard let self else { return }
-            let address = await humanReadableAddress(for: location)
-            let point = QueuedLocation(
-                id: UUID(), shiftId: shiftId,
-                collectedAt: ISO8601DateFormatter().string(from: location.timestamp),
-                latitude: location.coordinate.latitude, longitude: location.coordinate.longitude,
-                accuracyM: location.horizontalAccuracy,
-                address: address
-            )
-            try? await PersistentQueues.shared.appendLocation(point)
-            onPoint?(point)
+            await self?.queueLocation(location, collectedAt: location.timestamp, force: false)
         }
+    }
+
+    private func queueLatestLocation(force: Bool) async {
+        guard isTracking,
+              let location = lastLocation ?? manager.location,
+              location.horizontalAccuracy >= 0,
+              location.horizontalAccuracy <= maximumUsableAccuracyM else { return }
+        // A stationary employee may not trigger a fresh Core Location callback.
+        // Sample the most recent fused fix at the five-minute heartbeat so the
+        // route still records a verifiable stop instead of an unexplained gap.
+        await queueLocation(location, collectedAt: Date(), force: force)
+    }
+
+    private func queueLocation(_ location: CLLocation, collectedAt: Date, force: Bool) async {
+        guard let shiftId, isTracking else { return }
+        let now = Date()
+        guard force || now.timeIntervalSince(lastQueuedAt) >= 300 else { return }
+        lastQueuedAt = now
+        let address = await humanReadableAddress(for: location)
+        let point = QueuedLocation(
+            id: UUID(), shiftId: shiftId,
+            collectedAt: ISO8601DateFormatter().string(from: collectedAt),
+            latitude: location.coordinate.latitude, longitude: location.coordinate.longitude,
+            accuracyM: location.horizontalAccuracy,
+            address: address
+        )
+        try? await PersistentQueues.shared.appendLocation(point)
+        onPoint?(point)
     }
 
     func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {

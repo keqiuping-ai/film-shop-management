@@ -1747,10 +1747,11 @@ function sanitizeDbForUser(db, user, options = {}) {
     expenses: p.expensesView || p.fullFinanceView ? branchVisibleRecords(db, user, db.expenses || []) : [],
     reimbursements: p.reimbursementsView ? branchVisibleRecords(db, user, db.reimbursements || []).filter(item => canApproveReimbursements || item.employeeUserId === user.id) : [],
     canApproveLeave: canApproveLeave(user),
-    clockRecords: (db.clockRecords || [])
-      .filter(item => canApproveLeave(user) || item.userId === user.id)
-      .sort((a, b) => String(b.at || '').localeCompare(String(a.at || '')))
-      .slice(0, 200)
+    clockRecords: newestRowsPerUser(
+      (db.clockRecords || []).filter(item => canApproveLeave(user) || item.userId === user.id),
+      400,
+      'at'
+    )
       .map(item => clockRecordWithCurrentOfficeMatch(db, item)),
     leaveRequests: (db.leaveRequests || [])
       .filter(item => canApproveLeave(user) || item.userId === user.id)
@@ -2289,10 +2290,29 @@ function fieldSalesInventoryPricingResults(db, user, query, limit = 40) {
     });
 }
 
+function fieldSalesAssignedUserId(item) {
+  return String(item?.assignedUserId || item?.userId || '').trim();
+}
+
 function fieldSalesVisible(item, user) {
   if (item?.active === false) return false;
   if (canManageFieldSales(user)) return true;
-  return [item?.assignedUserId, item?.userId, item?.createdByUserId].includes(user?.id);
+  // Customer and work ownership is exclusive. A creator must not retain access
+  // after a manager assigns the record to another salesperson.
+  return fieldSalesAssignedUserId(item) === String(user?.id || '');
+}
+
+function newestRowsPerUser(rows, perUserLimit, timestampKey) {
+  const counts = new Map();
+  return [...rows]
+    .sort((a, b) => String(b?.[timestampKey] || '').localeCompare(String(a?.[timestampKey] || '')))
+    .filter(item => {
+      const userId = String(item?.userId || '');
+      const count = counts.get(userId) || 0;
+      if (count >= perUserLimit) return false;
+      counts.set(userId, count + 1);
+      return true;
+    });
 }
 
 function addDaysIso(db, days, hour = 17) {
@@ -2348,20 +2368,22 @@ function fieldSalesSnapshot(db, user) {
       .filter(item => canManage || item.userId === user.id)
       .sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')))
       .slice(0, 200),
-    locationPoints: (db.salesLocationPoints || [])
-      .filter(item => canManage || item.userId === user.id)
+    locationPoints: newestRowsPerUser(
+      (db.salesLocationPoints || []).filter(item => canManage || item.userId === user.id),
+      1600,
+      'collectedAt'
+    )
       .map(item => ({
         ...item,
         businessDate:item.businessDate || instantDateInTimezone(item.collectedAt, db.settings?.timezone || 'America/Los_Angeles')
       }))
-      .sort((a, b) => String(a.collectedAt || '').localeCompare(String(b.collectedAt || '')))
-      .slice(-1000),
+      .sort((a, b) => String(a.collectedAt || '').localeCompare(String(b.collectedAt || ''))),
     visitPlans: (db.salesVisitPlans || [])
-      .filter(item => canManage || item.userId === user.id || item.assignedUserId === user.id)
+      .filter(item => canManage || (accountIds.has(item.accountId) && fieldSalesAssignedUserId(item) === user.id))
       .sort((a, b) => String(a.plannedAt || '').localeCompare(String(b.plannedAt || '')))
       .slice(0, 500),
     followUps: (db.salesFollowUps || [])
-      .filter(item => canManage || item.userId === user.id || item.assignedUserId === user.id)
+      .filter(item => canManage || (accountIds.has(item.accountId) && fieldSalesAssignedUserId(item) === user.id))
       .sort((a, b) => String(a.dueAt || '').localeCompare(String(b.dueAt || '')))
       .slice(0, 500),
     fieldOrders: (db.salesFieldOrders || [])
@@ -2402,10 +2424,11 @@ function mobileSnapshot(db, user) {
         .sort((a, b) => String(b.createdAt || b.date || '').localeCompare(String(a.createdAt || a.date || '')))
         .slice(0, 200)
       : [],
-    clockRecords: (db.clockRecords || [])
-      .filter(item => approver || item.userId === userId)
-      .sort((a, b) => String(b.at || '').localeCompare(String(a.at || '')))
-      .slice(0, 200)
+    clockRecords: newestRowsPerUser(
+      (db.clockRecords || []).filter(item => approver || item.userId === userId),
+      400,
+      'at'
+    )
       .map(item => clockRecordWithCurrentOfficeMatch(db, item)),
     leaveRequests: (db.leaveRequests || [])
       .filter(item => approver || item.userId === userId)
@@ -8867,6 +8890,7 @@ async function api(req, res) {
       businessDate:instantDateInTimezone(collectedAt, db.settings?.timezone || 'America/Los_Angeles'),
       latitude, longitude,
       accuracyM: Number.isFinite(accuracyM) ? Math.max(0, accuracyM) : 0,
+      address: String(body.address || '').trim().slice(0, 500),
       source: String(body.source || 'IOS_NATIVE').trim().slice(0, 40),
       createdAt: new Date().toISOString()
     };
@@ -8907,7 +8931,7 @@ async function api(req, res) {
       const linkedPlan = (db.salesVisitPlans || []).find(row => row.id === targetId);
       const linkedAccount = (db.salesAccounts || []).find(row => row.id === targetId);
       if (!canManageFieldSales(user) && linkedVisit && linkedVisit.userId !== user.id) return send(res, 403, { error:'不能上传到其他业务员的拜访记录' });
-      if (!canManageFieldSales(user) && linkedPlan && ![linkedPlan.userId, linkedPlan.assignedUserId].includes(user.id)) return send(res, 403, { error:'不能上传到其他业务员的拜访计划' });
+      if (!canManageFieldSales(user) && linkedPlan && fieldSalesAssignedUserId(linkedPlan) !== user.id) return send(res, 403, { error:'不能上传到其他业务员的拜访计划' });
       if (linkedAccount && !fieldSalesVisible(linkedAccount, user)) return send(res, 403, { error:'不能上传到无权查看的客户档案' });
       fs.mkdirSync(CUSTOMER_MEDIA_DIR, { recursive: true });
       const storedName = `${crypto.randomBytes(6).toString('hex')}${safeCustomerMediaExtension(fileName, contentType)}`;
@@ -8998,7 +9022,7 @@ async function api(req, res) {
     const index = (db.salesVisitPlans || []).findIndex(item => item.id === planId);
     if (index < 0) return send(res, 404, { error: '找不到这个拜访计划' });
     const plan = db.salesVisitPlans[index];
-    if (!canManageFieldSales(user) && ![plan.userId, plan.assignedUserId].includes(user.id)) return send(res, 403, { error: '不能取消其他业务员的拜访计划' });
+    if (!canManageFieldSales(user) && fieldSalesAssignedUserId(plan) !== user.id) return send(res, 403, { error: '不能取消其他业务员的拜访计划' });
     if (!canAccessBranch(db, user, plan.branchId)) return send(res, 403, { error: '你没有这个计划所属分店的数据权限' });
     if (!['待出发', 'PLANNED', 'PENDING', 'SCHEDULED'].includes(String(plan.status || ''))) {
       return send(res, 409, { error: '只有尚未出发的计划可以取消' });
@@ -9025,7 +9049,9 @@ async function api(req, res) {
     if (!account) return send(res, 404, { error:'找不到这个客户' });
     const dueAt = String(body.dueAt || '').trim();
     if (!dueAt || !String(body.reason || '').trim()) return send(res, 400, { error:'请填写跟进时间和原因' });
-    const assignedUserId = (db.users || []).some(item => item.id === body.assignedUserId && item.active !== false) ? String(body.assignedUserId) : user.id;
+    const assignedUserId = canManageFieldSales(user) && (db.users || []).some(item => item.id === body.assignedUserId && item.active !== false)
+      ? String(body.assignedUserId)
+      : user.id;
     const task = {
       id:id(), accountId:account.id, businessName:account.businessName, branchId:account.branchId || '',
       userId:user.id, assignedUserId, assignedUserName:(db.users || []).find(item => item.id === assignedUserId)?.name || '',
@@ -9789,6 +9815,7 @@ async function api(req, res) {
       email: user.email || '',
       branchId: String(user.defaultBranchId || '').trim(),
       type,
+      shiftId: type === 'out' ? String(body.shiftId || '').trim().slice(0, 100) : '',
       at: new Date().toISOString(),
       date: dateInTimezone(db.settings?.timezone || 'America/Los_Angeles', 0),
       lat,

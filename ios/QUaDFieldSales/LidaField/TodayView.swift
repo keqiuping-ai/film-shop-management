@@ -204,7 +204,14 @@ enum PhotoEvidenceBuilder {
     }
 
     private static func jpegDataWithGPS(image: UIImage, location: CLLocation, capturedAt: Date) -> Data? {
-        guard let original = image.jpegData(compressionQuality: 0.9),
+        let normalized = resized(image, maximumDimension: 2_560)
+        var original: Data?
+        for quality in stride(from: 0.84, through: 0.42, by: -0.07) {
+            guard let candidate = normalized.jpegData(compressionQuality: quality) else { continue }
+            original = candidate
+            if candidate.count <= 8_000_000 { break }
+        }
+        guard let original,
               let source = CGImageSourceCreateWithData(original as CFData, nil),
               let type = CGImageSourceGetType(source) else { return nil }
 
@@ -234,6 +241,18 @@ enum PhotoEvidenceBuilder {
         CGImageDestinationAddImageFromSource(destination, source, 0, properties as CFDictionary)
         guard CGImageDestinationFinalize(destination) else { return nil }
         return output as Data
+    }
+
+    private static func resized(_ image: UIImage, maximumDimension: CGFloat) -> UIImage {
+        let longest = max(image.size.width, image.size.height)
+        guard longest > maximumDimension else { return image }
+        let scale = maximumDimension / longest
+        let size = CGSize(width: image.size.width * scale, height: image.size.height * scale)
+        let format = UIGraphicsImageRendererFormat.default()
+        format.scale = 1
+        return UIGraphicsImageRenderer(size: size, format: format).image { _ in
+            image.draw(in: CGRect(origin: .zero, size: size))
+        }
     }
 }
 

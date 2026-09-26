@@ -233,7 +233,15 @@ final class AppState: ObservableObject {
         guard !isDesignPreview, let token = TokenStore.load() else { return }
         await api.setToken(token)
         do {
-            user = try await api.me()
+            let restoredUser = try await api.me()
+            stopAutomaticBusinessRefresh()
+            resetAccountScopedState()
+            user = restoredUser
+            try? await PersistentQueues.shared.activate(
+                ownerIdentifier: profileStoreIdentifier,
+                claimUnowned: true
+            )
+            await recorder.refreshPendingCount()
         } catch {
             if case APIError.unauthorized = error {
                 TokenStore.delete()
@@ -259,8 +267,17 @@ final class AppState: ObservableObject {
         defer { isBusy = false }
         do {
             let response = try await api.login(account: account, password: password)
-            try TokenStore.save(response.accessToken)
+            do {
+                try TokenStore.save(response.accessToken)
+            } catch {
+                await api.setToken(nil)
+                throw error
+            }
+            stopAutomaticBusinessRefresh()
+            resetAccountScopedState()
             user = response.user
+            try? await PersistentQueues.shared.activate(ownerIdentifier: profileStoreIdentifier)
+            await recorder.refreshPendingCount()
             loadProfilePresentation()
             region = RegionalConfiguration.resolve(user: response.user)
             await api.setRegionalConfiguration(region)
@@ -274,16 +291,35 @@ final class AppState: ObservableObject {
     func logout() async {
         stopAutomaticBusinessRefresh()
         if recorder.isRecording { await recorder.stop() }
+        // Claim legacy unscoped queue entries for the employee who created
+        // them before removing that employee from memory.
+        try? await PersistentQueues.shared.activate(
+            ownerIdentifier: profileStoreIdentifier,
+            claimUnowned: true
+        )
         persistAllMeetingDrafts()
         meetingDraftSaveTasks.values.forEach { $0.cancel() }
         meetingDraftSaveTasks = [:]
         location.stop()
         TokenStore.delete()
         await api.setToken(nil)
+        try? await PersistentQueues.shared.activate(ownerIdentifier: nil)
+        await recorder.refreshPendingCount()
+        resetAccountScopedState()
+    }
+
+    /// Clears every value that is owned by one authenticated employee. This is
+    /// intentionally shared by logout, restored-session activation and a fresh
+    /// login so switching accounts never waits for the new network refresh
+    /// before removing the former salesperson's information.
+    private func resetAccountScopedState() {
         user = nil
         dashboard = nil
         customers = []
+        selectedVisit = nil
+        activeTripConflict = nil
         selectedCustomerIDs = []
+        completedArtifactsByPlan = [:]
         internalMessages = []
         internalMessageDeliveryTasks.values.forEach { $0.cancel() }
         internalMessageDeliveryTasks = [:]
@@ -297,8 +333,16 @@ final class AppState: ObservableObject {
         completedMeetingPlanIDs = []
         profileDisplayName = ""
         profileAvatarData = nil
+        lastBusinessRefreshAt = nil
+        businessRefreshStatus = "等待首次更新"
+        isRefreshingBusinessData = false
+        isLoadingMessages = false
+        isSavingVisitPlans = false
+        deletingVisitPlanIDs = []
         isAttendanceBusy = false
         attendanceActionStatus = ""
+        successMessage = ""
+        errorMessage = ""
     }
 
     var displayedProfileName: String {
@@ -330,12 +374,16 @@ final class AppState: ObservableObject {
             return false
         }
 
-        guard !isDesignPreview, let userId = user?.userId else {
+        guard !isDesignPreview,
+              let userId = user?.userId,
+              let expectedAccount = profileStoreIdentifier else {
             successMessage = "头像与姓名已保存"
             return true
         }
         do {
-            user = try await api.updateProfile(displayName: normalizedName)
+            let updatedUser = try await api.updateProfile(displayName: normalizedName)
+            guard profileStoreIdentifier == expectedAccount else { return false }
+            user = updatedUser
             if let avatarData {
                 let uploaded = try await api.uploadAttachment(
                     objectId: userId,
@@ -361,7 +409,7 @@ final class AppState: ObservableObject {
                 }
             }
             let overview = try await api.collaborationOverview()
-            await applyInternalMessageOverview(overview)
+            await applyInternalMessageOverview(overview, expectedAccount: expectedAccount)
             successMessage = "头像与姓名已同步到企业系统"
             return true
         } catch {
@@ -473,8 +521,11 @@ final class AppState: ObservableObject {
             dashboard = shouldPersistAttendanceState ? reconciledDashboard(preview) : preview
             return
         }
+        let expectedAccount = profileStoreIdentifier
         let date = APIClient.localDate(timeZoneIdentifier: region.timeZoneIdentifier)
-        dashboard = try await api.dashboard(date: date)
+        let refreshed = try await api.dashboard(date: date)
+        guard expectedAccount != nil, profileStoreIdentifier == expectedAccount else { return }
+        dashboard = refreshed
         resumeNativeServices()
     }
 
@@ -482,8 +533,9 @@ final class AppState: ObservableObject {
         if isDesignPreview { return PreviewData.dashboard(for: region) }
         let dateKey = APIClient.localDate(date, timeZoneIdentifier: region.timeZoneIdentifier)
         let todayKey = APIClient.localDate(timeZoneIdentifier: region.timeZoneIdentifier)
+        let expectedAccount = profileStoreIdentifier
         let remote = try await api.dashboard(date: dateKey)
-        if dateKey == todayKey {
+        if dateKey == todayKey, expectedAccount != nil, profileStoreIdentifier == expectedAccount {
             dashboard = remote
             resumeNativeServices()
         }
@@ -497,8 +549,16 @@ final class AppState: ObservableObject {
                 : PreviewData.customers(for: region)
             return
         }
-        do { customers = scopedCustomers(try await api.customers()) }
-        catch { errorMessage = error.localizedDescription }
+        let expectedAccount = profileStoreIdentifier
+        do {
+            let refreshed = try await api.customers()
+            guard expectedAccount != nil, profileStoreIdentifier == expectedAccount else { return }
+            customers = scopedCustomers(refreshed)
+        }
+        catch {
+            guard expectedAccount != nil, profileStoreIdentifier == expectedAccount else { return }
+            errorMessage = error.localizedDescription
+        }
     }
 
     func loadInternalMessages() async {
@@ -508,17 +568,25 @@ final class AppState: ObservableObject {
             return
         }
         guard !isLoadingMessages else { return }
+        let expectedAccount = profileStoreIdentifier
         isLoadingMessages = true
         defer { isLoadingMessages = false }
         do {
             let overview = try await api.collaborationOverview()
-            await applyInternalMessageOverview(overview)
+            guard expectedAccount != nil, profileStoreIdentifier == expectedAccount else { return }
+            await applyInternalMessageOverview(overview, expectedAccount: expectedAccount)
         } catch {
+            guard expectedAccount != nil, profileStoreIdentifier == expectedAccount else { return }
             errorMessage = error.localizedDescription
         }
     }
 
-    private func applyInternalMessageOverview(_ overview: CollaborationOverview) async {
+    private func applyInternalMessageOverview(
+        _ overview: CollaborationOverview,
+        expectedAccount: String?
+    ) async {
+        let account = expectedAccount ?? profileStoreIdentifier
+        guard account != nil, profileStoreIdentifier == account else { return }
         internalMessages = overview.messages
         internalMessageUsers = overview.users.filter { $0.userId != user?.userId }
         let activeUserIDs = Set(overview.users.map(\.userId))
@@ -546,6 +614,7 @@ final class AppState: ObservableObject {
             guard let data = try? await api.downloadAttachment(attachmentId, module: "profile-avatar") else {
                 continue
             }
+            guard profileStoreIdentifier == account else { return }
             internalMessageAvatarData[messageUser.userId] = data
             internalMessageAvatarAttachmentIDs[messageUser.userId] = attachmentId
             if messageUser.userId == user?.userId {
@@ -563,6 +632,7 @@ final class AppState: ObservableObject {
 
     func applicationDidBecomeActive() async {
         await checkAppVersion()
+        guard isAuthenticated else { return }
         let recoveryPreviewEnabled = ProcessInfo.processInfo.arguments.contains("-preview-enable-recovery")
         if (!isDesignPreview || recoveryPreviewEnabled), !recorder.isRecording {
             do {
@@ -575,7 +645,6 @@ final class AppState: ObservableObject {
                 errorMessage = "异常退出录音恢复失败：\(error.localizedDescription)"
             }
         }
-        guard isAuthenticated else { return }
         await refreshBusinessData(showCompletion: false)
         startAutomaticBusinessRefresh()
     }
@@ -583,6 +652,7 @@ final class AppState: ObservableObject {
     @discardableResult
     func refreshBusinessData(showCompletion: Bool = true) async -> Bool {
         guard !isRefreshingBusinessData else { return false }
+        guard let expectedAccount = profileStoreIdentifier else { return false }
         isRefreshingBusinessData = true
         businessRefreshStatus = "正在更新客户、拜访、日报和待补传资料"
         defer { isRefreshingBusinessData = false }
@@ -598,13 +668,19 @@ final class AppState: ObservableObject {
         var issues: [String] = []
         do {
             let date = APIClient.localDate(timeZoneIdentifier: region.timeZoneIdentifier)
-            dashboard = try await api.dashboard(date: date)
+            let refreshed = try await api.dashboard(date: date)
+            guard profileStoreIdentifier == expectedAccount else { return false }
+            dashboard = refreshed
         } catch {
+            guard profileStoreIdentifier == expectedAccount else { return false }
             issues.append("拜访与打卡资料更新失败：\(error.localizedDescription)")
         }
         do {
-            customers = scopedCustomers(try await api.customers())
+            let refreshed = try await api.customers()
+            guard profileStoreIdentifier == expectedAccount else { return false }
+            customers = scopedCustomers(refreshed)
         } catch {
+            guard profileStoreIdentifier == expectedAccount else { return false }
             issues.append("客户资料更新失败：\(error.localizedDescription)")
         }
         lastBusinessRefreshAt = Date()
@@ -721,6 +797,7 @@ final class AppState: ObservableObject {
         }
 
         var saved = false
+        let expectedAccount = profileStoreIdentifier
         await perform {
             let response = try await api.sendInternalMessage(
                 recipientId: recipientId,
@@ -741,7 +818,7 @@ final class AppState: ObservableObject {
                 }
             }
             let overview = try await api.collaborationOverview()
-            await applyInternalMessageOverview(overview)
+            await applyInternalMessageOverview(overview, expectedAccount: expectedAccount)
             saved = true
         }
         return saved
@@ -814,6 +891,7 @@ final class AppState: ObservableObject {
     private func deliverPendingInternalMessage(id: String) async {
         defer { internalMessageDeliveryTasks[id] = nil }
         guard let pending = pendingInternalMessages.first(where: { $0.id == id }) else { return }
+        let expectedAccount = profileStoreIdentifier
         do {
             let response = try await api.sendInternalMessage(
                 recipientId: pending.recipientId,
@@ -849,7 +927,8 @@ final class AppState: ObservableObject {
                 }
             }
             let overview = try await api.collaborationOverview()
-            await applyInternalMessageOverview(overview)
+            await applyInternalMessageOverview(overview, expectedAccount: expectedAccount)
+            guard profileStoreIdentifier == expectedAccount else { return }
             pendingInternalMessages.removeAll { $0.id == id }
         } catch {
             guard let index = pendingInternalMessages.firstIndex(where: { $0.id == id }) else { return }
@@ -1771,6 +1850,7 @@ final class AppState: ObservableObject {
                 accuracy: current.horizontalAccuracy,
                 address: address
             )
+            await location.recordCurrentLocation(current)
             let completed = try await api.endShift(shift.shiftId, location: payload)
             replaceActiveShift(with: nil, completedShift: completed)
             location.stop()

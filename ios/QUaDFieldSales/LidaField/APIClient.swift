@@ -52,6 +52,10 @@ actor APIClient {
         )
         token = response.token
         currentUserId = response.user.id
+        // Sender lookup data belongs to the previous authenticated session.
+        // Keeping it across an account switch can make a newly signed-in user
+        // see names resolved from the former employee's message list.
+        messageSendersById = [:]
         return LoginResponse(accessToken: response.token, user: response.user.appUser)
     }
 
@@ -576,6 +580,7 @@ actor APIClient {
     func endShift(_ shiftId: String, location: CLLocationPayload?) async throws -> Shift {
         var body: [String: AnyEncodable] = [
             "type": .string("out"),
+            "shiftId": .string(shiftId),
             "locationConsent": .bool(true)
         ]
         if let location {

@@ -569,6 +569,7 @@ struct RecordingSegment: Codable, Identifiable {
     var byteCount: Int
     var attempts: Int
     var lastError: String? = nil
+    var ownerIdentifier: String? = nil
 }
 
 struct QueuedLocation: Codable, Identifiable {
@@ -579,6 +580,7 @@ struct QueuedLocation: Codable, Identifiable {
     let longitude: Double
     let accuracyM: Double
     let address: String?
+    var ownerIdentifier: String? = nil
 }
 
 struct CustomerListResponse: Decodable {
@@ -809,6 +811,7 @@ enum DesignPreviewPage: String, CaseIterable, Hashable {
     case completion = "14"
     case report = "15"
     case nearby = "16"
+    case inventoryPricing = "17"
 }
 
 enum PreviewData {

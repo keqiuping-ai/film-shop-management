@@ -18,12 +18,87 @@ private func chatSpeechAuthorization() async -> SFSpeechRecognizerAuthorizationS
     }
 }
 
+// AVAudioEngine invokes tap blocks on a realtime audio queue. Creating that
+// block inside ChatSpeechInput.start() (which is @MainActor) makes Swift attach
+// main-actor isolation to the block. iOS 26 then traps when the audio queue
+// invokes it. Build the callback in nonisolated file scope, just like the
+// meeting recorder's stable audio tap.
+private func makeChatSpeechAudioTap(
+    request: SFSpeechAudioBufferRecognitionRequest
+) -> AVAudioNodeTapBlock {
+    { buffer, _ in request.append(buffer) }
+}
+
+private func makeChatSpeechRecognitionHandler(
+    input: ChatSpeechInput,
+    prefix: String,
+    generation: Int
+) -> (SFSpeechRecognitionResult?, (any Error)?) -> Void {
+    { [weak input] result, error in
+        let recognized = result?.bestTranscription.formattedString
+        let isFinal = result?.isFinal ?? false
+        let errorValue = error.map { $0 as NSError }
+        let errorDomain = errorValue?.domain
+        let errorCode = errorValue?.code
+        let errorDescription = errorValue?.localizedDescription
+        Task { @MainActor [weak input, recognized, isFinal, errorDomain, errorCode, errorDescription, prefix] in
+            input?.receiveRecognitionResult(
+                recognized,
+                isFinal: isFinal,
+                errorDomain: errorDomain,
+                errorCode: errorCode,
+                errorDescription: errorDescription,
+                prefix: prefix,
+                generation: generation
+            )
+        }
+    }
+}
+
+private final class ChatVoiceAudioSink: @unchecked Sendable {
+    private let lock = NSLock()
+    private var file: AVAudioFile?
+    private var writeFailure: Error?
+
+    func replaceFile(with value: AVAudioFile?) {
+        lock.lock()
+        file = value
+        lock.unlock()
+    }
+
+    func consume(_ buffer: AVAudioPCMBuffer) {
+        lock.lock()
+        defer { lock.unlock() }
+        do {
+            try file?.write(from: buffer)
+        } catch {
+            writeFailure = error
+        }
+    }
+
+    func takeWriteFailure() -> Error? {
+        lock.lock()
+        defer { lock.unlock() }
+        let value = writeFailure
+        writeFailure = nil
+        return value
+    }
+}
+
+private func makeChatVoiceAudioTap(sink: ChatVoiceAudioSink) -> AVAudioNodeTapBlock {
+    { buffer, _ in sink.consume(buffer) }
+}
+
 @MainActor
-final class ChatVoiceRecorder: NSObject, ObservableObject, AVAudioRecorderDelegate {
+final class ChatVoiceRecorder: ObservableObject {
     @Published private(set) var isRecording = false
     @Published private(set) var elapsed: TimeInterval = 0
 
-    private var recorder: AVAudioRecorder?
+    private let audioEngine = AVAudioEngine()
+    private let audioSink = ChatVoiceAudioSink()
+    private var hasInputTap = false
+    private var recordingURL: URL?
+    private var recordingStartedAt: Date?
     private var timer: Timer?
 
     func start() async throws {
@@ -31,43 +106,63 @@ final class ChatVoiceRecorder: NSObject, ObservableObject, AVAudioRecorderDelega
         let permitted = await chatMicrophonePermission()
         guard permitted else { throw RecorderError.permissionDenied }
 
-        let session = AVAudioSession.sharedInstance()
-        try session.setCategory(.playAndRecord, mode: .spokenAudio, options: [.defaultToSpeaker, .allowBluetoothHFP])
-        try session.setActive(true)
+        do {
+            let session = AVAudioSession.sharedInstance()
+            try session.setCategory(.playAndRecord, mode: .measurement, options: [.defaultToSpeaker, .allowBluetoothHFP])
+            try session.setActive(true)
 
-        let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent("站内语音-\(UUID().uuidString).m4a")
-        let settings: [String: Any] = [
-            AVFormatIDKey: Int(kAudioFormatMPEG4AAC),
-            AVSampleRateKey: 16_000,
-            AVNumberOfChannelsKey: 1,
-            AVEncoderBitRateKey: 64_000,
-            AVEncoderAudioQualityKey: AVAudioQuality.high.rawValue
-        ]
-        let value = try AVAudioRecorder(url: url, settings: settings)
-        value.delegate = self
-        guard value.prepareToRecord(), value.record() else { throw RecorderError.cannotStart }
-        recorder = value
-        elapsed = 0
-        isRecording = true
-        timer = .scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
-            Task { @MainActor in self?.elapsed += 1 }
+            let inputNode = audioEngine.inputNode
+            let format = inputNode.outputFormat(forBus: 0)
+            guard format.sampleRate > 0, format.channelCount > 0 else {
+                throw RecorderError.invalidInputFormat
+            }
+
+            let url = FileManager.default.temporaryDirectory
+                .appendingPathComponent("站内语音-\(UUID().uuidString).m4a")
+            let settings: [String: Any] = [
+                AVFormatIDKey: Int(kAudioFormatMPEG4AAC),
+                AVSampleRateKey: format.sampleRate,
+                AVNumberOfChannelsKey: Int(format.channelCount),
+                AVEncoderBitRateKey: 64_000,
+                AVEncoderAudioQualityKey: AVAudioQuality.high.rawValue
+            ]
+            let file = try AVAudioFile(
+                forWriting: url,
+                settings: settings,
+                commonFormat: format.commonFormat,
+                interleaved: format.isInterleaved
+            )
+            audioSink.replaceFile(with: file)
+            inputNode.installTap(
+                onBus: 0,
+                bufferSize: 1_024,
+                format: format,
+                block: makeChatVoiceAudioTap(sink: audioSink)
+            )
+            hasInputTap = true
+            audioEngine.prepare()
+            try audioEngine.start()
+
+            recordingURL = url
+            recordingStartedAt = Date()
+            elapsed = 0
+            isRecording = true
+            timer = .scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
+                Task { @MainActor in self?.elapsed += 1 }
+            }
+        } catch {
+            tearDownCapture(removeFile: true)
+            throw error
         }
     }
 
     func stop() throws -> ChatMediaDraft? {
-        guard let recorder, isRecording else { return nil }
-        let duration = recorder.currentTime
-        recorder.stop()
-        timer?.invalidate()
-        timer = nil
-        self.recorder = nil
-        isRecording = false
-        elapsed = 0
-        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
-
-        let data = try Data(contentsOf: recorder.url)
-        try? FileManager.default.removeItem(at: recorder.url)
+        guard let url = recordingURL, isRecording else { return nil }
+        let duration = recordingStartedAt.map { Date().timeIntervalSince($0) } ?? elapsed
+        tearDownCapture(removeFile: false)
+        if let failure = audioSink.takeWriteFailure() { throw failure }
+        let data = try Data(contentsOf: url)
+        try? FileManager.default.removeItem(at: url)
         guard !data.isEmpty else { return nil }
         return ChatMediaDraft(
             kind: .voice,
@@ -79,19 +174,24 @@ final class ChatVoiceRecorder: NSObject, ObservableObject, AVAudioRecorderDelega
     }
 
     func cancel() {
-        recorder?.stop()
-        if let url = recorder?.url { try? FileManager.default.removeItem(at: url) }
-        recorder = nil
+        tearDownCapture(removeFile: true)
+    }
+
+    private func tearDownCapture(removeFile: Bool) {
+        if audioEngine.isRunning { audioEngine.stop() }
+        if hasInputTap {
+            audioEngine.inputNode.removeTap(onBus: 0)
+            hasInputTap = false
+        }
+        audioSink.replaceFile(with: nil)
+        if removeFile, let recordingURL { try? FileManager.default.removeItem(at: recordingURL) }
+        recordingURL = nil
+        recordingStartedAt = nil
         timer?.invalidate()
         timer = nil
         isRecording = false
         elapsed = 0
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
-    }
-
-    nonisolated func audioRecorderDidFinishRecording(_ recorder: AVAudioRecorder, successfully flag: Bool) {
-        guard !flag else { return }
-        Task { @MainActor [weak self] in self?.cancel() }
     }
 }
 
@@ -99,17 +199,20 @@ final class ChatVoiceRecorder: NSObject, ObservableObject, AVAudioRecorderDelega
 final class ChatSpeechInput: ObservableObject {
     @Published private(set) var isListening = false
     @Published private(set) var transcript = ""
+    @Published private(set) var errorMessage: String?
 
     private let audioEngine = AVAudioEngine()
     private var recognitionRequest: SFSpeechAudioBufferRecognitionRequest?
     private var recognitionTask: SFSpeechRecognitionTask?
     private var isStarting = false
     private var hasInputTap = false
+    private var recognitionGeneration = 0
 
     func start(localeIdentifier: String, existingText: String) async throws {
         guard !isListening, !isStarting else { return }
         isStarting = true
         defer { isStarting = false }
+        errorMessage = nil
 
         let speechStatus = await chatSpeechAuthorization()
         guard speechStatus == .authorized else {
@@ -146,24 +249,25 @@ final class ChatSpeechInput: ObservableObject {
                 inputNode.removeTap(onBus: 0)
                 hasInputTap = false
             }
-            inputNode.installTap(onBus: 0, bufferSize: 1_024, format: format) { buffer, _ in
-                request.append(buffer)
-            }
+            inputNode.installTap(
+                onBus: 0,
+                bufferSize: 1_024,
+                format: format,
+                block: makeChatSpeechAudioTap(request: request)
+            )
             hasInputTap = true
 
             let prefix = existingText.trimmingCharacters(in: .whitespacesAndNewlines)
-            recognitionTask = recognizer.recognitionTask(with: request) { [weak self] result, error in
-                Task { @MainActor in
-                    guard let self else { return }
-                    if let result {
-                        let recognized = result.bestTranscription.formattedString
-                        self.transcript = prefix.isEmpty ? recognized : prefix + " " + recognized
-                        if result.isFinal { self.stop() }
-                    } else if error != nil {
-                        self.stop()
-                    }
-                }
-            }
+            recognitionGeneration += 1
+            let generation = recognitionGeneration
+            recognitionTask = recognizer.recognitionTask(
+                with: request,
+                resultHandler: makeChatSpeechRecognitionHandler(
+                    input: self,
+                    prefix: prefix,
+                    generation: generation
+                )
+            )
 
             audioEngine.prepare()
             try audioEngine.start()
@@ -176,7 +280,31 @@ final class ChatSpeechInput: ObservableObject {
 
     func stop() {
         guard isListening || recognitionRequest != nil || hasInputTap else { return }
+        recognitionGeneration += 1
         resetAudioCapture()
+    }
+
+    fileprivate func receiveRecognitionResult(
+        _ recognized: String?,
+        isFinal: Bool,
+        errorDomain: String?,
+        errorCode: Int?,
+        errorDescription: String?,
+        prefix: String,
+        generation: Int
+    ) {
+        guard generation == recognitionGeneration else { return }
+        if let recognized {
+            transcript = prefix.isEmpty ? recognized : prefix + " " + recognized
+            if isFinal { stop() }
+        } else if let errorDomain, let errorCode {
+            let detail = errorDescription ?? "unknown"
+            print("[ChatSpeech] recognition failed domain=\(errorDomain) code=\(errorCode) detail=\(detail)")
+            errorMessage = errorDomain == "kAFAssistantErrorDomain" && errorCode == 1110
+                ? "未检测到语音，请靠近麦克风后重试"
+                : "语音转写失败（\(errorDomain) \(errorCode)）"
+            stop()
+        }
     }
 
     private func resetAudioCapture() {

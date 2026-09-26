@@ -87,7 +87,10 @@ struct MessageCenterView: View {
                 )
             } else {
                 List(conversations) { conversation in
-                    NavigationLink(destination: ChatConversationView(conversation: conversation)) {
+                    NavigationLink(destination: ChatConversationView(
+                        conversation: conversation,
+                        accountIdentifier: presentationIdentifier
+                    )) {
                         InternalConversationRow(conversation: conversation)
                     }
                 }
@@ -111,7 +114,7 @@ struct MessageCenterView: View {
             NewInternalMessageView()
         }
         .navigationDestination(item: $previewConversation) { conversation in
-            ChatConversationView(conversation: conversation)
+            ChatConversationView(conversation: conversation, accountIdentifier: presentationIdentifier)
         }
         .onAppear {
             guard !didRestorePresentation else { return }
@@ -251,19 +254,29 @@ private struct NewInternalMessageView: View {
 private struct ChatConversationView: View {
     @EnvironmentObject private var app: AppState
     let conversation: InternalConversation
+    let accountIdentifier: String
 
     @StateObject private var voiceRecorder = ChatVoiceRecorder()
     @StateObject private var speechInput = ChatSpeechInput()
-    @State private var text = ""
+    @State private var text: String
     @State private var usesVoiceMessage = false
-    @State private var showsAttachmentTray = false
+    @State private var showsAttachmentTray = ProcessInfo.processInfo.arguments.contains("-preview-show-attachments")
     @State private var showsFileImporter = false
+    @State private var isCameraPresented = false
     @State private var selectedPhoto: PhotosPickerItem?
-    @State private var didRestoreDraft = false
     @FocusState private var isTextFocused: Bool
 
+    @MainActor
+    init(conversation: InternalConversation, accountIdentifier: String) {
+        self.conversation = conversation
+        self.accountIdentifier = accountIdentifier
+        _text = State(initialValue: MessagePresentationStore.draft(
+            identifier: accountIdentifier,
+            conversationId: conversation.recipientId
+        ))
+    }
+
     private var currentUserId: String { app.user?.userId ?? "" }
-    private var presentationIdentifier: String { app.user?.userId ?? app.user?.loginName ?? "anonymous" }
     private var bottomAnchorId: String { "conversation-bottom-\(conversation.recipientId)" }
     private var messages: [InternalMessage] {
         app.internalMessages.filter { message in
@@ -278,8 +291,6 @@ private struct ChatConversationView: View {
             .filter { $0.recipientId == conversation.recipientId }
             .sorted { $0.queuedAt < $1.queuedAt }
     }
-    private var timelineCount: Int { messages.count + pendingMessages.count }
-
     var body: some View {
         ScrollViewReader { proxy in
             ScrollView {
@@ -318,15 +329,10 @@ private struct ChatConversationView: View {
             }
             .background(Color(uiColor: .systemGray6))
             .defaultScrollAnchor(.bottom)
-            .onChange(of: timelineCount) { _, _ in
-                withAnimation { proxy.scrollTo(bottomAnchorId, anchor: .bottom) }
-            }
             .task {
                 await Task.yield()
                 proxy.scrollTo(bottomAnchorId, anchor: .bottom)
                 await app.markConversationRead(recipientId: conversation.recipientId)
-                try? await Task.sleep(for: .milliseconds(120))
-                proxy.scrollTo(bottomAnchorId, anchor: .bottom)
             }
         }
         .navigationTitle(conversation.displayName)
@@ -337,24 +343,22 @@ private struct ChatConversationView: View {
             guard case .success(let url) = result else { return }
             Task { await sendFile(url) }
         }
+        .sheet(isPresented: $isCameraPresented) {
+            CameraCaptureView { image in sendCapturedPhoto(image) }
+                .ignoresSafeArea()
+        }
         .onChange(of: selectedPhoto) { _, item in
             guard let item else { return }
             Task { await sendPhoto(item) }
         }
         .onChange(of: speechInput.transcript) { _, value in text = value }
-        .onAppear {
-            guard !didRestoreDraft else { return }
-            text = MessagePresentationStore.draft(
-                identifier: presentationIdentifier,
-                conversationId: conversation.recipientId
-            )
-            didRestoreDraft = true
+        .onChange(of: speechInput.errorMessage) { _, value in
+            if let value { app.errorMessage = value }
         }
         .onChange(of: text) { _, value in
-            guard didRestoreDraft else { return }
             MessagePresentationStore.saveDraft(
                 value,
-                identifier: presentationIdentifier,
+                identifier: accountIdentifier,
                 conversationId: conversation.recipientId
             )
         }
@@ -368,6 +372,11 @@ private struct ChatConversationView: View {
         VStack(spacing: 8) {
             HStack(alignment: .bottom, spacing: 8) {
                 Button {
+                    if usesVoiceMessage {
+                        voiceRecorder.cancel()
+                    } else {
+                        speechInput.stop()
+                    }
                     usesVoiceMessage.toggle()
                     showsAttachmentTray = false
                     if usesVoiceMessage { isTextFocused = false } else { isTextFocused = true }
@@ -422,9 +431,21 @@ private struct ChatConversationView: View {
             }
 
             if showsAttachmentTray {
-                HStack(spacing: 30) {
+                HStack(spacing: 24) {
+                    Button {
+                        guard UIImagePickerController.isSourceTypeAvailable(.camera) else {
+                            app.errorMessage = app.localized(
+                                cn: "当前设备没有可用相机",
+                                us: "No camera is available on this device."
+                            )
+                            return
+                        }
+                        isCameraPresented = true
+                    } label: {
+                        AttachmentTrayItem(title: "拍照", systemImage: "camera.fill")
+                    }
                     PhotosPicker(selection: $selectedPhoto, matching: .images) {
-                        AttachmentTrayItem(title: "图片", systemImage: "photo.fill")
+                        AttachmentTrayItem(title: "相册", systemImage: "photo.fill")
                     }
                     Button { showsFileImporter = true } label: {
                         AttachmentTrayItem(title: "文件", systemImage: "folder.fill")
@@ -468,6 +489,8 @@ private struct ChatConversationView: View {
                     media: media
                 )
             } else {
+                speechInput.stop()
+                try? await Task.sleep(for: .milliseconds(150))
                 try await voiceRecorder.start()
             }
         } catch {
@@ -481,7 +504,10 @@ private struct ChatConversationView: View {
             return
         }
         do {
-            try await speechInput.start(localeIdentifier: app.region.localeIdentifier, existingText: text)
+            voiceRecorder.cancel()
+            try? await Task.sleep(for: .milliseconds(150))
+            let speechLocale = app.interfaceLanguage == .simplifiedChinese ? "zh_CN" : "en_US"
+            try await speechInput.start(localeIdentifier: speechLocale, existingText: text)
         } catch {
             app.errorMessage = error.localizedDescription
         }
@@ -493,12 +519,36 @@ private struct ChatConversationView: View {
             app.errorMessage = "图片读取失败"
             return
         }
-        let type = item.supportedContentTypes.first ?? .jpeg
+        guard let encoded = ChatImageEncoder.jpegData(from: data) else {
+            app.errorMessage = app.localized(cn: "图片处理失败", us: "The image could not be processed.")
+            return
+        }
+        let media = ChatMediaDraft(
+            kind: .image,
+            data: encoded,
+            fileName: "站内图片-\(Date().ISO8601Format()).jpg",
+            contentType: "image/jpeg",
+            duration: nil
+        )
+        _ = app.queueChatMessage(
+            recipientId: conversation.recipientId,
+            subject: conversation.subject,
+            text: "",
+            media: media
+        )
+    }
+
+    private func sendCapturedPhoto(_ image: UIImage) {
+        defer { showsAttachmentTray = false }
+        guard let data = ChatImageEncoder.jpegData(from: image) else {
+            app.errorMessage = app.localized(cn: "照片处理失败", us: "The photo could not be processed.")
+            return
+        }
         let media = ChatMediaDraft(
             kind: .image,
             data: data,
-            fileName: "站内图片-\(Date().ISO8601Format()).\(type.preferredFilenameExtension ?? "jpg")",
-            contentType: type.preferredMIMEType ?? "image/jpeg",
+            fileName: "站内拍照-\(Date().ISO8601Format()).jpg",
+            contentType: "image/jpeg",
             duration: nil
         )
         _ = app.queueChatMessage(
@@ -560,6 +610,13 @@ private struct PendingChatMessageRow: View {
                             .foregroundStyle(Color.black.opacity(0.88))
                     }
                     if let media = message.media {
+                        if media.contentType.hasPrefix("image/"), let image = UIImage(data: media.data) {
+                            Image(uiImage: image)
+                                .resizable()
+                                .scaledToFill()
+                                .frame(maxWidth: 220, minHeight: 110, maxHeight: 220)
+                                .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+                        }
                         HStack(spacing: 9) {
                             Image(systemName: attachmentIcon(media.contentType))
                                 .font(.title3)
@@ -834,6 +891,38 @@ private enum MessagePresentationStore {
             .replacingOccurrences(of: "+", with: "-")
             .replacingOccurrences(of: "=", with: "")
         return "message.presentation.\(safe)"
+    }
+}
+
+private enum ChatImageEncoder {
+    private static let maximumBytes = 4_500_000
+    private static let maximumDimension: CGFloat = 2_048
+
+    static func jpegData(from data: Data) -> Data? {
+        guard let image = UIImage(data: data) else { return nil }
+        return jpegData(from: image)
+    }
+
+    static func jpegData(from image: UIImage) -> Data? {
+        let normalized = resized(image, maximumDimension: maximumDimension)
+        for quality in stride(from: 0.84, through: 0.42, by: -0.07) {
+            if let data = normalized.jpegData(compressionQuality: quality), data.count <= maximumBytes {
+                return data
+            }
+        }
+        return normalized.jpegData(compressionQuality: 0.35)
+    }
+
+    private static func resized(_ image: UIImage, maximumDimension: CGFloat) -> UIImage {
+        let longest = max(image.size.width, image.size.height)
+        guard longest > maximumDimension else { return image }
+        let scale = maximumDimension / longest
+        let size = CGSize(width: image.size.width * scale, height: image.size.height * scale)
+        let format = UIGraphicsImageRendererFormat.default()
+        format.scale = 1
+        return UIGraphicsImageRenderer(size: size, format: format).image { _ in
+            image.draw(in: CGRect(origin: .zero, size: size))
+        }
     }
 }
 

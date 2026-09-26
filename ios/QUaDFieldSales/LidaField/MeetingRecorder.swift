@@ -1115,7 +1115,7 @@ enum RecorderError: LocalizedError {
         case .missingVisit: "请先选择拜访客户"
         case .invalidInputFormat: "当前麦克风音频格式不可用"
         case .cannotPrepare: "语音文件准备失败"
-        case .cannotStart: "语音转写启动失败"
+        case .cannotStart: "语音录制启动失败"
         case .notRecording: "当前没有正在进行的会议录音"
         case .modernSpeechUnavailable: "当前设备不支持 iOS 26 本机语音转文字"
         case .unsupportedSpeechLocale: "当前设备不支持简体中文语音模型"

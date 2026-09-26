@@ -196,7 +196,11 @@ async function seed() {
     createdAt: '2026-09-11T00:00:00.000Z',
     updatedAt: '2026-09-11T00:00:00.000Z'
   }];
-  db.clockRecords = [];
+  db.clockRecords = Array.from({ length: 500 }, (_, index) => ({
+    id:`other-clock-${index}`, userId:'native-sales-two', userName:'Native Sales Two', type:index % 2 ? 'in' : 'out',
+    at:`2026-09-27T${String(Math.floor(index / 60) % 24).padStart(2, '0')}:${String(index % 60).padStart(2, '0')}:00.000Z`,
+    date:'2026-09-26', lat:36.1, lng:-115.1, branchId:'las-vegas'
+  }));
   db.products.push({
     id:'isolated-film-product', sku:'ISOLATED-FILM-001', name:'Isolated Ceramic Film',
     model:'ISOLATED-001', specification:'60 in × 100 ft', unit:'卷', category:'汽车膜',
@@ -217,8 +221,15 @@ async function seed() {
   }];
   db.salesLocationPoints = [
     { locationId: 'isolated-location-point-1', clientPointId: 'isolated-client-point', userId: 'native-sales-user', collectedAt: '2026-09-11T15:05:00.000Z', latitude: 36.1716, longitude: -115.1391, accuracyM: 8 },
+    { locationId: 'isolated-location-point-stop-1', clientPointId: 'isolated-client-point-stop-1', userId: 'native-sales-user', collectedAt: '2026-09-11T15:10:00.000Z', latitude: 36.17, longitude: -115.142, accuracyM: 8 },
+    { locationId: 'isolated-location-point-stop-2', clientPointId: 'isolated-client-point-stop-2', userId: 'native-sales-user', collectedAt: '2026-09-11T15:15:00.000Z', latitude: 36.17001, longitude: -115.14201, accuracyM: 8 },
     { locationId: 'isolated-location-point-2', clientPointId: 'isolated-client-point-2', userId: 'native-sales-user', collectedAt: '2026-09-11T16:10:00.000Z', latitude: 36.1671, longitude: -115.1487, accuracyM: 9 },
-    { locationId: 'isolated-location-point-3', clientPointId: 'isolated-client-point-3', userId: 'native-sales-user', collectedAt: '2026-09-11T17:20:00.000Z', latitude: 36.1598, longitude: -115.1537, accuracyM: 7 }
+    { locationId: 'isolated-location-point-3', clientPointId: 'isolated-client-point-3', userId: 'native-sales-user', collectedAt: '2026-09-11T17:20:00.000Z', latitude: 36.1598, longitude: -115.1537, accuracyM: 7 },
+    ...Array.from({ length: 1700 }, (_, index) => ({
+      locationId:`other-location-${index}`, clientPointId:`other-client-point-${index}`, userId:'native-sales-two',
+      collectedAt:new Date(Date.UTC(2026, 8, 25, 0, index * 5)).toISOString(),
+      latitude:36.2 + index / 100000, longitude:-115.2 - index / 100000, accuracyM:10
+    }))
   ];
   const fixturePhoto = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M/wHwAEAQH/2G7fGQAAAABJRU5ErkJggg==';
   db.salesVisits = [{
@@ -319,6 +330,12 @@ async function run() {
   assert(visitViewSource.includes('特殊价格'), 'onsite orders must identify a manual special price');
   assert(visitViewSource.includes('app.createFieldOrder'), 'onsite order save must create a structured QUaD field order');
   assert(!visitViewSource.includes('sku: "待选择"'), 'native order flow must not create placeholder product rows');
+  const rootViewSource = fs.readFileSync(path.join(ROOT, 'ios/QUaDFieldSales/LidaField/RootView.swift'), 'utf8');
+  assert(rootViewSource.includes('title: app.localized(cn: "库存与报价", us: "Inventory & Pricing")'), 'native business home must expose inventory and pricing');
+  assert(rootViewSource.includes('NavigationLink(destination: InventoryPricingView()'), 'inventory tile must open its native screen');
+  assert(rootViewSource.includes('搜索 SKU、型号或产品名称'), 'inventory screen must search by SKU, model, or product name');
+  assert(rootViewSource.includes('只显示账号获准查看的价格档位'), 'inventory screen must explain server-authorized price filtering');
+  assert(rootViewSource.includes('access?.inventory == true'), 'inventory quantities must remain hidden without inventory permission');
   const appStateSource = fs.readFileSync(path.join(ROOT, 'ios/QUaDFieldSales/LidaField/AppState.swift'), 'utf8');
   assert(appStateSource.includes('APIClient.localDate(date, timeZoneIdentifier: region.timeZoneIdentifier)'), 'visit plan merging must use the configured business time zone');
   assert(appStateSource.includes('api.createConsignment'), 'samples must create a structured QUaD consignment');
@@ -416,7 +433,7 @@ async function run() {
   assert.equal(bootstrap.body.clockRecords.length, 0);
   assert.equal(bootstrap.body.fieldSales.visitPlans.length, 1);
   assert.equal(bootstrap.body.fieldSales.visitPlans[0].accountId, 'existing-native-customer');
-  assert.equal(bootstrap.body.fieldSales.locationPoints.length, 3);
+  assert.equal(bootstrap.body.fieldSales.locationPoints.length, 5);
   assert.equal(bootstrap.body.fieldSales.locationPoints[0].clientPointId, 'isolated-client-point');
 
   const clockIn = await jsonRequest('/api/mobile/clock', {
@@ -854,6 +871,10 @@ async function run() {
   assert(ownerFieldSales.dailyReports.some(item => item.summary === 'Isolated native field-sales daily report'));
   assert(ownerFieldSales.locationPoints.some(item => item.clientPointId === 'isolated-la-before-midnight' && item.businessDate === '2026-09-12'));
   assert(ownerFieldSales.locationPoints.some(item => item.clientPointId === 'isolated-la-after-midnight' && item.businessDate === '2026-09-13'));
+  assert(ownerFieldSales.locationPoints.some(item => item.clientPointId === 'isolated-client-point'), 'an older day must not be displaced by another salesperson route');
+  assert.equal(ownerFieldSales.locationPoints.filter(item => item.userId === 'native-sales-two').length, 1600);
+  assert(ownerSnapshot.body.clockRecords.some(item => item.userId === 'native-sales-user'), 'selected employee clock records must survive other employees activity');
+  assert.equal(ownerSnapshot.body.clockRecords.filter(item => item.userId === 'native-sales-two').length, 400);
   if (Number(process.env.UI_TEST_HOLD_AFTER_MS || 0) > 0) {
     console.log(`Isolated UI fixture ready at ${BASE_URL} (owner: native-owner@test.local)`);
     await new Promise(resolve => setTimeout(resolve, Number(process.env.UI_TEST_HOLD_AFTER_MS)));

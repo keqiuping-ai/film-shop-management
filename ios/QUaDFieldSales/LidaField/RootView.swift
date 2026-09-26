@@ -9,7 +9,13 @@ struct RootView: View {
         Group {
             if app.isAuthenticated {
                 if app.isDesignPreview && !app.showsAppShellPreview { DesignPreviewRouter(page: app.previewPage) }
-                else { MainAppShellView() }
+                else {
+                    // Recreate every tab/navigation stack when the authenticated
+                    // employee changes so view-local state cannot leak from the
+                    // previous salesperson.
+                    MainAppShellView()
+                        .id(app.user?.userId ?? app.user?.loginName ?? "authenticated-user")
+                }
             } else {
                 LoginView()
             }
@@ -117,8 +123,8 @@ struct MainAppShellView: View {
     @State private var selectedTab: MainAppTab = {
         let arguments = ProcessInfo.processInfo.arguments
         guard let index = arguments.firstIndex(of: "-preview-tab"),
-              arguments.indices.contains(index + 1) else { return .business }
-        return MainAppTab(rawValue: arguments[index + 1]) ?? .business
+              arguments.indices.contains(index + 1) else { return .messages }
+        return MainAppTab(rawValue: arguments[index + 1]) ?? .messages
     }()
 
     var body: some View {
@@ -392,7 +398,13 @@ struct BusinessCenterHomeView: View {
             .init(title: "今日拜访", subtitle: "今天计划与进行中", symbol: "scope", color: .quadOrange),
             .init(title: "计划拜访", subtitle: "选择客户并安排时间", symbol: "checkmark", color: .quadPurple),
             .init(title: "工作日报", subtitle: "记录今天完成事项", symbol: "text.justify", color: .quadGreen),
-            .init(title: "附近客户", subtitle: "\(app.region.defaultCity)周边", symbol: "scope", color: .quadRose)
+            .init(title: "附近客户", subtitle: "\(app.region.defaultCity)周边", symbol: "scope", color: .quadRose),
+            .init(
+                title: app.localized(cn: "库存与报价", us: "Inventory & Pricing"),
+                subtitle: app.localized(cn: "查询仓库可用库存与授权价格", us: "Authorized stock and pricing"),
+                symbol: "square.grid.3x3.fill",
+                color: .blue
+            )
         ]
     }
 
@@ -454,7 +466,199 @@ struct BusinessCenterHomeView: View {
         case 2: NavigationLink(destination: TodayVisitsView(), label: label)
         case 3: NavigationLink(destination: PlanCustomerSelectionView(), label: label)
         case 4: NavigationLink(destination: DailyReportView(), label: label)
-        default: NavigationLink(destination: NearbyCustomersView(), label: label)
+        case 5: NavigationLink(destination: NearbyCustomersView(), label: label)
+        default: NavigationLink(destination: InventoryPricingView(), label: label)
+        }
+    }
+}
+
+struct InventoryPricingView: View {
+    @EnvironmentObject private var app: AppState
+    @State private var query = ""
+    @State private var response: InventoryPricingResponse?
+    @State private var isLoading = false
+    @State private var errorText = ""
+
+    private var products: [InventoryPricingProduct] { response?.products ?? [] }
+
+    var body: some View {
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 14) {
+                if let access = response?.access {
+                    accessSummary(access)
+                }
+
+                if isLoading, response == nil {
+                    HStack { Spacer(); ProgressView(); Spacer() }
+                        .padding(.vertical, 36)
+                } else if !errorText.isEmpty {
+                    ContentUnavailableView(
+                        app.localized(cn: "无法读取库存与报价", us: "Inventory and pricing unavailable"),
+                        systemImage: "exclamationmark.triangle.fill",
+                        description: Text(errorText)
+                    )
+                    Button(app.localized(cn: "重新加载", us: "Try Again")) {
+                        Task { await load() }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .frame(maxWidth: .infinity)
+                } else if products.isEmpty {
+                    ContentUnavailableView.search(text: query)
+                } else {
+                    ForEach(products) { product in
+                        InventoryPricingCard(product: product, access: response?.access)
+                    }
+                }
+            }
+            .padding()
+        }
+        .quadScreen()
+        .navigationTitle(app.localized(cn: "库存与报价", us: "Inventory & Pricing"))
+        .navigationBarTitleDisplayMode(.inline)
+        .searchable(
+            text: $query,
+            placement: .navigationBarDrawer(displayMode: .always),
+            prompt: app.localized(cn: "搜索 SKU、型号或产品名称", us: "Search SKU, model, or product name")
+        )
+        .task(id: query) {
+            if !query.isEmpty {
+                try? await Task.sleep(for: .milliseconds(350))
+                guard !Task.isCancelled else { return }
+            }
+            await load()
+        }
+        .refreshable { await load() }
+    }
+
+    @ViewBuilder
+    private func accessSummary(_ access: InventoryPricingAccess) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Label(
+                    access.inventory
+                        ? app.localized(cn: "可查看库存", us: "Inventory access")
+                        : app.localized(cn: "库存数量未授权", us: "Inventory quantities hidden"),
+                    systemImage: access.inventory ? "shippingbox.fill" : "eye.slash.fill"
+                )
+                Spacer()
+                Text(app.localized(cn: "正式数据", us: "Live data"))
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(Color.quadTeal)
+            }
+            Text(
+                access.priceTierIds.isEmpty
+                    ? app.localized(cn: "价格未授权；仅显示产品资料。", us: "No price tier is authorized; product details only.")
+                    : app.localized(cn: "只显示账号获准查看的价格档位。", us: "Only price tiers authorized for this account are shown.")
+            )
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        }
+        .quadCard()
+    }
+
+    private func load() async {
+        isLoading = true
+        errorText = ""
+        defer { isLoading = false }
+        do {
+            response = try await app.searchInventoryPricing(query.trimmingCharacters(in: .whitespacesAndNewlines))
+        } catch is CancellationError {
+            return
+        } catch {
+            errorText = error.localizedDescription
+        }
+    }
+}
+
+private struct InventoryPricingCard: View {
+    @EnvironmentObject private var app: AppState
+    let product: InventoryPricingProduct
+    let access: InventoryPricingAccess?
+
+    private var priceRows: [(tier: String, price: Double)] {
+        ["standard", "first-order", "bronze", "silver", "gold", "strategic"].compactMap { tier in
+            guard let price = product.prices?[tier] ?? nil else { return nil }
+            return (tier, price)
+        }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .top, spacing: 10) {
+                Image(systemName: "square.grid.3x3.fill")
+                    .font(.title3)
+                    .foregroundStyle(.white)
+                    .frame(width: 42, height: 42)
+                    .background(Color.blue, in: RoundedRectangle(cornerRadius: 12))
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(product.name).font(.headline)
+                    Text([product.model, product.specification].filter { !$0.isEmpty }.joined(separator: " · "))
+                        .font(.subheadline).foregroundStyle(.secondary)
+                }
+                Spacer()
+            }
+
+            Text("SKU: \(product.sku) · \(app.localized(cn: "单位", us: "Unit")): \(product.unit.isEmpty ? "—" : product.unit)")
+                .font(.caption.monospacedDigit())
+                .foregroundStyle(.secondary)
+
+            if !product.category.isEmpty || !product.description.isEmpty {
+                Text([product.category, product.description].filter { !$0.isEmpty }.joined(separator: " · "))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            if access?.inventory == true, let inventory = product.inventory {
+                HStack(spacing: 10) {
+                    stockBox(
+                        app.localized(cn: "洛杉矶可用", us: "Los Angeles"),
+                        quantity: inventory["los-angeles"] ?? 0
+                    )
+                    stockBox(
+                        app.localized(cn: "拉斯维加斯可用", us: "Las Vegas"),
+                        quantity: inventory["las-vegas"] ?? 0
+                    )
+                }
+            }
+
+            if !priceRows.isEmpty {
+                Divider()
+                VStack(spacing: 8) {
+                    ForEach(priceRows, id: \.tier) { row in
+                        HStack {
+                            Text(tierName(row.tier)).foregroundStyle(.secondary)
+                            Spacer()
+                            Text(app.region.formatCurrency(row.price))
+                                .fontWeight(.bold)
+                                .foregroundStyle(Color.quadTeal)
+                        }
+                    }
+                }
+                .font(.subheadline)
+            }
+        }
+        .quadCard()
+    }
+
+    private func stockBox(_ title: String, quantity: Int) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title).font(.caption2).foregroundStyle(.secondary)
+            Text("\(quantity)").font(.title3.weight(.bold)).monospacedDigit()
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.blue.opacity(0.07), in: RoundedRectangle(cornerRadius: 12))
+    }
+
+    private func tierName(_ tier: String) -> String {
+        switch tier {
+        case "standard": app.localized(cn: "批发价", us: "Wholesale")
+        case "first-order": app.localized(cn: "首次进货价", us: "First order")
+        case "bronze": app.localized(cn: "铜牌价", us: "Bronze")
+        case "silver": app.localized(cn: "银牌价", us: "Silver")
+        case "gold": app.localized(cn: "金牌价", us: "Gold")
+        case "strategic": app.localized(cn: "战略合作价", us: "Strategic")
+        default: tier
         }
     }
 }
@@ -1066,6 +1270,7 @@ struct DesignPreviewRouter: View {
         case .completion: VisitCompletionView(plan: app.selectedPlan)
         case .report: DailyReportView()
         case .nearby: NearbyCustomersView()
+        case .inventoryPricing: InventoryPricingView()
         }
     }
 

@@ -113,13 +113,21 @@ async function seedIsolatedFixture() {
     testUser('sales-none', 'none@test.local', {}),
     testUser('sales-inventory', 'inventory@test.local', { fieldSalesInventoryView:true }),
     testUser('sales-prices', 'prices@test.local', { fieldSalesPriceSilver:true, fieldSalesPriceGold:true }),
-    testUser('sales-orders', 'orders@test.local', { fieldSalesView:true, fieldSalesEdit:true, fieldSalesInventoryView:true, fieldSalesPriceWholesale:true })
+    testUser('sales-orders', 'orders@test.local', { fieldSalesView:true, fieldSalesEdit:true, fieldSalesInventoryView:true, fieldSalesPriceWholesale:true }),
+    testUser('sales-a', 'sales-a@test.local', { fieldSalesView:true, fieldSalesEdit:true }),
+    testUser('sales-b', 'sales-b@test.local', { fieldSalesView:true, fieldSalesEdit:true }),
+    testUser('sales-manager', 'sales-manager@test.local', { fieldSalesView:true, fieldSalesEdit:true, fieldSalesManage:true })
   );
   db.salesAccounts = [
     { id:'old-account', businessName:'Old Hotel', address:'100 Old St', lat:36.1, lng:-115.2, assignedUserId:'sales-prices', stage:'前往中' },
     { id:'new-account', businessName:'New Film Shop', address:'200 New St', lat:36.11, lng:-115.21, assignedUserId:'sales-prices', stage:'待拜访' },
+    { id:'second-account', businessName:'Second Film Shop', address:'300 Second St', lat:36.12, lng:-115.22, assignedUserId:'sales-prices', stage:'待拜访' },
+    { id:'third-account', businessName:'Third Film Shop', address:'400 Third St', lat:36.13, lng:-115.23, assignedUserId:'sales-prices', stage:'待拜访' },
     { id:'order-account', businessName:'Order Test Shop', address:'300 Order St', assignedUserId:'sales-orders', stage:'待拜访' },
-    { id:'inventory-account', businessName:'Inventory Test Shop', address:'400 Inventory St', assignedUserId:'sales-inventory', stage:'待拜访' }
+    { id:'inventory-account', businessName:'Inventory Test Shop', address:'400 Inventory St', assignedUserId:'sales-inventory', stage:'待拜访' },
+    { id:'account-a', businessName:'Sales A Customer', address:'500 A St', assignedUserId:'sales-a', assignedUserName:'sales-a', createdByUserId:'sales-b', stage:'待拜访' },
+    { id:'account-b', businessName:'Sales B Customer', address:'600 B St', assignedUserId:'sales-b', assignedUserName:'sales-b', createdByUserId:'sales-a', stage:'待拜访' },
+    { id:'legacy-unassigned', businessName:'Needs Manager Assignment', address:'700 Unassigned St', createdByUserId:'sales-a', stage:'待拜访' }
   ];
   db.salesTrips = [{
     id:'old-trip', accountId:'old-account', businessName:'Old Hotel', userId:'sales-prices', userName:'sales-prices',
@@ -128,9 +136,20 @@ async function seedIsolatedFixture() {
   }];
   db.salesVisitPlans = [
     { id:'old-plan', accountId:'old-account', businessName:'Old Hotel', userId:'sales-prices', status:'前往中', tripId:'old-trip', date:'2026-09-08' },
-    { id:'new-plan', accountId:'new-account', businessName:'New Film Shop', userId:'sales-prices', status:'待出发', date:'2026-09-08' }
+    { id:'new-plan', accountId:'new-account', businessName:'New Film Shop', userId:'sales-prices', status:'待出发', date:'2026-09-08' },
+    { id:'second-plan', accountId:'second-account', businessName:'Second Film Shop', userId:'sales-prices', status:'待出发', date:'2026-09-08' },
+    { id:'third-plan', accountId:'third-account', businessName:'Third Film Shop', userId:'sales-prices', status:'待出发', date:'2026-09-08' },
+    { id:'plan-a', accountId:'account-a', businessName:'Sales A Customer', userId:'sales-b', assignedUserId:'sales-a', status:'待出发', date:'2026-09-09' },
+    { id:'plan-b', accountId:'account-b', businessName:'Sales B Customer', userId:'sales-a', assignedUserId:'sales-b', status:'待出发', date:'2026-09-09' }
   ];
-  db.salesVisits = [];
+  db.salesVisits = [
+    { id:'visit-a', accountId:'account-a', businessName:'Sales A Customer', userId:'sales-a', status:'已完成', createdAt:'2026-09-09T18:00:00.000Z' },
+    { id:'visit-b', accountId:'account-b', businessName:'Sales B Customer', userId:'sales-b', status:'已完成', createdAt:'2026-09-09T19:00:00.000Z' }
+  ];
+  db.salesFollowUps = [
+    { id:'follow-a', accountId:'account-a', businessName:'Sales A Customer', userId:'sales-b', assignedUserId:'sales-a', status:'待完成', dueAt:'2026-09-10T17:00:00.000Z' },
+    { id:'follow-b', accountId:'account-b', businessName:'Sales B Customer', userId:'sales-a', assignedUserId:'sales-b', status:'待完成', dueAt:'2026-09-10T17:00:00.000Z' }
+  ];
   fs.writeFileSync(dbPath, JSON.stringify(db, null, 2));
   await startServer();
 }
@@ -147,6 +166,64 @@ async function run() {
   const inventoryToken = await login('inventory@test.local');
   const pricesToken = await login('prices@test.local');
   const ordersToken = await login('orders@test.local');
+  const salesAToken = await login('sales-a@test.local');
+  const salesBToken = await login('sales-b@test.local');
+  const managerToken = await login('sales-manager@test.local');
+
+  // Customer ownership is exclusive: the assigned salesperson can see the
+  // customer and related work; the creator cannot retain access after a
+  // reassignment. Managers retain the categorized all-salesperson view.
+  const salesABootstrap = await request('/api/mobile/bootstrap', { token:salesAToken });
+  assert.equal(salesABootstrap.status, 200);
+  assert.deepEqual(salesABootstrap.body.fieldSales.accounts.map(item => item.id), ['account-a']);
+  assert.deepEqual(salesABootstrap.body.fieldSales.visitPlans.map(item => item.id), ['plan-a']);
+  assert.deepEqual(salesABootstrap.body.fieldSales.visits.map(item => item.id), ['visit-a']);
+  assert.deepEqual(salesABootstrap.body.fieldSales.followUps.map(item => item.id), ['follow-a']);
+
+  const salesBBootstrap = await request('/api/mobile/bootstrap', { token:salesBToken });
+  assert.equal(salesBBootstrap.status, 200);
+  assert.deepEqual(salesBBootstrap.body.fieldSales.accounts.map(item => item.id), ['account-b']);
+  assert.deepEqual(salesBBootstrap.body.fieldSales.visitPlans.map(item => item.id), ['plan-b']);
+  assert.deepEqual(salesBBootstrap.body.fieldSales.visits.map(item => item.id), ['visit-b']);
+  assert.deepEqual(salesBBootstrap.body.fieldSales.followUps.map(item => item.id), ['follow-b']);
+
+  const managerBootstrap = await request('/api/mobile/bootstrap', { token:managerToken });
+  assert.equal(managerBootstrap.status, 200);
+  assert.equal(managerBootstrap.body.fieldSales.canManage, true);
+  assert(managerBootstrap.body.fieldSales.accounts.some(item => item.id === 'account-a'));
+  assert(managerBootstrap.body.fieldSales.accounts.some(item => item.id === 'account-b'));
+  assert(managerBootstrap.body.fieldSales.accounts.some(item => item.id === 'legacy-unassigned'));
+
+  const crossAccountUpdate = await request('/api/field-sales/accounts/account-b', {
+    token:salesAToken, method:'PUT', body:{ note:'must not be written' }
+  });
+  assert.equal(crossAccountUpdate.status, 404);
+
+  const crossPlanUpload = await request('/api/field-sales/attachments?objectId=plan-b', {
+    token:salesAToken, method:'POST',
+    body:{ objectId:'plan-b', fileName:'forbidden.jpg', contentType:'image/jpeg', contentBase64:Buffer.from('forbidden').toString('base64') }
+  });
+  assert.equal(crossPlanUpload.status, 403);
+
+  const crossTripStart = await request('/api/field-sales/trips/start', {
+    token:salesAToken, method:'POST',
+    body:{ accountId:'account-b', locationConsent:true, lat:36.2, lng:-115.2, accuracy:6 }
+  });
+  assert.equal(crossTripStart.status, 404);
+
+  const crossVisitStart = await request('/api/field-sales/visits/start', {
+    token:salesAToken, method:'POST',
+    body:{ accountId:'account-b', locationConsent:true, lat:36.2, lng:-115.2, accuracy:6, photoUrl:'/customer-media/forbidden.jpg' }
+  });
+  assert.equal(crossVisitStart.status, 404);
+
+  const forcedCrossAssignment = await request('/api/field-sales/follow-ups', {
+    token:salesAToken, method:'POST',
+    body:{ accountId:'account-a', assignedUserId:'sales-b', dueAt:'2026-09-11T17:00:00.000Z', reason:'Own follow-up only' }
+  });
+  assert.equal(forcedCrossAssignment.status, 201);
+  const savedOwnFollowUp = forcedCrossAssignment.body.fieldSales.followUps.find(item => item.reason === 'Own follow-up only');
+  assert.equal(savedOwnFollowUp.assignedUserId, 'sales-a');
 
   const denied = await request('/api/field-sales/inventory-pricing?q=QD15', { token:noPermissionToken });
   assert.equal(denied.status, 403);
@@ -230,7 +307,72 @@ async function run() {
   assert.equal(completed.body.fieldSales.visits.find(item => item.id === visit.id).status, '已完成');
   assert.equal(completed.body.fieldSales.visitPlans.find(item => item.id === 'new-plan').status, '已完成');
 
-  console.log('Field sales inventory/pricing permissions and trip recovery tests passed.');
+  // A real field day contains several customers. Repeatedly exercise the exact
+  // start -> arrival photo -> visit -> evidence photo -> completion sequence so
+  // a stale active trip/visit cannot make only the first customer work.
+  for (const fixture of [
+    { accountId:'second-account', planId:'second-plan', lat:36.12, lng:-115.22 },
+    { accountId:'third-account', planId:'third-plan', lat:36.13, lng:-115.23 }
+  ]) {
+    const trip = await request('/api/field-sales/trips/start', {
+      token:pricesToken, method:'POST',
+      body:{ accountId:fixture.accountId, locationConsent:true, lat:fixture.lat, lng:fixture.lng, accuracy:6 }
+    });
+    assert.equal(trip.status, 201, `trip start failed for ${fixture.accountId}`);
+
+    const arrivalPhoto = await request(`/api/field-sales/attachments?objectId=${fixture.planId}`, {
+      token:pricesToken, method:'POST',
+      body:{
+        objectId:fixture.planId,
+        fileName:`${fixture.accountId}-arrival.jpg`,
+        contentType:'image/jpeg',
+        contentBase64:Buffer.from(`arrival-${fixture.accountId}`).toString('base64')
+      }
+    });
+    assert.equal(arrivalPhoto.status, 201, `arrival photo failed for ${fixture.accountId}`);
+    assert(arrivalPhoto.body.url.includes('/customer-media/'));
+
+    const startedVisit = await request('/api/field-sales/visits/start', {
+      token:pricesToken, method:'POST',
+      body:{
+        accountId:fixture.accountId, locationConsent:true,
+        lat:fixture.lat, lng:fixture.lng, accuracy:6,
+        address:`Actual location for ${fixture.accountId}`,
+        photoUrl:arrivalPhoto.body.url, contactMet:'Owner'
+      }
+    });
+    assert.equal(startedVisit.status, 201, `arrival check-in failed for ${fixture.accountId}`);
+    assert.equal(startedVisit.body.visit.status, '进行中');
+
+    const evidencePhoto = await request(`/api/field-sales/attachments?objectId=${fixture.planId}`, {
+      token:pricesToken, method:'POST',
+      body:{
+        objectId:fixture.planId,
+        fileName:`${fixture.accountId}-storefront.jpg`,
+        contentType:'image/jpeg',
+        contentBase64:Buffer.from(`evidence-${fixture.accountId}`).toString('base64')
+      }
+    });
+    assert.equal(evidencePhoto.status, 201, `evidence photo failed for ${fixture.accountId}`);
+    const evidenceList = await request(`/api/field-sales/attachments?objectId=${fixture.planId}`, { token:pricesToken });
+    assert.equal(evidenceList.status, 200);
+    assert.equal(evidenceList.body.items.length, 2, `photos were not retained for ${fixture.accountId}`);
+
+    const finished = await request(`/api/field-sales/visits/${startedVisit.body.visit.id}/complete`, {
+      token:pricesToken, method:'PUT',
+      body:{ reportText:`Completed ${fixture.accountId}`, outcome:'继续跟进' }
+    });
+    assert.equal(finished.status, 200, `visit completion failed for ${fixture.accountId}`);
+    assert.equal(finished.body.fieldSales.visitPlans.find(item => item.id === fixture.planId).status, '已完成');
+  }
+
+  const finalBootstrap = await request('/api/mobile/bootstrap', { token:pricesToken });
+  assert.equal(finalBootstrap.status, 200);
+  assert.equal(finalBootstrap.body.fieldSales.visits.filter(item => item.status === '进行中').length, 0);
+  assert.equal(finalBootstrap.body.fieldSales.trips.filter(item => item.status === '前往中').length, 0);
+  assert.equal(finalBootstrap.body.fieldSales.visitPlans.filter(item => ['new-plan','second-plan','third-plan'].includes(item.id) && item.status === '已完成').length, 3);
+
+  console.log('Field sales inventory/pricing, trip recovery, and three-customer photo flow tests passed.');
 }
 
 run().catch(error => {
