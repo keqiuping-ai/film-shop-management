@@ -1,4 +1,4 @@
-const CACHE_NAME = 'film-shop-v127-chat-ai-realtime-translation';
+const CACHE_NAME = 'film-shop-v128-direct-call-default';
 const ASSETS = [
     '/mobile.html',
     '/warranty.html',

@@ -65,7 +65,7 @@ async function run() {
   assert.match(mobileSource, /正在发送…/, 'Mobile pending text must show sending status');
   assert.match(mobileSource, /preserveMobileMessageSnapshot/, 'Mobile refreshes must preserve a visible non-empty thread');
   assert(mobileHtml.includes('/mobile.js?v=69'), 'Mobile app asset marker must be bumped');
-  assert(serviceWorker.includes('film-shop-v127-chat-ai-realtime-translation'), 'Service worker cache must be bumped');
+  assert(serviceWorker.includes('film-shop-v128-direct-call-default'), 'Service worker cache must be bumped');
   assert.match(appSource, /openInternalMessageAnalysis/, 'Desktop chat must expose the saved AI analysis panel');
   assert.match(mobileSource, /openMobileMessageAnalysis/, 'Mobile chat must expose the saved AI analysis panel');
   assert.match(serverSource, /detail:`AI 分析 \$\{targetDate\} 聊天；未自动创建任务`/, 'Chat analysis must be persisted without automatically creating a task');
@@ -74,6 +74,9 @@ async function run() {
   assert.match(realtimeSource, /gpt-realtime|realtime\/translations\/calls/, 'Call client must use the dedicated Realtime translation endpoint');
   assert.match(realtimeSource, /notes:transcript\.text, createTask:false/, 'Automatic call summary must not create a task');
   assert.match(realtimeSource, /setTranslationLanguage/, 'Call UI must expose target-language selection');
+  assert.match(realtimeSource, /translationEnabled = false/, 'Every call must default to direct audio without translation');
+  assert.match(realtimeSource, /setTranslationMode\('direct'\)/, 'Call UI must expose an explicit direct-call mode');
+  assert.match(realtimeSource, /setTranslationMode\('translate'\)/, 'Call UI must require an explicit translation mode');
 
   child = spawn(process.execPath, ['server.js'], {
     cwd: root,
