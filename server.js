@@ -11148,7 +11148,7 @@ async function api(req, res) {
     return send(res, 201, { task, analysis, data:sanitizeDbForUser(db, user) });
   }
 
-  const voiceCallMatch = url.pathname.match(/^\/api\/voice-calls(?:\/([^/]+))?(?:\/(token|summary))?$/);
+  const voiceCallMatch = url.pathname.match(/^\/api\/voice-calls(?:\/([^/]+))?(?:\/(token))?$/);
   if (voiceCallMatch) {
     const callId = String(voiceCallMatch[1] || '');
     const operation = String(voiceCallMatch[2] || '');
@@ -11179,8 +11179,8 @@ async function api(req, res) {
         callerUserId: user.id, callerName: user.name || user.email,
         participantUserIds, participantNames: participantUserIds.map(value => db.users.find(row => row.id === value)?.name || '').filter(Boolean),
         participantStatuses: { [user.id]: 'joined', ...Object.fromEntries(participantUserIds.map(userId => [userId, 'ringing'])) },
-        status: 'ringing', createdAt: now, answeredAt: '', endedAt: '', endedByUserId: '', recording: false,
-        declinedByUserIds: [], durationSeconds: 0, summary: '', summaryProvider: '', taskId: ''
+        status: 'ringing', createdAt: now, answeredAt: '', endedAt: '', endedByUserId: '',
+        declinedByUserIds: [], durationSeconds: 0
       };
       db.voiceCalls.push(call);
       db.voiceCalls = db.voiceCalls.slice(-1000);
@@ -11265,41 +11265,11 @@ async function api(req, res) {
         call.participantStatuses = { ...(call.participantStatuses || {}) };
         additions.forEach(userId => { call.participantStatuses[userId] = 'ringing'; });
         call.declinedByUserIds = (call.declinedByUserIds || []).filter(value => !additions.includes(value));
-      } else if (action === 'recording') {
-        if (call.callerUserId !== user.id) return send(res, 403, { error: '只有发起人可以开启 AI 通话记录' });
-        if (call.status !== 'active') return send(res, 409, { error: '通话接通后才能开启 AI 记录' });
-        call.recording = Boolean(body.enabled);
-        call.recordingStartedAt = call.recording ? now : (call.recordingStartedAt || '');
       } else return send(res, 400, { error: '不支持的通话操作' });
       audit(db, user, `voice-call-${action}`, { collection: 'voiceCalls', recordId: call.id, recordLabel: call.callerName, detail: `实时语音通话 ${action}` });
       notifyDataChanged(`voice-call-${action}`, { call }, [call.callerUserId, ...(call.participantUserIds || [])]);
       scheduleDbWrite(db);
       return send(res, 200, { call });
-    }
-    if (req.method === 'POST' && operation === 'summary') {
-      if (!['ended', 'active'].includes(call.status)) return send(res, 409, { error: '请在通话接通或结束后整理内容' });
-      const body = await readBody(req); const notes = String(body.notes || (body.createTask === true ? call.summary : '') || '').trim().slice(0, 8000);
-      if (!notes) return send(res, 400, { error: '请先输入本次通话的要点；系统不会在未告知双方的情况下录音' });
-      try {
-        const result = await createAiBossDraft(db, `这是员工内部通话记录。请整理通话结论，并提供一份供人工确认的后续任务建议；除非用户另行确认，系统不会自动创建任务：\n${notes}`, String(body.provider || ''));
-        const draft = result.draft || {};
-        call.summary = String(draft.description || notes).slice(0, 4000); call.summaryProvider = result.provider; call.summaryAt = new Date().toISOString();
-        let task = null;
-        if (body.createTask === true) {
-          const assignee = (db.users || []).find(row => row.id === String(draft.assigneeUserId || body.assigneeUserId || '') && row.active !== false)
-            || (db.users || []).find(row => row.id === call.answeredByUserId && row.active !== false)
-            || user;
-          const now = new Date().toISOString();
-          task = { id: id(), title: String(draft.title || '通话后续任务').slice(0, 180), description: call.summary, sourceText: notes,
-            createdByUserId: user.id, createdByName: user.name || user.email, assigneeUserId: assignee.id, assigneeName: assignee.name || assignee.email,
-            helperUserIds: [], helperNames: [], dueAt: normalizeAiBossDraftDueAt(db, draft.dueAt), priority: ['低','普通','高','紧急'].includes(draft.priority) ? draft.priority : '普通',
-            difficulty: Math.min(10, Math.max(1, Number(draft.difficulty || 3))), acceptanceCriteria: String(draft.acceptanceCriteria || '').slice(0, 2000),
-            aiReason: String(draft.reason || '').slice(0, 1000), status: 'pending', progressUpdates: [], createdAt: now, updatedAt: now, acceptedAt: '', completedAt: '', verifiedAt: '', callId: call.id };
-          db.aiBossTasks.push(task); call.taskId = task.id;
-        }
-        writeDb(db); notifyDataChanged('voice-call-summary', call.id);
-        return send(res, 200, { call, task, data: sanitizeDbForUser(db, user) });
-      } catch (error) { return send(res, 502, { error: `AI 整理失败：${String(error.message || error).slice(0, 220)}` }); }
     }
   }
 

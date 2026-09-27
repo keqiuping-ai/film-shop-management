@@ -16,14 +16,9 @@
   let pollWakeTimer = null;
   let lastPollAt = 0;
   let actionBusy = false;
-  let recording = null;
-  let recordingChunks = [];
-  let recordingContext = null;
-  let recordingDestination = null;
   let translationEnabled = false;
   let translationSelectionOpen = false;
   let translationGeneration = 0;
-  const recordingSources = new Map();
   const translationSidecars = new Map();
   const translationRetryCounts = new Map();
   const translationRetryTimers = new Map();
@@ -48,13 +43,6 @@
     if ((declinedCallerUntil.get(call.callerUserId) || 0) > Date.now()) return false;
     const status = call.participantStatuses?.[me()?.id];
     return status ? ['ringing', 'invited'].includes(status) : call.status === 'ringing';
-  };
-  const autoRecordKey = () => `filmShopCloud.autoAiCallRecord.${me()?.id || 'device'}`;
-  const autoRecordEnabled = () => {
-    try { return localStorage.getItem(autoRecordKey()) === '1'; } catch { return false; }
-  };
-  const setAutoRecordEnabled = enabled => {
-    try { localStorage.setItem(autoRecordKey(), enabled ? '1' : '0'); } catch {}
   };
   const translationLanguageKey = () => `filmShopCloud.callTranslationLanguage.${me()?.id || 'device'}`;
   const preferredTranslationLanguage = () => {
@@ -430,19 +418,17 @@
 
   function renderCall(call, statusText) {
     const layer = ensureLayer();
-    const automatic = autoRecordEnabled();
     const translationLanguage = preferredTranslationLanguage();
     const translationDetailsVisible = translationSelectionOpen || translationEnabled;
     layer.innerHTML = `<div class="quad-call-backdrop" onpointerdown="QuadCalls.resumeTranslationAudio()"><section class="quad-call-card active">
       <button class="quad-call-minimize" onclick="QuadCalls.toggleMinimize()">—</button>
       <div class="quad-call-quality" id="quadCallQuality">● ${esc(statusText || (zh() ? '正在连接…' : 'Connecting…'))}</div>
       <div class="quad-call-avatar">🎧</div><h2 id="quadCallName">${esc(nameFor(call))}</h2><time id="quadCallTime">00:00</time>
-      <div id="quadCallRecording" style="${call.recording ? '' : 'display:none'};color:#ff6b6b;font-weight:800;margin:.5rem 0">🔴 ${zh() ? 'AI 正在自动记录' : 'AI is recording automatically'}</div>
       <div class="quad-call-translation-controls"><div class="quad-call-mode-switch"><button id="quadCallDirectMode" class="${translationDetailsVisible ? '' : 'active'}" type="button" onclick="QuadCalls.setTranslationMode('direct')">📞 ${zh() ? '直接通话' : 'Direct call'}</button><button id="quadCallTranslateMode" class="${translationEnabled ? 'active' : ''}" type="button" onclick="QuadCalls.setTranslationMode('translate')">🌐 ${zh() ? '开启翻译' : 'Start translation'}</button></div><div id="quadCallTranslationDetails" ${translationDetailsVisible ? '' : 'hidden'}><strong>${zh() ? '请选择你需要听到的语言' : 'Choose the language you want to hear'}</strong><div class="quad-call-language-options">
         ${[['zh','中文'],['en','English'],['es','Español'],['pt','Português']].map(([value, label]) => `<button type="button" class="quad-call-language-option ${translationEnabled && translationLanguage === value ? 'active' : ''}" data-language="${value}" onclick="QuadCalls.setTranslationLanguage('${value}')">${label}</button>`).join('')}
       </div><small id="quadCallTranslationStatus">${translationEnabled ? (zh() ? `实时翻译已选择：${translationLanguageName(translationLanguage)}` : `Live translation selected: ${translationLanguageName(translationLanguage)}`) : (zh() ? '点选语言后开始翻译' : 'Tap a language to start translation')}</small><div class="quad-call-translation-transcript" id="quadCallTranslationTranscript"><div><b>${zh() ? '对方原话' : 'Original'}</b><span id="quadCallSourceTranscript"></span></div><div><b>${zh() ? '实时译文' : 'Translation'}</b><span id="quadCallTranslatedTranscript"></span></div></div></div></div>
       <div id="quadCallRemoteAudio"></div>
-      <footer><button id="quadMute" onclick="QuadCalls.toggleMute()">🎙️<br>${zh() ? '静音' : 'Mute'}</button>${call.callerUserId === me()?.id ? `<button id="quadRecord" onclick="QuadCalls.toggleAutoRecord()">${automatic ? '🔴' : '⚪️'}<br>${automatic ? (zh() ? '自动记录' : 'Auto record') : (zh() ? 'AI记录' : 'AI record')}</button>` : ''}<button onclick="QuadCalls.pickParticipants(true)">➕<br>${zh() ? '添加成员' : 'Add'}</button><button class="quad-call-end" onclick="QuadCalls.end()">📞<br>${zh() ? '挂断' : 'End'}</button></footer>
+      <footer><button id="quadMute" onclick="QuadCalls.toggleMute()">🎙️<br>${zh() ? '静音' : 'Mute'}</button><button onclick="QuadCalls.pickParticipants(true)">➕<br>${zh() ? '添加成员' : 'Add'}</button><button class="quad-call-end" onclick="QuadCalls.end()">📞<br>${zh() ? '挂断' : 'End'}</button></footer>
     </section></div>`;
     const audioHost = document.getElementById('quadCallRemoteAudio');
     room?.remoteParticipants?.forEach(participant => participant.audioTrackPublications.forEach(publication => {
@@ -464,7 +450,6 @@
     room.on(LivekitClient.RoomEvent.TrackSubscribed, (track, publication, participant) => {
       if (track.kind !== LivekitClient.Track.Kind.Audio) return;
       const element = track.attach(); element.autoplay = true; element.dataset.participantIdentity = participant.identity; document.getElementById('quadCallRemoteAudio')?.appendChild(element);
-      connectRecordingTrack(track.mediaStreamTrack);
       if (translationEnabled) startTranslationTrack(track.mediaStreamTrack, participant.identity);
     });
     room.on(LivekitClient.RoomEvent.TrackUnsubscribed, track => {
@@ -483,8 +468,6 @@
     room.on(LivekitClient.RoomEvent.Disconnected, () => { if (activeCall) finishLocal(false); });
     await room.connect(credentials.url, credentials.token, { autoSubscribe: true });
     await room.localParticipant.setMicrophoneEnabled(true, { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 });
-    const localAudio = room.localParticipant.getTrackPublication?.(LivekitClient.Track.Source.Microphone)?.track;
-    connectRecordingTrack(localAudio?.mediaStreamTrack);
     if (call.callerUserId !== me()?.id || room.remoteParticipants.size > 0) markAnswered();
     else {
       const label = document.getElementById('quadCallQuality'); if (label) label.textContent = zh() ? '● 正在呼叫，等待对方接听…' : '● Calling…';
@@ -497,7 +480,6 @@
     callStartedAt = activeCall?.answeredAt ? Date.parse(activeCall.answeredAt) : Date.now();
     if (!Number.isFinite(callStartedAt)) callStartedAt = Date.now();
     startTimer(); const label = document.getElementById('quadCallQuality'); if (label) label.textContent = zh() ? '● 通话中' : '● In call';
-    if (activeCall?.callerUserId === me()?.id && autoRecordEnabled()) startAiRecord();
   }
 
   function startTimer() {
@@ -613,90 +595,14 @@
   }
 
   async function end() {
-    const call = activeCall; const wasRecording = Boolean(recording); const audioDataUrl = await stopAiRecord(); finishLocal(false); if (!call) return;
+    const call = activeCall; finishLocal(false); if (!call) return;
     try {
-      if (wasRecording) await request(`/api/voice-calls/${encodeURIComponent(call.id)}`, { method:'PUT', body:JSON.stringify({ action:'recording', enabled:false }) }).catch(() => null);
       const result = await request(`/api/voice-calls/${encodeURIComponent(call.id)}`, { method:'PUT', body:JSON.stringify({ action:'leave' }) });
       if (result.data) replaceStore(result.data);
-      if (audioDataUrl) showAiProcessing(); else showSummary(call.id);
+      activeCall = null;
+      ensureLayer().innerHTML = '';
     }
     catch (error) { alert(error.message || error); }
-    if (audioDataUrl) transcribeAndSummarize(call.id, audioDataUrl);
-  }
-
-  function connectRecordingTrack(mediaStreamTrack) {
-    if (!recordingDestination || !mediaStreamTrack || recordingSources.has(mediaStreamTrack.id)) return;
-    try {
-      const source = recordingContext.createMediaStreamSource(new MediaStream([mediaStreamTrack]));
-      source.connect(recordingDestination); recordingSources.set(mediaStreamTrack.id, source);
-    } catch {}
-  }
-
-  async function startAiRecord() {
-    if (!room || !activeCall || recording) return;
-    try {
-      await request(`/api/voice-calls/${encodeURIComponent(activeCall.id)}`, { method:'PUT', body:JSON.stringify({ action:'recording', enabled:true }) });
-      recordingContext = new (window.AudioContext || window.webkitAudioContext)();
-      recordingDestination = recordingContext.createMediaStreamDestination(); recordingSources.clear(); recordingChunks = [];
-      const localAudio = room.localParticipant.getTrackPublication?.(LivekitClient.Track.Source.Microphone)?.track;
-      connectRecordingTrack(localAudio?.mediaStreamTrack);
-      room.remoteParticipants.forEach(participant => participant.audioTrackPublications.forEach(publication => connectRecordingTrack(publication.track?.mediaStreamTrack)));
-      const mimeType = ['audio/webm;codecs=opus','audio/webm','audio/mp4'].find(type => MediaRecorder.isTypeSupported(type)) || '';
-      recording = new MediaRecorder(recordingDestination.stream, { mimeType, audioBitsPerSecond:32000 });
-      recording.ondataavailable = event => { if (event.data?.size) recordingChunks.push(event.data); };
-      recording.start(1000); activeCall.recording = true;
-      const indicator = document.getElementById('quadCallRecording'); if (indicator) indicator.style.display = '';
-      updateAutoRecordButton();
-    } catch (error) { alert(error.message || error); }
-  }
-
-  async function toggleAutoRecord() {
-    const enabled = !autoRecordEnabled();
-    setAutoRecordEnabled(enabled);
-    updateAutoRecordButton();
-    if (enabled && room && activeCall && callStartedAt) await startAiRecord();
-    const indicator = document.getElementById('quadCallRecording');
-    if (!enabled && recording && indicator) indicator.textContent = zh() ? '🔴 本次通话继续记录；以后通话已关闭自动记录' : '🔴 This call is still recording; auto record is off for future calls';
-  }
-
-  function updateAutoRecordButton() {
-    const button = document.getElementById('quadRecord');
-    if (!button) return;
-    const enabled = autoRecordEnabled();
-    button.innerHTML = `${enabled ? '🔴' : '⚪️'}<br>${enabled ? (recording ? (zh() ? '自动记录中' : 'Auto recording') : (zh() ? '自动记录' : 'Auto record')) : (zh() ? 'AI记录' : 'AI record')}`;
-  }
-
-  async function stopAiRecord() {
-    if (!recording) return '';
-    const current = recording; recording = null;
-    return new Promise(resolve => {
-      current.onstop = () => {
-        const blob = new Blob(recordingChunks, { type:(current.mimeType || 'audio/webm').split(';')[0] });
-        const reader = new FileReader(); reader.onload = () => resolve(String(reader.result || '')); reader.onerror = () => resolve(''); reader.readAsDataURL(blob);
-        recordingContext?.close?.(); recordingContext = null; recordingDestination = null; recordingSources.clear(); recordingChunks = [];
-      };
-      current.stop();
-    });
-  }
-
-  async function transcribeAndSummarize(callId, dataUrl) {
-    try {
-      const transcript = await request('/api/ai-boss/transcribe', { method:'POST', body:JSON.stringify({ dataUrl, language:zh() ? 'zh' : 'en' }) });
-      const result = await request(`/api/voice-calls/${encodeURIComponent(callId)}/summary`, { method:'POST', body:JSON.stringify({ notes:transcript.text, createTask:false }) });
-      if (result.data) replaceStore(result.data);
-      showAiComplete(callId);
-    } catch (error) {
-      showSummary(callId, zh() ? `自动整理失败：${error.message || error}。可以在这里补充通话要点。` : `Automatic summary failed: ${error.message || error}. Add call notes here.`);
-    }
-  }
-
-  function showAiProcessing() {
-    activeCall = null;
-    ensureLayer().innerHTML = `<div class="quad-call-backdrop"><section class="quad-call-card summary"><div class="quad-call-pulse">🤖</div><h2>${zh() ? 'AI 正在整理通话记录' : 'AI is organizing the call'}</h2><p>${zh() ? '正在保存通话分析；不会自动生成督办任务。' : 'Saving the call analysis. No task will be created automatically.'}</p></section></div>`;
-  }
-
-  function showAiComplete(callId) {
-    ensureLayer().innerHTML = `<div class="quad-call-backdrop"><section class="quad-call-card summary"><button class="quad-call-close" onclick="QuadCalls.close()">×</button><div class="quad-call-pulse">✅</div><h2>${zh() ? '通话分析已保存' : 'Call analysis saved'}</h2><p>${zh() ? '系统没有自动创建任务。请核对后再决定是否生成督办任务。' : 'No task was created automatically. Review first, then create one only if needed.'}</p><footer><button onclick="QuadCalls.close()">${zh() ? '完成' : 'Done'}</button><button class="quad-call-accept" onclick="QuadCalls.createTaskFromCall('${callId}')">${zh() ? '确认生成督办任务' : 'Create task'}</button></footer></section></div>`;
   }
 
   function finishLocal(clear = true) {
@@ -713,33 +619,6 @@
     const layer = ensureLayer(); const minimized = layer.classList.toggle('minimized');
     const button = layer.querySelector('.quad-call-minimize'); if (button) button.textContent = minimized ? (zh() ? '展开' : 'Open') : '—';
     if (minimized && document.getElementById('modal')?.classList.contains('message-modal-open') && typeof window.closeModal === 'function') window.closeModal();
-  }
-
-  function showSummary(callId, message = '') {
-    activeCall = null; const layer = ensureLayer();
-    layer.innerHTML = `<div class="quad-call-backdrop"><section class="quad-call-card summary"><button class="quad-call-close" onclick="QuadCalls.close()">×</button>
-      <h2>${zh() ? '整理通话结果' : 'Summarize call'}</h2><p>${esc(message || (zh() ? '这次通话没有开启自动记录，可以输入要点让 AI 整理。' : 'Auto recording was not enabled for this call. Enter notes for AI follow-up.'))}</p>
-      <textarea id="quadCallNotes" placeholder="${zh() ? '例：张三明天下午5点前核对仓库并回报结果…' : 'Call notes…'}"></textarea>
-      <p class="quad-call-safe-note">${zh() ? '保存后只生成 AI 分析，不会自动创建任务。' : 'This saves AI analysis only and does not create a task.'}</p>
-      <footer><button onclick="QuadCalls.close()">${zh() ? '稍后' : 'Later'}</button><button class="quad-call-accept" onclick="QuadCalls.summarize('${callId}')">${zh() ? '保存 AI 分析' : 'Save AI analysis'}</button></footer>
-    </section></div>`;
-  }
-
-  async function summarize(callId) {
-    const notes = document.getElementById('quadCallNotes')?.value.trim(); if (!notes) return alert(zh() ? '请先输入通话要点' : 'Enter call notes');
-    try {
-      const result = await request(`/api/voice-calls/${encodeURIComponent(callId)}/summary`, { method:'POST', body:JSON.stringify({ notes, createTask:false }) });
-      if (result.data) replaceStore(result.data); showAiComplete(callId);
-    } catch (error) { alert(error.message || error); }
-  }
-
-  async function createTaskFromCall(callId) {
-    try {
-      const result = await request(`/api/voice-calls/${encodeURIComponent(callId)}/summary`, { method:'POST', body:JSON.stringify({ createTask:true }) });
-      if (result.data) replaceStore(result.data);
-      close();
-      alert(result.task ? (zh() ? '督办任务已生成' : 'Task created') : (zh() ? '没有生成任务' : 'No task was created'));
-    } catch (error) { alert(error.message || error); }
   }
 
   function close() { stopIncomingAlerts(incomingCallId || activeCall?.id); incomingCallId = ''; activeCall = null; closePicker(); ensureLayer().innerHTML = ''; }
@@ -800,13 +679,6 @@
       activeCall = call;
       const name = document.getElementById('quadCallName'); if (name) name.textContent = nameFor(call);
     }
-    if (activeCall?.id === call.id) {
-      const indicator = document.getElementById('quadCallRecording');
-      if (indicator) {
-        indicator.style.display = call.recording ? '' : 'none';
-        if (call.recording) indicator.textContent = zh() ? '🔴 AI 正在自动记录' : '🔴 AI is recording automatically';
-      }
-    }
     if (activeCall?.id === call.id && (['declined', 'ended', 'missed'].includes(call.status) || call.participantStatuses?.[me()?.id] === 'left')) finishLocal();
   }
 
@@ -814,7 +686,7 @@
     if ('Notification' in window && Notification.permission === 'default') await Notification.requestPermission();
   }
 
-  window.QuadCalls = { start, accept, decline, end, toggleMute, toggleMinimize, toggleAutoRecord, setTranslationMode, setTranslationLanguage, resumeTranslationAudio, summarize, createTaskFromCall, showSummary, close, poll, enableNotifications, pickParticipants, confirmParticipants, restoreCall, closePicker,
+  window.QuadCalls = { start, accept, decline, end, toggleMute, toggleMinimize, setTranslationMode, setTranslationLanguage, resumeTranslationAudio, close, poll, enableNotifications, pickParticipants, confirmParticipants, restoreCall, closePicker,
     startDirect: userId => start(userId),
     startGroup: () => pickParticipants(false) };
   if (window.__QUAD_CALL_TEST_MODE__) {
