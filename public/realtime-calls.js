@@ -21,6 +21,8 @@
   let recordingContext = null;
   let recordingDestination = null;
   let translationEnabled = false;
+  let translationSelectionOpen = false;
+  let translationGeneration = 0;
   const recordingSources = new Map();
   const translationSidecars = new Map();
   const declinedCallerUntil = new Map();
@@ -30,7 +32,8 @@
   const store = () => context().state || {};
   const replaceStore = value => window.setQuadCallState?.(value);
   const request = (...args) => window.api(...args);
-  const zh = () => window.lang !== 'en';
+  const interfaceLanguage = () => String(document.documentElement.lang || 'zh').toLowerCase();
+  const zh = () => !interfaceLanguage().startsWith('en');
   const esc = value => String(value || '').replace(/[&<>"']/g, char => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[char]));
   const callUsers = () => store().messageUsers || store().users || [];
   const calls = () => store().voiceCalls || [];
@@ -84,8 +87,9 @@
     });
   }
 
-  function stopTranslationSidecar(key) {
-    const sidecar = translationSidecars.get(key);
+  function stopTranslationSidecar(key, expectedSidecar = null) {
+    const currentSidecar = translationSidecars.get(key);
+    const sidecar = expectedSidecar || currentSidecar;
     if (!sidecar) return;
     try {
       if (sidecar.events?.readyState === 'open') sidecar.events.send(JSON.stringify({ type:'session.close' }));
@@ -95,10 +99,11 @@
       try { sidecar.track?.stop(); } catch {}
       try { sidecar.audio?.remove(); } catch {}
     }, 250);
-    translationSidecars.delete(key);
+    if (currentSidecar === sidecar) translationSidecars.delete(key);
   }
 
   function stopAllTranslationSidecars() {
+    translationGeneration += 1;
     [...translationSidecars.keys()].forEach(stopTranslationSidecar);
     setOriginalAudioMuted(false);
   }
@@ -106,6 +111,7 @@
   async function startTranslationTrack(mediaStreamTrack, participantIdentity = '') {
     const targetLanguage = preferredTranslationLanguage();
     if (!mediaStreamTrack || !translationEnabled) return;
+    const generation = translationGeneration;
     const key = `${participantIdentity || 'remote'}:${mediaStreamTrack.id}`;
     if (translationSidecars.has(key)) return;
     const sidecar = { pc:null, events:null, track:null, audio:null, participantIdentity, sourceTrackId:mediaStreamTrack.id };
@@ -115,9 +121,15 @@
       const secret = await request('/api/realtime-translation/session', {
         method:'POST', body:JSON.stringify({ targetLanguage })
       });
-      if (!translationEnabled || preferredTranslationLanguage() !== targetLanguage || !translationSidecars.has(key)) return stopTranslationSidecar(key);
+      if (!translationEnabled || preferredTranslationLanguage() !== targetLanguage || generation !== translationGeneration || translationSidecars.get(key) !== sidecar) return stopTranslationSidecar(key, sidecar);
       const pc = new RTCPeerConnection();
       sidecar.pc = pc;
+      pc.onconnectionstatechange = () => {
+        if (translationSidecars.get(key) !== sidecar || !['failed', 'disconnected', 'closed'].includes(pc.connectionState)) return;
+        stopTranslationSidecar(key);
+        setOriginalAudioMuted(false, participantIdentity);
+        updateTranslationStatus(zh() ? '翻译已断开，请再点一次语言重新连接' : 'Translation disconnected. Tap the language again to reconnect.', 'warning');
+      };
       sidecar.track = mediaStreamTrack.clone();
       const sourceStream = new MediaStream([sidecar.track]);
       pc.addTrack(sidecar.track, sourceStream);
@@ -151,9 +163,10 @@
       });
       if (!answer.ok) throw new Error((await answer.text()).slice(0, 220) || `OpenAI ${answer.status}`);
       await pc.setRemoteDescription({ type:'answer', sdp:await answer.text() });
+      if (!translationEnabled || preferredTranslationLanguage() !== targetLanguage || generation !== translationGeneration || translationSidecars.get(key) !== sidecar) return stopTranslationSidecar(key, sidecar);
       setOriginalAudioMuted(true, participantIdentity);
     } catch (error) {
-      stopTranslationSidecar(key);
+      stopTranslationSidecar(key, sidecar);
       setOriginalAudioMuted(false, participantIdentity);
       updateTranslationStatus(zh() ? `实时翻译连接失败：${error.message || error}` : `Live translation failed: ${error.message || error}`, 'error');
     }
@@ -162,7 +175,11 @@
   async function setTranslationLanguage(value) {
     const targetLanguage = ['zh', 'en', 'es', 'pt'].includes(String(value)) ? String(value) : (zh() ? 'zh' : 'en');
     try { localStorage.setItem(translationLanguageKey(), targetLanguage); } catch {}
-    if (!translationEnabled) return;
+    translationSelectionOpen = true;
+    translationEnabled = true;
+    document.getElementById('quadCallDirectMode')?.classList.remove('active');
+    document.getElementById('quadCallTranslateMode')?.classList.add('active');
+    document.querySelectorAll('.quad-call-language-option').forEach(button => button.classList.toggle('active', button.dataset.language === targetLanguage));
     stopAllTranslationSidecars();
     const source = document.getElementById('quadCallSourceTranscript');
     const translated = document.getElementById('quadCallTranslatedTranscript');
@@ -180,17 +197,20 @@
   }
 
   async function setTranslationMode(mode) {
-    translationEnabled = mode === 'translate';
-    document.getElementById('quadCallDirectMode')?.classList.toggle('active', !translationEnabled);
-    document.getElementById('quadCallTranslateMode')?.classList.toggle('active', translationEnabled);
+    const wantsTranslation = mode === 'translate';
+    translationSelectionOpen = wantsTranslation;
+    translationEnabled = false;
+    document.getElementById('quadCallDirectMode')?.classList.toggle('active', !wantsTranslation);
+    document.getElementById('quadCallTranslateMode')?.classList.remove('active');
     const details = document.getElementById('quadCallTranslationDetails');
-    if (details) details.hidden = !translationEnabled;
-    if (!translationEnabled) {
+    if (details) details.hidden = !wantsTranslation;
+    if (!wantsTranslation) {
       stopAllTranslationSidecars();
       updateTranslationStatus(zh() ? '直接通话中，不经过翻译' : 'Direct call; translation is off');
       return;
     }
-    await setTranslationLanguage(preferredTranslationLanguage());
+    stopAllTranslationSidecars();
+    updateTranslationStatus(zh() ? '请选择你需要听到的语言；点选后开始翻译' : 'Choose the language you want to hear. Translation starts after selection.');
   }
 
   function ensureLayer() {
@@ -338,17 +358,15 @@
     const layer = ensureLayer();
     const automatic = autoRecordEnabled();
     const translationLanguage = preferredTranslationLanguage();
+    const translationDetailsVisible = translationSelectionOpen || translationEnabled;
     layer.innerHTML = `<div class="quad-call-backdrop"><section class="quad-call-card active">
       <button class="quad-call-minimize" onclick="QuadCalls.toggleMinimize()">—</button>
       <div class="quad-call-quality" id="quadCallQuality">● ${esc(statusText || (zh() ? '正在连接…' : 'Connecting…'))}</div>
       <div class="quad-call-avatar">🎧</div><h2 id="quadCallName">${esc(nameFor(call))}</h2><time id="quadCallTime">00:00</time>
       <div id="quadCallRecording" style="${call.recording ? '' : 'display:none'};color:#ff6b6b;font-weight:800;margin:.5rem 0">🔴 ${zh() ? 'AI 正在自动记录' : 'AI is recording automatically'}</div>
-      <div class="quad-call-translation-controls"><div class="quad-call-mode-switch"><button id="quadCallDirectMode" class="${translationEnabled ? '' : 'active'}" type="button" onclick="QuadCalls.setTranslationMode('direct')">📞 ${zh() ? '直接通话' : 'Direct call'}</button><button id="quadCallTranslateMode" class="${translationEnabled ? 'active' : ''}" type="button" onclick="QuadCalls.setTranslationMode('translate')">🌐 ${zh() ? '开启翻译' : 'Translate'}</button></div><div id="quadCallTranslationDetails" ${translationEnabled ? '' : 'hidden'}><label>${zh() ? '我需要听到' : 'Translate others to'}<select id="quadCallTranslationLanguage" onchange="QuadCalls.setTranslationLanguage(this.value)">
-        <option value="zh" ${translationLanguage === 'zh' ? 'selected' : ''}>中文</option>
-        <option value="en" ${translationLanguage === 'en' ? 'selected' : ''}>English</option>
-        <option value="es" ${translationLanguage === 'es' ? 'selected' : ''}>Español</option>
-        <option value="pt" ${translationLanguage === 'pt' ? 'selected' : ''}>Português</option>
-      </select></label><small id="quadCallTranslationStatus">${zh() ? '翻译将在接通后自动连接' : 'Translation will connect after answer'}</small><div class="quad-call-translation-transcript" id="quadCallTranslationTranscript"><div><b>${zh() ? '对方原话' : 'Original'}</b><span id="quadCallSourceTranscript"></span></div><div><b>${zh() ? '实时译文' : 'Translation'}</b><span id="quadCallTranslatedTranscript"></span></div></div></div></div>
+      <div class="quad-call-translation-controls"><div class="quad-call-mode-switch"><button id="quadCallDirectMode" class="${translationDetailsVisible ? '' : 'active'}" type="button" onclick="QuadCalls.setTranslationMode('direct')">📞 ${zh() ? '直接通话' : 'Direct call'}</button><button id="quadCallTranslateMode" class="${translationEnabled ? 'active' : ''}" type="button" onclick="QuadCalls.setTranslationMode('translate')">🌐 ${zh() ? '开启翻译' : 'Start translation'}</button></div><div id="quadCallTranslationDetails" ${translationDetailsVisible ? '' : 'hidden'}><strong>${zh() ? '请选择你需要听到的语言' : 'Choose the language you want to hear'}</strong><div class="quad-call-language-options">
+        ${[['zh','中文'],['en','English'],['es','Español'],['pt','Português']].map(([value, label]) => `<button type="button" class="quad-call-language-option ${translationEnabled && translationLanguage === value ? 'active' : ''}" data-language="${value}" onclick="QuadCalls.setTranslationLanguage('${value}')">${label}</button>`).join('')}
+      </div><small id="quadCallTranslationStatus">${translationEnabled ? (zh() ? `实时翻译已选择：${translationLanguageName(translationLanguage)}` : `Live translation selected: ${translationLanguageName(translationLanguage)}`) : (zh() ? '点选语言后开始翻译' : 'Tap a language to start translation')}</small><div class="quad-call-translation-transcript" id="quadCallTranslationTranscript"><div><b>${zh() ? '对方原话' : 'Original'}</b><span id="quadCallSourceTranscript"></span></div><div><b>${zh() ? '实时译文' : 'Translation'}</b><span id="quadCallTranslatedTranscript"></span></div></div></div></div>
       <div id="quadCallRemoteAudio"></div>
       <footer><button id="quadMute" onclick="QuadCalls.toggleMute()">🎙️<br>${zh() ? '静音' : 'Mute'}</button>${call.callerUserId === me()?.id ? `<button id="quadRecord" onclick="QuadCalls.toggleAutoRecord()">${automatic ? '🔴' : '⚪️'}<br>${automatic ? (zh() ? '自动记录' : 'Auto record') : (zh() ? 'AI记录' : 'AI record')}</button>` : ''}<button onclick="QuadCalls.pickParticipants(true)">➕<br>${zh() ? '添加成员' : 'Add'}</button><button class="quad-call-end" onclick="QuadCalls.end()">📞<br>${zh() ? '挂断' : 'End'}</button></footer>
     </section></div>`;
@@ -364,6 +382,7 @@
   async function join(call) {
     if (!window.LivekitClient) throw new Error(zh() ? '实时通话组件加载失败' : 'Call component did not load');
     translationEnabled = false;
+    translationSelectionOpen = false;
     stopAllTranslationSidecars();
     activeCall = call; incomingCallId = ''; renderCall(call);
     const credentials = await request(`/api/voice-calls/${encodeURIComponent(call.id)}/token`, { method: 'POST', body: '{}' });
@@ -385,7 +404,7 @@
     });
     room.on(LivekitClient.RoomEvent.ConnectionQualityChanged, quality => {
       const label = document.getElementById('quadCallQuality');
-      if (label) label.textContent = quality === 'excellent' ? '● 网络优秀' : quality === 'good' ? '● 网络良好' : quality === 'poor' ? '● 网络较弱' : '● 通话中';
+      if (label) label.textContent = quality === 'excellent' ? (zh() ? '● 网络优秀' : '● Excellent network') : quality === 'good' ? (zh() ? '● 网络良好' : '● Good network') : quality === 'poor' ? (zh() ? '● 网络较弱' : '● Weak network') : (zh() ? '● 通话中' : '● In call');
     });
     room.on(LivekitClient.RoomEvent.Disconnected, () => { if (activeCall) finishLocal(false); });
     await room.connect(credentials.url, credentials.token, { autoSubscribe: true });
@@ -478,6 +497,17 @@
   }
 
   function restoreCall() { if (activeCall) renderCall(activeCall, zh() ? '通话中' : 'In call'); else close(); }
+  function refreshCallLanguage() {
+    if (!activeCall || !document.querySelector('.quad-call-card.active')) return;
+    const sourceText = document.getElementById('quadCallSourceTranscript')?.textContent || '';
+    const translatedText = document.getElementById('quadCallTranslatedTranscript')?.textContent || '';
+    renderCall(activeCall, zh() ? '通话中' : 'In call');
+    const source = document.getElementById('quadCallSourceTranscript');
+    const translated = document.getElementById('quadCallTranslatedTranscript');
+    if (source) source.textContent = sourceText;
+    if (translated) translated.textContent = translatedText;
+    if (sourceText || translatedText) document.getElementById('quadCallTranslationTranscript').hidden = false;
+  }
   function closePicker() { const layer = document.getElementById('quadCallPickerLayer'); if (layer) layer.innerHTML = ''; }
 
   async function accept(callId) {
@@ -596,7 +626,7 @@
   }
 
   function finishLocal(clear = true) {
-    clearInterval(timer); timer = null; stopIncomingAlerts(activeCall?.id); clearTimeout(ringTimeout); ringTimeout = null; callStartedAt = 0; translationEnabled = false; stopAllTranslationSidecars(); if (room) { const old = room; room = null; old.disconnect().catch?.(() => {}); }
+    clearInterval(timer); timer = null; stopIncomingAlerts(activeCall?.id); clearTimeout(ringTimeout); ringTimeout = null; callStartedAt = 0; translationEnabled = false; translationSelectionOpen = false; stopAllTranslationSidecars(); if (room) { const old = room; room = null; old.disconnect().catch?.(() => {}); }
     if (clear) activeCall = null; closePicker(); ensureLayer().innerHTML = '';
   }
 
@@ -719,6 +749,9 @@
   document.addEventListener('visibilitychange', () => { if (!document.hidden) requestPoll(); });
   window.addEventListener('focus', requestPoll);
   window.addEventListener('pageshow', requestPoll);
+  new MutationObserver(records => {
+    if (records.some(record => record.attributeName === 'lang')) refreshCallLanguage();
+  }).observe(document.documentElement, { attributes:true, attributeFilter:['lang'] });
   navigator.serviceWorker?.addEventListener?.('message', event => {
     if (event.data?.type === 'quad-incoming-call') {
       window.focus();
