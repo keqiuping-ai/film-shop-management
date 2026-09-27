@@ -23,6 +23,7 @@
   const translationRetryCounts = new Map();
   const translationRetryTimers = new Map();
   const declinedCallerUntil = new Map();
+  const translationFallbackDelay = window.__QUAD_CALL_TEST_MODE__ ? 30 : 1500;
 
   const context = () => window.getQuadCallContext?.() || {};
   const me = () => context().user || null;
@@ -87,18 +88,15 @@
     } catch {}
     setTimeout(() => {
       clearTimeout(sidecar.disconnectTimer);
+      clearTimeout(sidecar.audioFallbackTimer);
       try { sidecar.events?.close(); } catch {}
       if (sidecar.events) { sidecar.events.onopen = null; sidecar.events.onmessage = null; sidecar.events.onerror = null; sidecar.events.onclose = null; }
       if (sidecar.pc) { sidecar.pc.ontrack = null; sidecar.pc.onconnectionstatechange = null; }
       try { sidecar.pc?.close(); } catch {}
-      try { sidecar.track?.stop(); } catch {}
       try { sidecar.sourceClone?.stop(); } catch {}
-      try { sidecar.bridgeSource?.disconnect(); } catch {}
-      try { sidecar.bridgeDestination?.disconnect(); } catch {}
       try { sidecar.audio?.pause(); sidecar.audio.srcObject = null; sidecar.audio.remove(); } catch {}
-      try { sidecar.bridgeContext?.close(); } catch {}
       try { sidecar.offerAbort?.abort(); } catch {}
-      sidecar.pc = sidecar.events = sidecar.track = sidecar.sourceClone = sidecar.bridgeSource = sidecar.bridgeDestination = sidecar.bridgeContext = sidecar.audio = sidecar.offerAbort = null;
+      sidecar.pc = sidecar.events = sidecar.track = sidecar.sourceClone = sidecar.audio = sidecar.offerAbort = null;
     }, 150);
     if (currentSidecar === sidecar) translationSidecars.delete(key);
   }
@@ -134,7 +132,6 @@
 
   function resumeTranslationAudio() {
     translationSidecars.forEach(sidecar => {
-      sidecar.bridgeContext?.resume?.().catch(() => {});
       if (sidecar.audio?.srcObject) sidecar.audio.play?.().catch(() => {});
     });
   }
@@ -145,26 +142,13 @@
     const generation = translationGeneration;
     const key = `${participantIdentity || 'remote'}:${mediaStreamTrack.id}`;
     if (translationSidecars.has(key)) return;
-    const sidecar = { pc:null, events:null, track:null, sourceTrack:mediaStreamTrack, sourceClone:null, bridgeContext:null, bridgeSource:null, bridgeDestination:null, audio:null, participantIdentity, sourceTrackId:mediaStreamTrack.id, startedAt:performance.now(), stopping:false };
+    const sidecar = { pc:null, events:null, track:null, sourceTrack:mediaStreamTrack, sourceClone:null, audio:null, participantIdentity, sourceTrackId:mediaStreamTrack.id, startedAt:performance.now(), stopping:false, translationProven:false, inputSequence:0, outputSequence:0, audioFallbackTimer:null };
     translationSidecars.set(key, sidecar);
     try {
       updateTranslationStatus(zh() ? `正在连接 ${translationLanguageName(targetLanguage)} 实时翻译…` : `Connecting live ${translationLanguageName(targetLanguage)} translation…`);
       sidecar.sourceClone = mediaStreamTrack.clone();
-      const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-      let sourceStream;
-      if (AudioContextClass) {
-        try { sidecar.bridgeContext = new AudioContextClass({ latencyHint:'interactive' }); }
-        catch { sidecar.bridgeContext = new AudioContextClass(); }
-        sidecar.bridgeSource = sidecar.bridgeContext.createMediaStreamSource(new MediaStream([sidecar.sourceClone]));
-        sidecar.bridgeDestination = sidecar.bridgeContext.createMediaStreamDestination();
-        sidecar.bridgeSource.connect(sidecar.bridgeDestination);
-        sidecar.track = sidecar.bridgeDestination.stream.getAudioTracks()[0];
-        sourceStream = sidecar.bridgeDestination.stream;
-        sidecar.bridgeContext.resume?.().catch(() => {});
-      } else {
-        sidecar.track = sidecar.sourceClone;
-        sourceStream = new MediaStream([sidecar.track]);
-      }
+      sidecar.track = sidecar.sourceClone;
+      const sourceStream = new MediaStream([sidecar.track]);
       const secret = await request('/api/realtime-translation/session', {
         method:'POST', body:JSON.stringify({ targetLanguage })
       });
@@ -188,7 +172,10 @@
       document.getElementById('quadCallRemoteAudio')?.appendChild(translatedAudio);
       pc.ontrack = event => {
         translatedAudio.srcObject = event.streams[0];
-        translatedAudio.play().catch(() => updateTranslationStatus(zh() ? '请点一下通话画面以播放翻译语音' : 'Tap the call screen to play translated audio', 'warning'));
+        translatedAudio.play().catch(() => {
+          setOriginalAudioMuted(false, participantIdentity);
+          updateTranslationStatus(zh() ? '译音等待播放；原声已恢复，请点一下通话画面' : 'Translated audio is waiting to play. Original audio restored; tap the call screen.', 'warning');
+        });
       };
       const events = pc.createDataChannel('oai-events');
       sidecar.events = events;
@@ -200,16 +187,33 @@
           const event = JSON.parse(data);
           if (event.type === 'session.input_transcript.delta') {
             translationRetryCounts.delete(key);
+            sidecar.inputSequence += 1;
             updateTranslationTranscript('source', event.delta, participantIdentity);
             updateTranslationStatus(zh() ? '已收到对方语音，正在实时翻译…' : 'Speech received. Translating live…', 'ready');
+            if (sidecar.translationProven) {
+              const pendingSequence = sidecar.inputSequence;
+              clearTimeout(sidecar.audioFallbackTimer);
+              sidecar.audioFallbackTimer = setTimeout(() => {
+                if (translationSidecars.get(key) !== sidecar || sidecar.outputSequence >= pendingSequence) return;
+                setOriginalAudioMuted(false, participantIdentity);
+                updateTranslationStatus(zh() ? '翻译响应较慢，已自动恢复对方原声' : 'Translation is delayed. Original audio restored automatically.', 'warning');
+              }, translationFallbackDelay);
+            }
           }
           if (event.type === 'session.output_transcript.delta') {
             translationRetryCounts.delete(key);
+            sidecar.translationProven = true;
+            sidecar.outputSequence = sidecar.inputSequence;
+            clearTimeout(sidecar.audioFallbackTimer);
             updateTranslationTranscript('translated', event.delta, participantIdentity);
+            translatedAudio.play().then(() => setOriginalAudioMuted(true, participantIdentity)).catch(() => setOriginalAudioMuted(false, participantIdentity));
             const latencySeconds = Math.max(0, (performance.now() - sidecar.startedAt) / 1000).toFixed(1);
             updateTranslationStatus(zh() ? `实时翻译工作中 · 首次响应 ${latencySeconds} 秒` : `Live translation is working · first response ${latencySeconds}s`, 'ready');
           }
-          if (event.type === 'error') updateTranslationStatus(zh() ? `实时翻译暂时不可用：${event.error?.message || '未知错误'}` : `Translation unavailable: ${event.error?.message || 'Unknown error'}`, 'error');
+          if (event.type === 'error') {
+            setOriginalAudioMuted(false, participantIdentity);
+            updateTranslationStatus(zh() ? `实时翻译暂时不可用，已恢复原声：${event.error?.message || '未知错误'}` : `Translation unavailable; original audio restored: ${event.error?.message || 'Unknown error'}`, 'error');
+          }
         } catch {}
       };
       const offer = await pc.createOffer();
@@ -226,7 +230,7 @@
       if (!answer.ok) throw new Error((await answer.text()).slice(0, 220) || `OpenAI ${answer.status}`);
       await pc.setRemoteDescription({ type:'answer', sdp:await answer.text() });
       if (!translationEnabled || preferredTranslationLanguage() !== targetLanguage || generation !== translationGeneration || translationSidecars.get(key) !== sidecar) return stopTranslationSidecar(key, sidecar);
-      setOriginalAudioMuted(true, participantIdentity);
+      setOriginalAudioMuted(false, participantIdentity);
     } catch (error) {
       stopTranslationSidecar(key, sidecar);
       setOriginalAudioMuted(false, participantIdentity);
@@ -434,7 +438,9 @@
     room?.remoteParticipants?.forEach(participant => participant.audioTrackPublications.forEach(publication => {
       const track = publication.track;
       if (!track || document.querySelector(`#quadCallRemoteAudio audio[data-participant-identity="${CSS.escape(participant.identity)}"]`)) return;
-      const element = track.attach(); element.autoplay = true; element.dataset.participantIdentity = participant.identity; element.muted = translationEnabled; audioHost?.appendChild(element);
+      const element = track.attach(); element.autoplay = true; element.dataset.participantIdentity = participant.identity;
+      element.muted = [...translationSidecars.values()].some(sidecar => sidecar.participantIdentity === participant.identity && sidecar.translationProven);
+      audioHost?.appendChild(element);
     }));
     translationSidecars.forEach(sidecar => { if (sidecar.audio && audioHost && !sidecar.audio.isConnected) audioHost.appendChild(sidecar.audio); });
   }

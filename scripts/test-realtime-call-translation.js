@@ -22,6 +22,7 @@ function createClient(userId, language = 'zh') {
     play() { return Promise.resolve(); }
     pause() {}
   }
+  const remoteAudio = new Element('remote-audio');
 
   const element = id => {
     if (!elements.has(id)) elements.set(id, new Element(id));
@@ -76,7 +77,7 @@ function createClient(userId, language = 'zh') {
     documentElement:{ lang:language }, body:new Element('body'),
     getElementById:id => element(id),
     querySelector:() => element('active-call'),
-    querySelectorAll:selector => selector.includes('language-option') ? [] : [],
+    querySelectorAll:selector => selector.includes('language-option') ? [] : selector.includes('audio[data-participant-identity]') ? [remoteAudio] : [],
     addEventListener() {}
   };
   const state = { users:[], messageUsers:[], voiceCalls:[] };
@@ -98,9 +99,10 @@ function createClient(userId, language = 'zh') {
   };
   vm.runInNewContext(source, context, { filename:'realtime-calls.js' });
   return {
-    calls:window.QuadCalls, pcs, elements,
+    calls:window.QuadCalls, pcs, elements, remoteAudio,
     setRemoteTrack(identity) {
       const track = new FakeTrack(`remote-${identity}`);
+      remoteAudio.dataset.participantIdentity = identity;
       const publication = { track:{ mediaStreamTrack:track } };
       const participant = { identity, audioTrackPublications:new Map([['audio', publication]]) };
       window.QuadCalls.__test.setRoom({ remoteParticipants:new Map([[identity, participant]]) });
@@ -114,12 +116,15 @@ async function runTranslationRound(client, targetLanguage, input, output) {
   await client.calls.setTranslationLanguage(targetLanguage);
   const pc = client.pcs.at(-1);
   assert(pc, 'A translation peer connection must be created');
-  assert.match(pc.addedTrack.id, /^bridge-/, 'Remote call audio must pass through the Safari-safe Web Audio bridge');
+  assert.match(pc.addedTrack.id, /^remote-.*-clone$/, 'Remote call audio must be cloned directly into the translation peer connection');
+  assert.equal(client.remoteAudio.muted, false, 'Original call audio must remain audible until translated output is confirmed');
   pc.channel.emit('session.input_transcript.delta', input);
   pc.channel.emit('session.output_transcript.delta', output);
   assert.equal(client.elements.get('quadCallSourceTranscript').textContent, input);
   assert.equal(client.elements.get('quadCallTranslatedTranscript').textContent, output);
   assert.match(client.elements.get('quadCallTranslationStatus').textContent, /翻译工作中|translation is working/i);
+  await Promise.resolve();
+  assert.equal(client.remoteAudio.muted, true, 'Original audio may be muted only after translated output is playable');
 }
 
 test('two independent accounts can translate in opposite directions for repeated rounds', async () => {
@@ -150,6 +155,11 @@ test('two independent accounts can translate in opposite directions for repeated
   assert.equal(employee.calls.__test.translationState().sidecars.length, 1);
   assert.equal(owner.pcs.length, 2, 'Owner must establish a fresh second translation session');
   assert.equal(employee.pcs.length, 2, 'Employee must establish a fresh second translation session');
+
+  owner.pcs.at(-1).channel.emit('session.input_transcript.delta', 'Translation stalled.');
+  await new Promise(resolve => setTimeout(resolve, 45));
+  assert.equal(owner.remoteAudio.muted, false, 'Original audio must return when a proven translation session stops producing output');
+  assert.match(owner.elements.get('quadCallTranslationStatus').textContent, /恢复对方原声|original audio restored/i);
 
   owner.pcs.at(-1).connectionState = 'failed';
   owner.pcs.at(-1).onconnectionstatechange();
