@@ -20,11 +20,7 @@
   let translationSelectionOpen = false;
   let translationGeneration = 0;
   const translationSidecars = new Map();
-  const translationRetryCounts = new Map();
-  const translationRetryTimers = new Map();
   const declinedCallerUntil = new Map();
-  const translationFallbackDelay = window.__QUAD_CALL_TEST_MODE__ ? 30 : 1500;
-  const translationConnectTimeout = window.__QUAD_CALL_TEST_MODE__ ? 80 : 12_000;
 
   const context = () => window.getQuadCallContext?.() || {};
   const me = () => context().user || null;
@@ -88,49 +84,18 @@
       if (sidecar.events?.readyState === 'open') sidecar.events.send(JSON.stringify({ type:'session.close' }));
     } catch {}
     setTimeout(() => {
-      clearTimeout(sidecar.disconnectTimer);
-      clearTimeout(sidecar.audioFallbackTimer);
-      clearTimeout(sidecar.connectTimer);
-      clearTimeout(sidecar.speechTimer);
-      clearInterval(sidecar.statsTimer);
       try { sidecar.events?.close(); } catch {}
-      if (sidecar.events) { sidecar.events.onopen = null; sidecar.events.onmessage = null; sidecar.events.onerror = null; sidecar.events.onclose = null; }
-      if (sidecar.pc) { sidecar.pc.ontrack = null; sidecar.pc.onconnectionstatechange = null; }
       try { sidecar.pc?.close(); } catch {}
+      try { sidecar.track?.stop(); } catch {}
       try { sidecar.audio?.pause(); sidecar.audio.srcObject = null; sidecar.audio.remove(); } catch {}
-      try { sidecar.offerAbort?.abort(); } catch {}
-      sidecar.pc = sidecar.events = sidecar.track = sidecar.sender = sidecar.audio = sidecar.offerAbort = null;
-    }, 150);
+    }, 250);
     if (currentSidecar === sidecar) translationSidecars.delete(key);
   }
 
   function stopAllTranslationSidecars() {
     translationGeneration += 1;
-    translationRetryTimers.forEach(clearTimeout);
-    translationRetryTimers.clear();
-    translationRetryCounts.clear();
     [...translationSidecars.keys()].forEach(stopTranslationSidecar);
     setOriginalAudioMuted(false);
-  }
-
-  function scheduleTranslationReconnect(key, sidecar, reason = '') {
-    if (translationSidecars.get(key) !== sidecar || sidecar.stopping || !translationEnabled) return;
-    const sourceTrack = sidecar.sourceTrack;
-    const participantIdentity = sidecar.participantIdentity;
-    const attempt = Number(translationRetryCounts.get(key) || 0) + 1;
-    stopTranslationSidecar(key, sidecar);
-    setOriginalAudioMuted(false, participantIdentity);
-    if (!sourceTrack || sourceTrack.readyState === 'ended' || attempt > 3) {
-      updateTranslationStatus(zh() ? `翻译连接中断${reason ? `：${reason}` : ''}，请点语言重新连接` : `Translation interrupted${reason ? `: ${reason}` : ''}. Tap the language to reconnect.`, 'error');
-      return;
-    }
-    translationRetryCounts.set(key, attempt);
-    updateTranslationStatus(zh() ? `翻译连接不稳定，正在自动重连（${attempt}/3）…` : `Translation connection is unstable. Reconnecting (${attempt}/3)…`, 'warning');
-    const timerId = setTimeout(() => {
-      translationRetryTimers.delete(key);
-      if (translationEnabled) startTranslationTrack(sourceTrack, participantIdentity);
-    }, Math.min(2400, 500 * attempt));
-    translationRetryTimers.set(key, timerId);
   }
 
   function resumeTranslationAudio() {
@@ -145,30 +110,19 @@
     const generation = translationGeneration;
     const key = `${participantIdentity || 'remote'}:${mediaStreamTrack.id}`;
     if (translationSidecars.has(key)) return;
-    const sidecar = { pc:null, events:null, track:null, sender:null, sourceTrack:mediaStreamTrack, audio:null, participantIdentity, sourceTrackId:mediaStreamTrack.id, startedAt:performance.now(), stopping:false, translationProven:false, inputSequence:0, outputSequence:0, audioFallbackTimer:null, connectTimer:null, speechTimer:null, statsTimer:null, lastBytesSent:0 };
+    const sidecar = { pc:null, events:null, track:null, audio:null, participantIdentity, sourceTrackId:mediaStreamTrack.id, stopping:false };
     translationSidecars.set(key, sidecar);
     try {
       updateTranslationStatus(zh() ? `正在连接 ${translationLanguageName(targetLanguage)} 实时翻译…` : `Connecting live ${translationLanguageName(targetLanguage)} translation…`);
-      // Safari does not reliably forward a clone of an incoming WebRTC track to
-      // a second peer connection. Feed the subscribed LiveKit track itself into
-      // the OpenAI sidecar. We never stop or mutate this source track here.
-      sidecar.track = mediaStreamTrack;
-      const sourceStream = new MediaStream([sidecar.track]);
       const secret = await request('/api/realtime-translation/session', {
         method:'POST', body:JSON.stringify({ targetLanguage })
       });
       if (!translationEnabled || preferredTranslationLanguage() !== targetLanguage || generation !== translationGeneration || translationSidecars.get(key) !== sidecar) return stopTranslationSidecar(key, sidecar);
       const pc = new RTCPeerConnection();
       sidecar.pc = pc;
-      pc.onconnectionstatechange = () => {
-        if (translationSidecars.get(key) !== sidecar || sidecar.stopping || !['failed', 'disconnected'].includes(pc.connectionState)) return;
-        if (pc.connectionState === 'failed') return scheduleTranslationReconnect(key, sidecar, 'WebRTC failed');
-        clearTimeout(sidecar.disconnectTimer);
-        sidecar.disconnectTimer = setTimeout(() => {
-          if (translationSidecars.get(key) === sidecar && pc.connectionState === 'disconnected') scheduleTranslationReconnect(key, sidecar, 'WebRTC disconnected');
-        }, 2500);
-      };
-      sidecar.sender = pc.addTrack(sidecar.track, sourceStream);
+      sidecar.track = mediaStreamTrack.clone();
+      const sourceStream = new MediaStream([sidecar.track]);
+      pc.addTrack(sidecar.track, sourceStream);
       const translatedAudio = new Audio();
       translatedAudio.autoplay = true;
       translatedAudio.playsInline = true;
@@ -177,99 +131,33 @@
       document.getElementById('quadCallRemoteAudio')?.appendChild(translatedAudio);
       pc.ontrack = event => {
         translatedAudio.srcObject = event.streams[0];
-        translatedAudio.play().catch(() => {
-          setOriginalAudioMuted(false, participantIdentity);
-          updateTranslationStatus(zh() ? '译音等待播放；原声已恢复，请点一下通话画面' : 'Translated audio is waiting to play. Original audio restored; tap the call screen.', 'warning');
-        });
+        translatedAudio.play().catch(() => updateTranslationStatus(zh() ? '请点一下通话画面以播放翻译语音' : 'Tap the call screen to play translated audio', 'warning'));
       };
       const events = pc.createDataChannel('oai-events');
       sidecar.events = events;
-      events.onopen = () => {
-        clearTimeout(sidecar.connectTimer);
-        updateTranslationStatus(zh() ? `翻译通道已连接：${translationLanguageName(targetLanguage)}，正在检查对方音频…` : `Translation connected: ${translationLanguageName(targetLanguage)}. Checking incoming audio…`, 'ready');
-      };
-      events.onerror = () => scheduleTranslationReconnect(key, sidecar, 'data channel error');
-      events.onclose = () => { if (!sidecar.stopping) scheduleTranslationReconnect(key, sidecar, 'data channel closed'); };
+      events.onopen = () => updateTranslationStatus(zh() ? `实时翻译已开启：${translationLanguageName(targetLanguage)}` : `Live translation: ${translationLanguageName(targetLanguage)}`, 'ready');
       events.onmessage = ({ data }) => {
         try {
           const event = JSON.parse(data);
-          if (event.type === 'session.created' || event.type === 'session.updated') {
-            updateTranslationStatus(zh() ? `翻译服务已就绪：${translationLanguageName(targetLanguage)}，请让对方说话…` : `Translation is ready: ${translationLanguageName(targetLanguage)}. Ask the other person to speak…`, 'ready');
-          }
-          if (event.type === 'session.input_transcript.delta') {
-            translationRetryCounts.delete(key);
-            clearTimeout(sidecar.speechTimer);
-            sidecar.inputSequence += 1;
-            updateTranslationTranscript('source', event.delta, participantIdentity);
-            updateTranslationStatus(zh() ? '已收到对方语音，正在实时翻译…' : 'Speech received. Translating live…', 'ready');
-            if (sidecar.translationProven) {
-              const pendingSequence = sidecar.inputSequence;
-              clearTimeout(sidecar.audioFallbackTimer);
-              sidecar.audioFallbackTimer = setTimeout(() => {
-                if (translationSidecars.get(key) !== sidecar || sidecar.outputSequence >= pendingSequence) return;
-                setOriginalAudioMuted(false, participantIdentity);
-                updateTranslationStatus(zh() ? '翻译响应较慢，已自动恢复对方原声' : 'Translation is delayed. Original audio restored automatically.', 'warning');
-              }, translationFallbackDelay);
-            }
-          }
-          if (event.type === 'session.output_transcript.delta') {
-            translationRetryCounts.delete(key);
-            clearTimeout(sidecar.speechTimer);
-            sidecar.translationProven = true;
-            sidecar.outputSequence = sidecar.inputSequence;
-            clearTimeout(sidecar.audioFallbackTimer);
-            updateTranslationTranscript('translated', event.delta, participantIdentity);
-            translatedAudio.play().then(() => setOriginalAudioMuted(true, participantIdentity)).catch(() => setOriginalAudioMuted(false, participantIdentity));
-            const latencySeconds = Math.max(0, (performance.now() - sidecar.startedAt) / 1000).toFixed(1);
-            updateTranslationStatus(zh() ? `实时翻译工作中 · 首次响应 ${latencySeconds} 秒` : `Live translation is working · first response ${latencySeconds}s`, 'ready');
-          }
+          if (event.type === 'session.input_transcript.delta') updateTranslationTranscript('source', event.delta, participantIdentity);
+          if (event.type === 'session.output_transcript.delta') updateTranslationTranscript('translated', event.delta, participantIdentity);
           if (event.type === 'error') {
             setOriginalAudioMuted(false, participantIdentity);
-            updateTranslationStatus(zh() ? `实时翻译暂时不可用，已恢复原声：${event.error?.message || '未知错误'}` : `Translation unavailable; original audio restored: ${event.error?.message || 'Unknown error'}`, 'error');
+            updateTranslationStatus(zh() ? `实时翻译暂时不可用：${event.error?.message || '未知错误'}` : `Translation unavailable: ${event.error?.message || 'Unknown error'}`, 'error');
           }
         } catch {}
       };
-      sidecar.connectTimer = setTimeout(() => {
-        if (translationSidecars.get(key) !== sidecar || sidecar.stopping || events.readyState === 'open') return;
-        sidecar.offerAbort?.abort();
-        stopTranslationSidecar(key, sidecar);
-        setOriginalAudioMuted(false, participantIdentity);
-        updateTranslationStatus(zh() ? '翻译连接超过 12 秒，已停止等待并保持原声。请点语言重试。' : 'Translation took over 12 seconds. Waiting stopped and original audio remains on; tap the language to retry.', 'error');
-      }, translationConnectTimeout);
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
-      sidecar.offerAbort = new AbortController();
-      const offerTimeout = setTimeout(() => sidecar.offerAbort?.abort(), 20_000);
       const answer = await fetch('https://api.openai.com/v1/realtime/translations/calls', {
         method:'POST',
         headers:{ Authorization:`Bearer ${secret.value}`, 'Content-Type':'application/sdp' },
-        body:offer.sdp,
-        signal:sidecar.offerAbort.signal
-      }).finally(() => clearTimeout(offerTimeout));
-      sidecar.offerAbort = null;
+        body:offer.sdp
+      });
       if (!answer.ok) throw new Error((await answer.text()).slice(0, 220) || `OpenAI ${answer.status}`);
       await pc.setRemoteDescription({ type:'answer', sdp:await answer.text() });
       if (!translationEnabled || preferredTranslationLanguage() !== targetLanguage || generation !== translationGeneration || translationSidecars.get(key) !== sidecar) return stopTranslationSidecar(key, sidecar);
-      setOriginalAudioMuted(false, participantIdentity);
-      sidecar.speechTimer = setTimeout(() => {
-        if (translationSidecars.get(key) !== sidecar || sidecar.stopping || sidecar.translationProven) return;
-        setOriginalAudioMuted(false, participantIdentity);
-        updateTranslationStatus(zh() ? '翻译在 12 秒内没有收到语音，原声保持开启。请点一次语言重新连接。' : 'Translation received no speech within 12 seconds. Original audio stays on; tap the language to reconnect.', 'error');
-      }, translationConnectTimeout);
-      if (typeof pc.getStats === 'function') {
-        sidecar.statsTimer = setInterval(async () => {
-          if (translationSidecars.get(key) !== sidecar || sidecar.stopping) return clearInterval(sidecar.statsTimer);
-          try {
-            const reports = await pc.getStats(sidecar.sender || sidecar.track);
-            let bytesSent = 0;
-            reports.forEach(report => { if (report.type === 'outbound-rtp' && report.kind === 'audio') bytesSent += Number(report.bytesSent || 0); });
-            if (bytesSent > sidecar.lastBytesSent && !sidecar.inputSequence && !sidecar.translationProven) {
-              updateTranslationStatus(zh() ? '对方音频已送入翻译服务，正在等待第一句译文…' : 'Incoming audio is reaching translation. Waiting for the first translated phrase…', 'ready');
-            }
-            sidecar.lastBytesSent = Math.max(sidecar.lastBytesSent, bytesSent);
-          } catch {}
-        }, window.__QUAD_CALL_TEST_MODE__ ? 20 : 1500);
-      }
+      setOriginalAudioMuted(true, participantIdentity);
     } catch (error) {
       if (sidecar.stopping) return;
       stopTranslationSidecar(key, sidecar);
@@ -479,7 +367,7 @@
       const track = publication.track;
       if (!track || document.querySelector(`#quadCallRemoteAudio audio[data-participant-identity="${CSS.escape(participant.identity)}"]`)) return;
       const element = track.attach(); element.autoplay = true; element.dataset.participantIdentity = participant.identity;
-      element.muted = [...translationSidecars.values()].some(sidecar => sidecar.participantIdentity === participant.identity && sidecar.translationProven);
+      element.muted = translationEnabled;
       audioHost?.appendChild(element);
     }));
     translationSidecars.forEach(sidecar => { if (sidecar.audio && audioHost && !sidecar.audio.isConnected) audioHost.appendChild(sidecar.audio); });

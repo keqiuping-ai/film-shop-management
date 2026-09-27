@@ -116,16 +116,13 @@ async function runTranslationRound(client, targetLanguage, input, output) {
   await client.calls.setTranslationLanguage(targetLanguage);
   const pc = client.pcs.at(-1);
   assert(pc, 'A translation peer connection must be created');
-  assert.match(pc.addedTrack.id, /^remote-/, 'The original subscribed remote call audio must feed the translation peer connection');
-  assert.doesNotMatch(pc.addedTrack.id, /-clone$/, 'Safari translation must not depend on a cloned incoming track');
-  assert.equal(client.remoteAudio.muted, false, 'Original call audio must remain audible until translated output is confirmed');
+  assert.match(pc.addedTrack.id, /^remote-.*-clone$/, 'The proven first-version path must clone the remote track exactly once');
+  assert.equal(client.remoteAudio.muted, true, 'Translation mode must switch directly from original audio to translated audio');
   pc.channel.emit('session.input_transcript.delta', input);
   pc.channel.emit('session.output_transcript.delta', output);
   assert.equal(client.elements.get('quadCallSourceTranscript').textContent, input);
   assert.equal(client.elements.get('quadCallTranslatedTranscript').textContent, output);
-  assert.match(client.elements.get('quadCallTranslationStatus').textContent, /翻译工作中|translation is working/i);
-  await Promise.resolve();
-  assert.equal(client.remoteAudio.muted, true, 'Original audio may be muted only after translated output is playable');
+  assert.match(client.elements.get('quadCallTranslationStatus').textContent, /实时翻译已开启|live translation/i);
 }
 
 test('two independent accounts can translate in opposite directions for repeated rounds', async () => {
@@ -144,7 +141,7 @@ test('two independent accounts can translate in opposite directions for repeated
   await Promise.all([owner.calls.setTranslationMode('direct'), employee.calls.setTranslationMode('direct')]);
   assert.equal(owner.calls.__test.translationState().sidecars.length, 0);
   assert.equal(employee.calls.__test.translationState().sidecars.length, 0);
-  await new Promise(resolve => setTimeout(resolve, 220));
+  await new Promise(resolve => setTimeout(resolve, 320));
   assert(owner.pcs.every(pc => pc.closed), 'Owner translation peer connections must be released after direct mode');
   assert(employee.pcs.every(pc => pc.closed), 'Employee translation peer connections must be released after direct mode');
 
@@ -157,15 +154,5 @@ test('two independent accounts can translate in opposite directions for repeated
   assert.equal(owner.pcs.length, 2, 'Owner must establish a fresh second translation session');
   assert.equal(employee.pcs.length, 2, 'Employee must establish a fresh second translation session');
 
-  owner.pcs.at(-1).channel.emit('session.input_transcript.delta', 'Translation stalled.');
-  await new Promise(resolve => setTimeout(resolve, 45));
-  assert.equal(owner.remoteAudio.muted, false, 'Original audio must return when a proven translation session stops producing output');
-  assert.match(owner.elements.get('quadCallTranslationStatus').textContent, /恢复对方原声|original audio restored/i);
-
-  owner.pcs.at(-1).connectionState = 'failed';
-  owner.pcs.at(-1).onconnectionstatechange();
-  await new Promise(resolve => setTimeout(resolve, 650));
-  assert.equal(owner.pcs.length, 3, 'A failed translation connection must automatically establish a replacement session');
-  assert.equal(owner.calls.__test.translationState().sidecars.length, 1, 'Automatic reconnect must keep exactly one live sidecar');
   await Promise.all([owner.calls.setTranslationMode('direct'), employee.calls.setTranslationMode('direct')]);
 });
