@@ -1,4 +1,4 @@
-const CACHE_NAME = 'film-shop-v129-ai-draft-layout';
+const CACHE_NAME = 'film-shop-v130-ai-draft-layout';
 const ASSETS = [
     '/mobile.html',
     '/warranty.html',
