@@ -116,7 +116,8 @@ async function runTranslationRound(client, targetLanguage, input, output) {
   await client.calls.setTranslationLanguage(targetLanguage);
   const pc = client.pcs.at(-1);
   assert(pc, 'A translation peer connection must be created');
-  assert.match(pc.addedTrack.id, /^remote-.*-clone$/, 'Remote call audio must be cloned directly into the translation peer connection');
+  assert.match(pc.addedTrack.id, /^remote-/, 'The original subscribed remote call audio must feed the translation peer connection');
+  assert.doesNotMatch(pc.addedTrack.id, /-clone$/, 'Safari translation must not depend on a cloned incoming track');
   assert.equal(client.remoteAudio.muted, false, 'Original call audio must remain audible until translated output is confirmed');
   pc.channel.emit('session.input_transcript.delta', input);
   pc.channel.emit('session.output_transcript.delta', output);
@@ -148,8 +149,8 @@ test('two independent accounts can translate in opposite directions for repeated
   assert(employee.pcs.every(pc => pc.closed), 'Employee translation peer connections must be released after direct mode');
 
   await Promise.all([
-    runTranslationRound(owner, 'es', 'Good morning.', 'Buenos días.'),
-    runTranslationRound(employee, 'pt', '谢谢。', 'Obrigado.')
+    runTranslationRound(owner, 'zh', 'Good morning.', '早上好。'),
+    runTranslationRound(employee, 'en', '谢谢。', 'Thank you.')
   ]);
   assert.equal(owner.calls.__test.translationState().sidecars.length, 1);
   assert.equal(employee.calls.__test.translationState().sidecars.length, 1);

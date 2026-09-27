@@ -11044,7 +11044,7 @@ async function api(req, res) {
     if (!apiKey) return send(res, 503, { error: 'OpenAI 实时翻译尚未配置' });
     const body = await readBody(req);
     const targetLanguage = String(body.targetLanguage || '').trim().toLowerCase();
-    if (!['zh', 'en', 'es', 'pt'].includes(targetLanguage)) return send(res, 400, { error: '请选择中文、英语、西班牙语或葡萄牙语' });
+    if (!['zh', 'en'].includes(targetLanguage)) return send(res, 400, { error: '当前实时翻译仅支持中文和英语' });
     try {
       const safetyIdentifier = crypto.createHash('sha256').update(`quad-realtime:${user.id}`).digest('hex');
       const response = await fetch('https://api.openai.com/v1/realtime/translations/client_secrets', {

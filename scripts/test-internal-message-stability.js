@@ -81,8 +81,9 @@ async function run() {
   assert.match(realtimeSource, /document\.documentElement\.lang/, 'Call UI language must follow the app language');
   assert.match(realtimeSource, /translationSidecars\.get\(key\) !== sidecar/, 'Stale translation sessions must not replace a newer session');
   assert.match(realtimeSource, /Choose the language you want to hear/, 'Translation mode must wait for an explicit language selection');
-  assert(indexSource.includes('/realtime-calls.js?v=25') && mobileHtml.includes('/realtime-calls.js?v=25'), 'Call client asset marker must be bumped');
-  assert.match(realtimeSource, /sidecar\.sourceClone = mediaStreamTrack\.clone\(\)/, 'The remote WebRTC audio track must be cloned directly into the translation sidecar');
+  assert(indexSource.includes('/realtime-calls.js?v=26') && mobileHtml.includes('/realtime-calls.js?v=26'), 'Call client asset marker must be bumped');
+  assert.match(realtimeSource, /sidecar\.track = mediaStreamTrack/, 'The subscribed remote WebRTC audio track must feed the translation sidecar directly');
+  assert.doesNotMatch(realtimeSource, /mediaStreamTrack\.clone\(\)/, 'Safari translation must not clone the subscribed remote audio track');
   assert.doesNotMatch(realtimeSource, /bridgeDestination|createMediaStreamDestination/, 'Translation must not route Safari remote audio through a suspended Web Audio bridge');
   assert.match(realtimeSource, /翻译响应较慢，已自动恢复对方原声/, 'Delayed translation must restore original call audio');
   assert.match(realtimeSource, /translationRetryTimers/, 'Interrupted translation sessions must retry without leaking timers');
