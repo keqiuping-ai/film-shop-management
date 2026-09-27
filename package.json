@@ -19,6 +19,7 @@
     "test:customer-existing-selection": "node scripts/test-customer-existing-selection.js",
     "test:appointment-visibility": "node scripts/test-customer-appointment-visibility.js",
     "test:internal-message-stability": "node scripts/test-internal-message-stability.js",
+    "test:realtime-translation": "node --test scripts/test-realtime-call-translation.js",
     "test:sales-customer-review": "node scripts/test-sales-customer-review-detail.js",
     "test:product-metadata": "node scripts/test-owner-product-metadata.js",
     "test:sales-order-save": "node scripts/test-sales-order-idempotency.js",

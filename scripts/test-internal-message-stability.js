@@ -65,7 +65,7 @@ async function run() {
   assert.match(mobileSource, /正在发送…/, 'Mobile pending text must show sending status');
   assert.match(mobileSource, /preserveMobileMessageSnapshot/, 'Mobile refreshes must preserve a visible non-empty thread');
   assert(mobileHtml.includes('/mobile.js?v=69'), 'Mobile app asset marker must be bumped');
-  assert(serviceWorker.includes('film-shop-v131-call-translation-state'), 'Service worker cache must be bumped');
+  assert(serviceWorker.includes('film-shop-v132-call-translation-audio-bridge'), 'Service worker cache must be bumped');
   assert.match(appSource, /openInternalMessageAnalysis/, 'Desktop chat must expose the saved AI analysis panel');
   assert.match(mobileSource, /openMobileMessageAnalysis/, 'Mobile chat must expose the saved AI analysis panel');
   assert.match(serverSource, /detail:`AI 分析 \$\{targetDate\} 聊天；未自动创建任务`/, 'Chat analysis must be persisted without automatically creating a task');
@@ -80,7 +80,9 @@ async function run() {
   assert.match(realtimeSource, /document\.documentElement\.lang/, 'Call UI language must follow the app language');
   assert.match(realtimeSource, /translationSidecars\.get\(key\) !== sidecar/, 'Stale translation sessions must not replace a newer session');
   assert.match(realtimeSource, /Choose the language you want to hear/, 'Translation mode must wait for an explicit language selection');
-  assert(indexSource.includes('/realtime-calls.js?v=22') && mobileHtml.includes('/realtime-calls.js?v=22'), 'Call client asset marker must be bumped');
+  assert(indexSource.includes('/realtime-calls.js?v=23') && mobileHtml.includes('/realtime-calls.js?v=23'), 'Call client asset marker must be bumped');
+  assert.match(realtimeSource, /createMediaStreamDestination/, 'Remote Safari audio must use a Web Audio bridge for stable translation input');
+  assert.match(realtimeSource, /translationRetryTimers/, 'Interrupted translation sessions must retry without leaking timers');
 
   child = spawn(process.execPath, ['server.js'], {
     cwd: root,

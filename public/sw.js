@@ -1,4 +1,4 @@
-const CACHE_NAME = 'film-shop-v131-call-translation-state';
+const CACHE_NAME = 'film-shop-v132-call-translation-audio-bridge';
 const ASSETS = [
     '/mobile.html',
     '/warranty.html',
