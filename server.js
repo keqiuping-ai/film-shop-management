@@ -2304,6 +2304,53 @@ function fieldSalesAssignedUserId(item) {
   return String(item?.assignedUserId || item?.userId || '').trim();
 }
 
+function fieldSalesMeetingSummaryText(value, fallback = '未明确') {
+  const text = String(value || '').trim().replace(/\s+/g, ' ');
+  return text ? text.slice(0, 1200) : fallback;
+}
+
+async function createFieldSalesMeetingSummaryChinese(db, { transcript, customerName, objective }) {
+  const source = String(transcript || '').trim().slice(0, 30000);
+  if (!source) throw new Error('会议原文为空');
+  const completion = await fetchCustomerAiCompletion(db, {
+    feature: 'field-sales-meeting-summary-zh',
+    messages: [
+      {
+        role: 'system',
+        content: `你是 QUaD Film 的业务拜访复盘助手。无论原始谈话使用英语、中文或混合语言，所有整理结果必须使用简体中文；产品型号、SKU、公司名和人名可以保留原文。原始转写可能有严重错词、重复、口音干扰或无法区分说话人，你必须忠实整理，只总结能够确认的事实；不确定内容明确写“转写不清，无法确认”，不得猜测、补写交易、价格、承诺或客户态度。没有说话人标记时，不得把粗俗词语或负面言论武断归因给业务员。评价业务员沟通能力时应说明证据和转写质量限制。只返回 JSON 对象，字段必须为 summaryZh, customerNeedsZh, concernsZh, commitmentsZh, nextStepsZh, salespersonAssessmentZh, communicationScore, transcriptQualityZh。communicationScore 为 0 到 100 的整数；证据不足时给出保守分数，并在 salespersonAssessmentZh 中说明置信度较低。`
+      },
+      {
+        role: 'user',
+        content: JSON.stringify({
+          customerName: String(customerName || '').trim().slice(0, 200),
+          visitObjective: String(objective || '').trim().slice(0, 1000),
+          transcript: source
+        })
+      }
+    ],
+    maxCompletionTokens: 1800
+  });
+  const parsed = parseAiBossDraft(completion.content) || {};
+  const score = Math.max(0, Math.min(100, Math.round(Number(parsed.communicationScore) || 0)));
+  const organizedChinese = [
+    `沟通概况：${fieldSalesMeetingSummaryText(parsed.summaryZh)}`,
+    `客户需求：${fieldSalesMeetingSummaryText(parsed.customerNeedsZh)}`,
+    `关注问题／异议：${fieldSalesMeetingSummaryText(parsed.concernsZh)}`,
+    `明确承诺：${fieldSalesMeetingSummaryText(parsed.commitmentsZh)}`,
+    `下一步：${fieldSalesMeetingSummaryText(parsed.nextStepsZh)}`,
+    `业务员沟通表现：${fieldSalesMeetingSummaryText(parsed.salespersonAssessmentZh, '证据不足，暂不评价')}`,
+    `沟通评分：${score}/100`,
+    `转写质量：${fieldSalesMeetingSummaryText(parsed.transcriptQualityZh, '未评估')}`
+  ].join('\n');
+  if (!/\p{Script=Han}/u.test(organizedChinese)) throw new Error('AI 没有返回可用的中文总结');
+  return {
+    correctedTranscript: source,
+    organizedChinese,
+    provider: completion.provider,
+    model: completion.model
+  };
+}
+
 function fieldSalesVisible(item, user) {
   if (item?.active === false) return false;
   if (canManageFieldSales(user)) return true;
@@ -8929,6 +8976,27 @@ async function api(req, res) {
       access: { inventory: access.inventory, priceTierIds: access.priceTierIds },
       products
     }, undefined, req);
+  }
+
+  if (req.method === 'POST' && url.pathname === '/api/field-sales/organize-visit') {
+    if (!canUseFieldSales(user)) return send(res, 403, { error: '当前账号没有业务员管理权限' });
+    const body = await readBody(req);
+    const planId = String(body.planId || '').trim();
+    const transcript = String(body.transcript || '').trim();
+    if (!planId || !transcript) return send(res, 400, { error: '缺少拜访计划或会议原文' });
+    const plan = (db.salesVisitPlans || []).find(item => item.id === planId && fieldSalesVisible(item, user));
+    if (!plan) return send(res, 404, { error: '找不到本人名下的拜访计划' });
+    if (!canAccessBranch(db, user, plan.branchId)) return send(res, 403, { error: '你没有这个计划所属分店的数据权限' });
+    try {
+      const result = await createFieldSalesMeetingSummaryChinese(db, {
+        transcript,
+        customerName: plan.businessName || body.customerName,
+        objective: plan.note || body.objective
+      });
+      return send(res, 200, result);
+    } catch (error) {
+      return send(res, 502, { error: `AI 中文总结失败：${String(error.message || error).slice(0, 260)}` });
+    }
   }
 
   if (req.method === 'POST' && url.pathname === '/api/field-sales/location-points') {

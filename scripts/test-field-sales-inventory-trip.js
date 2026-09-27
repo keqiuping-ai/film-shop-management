@@ -1,6 +1,7 @@
 const assert = require('assert');
 const crypto = require('crypto');
 const fs = require('fs');
+const http = require('http');
 const os = require('os');
 const path = require('path');
 const { spawn } = require('child_process');
@@ -9,7 +10,42 @@ const ROOT = path.resolve(__dirname, '..');
 const DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'quad-field-sales-test-'));
 const PORT = 46000 + Math.floor(Math.random() * 1000);
 const BASE_URL = `http://127.0.0.1:${PORT}`;
+const AI_PORT = PORT + 1000;
 let server = null;
+let fakeAiServer = null;
+
+function startFakeAiServer() {
+  return new Promise((resolve, reject) => {
+    fakeAiServer = http.createServer((req, res) => {
+      if (req.method !== 'POST' || req.url !== '/chat/completions') {
+        res.writeHead(404, { 'Content-Type':'application/json' });
+        res.end(JSON.stringify({ error:{ message:'not found' } }));
+        return;
+      }
+      let raw = '';
+      req.on('data', chunk => { raw += chunk; });
+      req.on('end', () => {
+        const requestBody = JSON.parse(raw || '{}');
+        const prompt = JSON.stringify(requestBody.messages || []);
+        assert(prompt.includes('所有整理结果必须使用简体中文'));
+        const content = JSON.stringify({
+          summaryZh:'业务员与客户讨论了隔热膜产品。',
+          customerNeedsZh:'客户正在比较适合门店的产品。',
+          concernsZh:'部分原始转写不清，具体异议无法确认。',
+          commitmentsZh:'没有识别到可确认的承诺。',
+          nextStepsZh:'确认产品型号后再次跟进。',
+          salespersonAssessmentZh:'能够维持对话，但受转写质量影响，评价置信度较低。',
+          communicationScore:63,
+          transcriptQualityZh:'较差，存在大量错词和重复。'
+        });
+        res.writeHead(200, { 'Content-Type':'application/json' });
+        res.end(JSON.stringify({ choices:[{ message:{ content } }] }));
+      });
+    });
+    fakeAiServer.once('error', reject);
+    fakeAiServer.listen(AI_PORT, '127.0.0.1', resolve);
+  });
+}
 
 function hashPassword(password, salt = crypto.randomBytes(16).toString('hex')) {
   const hash = crypto.scryptSync(String(password), salt, 64).toString('hex');
@@ -20,7 +56,16 @@ function startServer() {
   return new Promise((resolve, reject) => {
     server = spawn(process.execPath, ['server.js'], {
       cwd: ROOT,
-      env: { ...process.env, DATA_DIR, PORT: String(PORT), HOST: '127.0.0.1', ENABLE_CLOUD_DAILY_BACKUPS: 'false' },
+      env: {
+        ...process.env,
+        DATA_DIR,
+        PORT: String(PORT),
+        HOST: '127.0.0.1',
+        ENABLE_CLOUD_DAILY_BACKUPS: 'false',
+        OPENAI_API_KEY: 'isolated-test-key',
+        OPENAI_API_BASE_URL: `http://127.0.0.1:${AI_PORT}`,
+        OPENAI_CUSTOMER_REPLY_MODEL: 'gpt-5-mini'
+      },
       stdio: ['ignore', 'pipe', 'pipe']
     });
     let output = '';
@@ -81,6 +126,7 @@ function testUser(id, email, permissions) {
 }
 
 async function seedIsolatedFixture() {
+  await startFakeAiServer();
   await startServer();
   await stopServer();
   const dbPath = path.join(DATA_DIR, 'db.json');
@@ -193,6 +239,30 @@ async function run() {
   assert(managerBootstrap.body.fieldSales.accounts.some(item => item.id === 'account-a'));
   assert(managerBootstrap.body.fieldSales.accounts.some(item => item.id === 'account-b'));
   assert(managerBootstrap.body.fieldSales.accounts.some(item => item.id === 'legacy-unassigned'));
+
+  const chineseMeetingSummary = await request('/api/field-sales/organize-visit', {
+    token:salesAToken,
+    method:'POST',
+    body:{
+      planId:'plan-a',
+      transcript:'The customer is comparing PPF materials and asked about the next step.',
+      customerName:'untrusted client value',
+      objective:'Discuss PPF'
+    }
+  });
+  assert.equal(chineseMeetingSummary.status, 200);
+  assert(chineseMeetingSummary.body.organizedChinese.includes('沟通概况：'));
+  assert(chineseMeetingSummary.body.organizedChinese.includes('沟通评分：63/100'));
+  assert(chineseMeetingSummary.body.organizedChinese.includes('转写质量：较差'));
+  assert(!chineseMeetingSummary.body.organizedChinese.includes('The customer is comparing'));
+  assert.equal(chineseMeetingSummary.body.correctedTranscript, 'The customer is comparing PPF materials and asked about the next step.');
+
+  const crossEmployeeSummary = await request('/api/field-sales/organize-visit', {
+    token:salesBToken,
+    method:'POST',
+    body:{ planId:'plan-a', transcript:'Must not analyze another salesperson customer.' }
+  });
+  assert.equal(crossEmployeeSummary.status, 404);
 
   const crossAccountUpdate = await request('/api/field-sales/accounts/account-b', {
     token:salesAToken, method:'PUT', body:{ note:'must not be written' }
@@ -380,5 +450,6 @@ run().catch(error => {
   process.exitCode = 1;
 }).finally(async () => {
   await stopServer();
+  if (fakeAiServer) await new Promise(resolve => fakeAiServer.close(resolve));
   fs.rmSync(DATA_DIR, { recursive:true, force:true });
 });

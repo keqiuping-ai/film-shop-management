@@ -2077,7 +2077,7 @@ final class AppState: ObservableObject {
         let text = meetingTranscript(for: plan.planId).trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { errorMessage = "请先填写或生成会议原文"; return }
         guard let job = enqueueMeetingAnalysis(for: plan) else { return }
-        await executeMeetingAnalysis(job, showMessages: true)
+        await executeMeetingAnalysis(job, showMessages: true, forceRegenerate: true)
     }
 
     private func loadPendingMeetingAnalysisState() {
@@ -2103,7 +2103,8 @@ final class AppState: ObservableObject {
 
     private func executeMeetingAnalysis(
         _ job: PendingMeetingAnalysisJob,
-        showMessages: Bool
+        showMessages: Bool,
+        forceRegenerate: Bool = false
     ) async {
         let planId = job.plan.planId
         guard !activeMeetingAnalysisPlanIDs.contains(planId) else { return }
@@ -2127,7 +2128,7 @@ final class AppState: ObservableObject {
                     MeetingDraftStore.load(userIdentifier: $0, planId: planId)
                 }
                 ?? MeetingDraft(transcript: job.transcript)
-            if draft.aiResult.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            if forceRegenerate || draft.aiResult.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 let result = try await api.organizeVisit(
                     planId: planId,
                     transcript: job.transcript,

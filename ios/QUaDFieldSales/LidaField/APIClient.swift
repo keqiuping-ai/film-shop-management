@@ -603,9 +603,16 @@ actor APIClient {
     func organizeVisit(planId: String, transcript: String, plan: VisitPlan) async throws -> AIVisitResult {
         let clean = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !clean.isEmpty else { throw APIError.message("会议原文为空") }
-        return AIVisitResult(
-            correctedTranscript: clean,
-            organizedChinese: "客户：\(plan.customerName)\n拜访目标：\(plan.objective ?? "外勤拜访")\n语音记录：\(clean)"
+        let body: [String: AnyEncodable] = [
+            "planId": .string(planId),
+            "transcript": .string(clean),
+            "customerName": .string(plan.customerName),
+            "objective": .string(plan.objective ?? "外勤拜访")
+        ]
+        return try await request(
+            "/api/field-sales/organize-visit",
+            method: "POST",
+            body: try encoder.encode(body)
         )
     }
 
