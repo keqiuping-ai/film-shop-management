@@ -11,17 +11,20 @@ function createClient(userId, language = 'zh') {
   const storage = new Map();
   const pcs = [];
   const createdAudios = [];
+  const recognitions = [];
 
   class Element {
     constructor(id = '') {
       this.id = id; this.textContent = ''; this.dataset = {}; this.hidden = false; this.muted = false;
       this.srcObject = null; this.isConnected = true; this.style = {}; this.children = [];
       this.classList = { add() {}, remove() {}, toggle() {} };
+      this.scrollTop = 0; this.scrollHeight = 100;
     }
     appendChild(child) { this.children.push(child); child.isConnected = true; return child; }
     remove() { this.isConnected = false; }
     play() { return Promise.resolve(); }
     pause() {}
+    closest() { return this; }
   }
   const remoteAudio = new Element('remote-audio');
 
@@ -74,6 +77,17 @@ function createClient(userId, language = 'zh') {
     close() { this.closed = true; this.connectionState = 'closed'; }
   }
 
+  class FakeSpeechRecognition {
+    constructor() { this.started = false; recognitions.push(this); }
+    start() { this.started = true; }
+    abort() { this.started = false; }
+    emit(transcript, isFinal = true) {
+      const result = [{ transcript }];
+      result.isFinal = isFinal;
+      this.onresult?.({ resultIndex:0, results:[result] });
+    }
+  }
+
   const document = {
     documentElement:{ lang:language }, body:new Element('body'),
     getElementById:id => element(id),
@@ -85,6 +99,7 @@ function createClient(userId, language = 'zh') {
   const window = {
     __QUAD_CALL_TEST_MODE__:true,
     AudioContext:FakeAudioContext,
+    webkitSpeechRecognition:FakeSpeechRecognition,
     getQuadCallContext:() => ({ user:{ id:userId, name:userId }, state }),
     setQuadCallState() {},
     api:async url => url === '/api/realtime-translation/session' ? { value:`secret-${userId}` } : { calls:[] },
@@ -100,18 +115,13 @@ function createClient(userId, language = 'zh') {
   };
   vm.runInNewContext(source, context, { filename:'realtime-calls.js' });
   return {
-    calls:window.QuadCalls, pcs, elements, remoteAudio, createdAudios,
+    calls:window.QuadCalls, pcs, elements, remoteAudio, createdAudios, recognitions,
     setRemoteTrack(identity) {
       const track = new FakeTrack(`remote-${identity}`);
-      const localTrack = new FakeTrack(`local-${userId}`);
       remoteAudio.dataset.participantIdentity = identity;
       const publication = { track:{ mediaStreamTrack:track } };
-      const localPublication = { track:{ mediaStreamTrack:localTrack } };
       const participant = { identity, audioTrackPublications:new Map([['audio', publication]]) };
-      window.QuadCalls.__test.setRoom({
-        remoteParticipants:new Map([[identity, participant]]),
-        localParticipant:{ getTrackPublication:() => localPublication, audioTrackPublications:new Map([['audio', localPublication]]) }
-      });
+      window.QuadCalls.__test.setRoom({ remoteParticipants:new Map([[identity, participant]]) });
       return track;
     }
   };
@@ -120,16 +130,17 @@ function createClient(userId, language = 'zh') {
 async function runTranslationRound(client, targetLanguage, localInput, remoteOutput) {
   await client.calls.setTranslationMode('translate');
   await client.calls.setTranslationLanguage(targetLanguage);
-  const remotePc = client.pcs.findLast(pc => /^remote-.*-clone$/.test(pc.addedTrack.id));
-  const localPc = client.pcs.findLast(pc => /^local-.*-clone$/.test(pc.addedTrack.id));
-  assert(remotePc && localPc, 'Remote translation and local transcription peer connections must both be created');
+  const remotePc = client.pcs.at(-1);
+  const recognition = client.recognitions.at(-1);
+  assert(remotePc && recognition, 'One remote translation connection and local browser captions must start');
+  assert.match(remotePc.addedTrack.id, /^remote-.*-clone$/);
   assert.equal(client.remoteAudio.muted, true, 'Translation mode must switch directly from original audio to translated audio');
-  localPc.channel.emit('session.input_transcript.delta', localInput);
+  recognition.emit(localInput);
   remotePc.channel.emit('session.output_transcript.delta', remoteOutput);
   assert.equal(client.elements.get('quadCallSourceTranscript').textContent, localInput);
   assert.equal(client.elements.get('quadCallTranslatedTranscript').textContent, remoteOutput);
   assert.match(client.elements.get('quadCallTranslationStatus').textContent, /实时翻译已开启|live translation/i);
-  return { remotePc, localPc };
+  return { remotePc, recognition };
 }
 
 test('two independent accounts can translate in opposite directions for repeated rounds', async () => {
@@ -142,8 +153,8 @@ test('two independent accounts can translate in opposite directions for repeated
     runTranslationRound(owner, 'zh', 'How are you?', '你好吗？'),
     runTranslationRound(employee, 'en', '今天可以施工。', 'We can do the installation today.')
   ]);
-  assert.equal(owner.calls.__test.translationState().sidecars.length, 2);
-  assert.equal(employee.calls.__test.translationState().sidecars.length, 2);
+  assert.equal(owner.calls.__test.translationState().sidecars.length, 1);
+  assert.equal(employee.calls.__test.translationState().sidecars.length, 1);
 
   await Promise.all([owner.calls.setTranslationMode('direct'), employee.calls.setTranslationMode('direct')]);
   assert.equal(owner.calls.__test.translationState().sidecars.length, 0);
@@ -156,10 +167,10 @@ test('two independent accounts can translate in opposite directions for repeated
     runTranslationRound(owner, 'zh', 'Good morning.', '早上好。'),
     runTranslationRound(employee, 'en', '谢谢。', 'Thank you.')
   ]);
-  assert.equal(owner.calls.__test.translationState().sidecars.length, 2);
-  assert.equal(employee.calls.__test.translationState().sidecars.length, 2);
-  assert.equal(owner.pcs.length, 4, 'Owner must establish fresh remote and local sessions for the second round');
-  assert.equal(employee.pcs.length, 4, 'Employee must establish fresh remote and local sessions for the second round');
+  assert.equal(owner.calls.__test.translationState().sidecars.length, 1);
+  assert.equal(employee.calls.__test.translationState().sidecars.length, 1);
+  assert.equal(owner.pcs.length, 2, 'Owner must establish one fresh remote translation session for the second round');
+  assert.equal(employee.pcs.length, 2, 'Employee must establish one fresh remote translation session for the second round');
 
   await Promise.all([owner.calls.setTranslationMode('direct'), employee.calls.setTranslationMode('direct')]);
 });
@@ -189,7 +200,7 @@ test('an unexpected translation channel close restores direct audio and reports 
   pc.channel.close();
 
   assert.equal(client.remoteAudio.muted, false);
-  assert.equal(client.calls.__test.translationState().sidecars.length, 1, 'Local speech transcription stays available if only the remote translation channel closes');
+  assert.equal(client.calls.__test.translationState().sidecars.length, 0);
   assert.match(client.elements.get('quadCallTranslationStatus').textContent, /已断开|disconnected/i);
 });
 

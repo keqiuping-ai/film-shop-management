@@ -65,7 +65,7 @@ async function run() {
   assert.match(mobileSource, /正在发送…/, 'Mobile pending text must show sending status');
   assert.match(mobileSource, /preserveMobileMessageSnapshot/, 'Mobile refreshes must preserve a visible non-empty thread');
   assert(mobileHtml.includes('/mobile.js?v=69'), 'Mobile app asset marker must be bumped');
-  assert(serviceWorker.includes('film-shop-v136-local-and-remote-transcripts'), 'Service worker cache must be bumped');
+  assert(serviceWorker.includes('film-shop-v137-stable-translation-local-captions'), 'Service worker cache must be bumped');
   assert.match(appSource, /openInternalMessageAnalysis/, 'Desktop chat must expose the saved AI analysis panel');
   assert.match(mobileSource, /openMobileMessageAnalysis/, 'Mobile chat must expose the saved AI analysis panel');
   assert.match(serverSource, /detail:`AI 分析 \$\{targetDate\} 聊天；未自动创建任务`/, 'Chat analysis must be persisted without automatically creating a task');
@@ -81,9 +81,10 @@ async function run() {
   assert.match(realtimeSource, /document\.documentElement\.lang/, 'Call UI language must follow the app language');
   assert.match(realtimeSource, /translationSidecars\.get\(key\) === sidecar/, 'Stale translation sessions must not replace a newer session');
   assert.match(realtimeSource, /Choose the language you want to hear/, 'Translation mode must wait for an explicit language selection');
-  assert(indexSource.includes('/realtime-calls.js?v=31') && mobileHtml.includes('/realtime-calls.js?v=31'), 'Call client asset marker must be bumped');
-  assert.match(realtimeSource, /purpose === 'local'.*session\.input_transcript\.delta/s, 'Local microphone speech must populate the local transcript');
-  assert.match(realtimeSource, /purpose === 'remote'.*session\.output_transcript\.delta/s, 'Remote translated speech must populate the translated transcript');
+  assert(indexSource.includes('/realtime-calls.js?v=32') && mobileHtml.includes('/realtime-calls.js?v=32'), 'Call client asset marker must be bumped');
+  assert.match(realtimeSource, /webkitSpeechRecognition/, 'Local microphone captions must use browser speech recognition without opening a second OpenAI session');
+  assert.match(realtimeSource, /event\.type === 'session\.output_transcript\.delta'/, 'Remote translated speech must populate the translated transcript');
+  assert.doesNotMatch(realtimeSource, /session\.input_transcript\.delta/, 'The stable translation path must not create a second OpenAI input-transcription session');
   assert.match(realtimeSource, /scrollTop = transcriptRow\.scrollHeight/, 'Both transcript panes must automatically follow the latest text');
   assert.match(realtimeSource, /sidecar\.track = mediaStreamTrack\.clone\(\)/, 'The proven first-version Safari translation path must use one cloned remote track');
   assert.doesNotMatch(realtimeSource, /bridgeDestination|createMediaStreamDestination/, 'Translation must not route Safari remote audio through a suspended Web Audio bridge');
