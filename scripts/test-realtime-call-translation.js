@@ -10,6 +10,7 @@ function createClient(userId, language = 'zh') {
   const elements = new Map();
   const storage = new Map();
   const pcs = [];
+  const createdAudios = [];
 
   class Element {
     constructor(id = '') {
@@ -92,14 +93,14 @@ function createClient(userId, language = 'zh') {
   const context = {
     window, document, localStorage:{ getItem:key => storage.get(key) || null, setItem:(key, value) => storage.set(key, String(value)) },
     navigator:{ serviceWorker:{ addEventListener() {} } }, MutationObserver:class { observe() {} },
-    MediaStream:FakeMediaStream, Audio:class extends Element {}, RTCPeerConnection:FakePeerConnection,
+    MediaStream:FakeMediaStream, Audio:class extends Element { constructor() { super(); createdAudios.push(this); } }, RTCPeerConnection:FakePeerConnection,
     CSS:{ escape:value => String(value) }, Notification:class {}, performance, AbortController,
     fetch:async () => ({ ok:true, text:async () => 'fake-answer' }),
     setTimeout, clearTimeout, setInterval:() => 0, clearInterval() {}, alert() {}
   };
   vm.runInNewContext(source, context, { filename:'realtime-calls.js' });
   return {
-    calls:window.QuadCalls, pcs, elements, remoteAudio,
+    calls:window.QuadCalls, pcs, elements, remoteAudio, createdAudios,
     setRemoteTrack(identity) {
       const track = new FakeTrack(`remote-${identity}`);
       remoteAudio.dataset.participantIdentity = identity;
@@ -186,4 +187,18 @@ test('an unexpected translation channel close restores direct audio and reports 
   assert.equal(client.remoteAudio.muted, false);
   assert.equal(client.calls.__test.translationState().sidecars.length, 0);
   assert.match(client.elements.get('quadCallTranslationStatus').textContent, /已断开|disconnected/i);
+});
+
+test('Safari translation playback accepts a remote track without an event stream', async () => {
+  const client = createClient('owner');
+  client.setRemoteTrack('employee');
+
+  await client.calls.setTranslationMode('translate');
+  await client.calls.setTranslationLanguage('en');
+  const pc = client.pcs.at(-1);
+  pc.ontrack({ streams:[], track:{ id:'translated-track' } });
+
+  assert.equal(pc.channel.readyState, 'open');
+  const translatedAudio = client.createdAudios.at(-1);
+  assert.equal(translatedAudio.srcObject.getTracks()[0].id, 'translated-track');
 });

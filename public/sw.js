@@ -1,4 +1,4 @@
-const CACHE_NAME = 'film-shop-v134-translation-original-audio-fallback';
+const CACHE_NAME = 'film-shop-v135-translation-device-diagnostics';
 const ASSETS = [
     '/mobile.html',
     '/warranty.html',
