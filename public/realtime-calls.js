@@ -24,6 +24,9 @@
   let localSpeechRestartTimer = null;
   let localSpeechFinalText = '';
   let localSpeechShouldRun = false;
+  let cameraEnabled = false;
+  let cameraBusy = false;
+  let weakVideoTimer = null;
   const declinedCallerUntil = new Map();
 
   const context = () => window.getQuadCallContext?.() || {};
@@ -161,6 +164,91 @@
     document.querySelectorAll('#quadCallRemoteAudio audio[data-participant-identity]').forEach(element => {
       if (!participantIdentity || element.dataset.participantIdentity === participantIdentity) element.muted = muted;
     });
+  }
+
+  function videoCallAllowed() {
+    const identities = new Set([activeCall?.callerUserId, ...(activeCall?.participantUserIds || [])].filter(Boolean));
+    return identities.size ? identities.size <= 2 : (room?.remoteParticipants?.size || 0) <= 1;
+  }
+
+  function attachVideoTrack(track, participantIdentity = '', local = false) {
+    if (!track) return;
+    const host = document.getElementById('quadCallVideoStage');
+    if (!host || host.querySelector?.(`video[data-participant-identity="${CSS.escape(participantIdentity)}"]`)) return;
+    const element = track.attach();
+    element.autoplay = true;
+    element.playsInline = true;
+    element.muted = local;
+    element.dataset.participantIdentity = participantIdentity;
+    element.dataset.localVideo = local ? 'true' : 'false';
+    host.appendChild(element);
+    host.hidden = false;
+    document.querySelector('.quad-call-card.active')?.classList.add('video-on');
+  }
+
+  function removeVideoElements(participantIdentity = '') {
+    const selector = participantIdentity
+      ? `#quadCallVideoStage video[data-participant-identity="${CSS.escape(participantIdentity)}"]`
+      : '#quadCallVideoStage video';
+    document.querySelectorAll(selector).forEach(element => element.remove());
+    const host = document.getElementById('quadCallVideoStage');
+    if (host && !host.querySelector?.('video')) {
+      host.hidden = true;
+      document.querySelector('.quad-call-card.active')?.classList.remove('video-on');
+    }
+  }
+
+  function updateCameraButton(note = '') {
+    const button = document.getElementById('quadCamera');
+    if (!button) return;
+    button.disabled = cameraBusy;
+    button.innerHTML = `${cameraEnabled ? '📷' : '🎥'}<br>${cameraEnabled ? (zh() ? '关闭视频' : 'Stop video') : (zh() ? '开启摄像头' : 'Start video')}`;
+    button.title = note;
+  }
+
+  async function toggleCamera(forceOff = false, reason = '') {
+    if (!room || cameraBusy) return;
+    if (!videoCallAllowed()) {
+      alert(zh() ? '视频目前只支持两人通话；多人通话继续使用纯语音。' : 'Video currently supports two-person calls only. Group calls remain audio-only.');
+      return;
+    }
+    cameraBusy = true;
+    updateCameraButton();
+    try {
+      const nextEnabled = forceOff ? false : !cameraEnabled;
+      const publication = await room.localParticipant.setCameraEnabled(nextEnabled, nextEnabled ? {
+        resolution:{ width:640, height:360 }, frameRate:15, facingMode:'user'
+      } : undefined, nextEnabled ? {
+        videoEncoding:{ maxBitrate:400_000, maxFramerate:15 },
+        simulcast:true,
+        videoSimulcastLayers:LivekitClient.VideoPresets?.h180 ? [LivekitClient.VideoPresets.h180] : undefined,
+        degradationPreference:'balanced'
+      } : undefined);
+      cameraEnabled = nextEnabled;
+      if (cameraEnabled && publication?.track) attachVideoTrack(publication.track, me()?.id || 'local', true);
+      if (!cameraEnabled) {
+        removeVideoElements(me()?.id || 'local');
+      }
+      updateCameraButton(reason);
+      if (reason) updateTranslationStatus(reason, 'warning');
+    } catch (error) {
+      cameraEnabled = false;
+      updateCameraButton();
+      alert(zh() ? `无法开启摄像头：${error.message || error}` : `Could not start the camera: ${error.message || error}`);
+    } finally {
+      cameraBusy = false;
+      updateCameraButton(reason);
+    }
+  }
+
+  function protectAudioOnWeakNetwork(quality) {
+    clearTimeout(weakVideoTimer);
+    weakVideoTimer = null;
+    if (quality !== 'poor' || !cameraEnabled) return;
+    weakVideoTimer = setTimeout(() => {
+      if (!cameraEnabled) return;
+      toggleCamera(true, zh() ? '网络较弱，已自动关闭视频以保护语音和翻译' : 'Video was turned off to protect voice and translation').catch(() => {});
+    }, 8_000);
   }
 
   function stopTranslationSidecar(key, expectedSidecar = null) {
@@ -512,12 +600,12 @@
     layer.innerHTML = `<div class="quad-call-backdrop" onpointerdown="QuadCalls.resumeTranslationAudio()"><section class="quad-call-card active">
       <button class="quad-call-minimize" onclick="QuadCalls.toggleMinimize()">—</button>
       <div class="quad-call-quality" id="quadCallQuality">● ${esc(statusText || (zh() ? '正在连接…' : 'Connecting…'))}</div>
-      <div class="quad-call-avatar">🎧</div><h2 id="quadCallName">${esc(nameFor(call))}</h2><time id="quadCallTime">00:00</time>
+      <div class="quad-call-avatar">🎧</div><div class="quad-call-video-stage" id="quadCallVideoStage" hidden></div><h2 id="quadCallName">${esc(nameFor(call))}</h2><time id="quadCallTime">00:00</time>
       <div class="quad-call-translation-controls"><div class="quad-call-mode-switch"><button id="quadCallDirectMode" class="${translationDetailsVisible ? '' : 'active'}" type="button" onclick="QuadCalls.setTranslationMode('direct')">📞 ${zh() ? '直接通话' : 'Direct call'}</button><button id="quadCallTranslateMode" class="${translationEnabled ? 'active' : ''}" type="button" onclick="QuadCalls.setTranslationMode('translate')">🌐 ${zh() ? '开启翻译' : 'Start translation'}</button></div><div id="quadCallTranslationDetails" ${translationDetailsVisible ? '' : 'hidden'}><strong>${zh() ? '请选择你需要听到的语言' : 'Choose the language you want to hear'}</strong><div class="quad-call-language-options">
         ${[['zh','中文'],['en','English']].map(([value, label]) => `<button type="button" class="quad-call-language-option ${translationEnabled && translationLanguage === value ? 'active' : ''}" data-language="${value}" onclick="QuadCalls.setTranslationLanguage('${value}')">${label}</button>`).join('')}
       </div><small id="quadCallTranslationStatus">${translationEnabled ? (zh() ? `实时翻译已选择：${translationLanguageName(translationLanguage)}` : `Live translation selected: ${translationLanguageName(translationLanguage)}`) : (zh() ? '点选语言后开始翻译' : 'Tap a language to start translation')}</small><div class="quad-call-translation-transcript" id="quadCallTranslationTranscript"><div><b>${zh() ? '我说的话' : 'My speech'}</b><span id="quadCallSourceTranscript"></span></div><div><b>${zh() ? '对方译文' : 'Their translation'}</b><span id="quadCallTranslatedTranscript"></span></div></div></div></div>
       <div id="quadCallRemoteAudio"></div>
-      <footer><button id="quadMute" onclick="QuadCalls.toggleMute()">🎙️<br>${zh() ? '静音' : 'Mute'}</button><button onclick="QuadCalls.pickParticipants(true)">➕<br>${zh() ? '添加成员' : 'Add'}</button><button class="quad-call-end" onclick="QuadCalls.end()">📞<br>${zh() ? '挂断' : 'End'}</button></footer>
+      <footer><button id="quadMute" onclick="QuadCalls.toggleMute()">🎙️<br>${zh() ? '静音' : 'Mute'}</button><button id="quadCamera" onclick="QuadCalls.toggleCamera()">${cameraEnabled ? '📷' : '🎥'}<br>${cameraEnabled ? (zh() ? '关闭视频' : 'Stop video') : (zh() ? '开启摄像头' : 'Start video')}</button><button onclick="QuadCalls.pickParticipants(true)">➕<br>${zh() ? '添加成员' : 'Add'}</button><button class="quad-call-end" onclick="QuadCalls.end()">📞<br>${zh() ? '挂断' : 'End'}</button></footer>
     </section></div>`;
     const audioHost = document.getElementById('quadCallRemoteAudio');
     room?.remoteParticipants?.forEach(participant => participant.audioTrackPublications.forEach(publication => {
@@ -528,33 +616,60 @@
       audioHost?.appendChild(element);
     }));
     translationSidecars.forEach(sidecar => { if (sidecar.audio && audioHost && !sidecar.audio.isConnected) audioHost.appendChild(sidecar.audio); });
+    room?.remoteParticipants?.forEach(participant => participant.videoTrackPublications?.forEach(publication => {
+      if (publication.track && !publication.isMuted) attachVideoTrack(publication.track, participant.identity, false);
+    }));
+    const cameraSource = window.LivekitClient?.Track?.Source?.Camera || 'camera';
+    const localCamera = room?.localParticipant?.getTrackPublication?.(cameraSource);
+    if (cameraEnabled && localCamera?.track) attachVideoTrack(localCamera.track, me()?.id || 'local', true);
   }
 
   async function join(call) {
     if (!window.LivekitClient) throw new Error(zh() ? '实时通话组件加载失败' : 'Call component did not load');
     translationEnabled = false;
     translationSelectionOpen = false;
+    cameraEnabled = false;
+    cameraBusy = false;
+    clearTimeout(weakVideoTimer); weakVideoTimer = null;
     stopAllTranslationSidecars();
     activeCall = call; incomingCallId = ''; renderCall(call);
     const credentials = await request(`/api/voice-calls/${encodeURIComponent(call.id)}/token`, { method: 'POST', body: '{}' });
     room = new LivekitClient.Room({ adaptiveStream: true, dynacast: true, disconnectOnPageLeave: true });
     room.on(LivekitClient.RoomEvent.TrackSubscribed, (track, publication, participant) => {
+      if (track.kind === LivekitClient.Track.Kind.Video) {
+        attachVideoTrack(track, participant.identity, false);
+        return;
+      }
       if (track.kind !== LivekitClient.Track.Kind.Audio) return;
       const element = track.attach(); element.autoplay = true; element.dataset.participantIdentity = participant.identity; document.getElementById('quadCallRemoteAudio')?.appendChild(element);
       if (translationEnabled) startTranslationTrack(track.mediaStreamTrack, participant.identity);
     });
-    room.on(LivekitClient.RoomEvent.TrackUnsubscribed, track => {
+    room.on(LivekitClient.RoomEvent.TrackUnsubscribed, (track, publication, participant) => {
       track.detach().forEach(element => element.remove());
+      if (track.kind === LivekitClient.Track.Kind.Video) removeVideoElements(participant?.identity || '');
       [...translationSidecars.entries()].filter(([, sidecar]) => sidecar.sourceTrackId === track.mediaStreamTrack?.id).forEach(([key]) => stopTranslationSidecar(key));
     });
-    room.on(LivekitClient.RoomEvent.ParticipantConnected, () => markAnswered());
+    room.on(LivekitClient.RoomEvent.TrackMuted, (publication, participant) => {
+      if (publication.kind === LivekitClient.Track.Kind.Video) removeVideoElements(participant?.identity || '');
+    });
+    room.on(LivekitClient.RoomEvent.TrackUnmuted, (publication, participant) => {
+      if (publication.kind === LivekitClient.Track.Kind.Video && publication.track) attachVideoTrack(publication.track, participant?.identity || '', false);
+    });
+    room.on(LivekitClient.RoomEvent.ParticipantConnected, () => {
+      markAnswered();
+      if (cameraEnabled && room.remoteParticipants.size > 1) {
+        toggleCamera(true, zh() ? '加入第三位成员后已自动关闭视频，继续使用纯语音' : 'Video was turned off when a third participant joined; continuing with audio').catch(() => {});
+      }
+    });
     room.on(LivekitClient.RoomEvent.ParticipantDisconnected, participant => {
       participant.audioTrackPublications.forEach(publication => publication.track?.detach().forEach(element => element.remove()));
       document.querySelectorAll(`#quadCallRemoteAudio audio[data-participant-identity="${CSS.escape(participant.identity)}"]`).forEach(element => element.remove());
+      removeVideoElements(participant.identity);
     });
     room.on(LivekitClient.RoomEvent.ConnectionQualityChanged, quality => {
       const label = document.getElementById('quadCallQuality');
       if (label) label.textContent = quality === 'excellent' ? (zh() ? '● 网络优秀' : '● Excellent network') : quality === 'good' ? (zh() ? '● 网络良好' : '● Good network') : quality === 'poor' ? (zh() ? '● 网络较弱' : '● Weak network') : (zh() ? '● 通话中' : '● In call');
+      protectAudioOnWeakNetwork(quality);
     });
     room.on(LivekitClient.RoomEvent.Disconnected, () => { if (activeCall) finishLocal(false); });
     await room.connect(credentials.url, credentials.token, { autoSubscribe: true });
@@ -697,7 +812,7 @@
   }
 
   function finishLocal(clear = true) {
-    clearInterval(timer); timer = null; stopIncomingAlerts(activeCall?.id); clearTimeout(ringTimeout); ringTimeout = null; callStartedAt = 0; translationEnabled = false; translationSelectionOpen = false; stopLocalSpeechRecognition(true); stopAllTranslationSidecars(); if (room) { const old = room; room = null; old.disconnect().catch?.(() => {}); }
+    clearInterval(timer); timer = null; stopIncomingAlerts(activeCall?.id); clearTimeout(ringTimeout); ringTimeout = null; clearTimeout(weakVideoTimer); weakVideoTimer = null; callStartedAt = 0; translationEnabled = false; translationSelectionOpen = false; cameraEnabled = false; cameraBusy = false; stopLocalSpeechRecognition(true); stopAllTranslationSidecars(); if (room) { const old = room; room = null; old.disconnect().catch?.(() => {}); }
     if (clear) activeCall = null; closePicker(); ensureLayer().innerHTML = '';
   }
 
@@ -777,13 +892,14 @@
     if ('Notification' in window && Notification.permission === 'default') await Notification.requestPermission();
   }
 
-  window.QuadCalls = { start, accept, decline, end, toggleMute, toggleMinimize, setTranslationMode, setTranslationLanguage, resumeTranslationAudio, close, poll, enableNotifications, pickParticipants, confirmParticipants, restoreCall, closePicker,
+  window.QuadCalls = { start, accept, decline, end, toggleMute, toggleCamera, toggleMinimize, setTranslationMode, setTranslationLanguage, resumeTranslationAudio, close, poll, enableNotifications, pickParticipants, confirmParticipants, restoreCall, closePicker,
     startDirect: userId => start(userId),
     startGroup: () => pickParticipants(false) };
   if (window.__QUAD_CALL_TEST_MODE__) {
     window.QuadCalls.__test = {
       setRoom: value => { room = value; },
-      translationState: () => ({ enabled:translationEnabled, selectionOpen:translationSelectionOpen, generation:translationGeneration, sidecars:[...translationSidecars.values()].map(sidecar => ({ targetLanguage:preferredTranslationLanguage(), participantIdentity:sidecar.participantIdentity, connectionState:sidecar.pc?.connectionState || '', stopping:Boolean(sidecar.stopping) })) })
+      translationState: () => ({ enabled:translationEnabled, selectionOpen:translationSelectionOpen, generation:translationGeneration, sidecars:[...translationSidecars.values()].map(sidecar => ({ targetLanguage:preferredTranslationLanguage(), participantIdentity:sidecar.participantIdentity, connectionState:sidecar.pc?.connectionState || '', stopping:Boolean(sidecar.stopping) })) }),
+      cameraState: () => ({ enabled:cameraEnabled, busy:cameraBusy })
     };
   }
   window.addEventListener('quad-voice-call', receiveVoiceEvent);

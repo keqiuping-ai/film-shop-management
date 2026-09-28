@@ -12,6 +12,7 @@ function createClient(userId, language = 'zh') {
   const pcs = [];
   const createdAudios = [];
   const recognitions = [];
+  const cameraCalls = [];
 
   class Element {
     constructor(id = '') {
@@ -96,10 +97,12 @@ function createClient(userId, language = 'zh') {
     addEventListener() {}
   };
   const state = { users:[], messageUsers:[], voiceCalls:[] };
+  const fakeLivekit = { VideoPresets:{ h180:{ resolution:{ width:320, height:180 }, encoding:{ maxBitrate:160000, maxFramerate:20 } } } };
   const window = {
     __QUAD_CALL_TEST_MODE__:true,
     AudioContext:FakeAudioContext,
     webkitSpeechRecognition:FakeSpeechRecognition,
+    LivekitClient:fakeLivekit,
     getQuadCallContext:() => ({ user:{ id:userId, name:userId }, state }),
     setQuadCallState() {},
     api:async url => url === '/api/realtime-translation/session' ? { value:`secret-${userId}` } : { calls:[] },
@@ -108,14 +111,14 @@ function createClient(userId, language = 'zh') {
   const context = {
     window, document, localStorage:{ getItem:key => storage.get(key) || null, setItem:(key, value) => storage.set(key, String(value)) },
     navigator:{ serviceWorker:{ addEventListener() {} } }, MutationObserver:class { observe() {} },
-    MediaStream:FakeMediaStream, Audio:class extends Element { constructor() { super(); createdAudios.push(this); } }, RTCPeerConnection:FakePeerConnection,
+    MediaStream:FakeMediaStream, Audio:class extends Element { constructor() { super(); createdAudios.push(this); } }, RTCPeerConnection:FakePeerConnection, LivekitClient:fakeLivekit,
     CSS:{ escape:value => String(value) }, Notification:class {}, performance, AbortController,
     fetch:async () => ({ ok:true, text:async () => 'fake-answer' }),
     setTimeout, clearTimeout, setInterval:() => 0, clearInterval() {}, alert() {}
   };
   vm.runInNewContext(source, context, { filename:'realtime-calls.js' });
   return {
-    calls:window.QuadCalls, pcs, elements, remoteAudio, createdAudios, recognitions,
+    calls:window.QuadCalls, pcs, elements, remoteAudio, createdAudios, recognitions, cameraCalls,
     setRemoteTrack(identity) {
       const track = new FakeTrack(`remote-${identity}`);
       remoteAudio.dataset.participantIdentity = identity;
@@ -123,6 +126,17 @@ function createClient(userId, language = 'zh') {
       const participant = { identity, audioTrackPublications:new Map([['audio', publication]]) };
       window.QuadCalls.__test.setRoom({ remoteParticipants:new Map([[identity, participant]]) });
       return track;
+    },
+    setVideoRoom(identity = 'employee') {
+      const videoTrack = new FakeTrack(`camera-${userId}`);
+      videoTrack.kind = 'video';
+      const publication = { track:videoTrack };
+      window.QuadCalls.__test.setRoom({
+        remoteParticipants:new Map([[identity, { identity }]]),
+        localParticipant:{
+          async setCameraEnabled(enabled, capture, publish) { cameraCalls.push({ enabled, capture, publish }); return enabled ? publication : undefined; }
+        }
+      });
     }
   };
 }
@@ -216,4 +230,24 @@ test('Safari translation playback accepts a remote track without an event stream
   assert.equal(pc.channel.readyState, 'open');
   const translatedAudio = client.createdAudios.at(-1);
   assert.equal(translatedAudio.srcObject.getTracks()[0].id, 'translated-track');
+});
+
+test('optional video starts at 360p 15fps and stops without touching translation', async () => {
+  const client = createClient('owner');
+  client.setVideoRoom();
+
+  await client.calls.toggleCamera();
+  assert.equal(client.calls.__test.cameraState().enabled, true);
+  assert.equal(client.cameraCalls[0].capture.resolution.width, 640);
+  assert.equal(client.cameraCalls[0].capture.resolution.height, 360);
+  assert.equal(client.cameraCalls[0].capture.frameRate, 15);
+  assert.equal(client.cameraCalls[0].publish.videoEncoding.maxBitrate, 400_000);
+  assert.equal(client.cameraCalls[0].publish.videoEncoding.maxFramerate, 15);
+  assert.equal(client.cameraCalls[0].publish.simulcast, true);
+  assert.equal(client.calls.__test.translationState().sidecars.length, 0);
+
+  await client.calls.toggleCamera();
+  assert.equal(client.calls.__test.cameraState().enabled, false);
+  assert.equal(client.cameraCalls[1].enabled, false);
+  assert.equal(client.calls.__test.translationState().sidecars.length, 0);
 });
