@@ -103,27 +103,33 @@ function createClient(userId, language = 'zh') {
     calls:window.QuadCalls, pcs, elements, remoteAudio, createdAudios,
     setRemoteTrack(identity) {
       const track = new FakeTrack(`remote-${identity}`);
+      const localTrack = new FakeTrack(`local-${userId}`);
       remoteAudio.dataset.participantIdentity = identity;
       const publication = { track:{ mediaStreamTrack:track } };
+      const localPublication = { track:{ mediaStreamTrack:localTrack } };
       const participant = { identity, audioTrackPublications:new Map([['audio', publication]]) };
-      window.QuadCalls.__test.setRoom({ remoteParticipants:new Map([[identity, participant]]) });
+      window.QuadCalls.__test.setRoom({
+        remoteParticipants:new Map([[identity, participant]]),
+        localParticipant:{ getTrackPublication:() => localPublication, audioTrackPublications:new Map([['audio', localPublication]]) }
+      });
       return track;
     }
   };
 }
 
-async function runTranslationRound(client, targetLanguage, input, output) {
+async function runTranslationRound(client, targetLanguage, localInput, remoteOutput) {
   await client.calls.setTranslationMode('translate');
   await client.calls.setTranslationLanguage(targetLanguage);
-  const pc = client.pcs.at(-1);
-  assert(pc, 'A translation peer connection must be created');
-  assert.match(pc.addedTrack.id, /^remote-.*-clone$/, 'The proven first-version path must clone the remote track exactly once');
+  const remotePc = client.pcs.findLast(pc => /^remote-.*-clone$/.test(pc.addedTrack.id));
+  const localPc = client.pcs.findLast(pc => /^local-.*-clone$/.test(pc.addedTrack.id));
+  assert(remotePc && localPc, 'Remote translation and local transcription peer connections must both be created');
   assert.equal(client.remoteAudio.muted, true, 'Translation mode must switch directly from original audio to translated audio');
-  pc.channel.emit('session.input_transcript.delta', input);
-  pc.channel.emit('session.output_transcript.delta', output);
-  assert.equal(client.elements.get('quadCallSourceTranscript').textContent, input);
-  assert.equal(client.elements.get('quadCallTranslatedTranscript').textContent, output);
+  localPc.channel.emit('session.input_transcript.delta', localInput);
+  remotePc.channel.emit('session.output_transcript.delta', remoteOutput);
+  assert.equal(client.elements.get('quadCallSourceTranscript').textContent, localInput);
+  assert.equal(client.elements.get('quadCallTranslatedTranscript').textContent, remoteOutput);
   assert.match(client.elements.get('quadCallTranslationStatus').textContent, /实时翻译已开启|live translation/i);
+  return { remotePc, localPc };
 }
 
 test('two independent accounts can translate in opposite directions for repeated rounds', async () => {
@@ -136,8 +142,8 @@ test('two independent accounts can translate in opposite directions for repeated
     runTranslationRound(owner, 'zh', 'How are you?', '你好吗？'),
     runTranslationRound(employee, 'en', '今天可以施工。', 'We can do the installation today.')
   ]);
-  assert.equal(owner.calls.__test.translationState().sidecars.length, 1);
-  assert.equal(employee.calls.__test.translationState().sidecars.length, 1);
+  assert.equal(owner.calls.__test.translationState().sidecars.length, 2);
+  assert.equal(employee.calls.__test.translationState().sidecars.length, 2);
 
   await Promise.all([owner.calls.setTranslationMode('direct'), employee.calls.setTranslationMode('direct')]);
   assert.equal(owner.calls.__test.translationState().sidecars.length, 0);
@@ -150,10 +156,10 @@ test('two independent accounts can translate in opposite directions for repeated
     runTranslationRound(owner, 'zh', 'Good morning.', '早上好。'),
     runTranslationRound(employee, 'en', '谢谢。', 'Thank you.')
   ]);
-  assert.equal(owner.calls.__test.translationState().sidecars.length, 1);
-  assert.equal(employee.calls.__test.translationState().sidecars.length, 1);
-  assert.equal(owner.pcs.length, 2, 'Owner must establish a fresh second translation session');
-  assert.equal(employee.pcs.length, 2, 'Employee must establish a fresh second translation session');
+  assert.equal(owner.calls.__test.translationState().sidecars.length, 2);
+  assert.equal(employee.calls.__test.translationState().sidecars.length, 2);
+  assert.equal(owner.pcs.length, 4, 'Owner must establish fresh remote and local sessions for the second round');
+  assert.equal(employee.pcs.length, 4, 'Employee must establish fresh remote and local sessions for the second round');
 
   await Promise.all([owner.calls.setTranslationMode('direct'), employee.calls.setTranslationMode('direct')]);
 });
@@ -162,8 +168,7 @@ test('a stopped translation session cannot overwrite the direct-call state with 
   const client = createClient('owner');
   client.setRemoteTrack('employee');
 
-  await runTranslationRound(client, 'en', 'Hello.', '你好。');
-  const stalePc = client.pcs.at(-1);
+  const { remotePc:stalePc } = await runTranslationRound(client, 'en', 'Hello.', '你好。');
   await client.calls.setTranslationMode('direct');
   const status = client.elements.get('quadCallTranslationStatus');
   assert.match(status.textContent, /直接通话|direct call/i);
@@ -180,12 +185,11 @@ test('an unexpected translation channel close restores direct audio and reports 
   const client = createClient('owner');
   client.setRemoteTrack('employee');
 
-  await runTranslationRound(client, 'en', 'Hello.', '你好。');
-  const pc = client.pcs.at(-1);
+  const { remotePc:pc } = await runTranslationRound(client, 'en', 'Hello.', '你好。');
   pc.channel.close();
 
   assert.equal(client.remoteAudio.muted, false);
-  assert.equal(client.calls.__test.translationState().sidecars.length, 0);
+  assert.equal(client.calls.__test.translationState().sidecars.length, 1, 'Local speech transcription stays available if only the remote translation channel closes');
   assert.match(client.elements.get('quadCallTranslationStatus').textContent, /已断开|disconnected/i);
 });
 
@@ -195,7 +199,7 @@ test('Safari translation playback accepts a remote track without an event stream
 
   await client.calls.setTranslationMode('translate');
   await client.calls.setTranslationLanguage('en');
-  const pc = client.pcs.at(-1);
+  const pc = client.pcs.findLast(item => /^remote-.*-clone$/.test(item.addedTrack.id));
   pc.ontrack({ streams:[], track:{ id:'translated-track' } });
 
   assert.equal(pc.channel.readyState, 'open');

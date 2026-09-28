@@ -1,4 +1,4 @@
-const CACHE_NAME = 'film-shop-v135-translation-device-diagnostics';
+const CACHE_NAME = 'film-shop-v136-local-and-remote-transcripts';
 const ASSETS = [
     '/mobile.html',
     '/warranty.html',
