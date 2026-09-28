@@ -1,4 +1,4 @@
-const CACHE_NAME = 'film-shop-v138-optional-low-bandwidth-video';
+const CACHE_NAME = 'film-shop-v139-compact-video-group-translation';
 const ASSETS = [
     '/mobile.html',
     '/warranty.html',

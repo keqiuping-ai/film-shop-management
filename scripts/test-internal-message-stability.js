@@ -65,7 +65,7 @@ async function run() {
   assert.match(mobileSource, /正在发送…/, 'Mobile pending text must show sending status');
   assert.match(mobileSource, /preserveMobileMessageSnapshot/, 'Mobile refreshes must preserve a visible non-empty thread');
   assert(mobileHtml.includes('/mobile.js?v=69'), 'Mobile app asset marker must be bumped');
-  assert(serviceWorker.includes('film-shop-v138-optional-low-bandwidth-video'), 'Service worker cache must be bumped');
+  assert(serviceWorker.includes('film-shop-v139-compact-video-group-translation'), 'Service worker cache must be bumped');
   assert.match(appSource, /openInternalMessageAnalysis/, 'Desktop chat must expose the saved AI analysis panel');
   assert.match(mobileSource, /openMobileMessageAnalysis/, 'Mobile chat must expose the saved AI analysis panel');
   assert.match(serverSource, /detail:`AI 分析 \$\{targetDate\} 聊天；未自动创建任务`/, 'Chat analysis must be persisted without automatically creating a task');
@@ -81,14 +81,15 @@ async function run() {
   assert.match(realtimeSource, /document\.documentElement\.lang/, 'Call UI language must follow the app language');
   assert.match(realtimeSource, /translationSidecars\.get\(key\) === sidecar/, 'Stale translation sessions must not replace a newer session');
   assert.match(realtimeSource, /Choose the language you want to hear/, 'Translation mode must wait for an explicit language selection');
-  assert(indexSource.includes('/realtime-calls.js?v=33') && mobileHtml.includes('/realtime-calls.js?v=33'), 'Call client asset marker must be bumped');
-  assert(indexSource.includes('/realtime-calls.css?v=14') && mobileHtml.includes('/realtime-calls.css?v=14'), 'Call styles asset marker must be bumped');
+  assert(indexSource.includes('/realtime-calls.js?v=34') && mobileHtml.includes('/realtime-calls.js?v=34'), 'Call client asset marker must be bumped');
+  assert(indexSource.includes('/realtime-calls.css?v=15') && mobileHtml.includes('/realtime-calls.css?v=15'), 'Call styles asset marker must be bumped');
   assert.match(realtimeSource, /webkitSpeechRecognition/, 'Local microphone captions must use browser speech recognition without opening a second OpenAI session');
   assert.match(realtimeSource, /event\.type === 'session\.output_transcript\.delta'/, 'Remote translated speech must populate the translated transcript');
   assert.doesNotMatch(realtimeSource, /session\.input_transcript\.delta/, 'The stable translation path must not create a second OpenAI input-transcription session');
   assert.match(realtimeSource, /scrollTop = transcriptRow\.scrollHeight/, 'Both transcript panes must automatically follow the latest text');
   assert.match(realtimeSource, /sidecar\.track = mediaStreamTrack\.clone\(\)/, 'The proven first-version Safari translation path must use one cloned remote track');
-  assert.doesNotMatch(realtimeSource, /bridgeDestination|createMediaStreamDestination/, 'Translation must not route Safari remote audio through a suspended Web Audio bridge');
+  assert.match(realtimeSource, /tracks\.length === 1[\s\S]*startTranslationTrack\(tracks\[0\]\[0\], tracks\[0\]\[1\]\)/, 'Two-person translation must keep the proven direct remote-track path');
+  assert.match(realtimeSource, /tracks\.length[\s\S]*createMediaStreamDestination\(\)[\s\S]*startTranslationTrack\(destination\.stream\.getAudioTracks\(\)\[0\], 'group'\)/, 'Group calls must mix remote speakers into one OpenAI translation connection');
   assert.doesNotMatch(realtimeSource, /translationRetryTimers|scheduleTranslationReconnect|getStats/, 'The restored first-version path must not layer reconnect or stats state machines over translation');
   assert.match(realtimeSource, /resolution:\{ width:640, height:360 \}, frameRate:15/, 'Optional camera must start at 360p and 15fps');
   assert.match(realtimeSource, /maxBitrate:400_000, maxFramerate:15/, 'Video bandwidth must be capped below the audio and translation priority path');

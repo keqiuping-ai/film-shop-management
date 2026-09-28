@@ -19,6 +19,8 @@
   let translationEnabled = false;
   let translationSelectionOpen = false;
   let translationGeneration = 0;
+  let translationRefreshTimer = null;
+  let groupTranslationMixer = null;
   const translationSidecars = new Map();
   let localSpeechRecognition = null;
   let localSpeechRestartTimer = null;
@@ -201,15 +203,18 @@
   function updateCameraButton(note = '') {
     const button = document.getElementById('quadCamera');
     if (!button) return;
-    button.disabled = cameraBusy;
-    button.innerHTML = `${cameraEnabled ? '📷' : '🎥'}<br>${cameraEnabled ? (zh() ? '关闭视频' : 'Stop video') : (zh() ? '开启摄像头' : 'Start video')}`;
+    const allowed = videoCallAllowed();
+    button.disabled = cameraBusy || !allowed;
+    button.innerHTML = !allowed
+      ? `🎥<br>${zh() ? '多人纯语音' : 'Group audio only'}`
+      : `${cameraEnabled ? '📷' : '🎥'}<br>${cameraEnabled ? (zh() ? '关闭视频' : 'Stop video') : (zh() ? '开启摄像头' : 'Start video')}`;
     button.title = note;
   }
 
   async function toggleCamera(forceOff = false, reason = '') {
     if (!room || cameraBusy) return;
-    if (!videoCallAllowed()) {
-      alert(zh() ? '视频目前只支持两人通话；多人通话继续使用纯语音。' : 'Video currently supports two-person calls only. Group calls remain audio-only.');
+    if (!videoCallAllowed() && !forceOff) {
+      updateCameraButton(zh() ? '多人通话继续使用纯语音' : 'Group calls remain audio-only');
       return;
     }
     cameraBusy = true;
@@ -269,10 +274,76 @@
     if (currentSidecar === sidecar) translationSidecars.delete(key);
   }
 
+  function stopGroupTranslationMixer() {
+    const mixer = groupTranslationMixer;
+    groupTranslationMixer = null;
+    if (!mixer) return;
+    mixer.sources?.forEach(source => { try { source.disconnect(); } catch {} });
+    try { mixer.destination?.disconnect?.(); } catch {}
+    try { mixer.destination?.stream?.getTracks?.().forEach(track => track.stop()); } catch {}
+    try { mixer.context?.close?.(); } catch {}
+  }
+
   function stopAllTranslationSidecars() {
+    clearTimeout(translationRefreshTimer);
+    translationRefreshTimer = null;
     translationGeneration += 1;
     [...translationSidecars.keys()].forEach(key => stopTranslationSidecar(key));
+    stopGroupTranslationMixer();
     setOriginalAudioMuted(false);
+  }
+
+  function remoteTranslationTracks() {
+    const tracks = [];
+    room?.remoteParticipants?.forEach(participant => participant.audioTrackPublications.forEach(publication => {
+      if (publication.track?.mediaStreamTrack) tracks.push([publication.track.mediaStreamTrack, participant.identity]);
+    }));
+    return tracks;
+  }
+
+  async function refreshTranslationTracks() {
+    if (!translationEnabled) return;
+    const tracks = remoteTranslationTracks();
+    stopAllTranslationSidecars();
+    if (!translationEnabled) return;
+    if (!tracks.length) {
+      updateTranslationStatus(zh() ? '实时翻译已准备，等待对方说话' : 'Translation ready; waiting for the other speaker');
+      return;
+    }
+    if (tracks.length === 1) {
+      await startTranslationTrack(tracks[0][0], tracks[0][1]);
+      return;
+    }
+    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContextClass) {
+      updateTranslationStatus(zh() ? '当前浏览器不支持多人语音混合，请改用最新版 Safari 或 Chrome' : 'This browser cannot mix group audio. Use the latest Safari or Chrome.', 'error');
+      return;
+    }
+    try {
+      const audioContext = new AudioContextClass();
+      if (audioContext.state === 'suspended') await audioContext.resume();
+      const destination = audioContext.createMediaStreamDestination();
+      const sources = tracks.map(([track]) => {
+        const source = audioContext.createMediaStreamSource(new MediaStream([track]));
+        source.connect(destination);
+        return source;
+      });
+      groupTranslationMixer = { context:audioContext, destination, sources };
+      updateTranslationStatus(zh() ? `正在连接多人实时翻译（${tracks.length}位对方成员）…` : `Connecting group translation (${tracks.length} remote participants)…`);
+      await startTranslationTrack(destination.stream.getAudioTracks()[0], 'group');
+    } catch (error) {
+      stopGroupTranslationMixer();
+      updateTranslationStatus(zh() ? `多人翻译启动失败：${error.message || error}` : `Group translation failed: ${error.message || error}`, 'error');
+    }
+  }
+
+  function scheduleTranslationRefresh() {
+    if (!translationEnabled) return;
+    clearTimeout(translationRefreshTimer);
+    translationRefreshTimer = setTimeout(() => {
+      translationRefreshTimer = null;
+      refreshTranslationTracks().catch(() => {});
+    }, 180);
   }
 
   function translationSidecarIsCurrent(key, sidecar, generation) {
@@ -309,6 +380,7 @@
     const key = `remote:${participantIdentity || 'remote'}:${mediaStreamTrack.id}`;
     if (translationSidecars.has(key)) return;
     const sidecar = { pc:null, events:null, track:null, ownsTrack:false, audio:null, connectTimer:null, iceError:'', selectedLanguage, participantIdentity, sourceTrackId:mediaStreamTrack.id, stopping:false };
+    const originalAudioIdentity = participantIdentity === 'group' ? '' : participantIdentity;
     translationSidecars.set(key, sidecar);
     try {
       updateTranslationStatus(zh() ? `翻译连接 1/4：正在获取安全凭证…` : `Translation 1/4: requesting a secure session…`);
@@ -355,7 +427,7 @@
           const event = JSON.parse(data);
           if (event.type === 'session.output_transcript.delta') updateTranslationTranscript('translated', event.delta, participantIdentity);
           if (event.type === 'error') {
-            setOriginalAudioMuted(false, participantIdentity);
+            setOriginalAudioMuted(false, originalAudioIdentity);
             updateTranslationStatus(zh() ? `实时翻译暂时不可用：${event.error?.message || '未知错误'}` : `Translation unavailable: ${event.error?.message || 'Unknown error'}`, 'error');
           }
         } catch {}
@@ -363,13 +435,13 @@
       events.onclose = () => {
         if (!translationSidecarIsCurrent(key, sidecar, generation)) return;
         stopTranslationSidecar(key, sidecar);
-        setOriginalAudioMuted(false, participantIdentity);
+        setOriginalAudioMuted(false, originalAudioIdentity);
         updateTranslationStatus(zh() ? '实时翻译已断开，请重新点选语言' : 'Live translation disconnected. Select the language again.', 'error');
       };
       pc.onconnectionstatechange = () => {
         if (!['failed', 'closed'].includes(pc.connectionState) || !translationSidecarIsCurrent(key, sidecar, generation)) return;
         stopTranslationSidecar(key, sidecar);
-        setOriginalAudioMuted(false, participantIdentity);
+        setOriginalAudioMuted(false, originalAudioIdentity);
         updateTranslationStatus(zh() ? `实时翻译已断开（${translationConnectionDetails(sidecar)}），请重新点选语言` : `Live translation disconnected (${translationConnectionDetails(sidecar)}). Select the language again.`, 'error');
       };
       pc.onicecandidateerror = event => {
@@ -387,20 +459,20 @@
       updateTranslationStatus(zh() ? `翻译连接 3/4：正在建立音频通道…` : `Translation 3/4: establishing the audio channel…`);
       await translationWithTimeout(pc.setRemoteDescription({ type:'answer', sdp:await answer.text() }), 10_000, zh() ? 'WebRTC 音频通道建立超时' : 'WebRTC audio channel setup timed out');
       if (!translationSidecarIsCurrent(key, sidecar, generation)) return stopTranslationSidecar(key, sidecar);
-      setOriginalAudioMuted(true, participantIdentity);
+      setOriginalAudioMuted(true, originalAudioIdentity);
       if (events.readyState !== 'open') {
         updateTranslationStatus(zh() ? `翻译连接 4/4：正在等待实时通道…` : `Translation 4/4: waiting for the realtime channel…`);
         sidecar.connectTimer = setTimeout(() => {
           if (!translationSidecarIsCurrent(key, sidecar, generation) || events.readyState === 'open') return;
           stopTranslationSidecar(key, sidecar);
-          setOriginalAudioMuted(false, participantIdentity);
+          setOriginalAudioMuted(false, originalAudioIdentity);
           updateTranslationStatus(zh() ? `翻译连接超时（${translationConnectionDetails(sidecar)}）：请检查这台设备的 Safari、VPN 或防火墙后重试` : `Translation timed out (${translationConnectionDetails(sidecar)}). Check this device's Safari, VPN, or firewall and try again.`, 'error');
         }, 12_000);
       }
     } catch (error) {
       if (sidecar.stopping) return;
       stopTranslationSidecar(key, sidecar);
-      setOriginalAudioMuted(false, participantIdentity);
+      setOriginalAudioMuted(false, originalAudioIdentity);
       const reason = String(error.message || error);
       const timeoutHint = /超时|timed out/i.test(reason) ? (zh() ? '；请检查这台设备的网络、VPN 或防火墙' : '; check this device\'s network, VPN, or firewall') : '';
       const diagnostic = translationConnectionDetails(sidecar);
@@ -425,12 +497,7 @@
     if (transcript) transcript.hidden = false;
     startLocalSpeechRecognition(targetLanguage);
     updateTranslationStatus(zh() ? `正在连接 ${translationLanguageName(targetLanguage)} 实时翻译…` : `Connecting ${translationLanguageName(targetLanguage)} translation…`);
-    const tracks = [];
-    room?.remoteParticipants?.forEach(participant => participant.audioTrackPublications.forEach(publication => {
-      if (publication.track?.mediaStreamTrack) tracks.push([publication.track.mediaStreamTrack, participant.identity]);
-    }));
-    if (!tracks.length) updateTranslationStatus(zh() ? '实时翻译已准备，等待对方说话' : 'Translation ready; waiting for the other speaker');
-    await Promise.all(tracks.map(([track, identity]) => startTranslationTrack(track, identity)));
+    await refreshTranslationTracks();
   }
 
   async function setTranslationMode(mode) {
@@ -622,6 +689,7 @@
     const cameraSource = window.LivekitClient?.Track?.Source?.Camera || 'camera';
     const localCamera = room?.localParticipant?.getTrackPublication?.(cameraSource);
     if (cameraEnabled && localCamera?.track) attachVideoTrack(localCamera.track, me()?.id || 'local', true);
+    updateCameraButton();
   }
 
   async function join(call) {
@@ -642,12 +710,13 @@
       }
       if (track.kind !== LivekitClient.Track.Kind.Audio) return;
       const element = track.attach(); element.autoplay = true; element.dataset.participantIdentity = participant.identity; document.getElementById('quadCallRemoteAudio')?.appendChild(element);
-      if (translationEnabled) startTranslationTrack(track.mediaStreamTrack, participant.identity);
+      if (translationEnabled) scheduleTranslationRefresh();
     });
     room.on(LivekitClient.RoomEvent.TrackUnsubscribed, (track, publication, participant) => {
       track.detach().forEach(element => element.remove());
       if (track.kind === LivekitClient.Track.Kind.Video) removeVideoElements(participant?.identity || '');
       [...translationSidecars.entries()].filter(([, sidecar]) => sidecar.sourceTrackId === track.mediaStreamTrack?.id).forEach(([key]) => stopTranslationSidecar(key));
+      if (track.kind === LivekitClient.Track.Kind.Audio && translationEnabled) scheduleTranslationRefresh();
     });
     room.on(LivekitClient.RoomEvent.TrackMuted, (publication, participant) => {
       if (publication.kind === LivekitClient.Track.Kind.Video) removeVideoElements(participant?.identity || '');
@@ -660,11 +729,15 @@
       if (cameraEnabled && room.remoteParticipants.size > 1) {
         toggleCamera(true, zh() ? '加入第三位成员后已自动关闭视频，继续使用纯语音' : 'Video was turned off when a third participant joined; continuing with audio').catch(() => {});
       }
+      updateCameraButton();
+      if (translationEnabled) scheduleTranslationRefresh();
     });
     room.on(LivekitClient.RoomEvent.ParticipantDisconnected, participant => {
       participant.audioTrackPublications.forEach(publication => publication.track?.detach().forEach(element => element.remove()));
       document.querySelectorAll(`#quadCallRemoteAudio audio[data-participant-identity="${CSS.escape(participant.identity)}"]`).forEach(element => element.remove());
       removeVideoElements(participant.identity);
+      updateCameraButton();
+      if (translationEnabled) scheduleTranslationRefresh();
     });
     room.on(LivekitClient.RoomEvent.ConnectionQualityChanged, quality => {
       const label = document.getElementById('quadCallQuality');

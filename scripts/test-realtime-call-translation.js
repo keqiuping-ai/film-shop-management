@@ -127,6 +127,14 @@ function createClient(userId, language = 'zh') {
       window.QuadCalls.__test.setRoom({ remoteParticipants:new Map([[identity, participant]]) });
       return track;
     },
+    setRemoteTracks(identities) {
+      const participants = new Map(identities.map(identity => {
+        const track = new FakeTrack(`remote-${identity}`);
+        const publication = { track:{ mediaStreamTrack:track } };
+        return [identity, { identity, audioTrackPublications:new Map([['audio', publication]]) }];
+      }));
+      window.QuadCalls.__test.setRoom({ remoteParticipants:participants });
+    },
     setVideoRoom(identity = 'employee') {
       const videoTrack = new FakeTrack(`camera-${userId}`);
       videoTrack.kind = 'video';
@@ -250,4 +258,23 @@ test('optional video starts at 360p 15fps and stops without touching translation
   assert.equal(client.calls.__test.cameraState().enabled, false);
   assert.equal(client.cameraCalls[1].enabled, false);
   assert.equal(client.calls.__test.translationState().sidecars.length, 0);
+});
+
+test('group calls mix every remote speaker into one OpenAI translation connection', async () => {
+  const client = createClient('owner');
+  client.setRemoteTracks(['employee', 'manager']);
+
+  await client.calls.setTranslationMode('translate');
+  await client.calls.setTranslationLanguage('zh');
+
+  const state = client.calls.__test.translationState();
+  assert.equal(state.sidecars.length, 1, 'A group call must use exactly one OpenAI connection');
+  assert.equal(state.sidecars[0].participantIdentity, 'group');
+  assert.equal(client.pcs.length, 1);
+  assert.match(client.pcs[0].addedTrack.id, /^bridge-owner-.*-clone$/);
+  assert.equal(client.remoteAudio.muted, true);
+
+  await client.calls.setTranslationMode('direct');
+  assert.equal(client.calls.__test.translationState().sidecars.length, 0);
+  assert.equal(client.remoteAudio.muted, false);
 });
