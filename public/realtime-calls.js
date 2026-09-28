@@ -80,6 +80,7 @@
     const sidecar = expectedSidecar || currentSidecar;
     if (!sidecar) return;
     sidecar.stopping = true;
+    clearTimeout(sidecar.connectTimer);
     try {
       if (sidecar.events?.readyState === 'open') sidecar.events.send(JSON.stringify({ type:'session.close' }));
     } catch {}
@@ -106,6 +107,18 @@
       && !sidecar.stopping;
   }
 
+  async function translationWithTimeout(promise, milliseconds, message) {
+    let timeout;
+    try {
+      return await Promise.race([
+        promise,
+        new Promise((_, reject) => { timeout = setTimeout(() => reject(new Error(message)), milliseconds); })
+      ]);
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
   function resumeTranslationAudio() {
     translationSidecars.forEach(sidecar => {
       if (sidecar.audio?.srcObject) sidecar.audio.play?.().catch(() => {});
@@ -118,13 +131,13 @@
     const generation = translationGeneration;
     const key = `${participantIdentity || 'remote'}:${mediaStreamTrack.id}`;
     if (translationSidecars.has(key)) return;
-    const sidecar = { pc:null, events:null, track:null, audio:null, participantIdentity, sourceTrackId:mediaStreamTrack.id, stopping:false };
+    const sidecar = { pc:null, events:null, track:null, audio:null, connectTimer:null, participantIdentity, sourceTrackId:mediaStreamTrack.id, stopping:false };
     translationSidecars.set(key, sidecar);
     try {
       updateTranslationStatus(zh() ? `正在连接 ${translationLanguageName(targetLanguage)} 实时翻译…` : `Connecting live ${translationLanguageName(targetLanguage)} translation…`);
-      const secret = await request('/api/realtime-translation/session', {
+      const secret = await translationWithTimeout(request('/api/realtime-translation/session', {
         method:'POST', body:JSON.stringify({ targetLanguage })
-      });
+      }), 22_000, zh() ? 'OpenAI 翻译凭证请求超时' : 'OpenAI translation credential request timed out');
       if (!translationEnabled || preferredTranslationLanguage() !== targetLanguage || generation !== translationGeneration || translationSidecars.get(key) !== sidecar) return stopTranslationSidecar(key, sidecar);
       const pc = new RTCPeerConnection();
       sidecar.pc = pc;
@@ -146,6 +159,7 @@
       sidecar.events = events;
       events.onopen = () => {
         if (!translationSidecarIsCurrent(key, sidecar, generation, targetLanguage)) return;
+        clearTimeout(sidecar.connectTimer);
         updateTranslationStatus(zh() ? `实时翻译已开启：${translationLanguageName(targetLanguage)}` : `Live translation: ${translationLanguageName(targetLanguage)}`, 'ready');
       };
       events.onmessage = ({ data }) => {
@@ -174,20 +188,30 @@
       };
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
-      const answer = await fetch('https://api.openai.com/v1/realtime/translations/calls', {
+      const answer = await translationWithTimeout(fetch('https://api.openai.com/v1/realtime/translations/calls', {
         method:'POST',
         headers:{ Authorization:`Bearer ${secret.value}`, 'Content-Type':'application/sdp' },
         body:offer.sdp
-      });
+      }), 20_000, zh() ? 'OpenAI WebRTC 连接超时' : 'OpenAI WebRTC connection timed out');
       if (!answer.ok) throw new Error((await answer.text()).slice(0, 220) || `OpenAI ${answer.status}`);
-      await pc.setRemoteDescription({ type:'answer', sdp:await answer.text() });
+      await translationWithTimeout(pc.setRemoteDescription({ type:'answer', sdp:await answer.text() }), 10_000, zh() ? 'WebRTC 音频通道建立超时' : 'WebRTC audio channel setup timed out');
       if (!translationEnabled || preferredTranslationLanguage() !== targetLanguage || generation !== translationGeneration || translationSidecars.get(key) !== sidecar) return stopTranslationSidecar(key, sidecar);
       setOriginalAudioMuted(true, participantIdentity);
+      if (events.readyState !== 'open') {
+        sidecar.connectTimer = setTimeout(() => {
+          if (!translationSidecarIsCurrent(key, sidecar, generation, targetLanguage) || events.readyState === 'open') return;
+          stopTranslationSidecar(key, sidecar);
+          setOriginalAudioMuted(false, participantIdentity);
+          updateTranslationStatus(zh() ? '翻译连接超时：请检查这台设备的网络、VPN 或防火墙后重试' : 'Translation timed out. Check this device\'s network, VPN, or firewall and try again.', 'error');
+        }, 12_000);
+      }
     } catch (error) {
       if (sidecar.stopping) return;
       stopTranslationSidecar(key, sidecar);
       setOriginalAudioMuted(false, participantIdentity);
-      updateTranslationStatus(zh() ? `实时翻译连接失败：${error.message || error}` : `Live translation failed: ${error.message || error}`, 'error');
+      const reason = String(error.message || error);
+      const timeoutHint = /超时|timed out/i.test(reason) ? (zh() ? '；请检查这台设备的网络、VPN 或防火墙' : '; check this device\'s network, VPN, or firewall') : '';
+      updateTranslationStatus(zh() ? `实时翻译连接失败：${reason}${timeoutHint}` : `Live translation failed: ${reason}${timeoutHint}`, 'error');
     }
   }
 

@@ -54,7 +54,7 @@ function createClient(userId, language = 'zh') {
   class FakeDataChannel {
     constructor() { this.readyState = 'connecting'; this.sent = []; }
     send(value) { this.sent.push(value); }
-    close() { this.readyState = 'closed'; }
+    close() { this.readyState = 'closed'; this.onclose?.(); }
     emit(type, delta = '') { this.onmessage?.({ data:JSON.stringify({ type, delta }) }); }
   }
 
@@ -173,4 +173,17 @@ test('a stopped translation session cannot overwrite the direct-call state with 
 
   assert.match(status.textContent, /直接通话|direct call/i, 'A stale OpenAI callback must not show translation as ready');
   assert.equal(client.calls.__test.translationState().sidecars.length, 0);
+});
+
+test('an unexpected translation channel close restores direct audio and reports the disconnect', async () => {
+  const client = createClient('owner');
+  client.setRemoteTrack('employee');
+
+  await runTranslationRound(client, 'en', 'Hello.', '你好。');
+  const pc = client.pcs.at(-1);
+  pc.channel.close();
+
+  assert.equal(client.remoteAudio.muted, false);
+  assert.equal(client.calls.__test.translationState().sidecars.length, 0);
+  assert.match(client.elements.get('quadCallTranslationStatus').textContent, /已断开|disconnected/i);
 });
