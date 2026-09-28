@@ -156,3 +156,21 @@ test('two independent accounts can translate in opposite directions for repeated
 
   await Promise.all([owner.calls.setTranslationMode('direct'), employee.calls.setTranslationMode('direct')]);
 });
+
+test('a stopped translation session cannot overwrite the direct-call state with a stale callback', async () => {
+  const client = createClient('owner');
+  client.setRemoteTrack('employee');
+
+  await runTranslationRound(client, 'en', 'Hello.', '你好。');
+  const stalePc = client.pcs.at(-1);
+  await client.calls.setTranslationMode('direct');
+  const status = client.elements.get('quadCallTranslationStatus');
+  assert.match(status.textContent, /直接通话|direct call/i);
+
+  stalePc.channel.readyState = 'open';
+  stalePc.channel.onopen?.();
+  stalePc.ontrack?.({ streams:[] });
+
+  assert.match(status.textContent, /直接通话|direct call/i, 'A stale OpenAI callback must not show translation as ready');
+  assert.equal(client.calls.__test.translationState().sidecars.length, 0);
+});

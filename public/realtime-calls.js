@@ -98,6 +98,14 @@
     setOriginalAudioMuted(false);
   }
 
+  function translationSidecarIsCurrent(key, sidecar, generation, targetLanguage) {
+    return translationEnabled
+      && preferredTranslationLanguage() === targetLanguage
+      && generation === translationGeneration
+      && translationSidecars.get(key) === sidecar
+      && !sidecar.stopping;
+  }
+
   function resumeTranslationAudio() {
     translationSidecars.forEach(sidecar => {
       if (sidecar.audio?.srcObject) sidecar.audio.play?.().catch(() => {});
@@ -130,13 +138,18 @@
       sidecar.audio = translatedAudio;
       document.getElementById('quadCallRemoteAudio')?.appendChild(translatedAudio);
       pc.ontrack = event => {
+        if (!translationSidecarIsCurrent(key, sidecar, generation, targetLanguage)) return;
         translatedAudio.srcObject = event.streams[0];
         translatedAudio.play().catch(() => updateTranslationStatus(zh() ? '请点一下通话画面以播放翻译语音' : 'Tap the call screen to play translated audio', 'warning'));
       };
       const events = pc.createDataChannel('oai-events');
       sidecar.events = events;
-      events.onopen = () => updateTranslationStatus(zh() ? `实时翻译已开启：${translationLanguageName(targetLanguage)}` : `Live translation: ${translationLanguageName(targetLanguage)}`, 'ready');
+      events.onopen = () => {
+        if (!translationSidecarIsCurrent(key, sidecar, generation, targetLanguage)) return;
+        updateTranslationStatus(zh() ? `实时翻译已开启：${translationLanguageName(targetLanguage)}` : `Live translation: ${translationLanguageName(targetLanguage)}`, 'ready');
+      };
       events.onmessage = ({ data }) => {
+        if (!translationSidecarIsCurrent(key, sidecar, generation, targetLanguage)) return;
         try {
           const event = JSON.parse(data);
           if (event.type === 'session.input_transcript.delta') updateTranslationTranscript('source', event.delta, participantIdentity);
@@ -146,6 +159,18 @@
             updateTranslationStatus(zh() ? `实时翻译暂时不可用：${event.error?.message || '未知错误'}` : `Translation unavailable: ${event.error?.message || 'Unknown error'}`, 'error');
           }
         } catch {}
+      };
+      events.onclose = () => {
+        if (!translationSidecarIsCurrent(key, sidecar, generation, targetLanguage)) return;
+        stopTranslationSidecar(key, sidecar);
+        setOriginalAudioMuted(false, participantIdentity);
+        updateTranslationStatus(zh() ? '实时翻译已断开，请重新点选语言' : 'Live translation disconnected. Select the language again.', 'error');
+      };
+      pc.onconnectionstatechange = () => {
+        if (!['failed', 'closed'].includes(pc.connectionState) || !translationSidecarIsCurrent(key, sidecar, generation, targetLanguage)) return;
+        stopTranslationSidecar(key, sidecar);
+        setOriginalAudioMuted(false, participantIdentity);
+        updateTranslationStatus(zh() ? '实时翻译已断开，请重新点选语言' : 'Live translation disconnected. Select the language again.', 'error');
       };
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
