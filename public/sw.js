@@ -1,4 +1,4 @@
-const CACHE_NAME = 'film-shop-v139-compact-video-group-translation';
+const CACHE_NAME = 'film-shop-v140-inventory-branch-picker';
 const ASSETS = [
     '/mobile.html',
     '/warranty.html',

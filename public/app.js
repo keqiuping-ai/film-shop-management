@@ -6333,7 +6333,7 @@ function priceRuleTable() {
 function productTable(rows, actions = false, scrollClass = '') {
   const costHead = canSeeFinance() ? `<th>${t('cost')}</th>` : '';
   return `<div class="table-wrap ${escapeHtml(scrollClass)}"><table><thead><tr><th>${t('sku')}</th><th>${lang === 'zh' ? '型号 / 规格' : 'Model / specification'}</th><th>${t('productName')}</th><th>${t('category')}</th><th>${t('stock')}</th>${costHead}<th>${t('wholesalePrice')}</th><th>${lang === 'zh' ? '客户端销售' : 'Portal sales'}</th>${actions ? '<th></th>' : ''}</tr></thead><tbody>
-  ${rows.map(p => { const qty = inventoryDisplayQty(p); const lv = Number((state.branchInventory || []).find(row => row.sku === p.sku && row.branchId === 'las-vegas')?.qty || 0); const la = Number((state.branchInventory || []).find(row => row.sku === p.sku && row.branchId === 'los-angeles')?.qty || 0); return `<tr><td>${escapeHtml(p.sku)}</td><td><strong>${escapeHtml(p.model || p.sku)}</strong><br><span class="note">${escapeHtml(p.specification || '—')}</span></td><td>${escapeHtml(p.name)}</td><td>${escapeHtml(p.category)}</td><td>${stockPill({ ...p, qty })} ${Number(qty || 0).toLocaleString()} ${escapeHtml(p.unit)}<br><span class="note">LV ${lv.toLocaleString()} · LA ${la.toLocaleString()}</span></td>${canSeeFinance() ? `<td>${currency.format(Number(p.cost || 0))}</td>` : ''}<td>${Number(p.wholesale || 0) > 0 ? currency.format(Number(p.wholesale)) : (lang === 'zh' ? '联系业务员' : 'Contact sales')}</td><td>${p.portalVisible === false ? (lang === 'zh' ? '隐藏' : 'Hidden') : p.portalPurchasable === false ? (lang === 'zh' ? '仅展示' : 'View only') : (lang === 'zh' ? '允许购买' : 'Purchasable')}</td>${actions ? actionCell('Product','products',p.id) : ''}</tr>`; }).join('')}
+  ${rows.map(p => { const stock = inventoryStockView(p); return `<tr><td>${escapeHtml(p.sku)}</td><td><strong>${escapeHtml(p.model || p.sku)}</strong><br><span class="note">${escapeHtml(p.specification || '—')}</span></td><td>${escapeHtml(p.name)}</td><td>${escapeHtml(p.category)}</td><td>${stockPill({ ...p, qty:stock.qty })} ${Number(stock.qty || 0).toLocaleString()} ${escapeHtml(p.unit)}<br><span class="note inventory-stock-scope">${stock.detail}</span></td>${canSeeFinance() ? `<td>${currency.format(Number(p.cost || 0))}</td>` : ''}<td>${Number(p.wholesale || 0) > 0 ? currency.format(Number(p.wholesale)) : (lang === 'zh' ? '联系业务员' : 'Contact sales')}</td><td>${p.portalVisible === false ? (lang === 'zh' ? '隐藏' : 'Hidden') : p.portalPurchasable === false ? (lang === 'zh' ? '仅展示' : 'View only') : (lang === 'zh' ? '允许购买' : 'Purchasable')}</td>${actions ? actionCell('Product','products',p.id) : ''}</tr>`; }).join('')}
   ${rows.length ? '' : `<tr><td colspan="${actions ? (canSeeFinance() ? 9 : 8) : (canSeeFinance() ? 8 : 7)}" class="note">${lang === 'zh' ? '没有库存商品。' : 'No inventory items.'}</td></tr>`}
   </tbody></table></div>`;
 }
@@ -6343,10 +6343,27 @@ function inventoryDisplayQty(product) {
   return Number((state.branchInventory || []).find(row => row.sku === product?.sku && String(row.branchId || '') === inventoryBranchFilter)?.qty || 0);
 }
 
+function inventoryStockView(product) {
+  const qty = inventoryDisplayQty(product);
+  const branchQty = branchId => Number((state.branchInventory || []).find(row => row.sku === product?.sku && String(row.branchId || '') === branchId)?.qty || 0);
+  if (inventoryBranchFilter === 'las-vegas') return { qty, detail:lang === 'zh' ? '仅拉斯维加斯（LV）库存' : 'Las Vegas (LV) only' };
+  if (inventoryBranchFilter === 'los-angeles') return { qty, detail:lang === 'zh' ? '仅洛杉矶（LA）库存' : 'Los Angeles (LA) only' };
+  if (inventoryBranchFilter === '') return { qty, detail:lang === 'zh' ? '待确认归属库存' : 'Branch assignment pending' };
+  const lv = branchQty('las-vegas');
+  const la = branchQty('los-angeles');
+  return { qty, detail:`LV ${lv.toLocaleString()} · LA ${la.toLocaleString()}` };
+}
+
 function inventoryBranchControls() {
-  const options = [['all', lang === 'zh' ? '公司全部库存' : 'Company total'], ['', lang === 'zh' ? '待确认分店' : 'Branch pending'], ...branchOptions(false)];
+  const options = [
+    ['all', lang === 'zh' ? '公司总库存' : 'Company total', lang === 'zh' ? '同时查看 LV + LA' : 'LV + LA together'],
+    ['las-vegas', lang === 'zh' ? '拉斯维加斯' : 'Las Vegas', 'LV'],
+    ['los-angeles', lang === 'zh' ? '洛杉矶' : 'Los Angeles', 'LA']
+  ];
+  const hasPending = (state.branchInventory || []).some(row => String(row.branchId || '') === '' && Math.abs(Number(row.qty || 0)) > 0.0001);
+  if (hasPending) options.push(['', lang === 'zh' ? '待确认' : 'Pending', lang === 'zh' ? '尚未归属分店' : 'Not assigned']);
   if (!options.some(([id]) => id === inventoryBranchFilter)) inventoryBranchFilter = user?.defaultBranchId || 'all';
-  return `<label class="branch-filter">${lang === 'zh' ? '查看分店' : 'Branch'}<select onchange="setInventoryBranch(this.value)">${options.map(([id, label]) => `<option value="${escapeHtml(id)}" ${id === inventoryBranchFilter ? 'selected' : ''}>${escapeHtml(label)}</option>`).join('')}</select></label>`;
+  return `<div class="inventory-branch-picker" role="group" aria-label="${lang === 'zh' ? '库存范围' : 'Inventory scope'}">${options.map(([id, label, hint]) => `<button type="button" class="inventory-branch-option ${id === inventoryBranchFilter ? 'active' : ''}" aria-pressed="${id === inventoryBranchFilter ? 'true' : 'false'}" onclick="setInventoryBranch('${escapeJs(id)}')"><strong>${escapeHtml(label)}</strong><span>${escapeHtml(hint)}</span></button>`).join('')}</div>`;
 }
 
 function setInventoryBranch(value) {

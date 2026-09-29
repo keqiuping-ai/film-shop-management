@@ -50,9 +50,16 @@ async function run() {
   assert(appSource.includes('openPendingStockOutDocument'), 'Pending stock-out rows must open a full document review');
   assert(appSource.includes('stockOutLineReconciliation'), 'Pending stock-out must compare order, shipped, and branch inventory quantities');
   assert(appSource.includes('openStockOutDocument'), 'Stock-out rows must open a grouped document detail');
+  assert(appSource.includes("['all', lang === 'zh' ? '公司总库存'"), 'Inventory scope must expose a company total option');
+  assert(appSource.includes("['las-vegas', lang === 'zh' ? '拉斯维加斯'"), 'Inventory scope must expose Las Vegas separately');
+  assert(appSource.includes("['los-angeles', lang === 'zh' ? '洛杉矶'"), 'Inventory scope must expose Los Angeles separately');
+  assert(appSource.includes("'仅拉斯维加斯（LV）库存'"), 'Las Vegas rows must identify the selected warehouse only');
+  assert(appSource.includes("'仅洛杉矶（LA）库存'"), 'Los Angeles rows must identify the selected warehouse only');
+  assert(appSource.includes('LV ${lv.toLocaleString()} · LA ${la.toLocaleString()}'), 'Company rows must show both LV and LA quantities');
   const cssSource = fs.readFileSync(path.join(root, 'public/styles.css'), 'utf8');
   assert(cssSource.includes('.inventory-stock-table-scroll{max-height:570px;overflow:auto'), 'Inventory list must stay compact and scroll internally');
   assert(cssSource.includes('.pending-stockout-table{width:100%;min-width:900px!important;table-layout:fixed'), 'Pending stock-out columns must stay compact enough to expose the action button');
+  assert(cssSource.includes('.inventory-branch-picker{display:grid;grid-template-columns:repeat(3'), 'Inventory branch choices must render as three clear tabs');
 
   const child = spawn(process.execPath, ['server.js'], {
     cwd:root,
@@ -65,14 +72,25 @@ async function run() {
   try {
     await waitForServer();
     const owner = await login();
-    const branchId = owner.data.settings.clockLocations[0].id;
+    const branchId = 'las-vegas';
+    const losAngelesBranchId = 'los-angeles';
+    assert(owner.data.settings.customerBranches.some(row => row.id === branchId), 'Las Vegas branch is required');
+    assert(owner.data.settings.customerBranches.some(row => row.id === losAngelesBranchId), 'Los Angeles branch is required');
     const product = owner.data.products.find(row => row.sku && !['CUSTOM-PRINTED-FILM','CUSTOM-CUSTOMER-REQUEST'].includes(row.sku));
     assert(product, 'Seed product required');
     const beforeQty = Number(product.qty || 0);
+    const beforeLv = Number(owner.data.branchInventory.find(row => row.sku === product.sku && row.branchId === branchId)?.qty || 0);
+    const beforeLa = Number(owner.data.branchInventory.find(row => row.sku === product.sku && row.branchId === losAngelesBranchId)?.qty || 0);
     const receive = await request('/api/movements', owner.token, {
       method:'POST', body:JSON.stringify({ date:localDate(), branchId, sku:product.sku, type:'in', qty:5, note:'workflow test receipt' })
     });
     assert.equal(receive.response.status, 200, `Stock-in failed: ${JSON.stringify(receive.body)}`);
+    const receiveLosAngeles = await request('/api/movements', owner.token, {
+      method:'POST', body:JSON.stringify({ date:localDate(), branchId:losAngelesBranchId, sku:product.sku, type:'in', qty:3, note:'Los Angeles scope test receipt' })
+    });
+    assert.equal(receiveLosAngeles.response.status, 200, `Los Angeles stock-in failed: ${JSON.stringify(receiveLosAngeles.body)}`);
+    assert.equal(Number(receiveLosAngeles.body.branchInventory.find(row => row.sku === product.sku && row.branchId === branchId)?.qty || 0), beforeLv + 5, 'Las Vegas stock must remain in the LV ledger');
+    assert.equal(Number(receiveLosAngeles.body.branchInventory.find(row => row.sku === product.sku && row.branchId === losAngelesBranchId)?.qty || 0), beforeLa + 3, 'Los Angeles stock must remain in the LA ledger');
 
     const unitPrice = Math.max(100, Number(product.minPrice || 0), Number(product.wholesale || 0));
     const paidOrder = await request('/api/salesOrders', owner.token, {
@@ -92,12 +110,12 @@ async function run() {
     assert.equal(shippedOrder.status, '已出库');
     assert.match(shippedOrder.shipmentNo, /^CK-\d{8}-[A-Z0-9]+$/);
     assert.equal(shipped.body.movements.filter(row => row.salesOrderId === order.id && row.type === 'out').length, 1);
-    assert.equal(Number(shipped.body.products.find(row => row.sku === product.sku).qty), beforeQty + 3);
+    assert.equal(Number(shipped.body.products.find(row => row.sku === product.sku).qty), beforeQty + 6);
 
     const repeated = await request(`/api/sales-orders/${order.id}/ship`, owner.token, { method:'POST', body:JSON.stringify({ branchId }) });
     assert.equal(repeated.response.status, 200, 'Repeated confirmation should be idempotent');
     assert.equal(repeated.body.movements.filter(row => row.salesOrderId === order.id && row.type === 'out').length, 1, 'Repeated confirmation must not deduct stock twice');
-    assert.equal(Number(repeated.body.products.find(row => row.sku === product.sku).qty), beforeQty + 3);
+    assert.equal(Number(repeated.body.products.find(row => row.sku === product.sku).qty), beforeQty + 6);
 
     const unpaidCreate = await request('/api/salesOrders', owner.token, {
       method:'POST', body:JSON.stringify({
