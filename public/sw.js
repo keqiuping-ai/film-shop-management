@@ -1,4 +1,4 @@
-const CACHE_NAME = 'film-shop-v141-page-scroll-continuity';
+const CACHE_NAME = 'film-shop-v142-call-domain-speech';
 const ASSETS = [
     '/mobile.html',
     '/warranty.html',

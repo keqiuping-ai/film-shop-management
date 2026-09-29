@@ -11130,7 +11130,10 @@ async function api(req, res) {
         body: JSON.stringify({
           session: {
             model: process.env.OPENAI_REALTIME_TRANSLATION_MODEL || 'gpt-realtime-translate',
-            audio: { output: { language: targetLanguage } }
+            audio: {
+              input: { noise_reduction: { type:'far_field' } },
+              output: { language: targetLanguage }
+            }
           }
         }),
         signal: AbortSignal.timeout(20_000)

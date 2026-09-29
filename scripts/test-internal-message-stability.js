@@ -66,7 +66,7 @@ async function run() {
   assert.match(mobileSource, /正在发送…/, 'Mobile pending text must show sending status');
   assert.match(mobileSource, /preserveMobileMessageSnapshot/, 'Mobile refreshes must preserve a visible non-empty thread');
   assert(mobileHtml.includes('/mobile.js?v=69'), 'Mobile app asset marker must be bumped');
-  assert(serviceWorker.includes('film-shop-v141-page-scroll-continuity'), 'Service worker cache must be bumped');
+  assert(serviceWorker.includes('film-shop-v142-call-domain-speech'), 'Service worker cache must be bumped');
   assert.match(appSource, /function capturePageContinuityState\(\)/, 'Desktop refreshes must capture page and nested-scroll positions');
   assert.match(appSource, /function restorePageContinuityState\(snapshot\)/, 'Desktop refreshes must restore page and nested-scroll positions');
   assert.match(appSource, /const unchangedBackgroundRefresh = Boolean\(/, 'Unchanged background refreshes must not rebuild the current page');
@@ -86,9 +86,13 @@ async function run() {
   assert.match(realtimeSource, /document\.documentElement\.lang/, 'Call UI language must follow the app language');
   assert.match(realtimeSource, /translationSidecars\.get\(key\) === sidecar/, 'Stale translation sessions must not replace a newer session');
   assert.match(realtimeSource, /Choose the language you want to hear/, 'Translation mode must wait for an explicit language selection');
-  assert(indexSource.includes('/realtime-calls.js?v=34') && mobileHtml.includes('/realtime-calls.js?v=34'), 'Call client asset marker must be bumped');
+  assert(indexSource.includes('/realtime-calls.js?v=35') && mobileHtml.includes('/realtime-calls.js?v=35'), 'Call client asset marker must be bumped');
   assert(indexSource.includes('/realtime-calls.css?v=15') && mobileHtml.includes('/realtime-calls.css?v=15'), 'Call styles asset marker must be bumped');
   assert.match(realtimeSource, /webkitSpeechRecognition/, 'Local microphone captions must use browser speech recognition without opening a second OpenAI session');
+  assert.match(realtimeSource, /SpeechRecognitionPhrase/, 'Supported browsers must receive automotive-film phrase hints');
+  assert.match(realtimeSource, /磁控溅射膜/, 'Local captions must include the automotive-film terminology glossary');
+  assert.match(realtimeSource, /normalizeCallTranscript/, 'Known industry homophones must be corrected before captions are rendered');
+  assert.match(serverSource, /noise_reduction: \{ type:'far_field' \}/, 'OpenAI translation input must use laptop/conference-room noise reduction');
   assert.match(realtimeSource, /event\.type === 'session\.output_transcript\.delta'/, 'Remote translated speech must populate the translated transcript');
   assert.doesNotMatch(realtimeSource, /session\.input_transcript\.delta/, 'The stable translation path must not create a second OpenAI input-transcription session');
   assert.match(realtimeSource, /scrollTop = transcriptRow\.scrollHeight/, 'Both transcript panes must automatically follow the latest text');

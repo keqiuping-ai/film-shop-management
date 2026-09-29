@@ -30,6 +30,18 @@
   let cameraBusy = false;
   let weakVideoTimer = null;
   const declinedCallerUntil = new Map();
+  const CALL_SPEECH_TERMS = {
+    zh: ['磁控溅射膜', '漆面保护膜', '隐形车衣', '改色膜', '窗膜', '陶瓷膜', '纳米陶瓷膜', '金属膜', '前挡', '侧后挡', '透光率', '红外线阻隔率', '紫外线阻隔率', '色卡', '包边', '收边', '热风枪', '刮板', 'PPF', 'TPU', 'QUAD FILM'],
+    en: ['magnetron sputtering film', 'paint protection film', 'color change film', 'window film', 'ceramic film', 'nano ceramic film', 'metalized film', 'windshield', 'visible light transmission', 'infrared rejection', 'ultraviolet rejection', 'color swatch', 'PPF', 'TPU', 'QUAD FILM']
+  };
+  const CALL_TRANSCRIPT_CORRECTIONS = [
+    [/(?:磁|词)控(?:建设|建射|箭射|键射|贱射)(?:膜|模)?/g, '磁控溅射膜'],
+    [/磁控溅射模/g, '磁控溅射膜'],
+    [/漆面保护模/g, '漆面保护膜'],
+    [/隐形车一/g, '隐形车衣'],
+    [/改色模/g, '改色膜'],
+    [/纳米陶瓷模/g, '纳米陶瓷膜']
+  ];
 
   const context = () => window.getQuadCallContext?.() || {};
   const me = () => context().user || null;
@@ -59,6 +71,23 @@
     } catch { return zh() ? 'zh' : 'en'; }
   };
   const translationLanguageName = value => ({ zh:'中文', en:'English' }[value] || (zh() ? '关闭' : 'Off'));
+
+  function normalizeCallTranscript(value, language = 'zh') {
+    let text = String(value || '');
+    if (language === 'zh') CALL_TRANSCRIPT_CORRECTIONS.forEach(([pattern, replacement]) => { text = text.replace(pattern, replacement); });
+    return text;
+  }
+
+  function recognitionCandidate(result, language) {
+    const choices = Array.from(result || []).map(candidate => {
+      const raw = String(candidate?.transcript || '');
+      const normalized = normalizeCallTranscript(raw, language);
+      const termHits = (CALL_SPEECH_TERMS[language] || []).filter(term => normalized.toLowerCase().includes(term.toLowerCase())).length;
+      return { text:normalized, score:(Number(candidate?.confidence) || 0) + (termHits * 2) };
+    });
+    choices.sort((left, right) => right.score - left.score);
+    return choices[0]?.text || '';
+  }
 
   function updateTranslationStatus(message, tone = '') {
     const status = document.getElementById('quadCallTranslationStatus');
@@ -131,17 +160,28 @@
     localSpeechShouldRun = true;
     recognition.continuous = true;
     recognition.interimResults = true;
+    recognition.maxAlternatives = 3;
     recognition.lang = language === 'zh' ? 'zh-CN' : 'en-US';
+    // Safari normally uses its online recognition service. Explicitly prefer
+    // that path when the experimental switch exists; offline recognition is
+    // noticeably weaker for automotive-film terminology.
+    try { if ('processLocally' in recognition) recognition.processLocally = false; } catch {}
+    // Chromium exposes contextual phrase biasing on some versions. Keep this
+    // progressive: Safari still gets the deterministic correction fallback.
+    try {
+      const Phrase = window.SpeechRecognitionPhrase;
+      if (Phrase && 'phrases' in recognition) recognition.phrases = (CALL_SPEECH_TERMS[language] || []).map(term => new Phrase(term, 8));
+    } catch {}
     recognition.onresult = event => {
       if (!localSpeechShouldRun || recognition !== localSpeechRecognition) return;
       let interim = '';
       for (let index = event.resultIndex || 0; index < event.results.length; index += 1) {
         const result = event.results[index];
-        const text = String(result?.[0]?.transcript || '');
+        const text = recognitionCandidate(result, language);
         if (result?.isFinal) localSpeechFinalText += `${text} `;
         else interim += text;
       }
-      setLocalSpeechTranscript(`${localSpeechFinalText}${interim}`.trim());
+      setLocalSpeechTranscript(normalizeCallTranscript(`${localSpeechFinalText}${interim}`.trim(), language));
     };
     recognition.onerror = event => {
       if (!['not-allowed', 'service-not-allowed'].includes(String(event?.error || ''))) return;
@@ -972,7 +1012,8 @@
     window.QuadCalls.__test = {
       setRoom: value => { room = value; },
       translationState: () => ({ enabled:translationEnabled, selectionOpen:translationSelectionOpen, generation:translationGeneration, sidecars:[...translationSidecars.values()].map(sidecar => ({ targetLanguage:preferredTranslationLanguage(), participantIdentity:sidecar.participantIdentity, connectionState:sidecar.pc?.connectionState || '', stopping:Boolean(sidecar.stopping) })) }),
-      cameraState: () => ({ enabled:cameraEnabled, busy:cameraBusy })
+      cameraState: () => ({ enabled:cameraEnabled, busy:cameraBusy }),
+      normalizeCallTranscript
     };
   }
   window.addEventListener('quad-voice-call', receiveVoiceEvent);

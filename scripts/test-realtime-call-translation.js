@@ -197,6 +197,21 @@ test('two independent accounts can translate in opposite directions for repeated
   await Promise.all([owner.calls.setTranslationMode('direct'), employee.calls.setTranslationMode('direct')]);
 });
 
+test('local captions correct common automotive-film homophones without another OpenAI session', async () => {
+  const client = createClient('owner');
+  client.setRemoteTrack('employee');
+
+  await client.calls.setTranslationMode('translate');
+  await client.calls.setTranslationLanguage('zh');
+  const recognition = client.recognitions.at(-1);
+  assert.equal(recognition.maxAlternatives, 3);
+  recognition.emit('我们的磁控建设模可以阻隔红外线');
+
+  assert.equal(client.elements.get('quadCallSourceTranscript').textContent, '我们的磁控溅射膜可以阻隔红外线');
+  assert.equal(client.calls.__test.normalizeCallTranscript('词控建设膜和漆面保护模'), '磁控溅射膜和漆面保护膜');
+  assert.equal(client.pcs.length, 1, 'Terminology correction must reuse the proven single translation connection');
+});
+
 test('a stopped translation session cannot overwrite the direct-call state with a stale callback', async () => {
   const client = createClient('owner');
   client.setRemoteTrack('employee');
