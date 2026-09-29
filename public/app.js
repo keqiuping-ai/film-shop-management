@@ -1020,9 +1020,89 @@ async function logout() {
   renderAuth();
 }
 
+function pageContinuityPath(element, root) {
+  if (!element || !root || element === root || !root.contains(element)) return '';
+  const path = [];
+  let node = element;
+  while (node && node !== root) {
+    const parent = node.parentElement;
+    if (!parent) return '';
+    path.unshift(Array.prototype.indexOf.call(parent.children, node));
+    node = parent;
+  }
+  return node === root ? path.join('.') : '';
+}
+
+function pageContinuityElement(path, root) {
+  if (!root || path === '') return null;
+  return String(path).split('.').reduce((node, index) => node?.children?.[Number(index)] || null, root);
+}
+
+function capturePageContinuityState() {
+  const root = document.getElementById('app');
+  if (!root || root.classList.contains('hidden')) return null;
+  const scrollers = [];
+  root.querySelectorAll('*').forEach(element => {
+    if (!element.scrollTop && !element.scrollLeft) return;
+    const path = pageContinuityPath(element, root);
+    if (path) scrollers.push({ path, top: element.scrollTop, left: element.scrollLeft });
+  });
+  const active = root.contains(document.activeElement) ? document.activeElement : null;
+  const activePath = pageContinuityPath(active, root);
+  const activeState = activePath && /^(INPUT|TEXTAREA|SELECT)$/.test(active?.tagName || '') ? {
+    path: activePath,
+    value: active.value,
+    checked: Boolean(active.checked),
+    selectionStart: Number.isInteger(active.selectionStart) ? active.selectionStart : null,
+    selectionEnd: Number.isInteger(active.selectionEnd) ? active.selectionEnd : null
+  } : null;
+  return {
+    page: current,
+    navigationRevision: uiNavigationRevision,
+    windowX: window.scrollX,
+    windowY: window.scrollY,
+    documentTop: document.scrollingElement?.scrollTop || 0,
+    documentLeft: document.scrollingElement?.scrollLeft || 0,
+    scrollers,
+    activeState
+  };
+}
+
+function restorePageContinuityState(snapshot) {
+  if (!snapshot || snapshot.page !== current || snapshot.navigationRevision !== uiNavigationRevision) return;
+  const restore = () => {
+    if (snapshot.page !== current || snapshot.navigationRevision !== uiNavigationRevision) return;
+    const root = document.getElementById('app');
+    if (!root) return;
+    snapshot.scrollers.forEach(position => {
+      const element = pageContinuityElement(position.path, root);
+      if (!element) return;
+      element.scrollTop = position.top || 0;
+      element.scrollLeft = position.left || 0;
+    });
+    if (document.scrollingElement) {
+      document.scrollingElement.scrollTop = snapshot.documentTop || snapshot.windowY || 0;
+      document.scrollingElement.scrollLeft = snapshot.documentLeft || snapshot.windowX || 0;
+    }
+    window.scrollTo(snapshot.windowX || 0, snapshot.windowY || 0);
+    const activeState = snapshot.activeState;
+    const active = activeState ? pageContinuityElement(activeState.path, root) : null;
+    if (active && /^(INPUT|TEXTAREA|SELECT)$/.test(active.tagName || '')) {
+      if (active.type === 'checkbox' || active.type === 'radio') active.checked = activeState.checked;
+      else active.value = activeState.value;
+      active.focus({ preventScroll: true });
+      if (activeState.selectionStart !== null && typeof active.setSelectionRange === 'function') {
+        active.setSelectionRange(activeState.selectionStart, activeState.selectionEnd ?? activeState.selectionStart);
+      }
+    }
+  };
+  requestAnimationFrame(() => requestAnimationFrame(restore));
+}
+
 async function sync(options = {}) {
   if (syncInFlight) return;
-  const aiRulesUiState = current === 'aiRules' ? captureCustomerAiRulesUiState() : null;
+  const aiRulesUiStateAtStart = current === 'aiRules' ? captureCustomerAiRulesUiState() : null;
+  const revisionAtStart = lastDataRevision;
   const uiRevisionAtStart = uiNavigationRevision;
   const messageUserAtStart = activeMessageUserId;
   const workspaceIdAtStart = activeProspectWorkspaceId;
@@ -1058,7 +1138,8 @@ async function sync(options = {}) {
       nextState.messageUsers = state.messageUsers;
     }
     state = nextState;
-    lastDataRevision = String(body.revision || lastDataRevision || '');
+    const nextDataRevision = String(body.revision || lastDataRevision || '');
+    lastDataRevision = nextDataRevision;
     // The bootstrap request can take long enough for the operator to keep typing.
     // Capture the live value immediately before rendering so an older snapshot
     // from the beginning of the request can never overwrite newer keystrokes.
@@ -1081,7 +1162,18 @@ async function sync(options = {}) {
     localStorage.setItem('filmShopCloud.lastEmail', user.email || '');
     lastSyncAt = new Date();
     renderAuth();
-    if (!uiChangedDuringSync) render({ aiRulesUiState });
+    const unchangedBackgroundRefresh = Boolean(
+      options.silent
+      && !state.deferredBootstrapData
+      && revisionAtStart
+      && nextDataRevision === revisionAtStart
+    );
+    if (!uiChangedDuringSync && !unchangedBackgroundRefresh) {
+      // The request may take several seconds. Capture at the last possible
+      // moment so scrolling or typing done while it was in flight is retained.
+      const aiRulesUiState = current === 'aiRules' ? (captureCustomerAiRulesUiState() || aiRulesUiStateAtStart) : null;
+      render({ aiRulesUiState });
+    }
     else updateMessageBadge();
     checkNewAppointmentAlerts();
     startPersistentAlertChecks();
@@ -1278,7 +1370,8 @@ function setPage(page) {
   if (page === 'customerTasks' || page === 'recruiting') url.searchParams.set('page', page);
   else url.searchParams.delete('page');
   window.history.replaceState({}, '', url);
-  render();
+  render({ resetScroll: true });
+  requestAnimationFrame(() => window.scrollTo(0, 0));
 }
 
 const COMPANY_SCOPE_PAGES = new Set([
@@ -1725,6 +1818,8 @@ function jobPersonOptions() {
 
 function render(options = {}) {
   if (!state) return;
+  const pageContinuityState = options.resetScroll ? null : (options.pageContinuityState || capturePageContinuityState());
+  const aiRulesUiState = current === 'aiRules' ? (options.aiRulesUiState || captureCustomerAiRulesUiState()) : null;
   window.Recruiting?.onAuthChanged?.();
   // Reuse the customer-center sort/search projection only within the current
   // rendered state. Any navigation, sync, mutation, branch switch, or language
@@ -1764,11 +1859,12 @@ function render(options = {}) {
   if (current === 'settings') setTimeout(loadMetaSettings, 0);
   if (current === 'clock') setTimeout(() => loadAttendanceReport(), 0);
   if (current === 'aiRules') {
-    if (options.aiRulesUiState) restoreCustomerAiRulesUiState(options.aiRulesUiState, { restoreDrafts: true });
+    if (aiRulesUiState) restoreCustomerAiRulesUiState(aiRulesUiState, { restoreDrafts: true });
     else setTimeout(() => { loadCustomerAiRules(); loadCustomerAiSettings(); }, 0);
   }
   if (activeProspectWorkspaceId && !preserveProspectWorkspaceRender) renderProspectWorkspace();
   preserveProspectWorkspaceRender = false;
+  restorePageContinuityState(pageContinuityState);
 }
 
 function messageUsers() {
@@ -11548,9 +11644,13 @@ function removeCustomerAiPlaybookRule(index) { if(customerAiPlaybookDrafts.lengt
 function moveCustomerAiPlaybookRule(index,offset) { const rows=readCustomerAiPlaybook(); const target=index+offset; if(target<0||target>=rows.length)return; [rows[index],rows[target]]=[rows[target],rows[index]]; customerAiPlaybookDrafts=rows; renderCustomerAiPlaybookEditors(); }
 
 async function loadCustomerAiRules() {
-  const uiState = captureCustomerAiRulesUiState();
+  const uiStateAtStart = captureCustomerAiRulesUiState();
   try {
     const info = await api('/api/customer-ai/rules');
+    // Operators often start reading or scrolling while this request is still
+    // loading. Preserve the position they reached, not the old position from
+    // the moment the request began.
+    const uiState = captureCustomerAiRulesUiState() || uiStateAtStart;
     customerAiKnowledgeDrafts = (info.knowledgeEntries || []).map(row => ({ ...row }));
     customerAiExperienceDrafts = (info.experiences || []).map(row => ({ ...row }));
     customerAiBranchDrafts = (info.branches || []).map(row => ({ ...row }));
@@ -11573,12 +11673,12 @@ async function loadAllCustomerAiRules() {
 }
 
 async function saveCustomerAiRules() {
-  const uiState = captureCustomerAiRulesUiState();
+  const uiStateAtStart = captureCustomerAiRulesUiState();
   const knowledgeEntries=readCustomerAiKnowledgeEntries(); const branches=readCustomerAiBranches(); const playbook=readCustomerAiPlaybook();
   if(!knowledgeEntries.length||knowledgeEntries.some(row=>!row.title||!row.content))return alert(lang==='zh'?'请至少保留一条知识，并填写标题和内容。':'Keep at least one complete knowledge entry.');
   if(!branches.length||branches.some(row=>!row.name||!row.city))return alert(lang==='zh'?'请填写每个分店的名称和城市。':'Complete every branch name and city.');
   if(!playbook.length||playbook.some(row=>!row.name||!row.instruction))return alert(lang==='zh'?'请填写每一条流程规则的名称和详细内容。':'Complete every playbook rule.');
-  try { if (!(await saveCustomerAiSettings(true))) return; const info=await api('/api/customer-ai/rules',{method:'PUT',body:JSON.stringify({knowledgeEntries,branches,playbook})}); customerAiKnowledgeDrafts=info.knowledgeEntries||[]; customerAiBranchDrafts=info.branches; customerAiPlaybookDrafts=info.playbook; renderCustomerAiKnowledgeEditors(); renderCustomerAiBranchEditors(); renderCustomerAiPlaybookEditors(); const meta=document.getElementById('customerAiRulesMeta'); if(meta)meta.textContent=lang==='zh'?`保存成功｜${formatAppDateTime(info.updatedAt)}｜${info.updatedBy||''}`:'Rules saved'; restoreCustomerAiRulesUiState(uiState); alert(lang==='zh'?'AI接入、自动回复和全部客服规则已经统一保存。':'AI access, auto reply, and all customer-service rules have been saved.'); } catch(err){alert(err.message);}
+  try { if (!(await saveCustomerAiSettings(true))) return; const info=await api('/api/customer-ai/rules',{method:'PUT',body:JSON.stringify({knowledgeEntries,branches,playbook})}); const uiState=captureCustomerAiRulesUiState()||uiStateAtStart; customerAiKnowledgeDrafts=info.knowledgeEntries||[]; customerAiBranchDrafts=info.branches; customerAiPlaybookDrafts=info.playbook; renderCustomerAiKnowledgeEditors(); renderCustomerAiBranchEditors(); renderCustomerAiPlaybookEditors(); const meta=document.getElementById('customerAiRulesMeta'); if(meta)meta.textContent=lang==='zh'?`保存成功｜${formatAppDateTime(info.updatedAt)}｜${info.updatedBy||''}`:'Rules saved'; restoreCustomerAiRulesUiState(uiState); alert(lang==='zh'?'AI接入、自动回复和全部客服规则已经统一保存。':'AI access, auto reply, and all customer-service rules have been saved.'); } catch(err){alert(err.message);}
 }
 
 function renderCustomerAiBranchEditors() {

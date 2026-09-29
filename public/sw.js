@@ -1,4 +1,4 @@
-const CACHE_NAME = 'film-shop-v140-inventory-branch-picker';
+const CACHE_NAME = 'film-shop-v141-page-scroll-continuity';
 const ASSETS = [
     '/mobile.html',
     '/warranty.html',
