@@ -2693,6 +2693,10 @@ const DEFAULT_CUSTOMER_AI_PLAYBOOK = [
   { id: 'human-rule', name: '必须转人工', trigger: 'escalation', enabled: true, instruction: '投诉、退款、质保争议、法律责任、无法确认的承诺和规则外报价必须转人工，不得自动承诺。' }
 ];
 
+const CUSTOMER_AI_MEDIA_CATEGORIES = new Set([
+  'auto-window-film', 'color-wrap', 'ppf', 'architectural-film', 'shop-display', 'brand-display'
+]);
+
 function normalizeCustomerAiPlaybookRule(value = {}, index = 0) {
   const allowed = new Set(['first', 'second', 'ongoing', 'pricing', 'visit', 'escalation', 'always']);
   const rawId = String(value.id || '').trim().toLowerCase().replace(/[^a-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '');
@@ -2701,7 +2705,37 @@ function normalizeCustomerAiPlaybookRule(value = {}, index = 0) {
     name: String(value.name || `规则 ${index + 1}`).trim().slice(0, 80),
     trigger: allowed.has(String(value.trigger || '')) ? String(value.trigger) : 'always',
     enabled: value.enabled !== false,
-    instruction: String(value.instruction || '').trim().slice(0, 3000)
+    instruction: String(value.instruction || '').trim().slice(0, 3000),
+    autoSelectMedia: value.autoSelectMedia === true,
+    includeBranchAddress: value.includeBranchAddress === true,
+    maxImages: Math.max(0, Math.min(3, Number(value.maxImages || 0) || 0)),
+    mediaCategories: [...new Set((Array.isArray(value.mediaCategories) ? value.mediaCategories : [])
+      .map(category => String(category || '').trim()).filter(category => CUSTOMER_AI_MEDIA_CATEGORIES.has(category)))],
+    mediaInstruction: String(value.mediaInstruction || '').trim().slice(0, 1200)
+  };
+}
+
+function customerAiMediaPolicy(db, playbook = []) {
+  const enabledRules = playbook.filter(rule => rule.enabled && (rule.autoSelectMedia || rule.includeBranchAddress));
+  const maxImages = Math.max(0, ...enabledRules.map(rule => Number(rule.maxImages || 0)));
+  const allowedCategories = new Set(enabledRules.flatMap(rule => rule.mediaCategories || []));
+  const candidates = (db.replyTemplates || []).filter(template =>
+    template?.type === 'image'
+    && template?.attachment?.url
+    && allowedCategories.has(String(template.category || ''))
+  ).slice(0, 60).map(template => ({
+    id: String(template.id || ''),
+    title: String(template.title || '').trim().slice(0, 120),
+    category: String(template.category || ''),
+    caption: String(template.content || '').trim().slice(0, 300),
+    attachment: { ...template.attachment }
+  }));
+  return {
+    enabled: maxImages > 0 && candidates.length > 0,
+    maxImages,
+    includeBranchAddress: enabledRules.some(rule => rule.includeBranchAddress),
+    instructions: enabledRules.map(rule => rule.mediaInstruction).filter(Boolean),
+    candidates
   };
 }
 
@@ -3149,7 +3183,7 @@ function customerBranchForItem(db, item = {}) {
   return branches.find(branch => branch.id === item.branchId) || null;
 }
 
-function customerAiReplyPrompt(task, channel = '', knowledgeEntries = [], branch = null, playbook = [], experiences = []) {
+function customerAiReplyPrompt(task, channel = '', knowledgeEntries = [], branch = null, playbook = [], experiences = [], mediaPolicy = {}) {
   const lastMessages = (task.messages || []).slice(-10).map(message => ({
     role: message.role,
     channel: message.channel,
@@ -3176,6 +3210,13 @@ ${branch?.aiKnowledge || '(No branch-specific rules configured.)'}
 
 Applicable conversation playbook rules (follow in this order):
 ${playbook.length ? playbook.map((rule, index) => `${index + 1}. ${rule.name}: ${rule.instruction}`).join('\n') : '(No additional playbook rule applies.)'}
+
+Approved media policy for this reply:
+${mediaPolicy.enabled ? `- You may select at most ${mediaPolicy.maxImages} relevant image(s), only from the approved list below.
+- Select no image when it is not clearly relevant, when the same material was already sent, or when the customer has not reached the matching conversation step.
+- Media selection instructions: ${(mediaPolicy.instructions || []).join(' | ') || 'Choose only directly relevant approved material.'}
+- Approved images: ${JSON.stringify((mediaPolicy.candidates || []).map(({ id, title, category, caption }) => ({ id, title, category, caption })), null, 2)}` : '- Do not select any media for this reply.'}
+- Branch address may be included only when includeBranchAddress is allowed, a saved branch address exists, and the customer is asking where to visit or is ready for an in-store next step.
 
 Approved experience learned from prior reviewed conversations (use only when relevant; newer customer facts win):
 ${experiences.length ? experiences.map((entry, index) => `${index + 1}. Scenario: ${entry.conversationScenario || 'other'}\nCustomer context: ${entry.customerContext || '(not recorded)'}\nDo not repeat: ${entry.wrongReply || '(unspecified mistake)'}\nWhy the correction is needed: ${entry.replyReason || '(not recorded)'}\nCorrect approach: ${entry.correctGuidance}`).join('\n\n') : '(No approved experience matched.)'}
@@ -3212,7 +3253,9 @@ Return JSON only with exactly these fields:
 - disposition: one of "ready_for_review", "needs_human", "no_reply_needed".
 - note: short Chinese note for the employee explaining why.
 - riskLevel: one of "low", "medium", "high".
-- followUpReason: short Chinese follow-up reason if useful, otherwise empty string.`;
+- followUpReason: short Chinese follow-up reason if useful, otherwise empty string.
+- replyTemplateIds: array of approved image IDs to send after the text; never invent an ID and obey the maximum above.
+- includeBranchAddress: boolean; true only when the saved assigned-branch address should be appended to this reply and the policy allows it.`;
 }
 
 function normalizeCustomerAiDraft(value) {
@@ -3228,7 +3271,10 @@ function normalizeCustomerAiDraft(value) {
     disposition: ['ready_for_review', 'needs_human', 'no_reply_needed'].includes(value?.disposition) ? value.disposition : 'ready_for_review',
     note: String(value?.note || '').trim().slice(0, 1000),
     riskLevel: ['low', 'medium', 'high'].includes(value?.riskLevel) ? value.riskLevel : 'medium',
-    followUpReason: String(value?.followUpReason || '').trim().slice(0, 500)
+    followUpReason: String(value?.followUpReason || '').trim().slice(0, 500),
+    replyTemplateIds: Array.isArray(value?.replyTemplateIds) ? value.replyTemplateIds.map(id => String(id || '').trim()).filter(Boolean).slice(0, 3) : [],
+    includeBranchAddress: value?.includeBranchAddress === true,
+    attachments: Array.isArray(value?.attachments) ? value.attachments.slice(0, 3) : []
   };
   if (draft.disposition === 'ready_for_review' && !draft.replyText) {
     draft.disposition = 'needs_human';
@@ -3536,7 +3582,9 @@ async function createCustomerAiReplyDraft(db, row, requestedChannel = '') {
   task.branch = branch ? { id: branch.id, name: branch.name, city: branch.city } : null;
   const knowledgeEntries = relevantCustomerAiKnowledge(db, row.item, branch);
   const experiences = relevantCustomerAiExperiences(db, row.item, branch);
-  const prompt = customerAiReplyPrompt(task, requestedChannel, knowledgeEntries, branch, applicableCustomerAiPlaybook(db, task), experiences);
+  const playbook = applicableCustomerAiPlaybook(db, task);
+  const mediaPolicy = customerAiMediaPolicy(db, playbook);
+  const prompt = customerAiReplyPrompt(task, requestedChannel, knowledgeEntries, branch, playbook, experiences, mediaPolicy);
   const startedAt = Date.now();
   const completion = await fetchCustomerAiCompletion(db, {
     feature: 'customer-reply-draft',
@@ -3544,7 +3592,17 @@ async function createCustomerAiReplyDraft(db, row, requestedChannel = '') {
     maxCompletionTokens: 650
   });
   const rawDraft = parseAiBossDraft(completion.content);
-  const englishReplyText = String(rawDraft?.englishReplyText || rawDraft?.replyText || '').trim().slice(0, 1600);
+  const allowedMedia = new Map(mediaPolicy.candidates.map(candidate => [candidate.id, candidate]));
+  const selectedIds = [...new Set((Array.isArray(rawDraft?.replyTemplateIds) ? rawDraft.replyTemplateIds : [])
+    .map(value => String(value || '').trim()).filter(value => allowedMedia.has(value)))]
+    .slice(0, mediaPolicy.maxImages);
+  rawDraft.replyTemplateIds = selectedIds;
+  rawDraft.attachments = selectedIds.map(templateId => allowedMedia.get(templateId));
+  rawDraft.includeBranchAddress = Boolean(rawDraft.includeBranchAddress && mediaPolicy.includeBranchAddress && branch?.address);
+  let englishReplyText = String(rawDraft?.englishReplyText || rawDraft?.replyText || '').trim().slice(0, 1600);
+  if (rawDraft.includeBranchAddress && branch?.address && !englishReplyText.toLowerCase().includes(String(branch.address).toLowerCase())) {
+    englishReplyText = `${englishReplyText}\n\nOur address: ${branch.address}`.trim().slice(0, 1600);
+  }
   rawDraft.englishReplyText = englishReplyText;
   rawDraft.chineseReplyText = englishReplyText
     ? await translateCustomerAiReplyToChinese(db, englishReplyText)
@@ -3571,6 +3629,9 @@ async function saveCustomerAiReplyDraft(db, user, item, collection, requestedCha
     disposition: result.draft.disposition,
     riskLevel: result.draft.riskLevel,
     followUpReason: result.draft.followUpReason,
+    replyTemplateIds: result.draft.replyTemplateIds,
+    attachments: result.draft.attachments,
+    includeBranchAddress: result.draft.includeBranchAddress,
     createdAt: now,
     createdBy: user.name || user.email,
     provider: result.provider,
@@ -6356,20 +6417,22 @@ function startTwilioReconciliationWorker() {
   setInterval(run, 30 * 1000);
 }
 
-async function sendTwilioSms({ to, body, mediaUrl, statusCallback, purpose }) {
+async function sendTwilioSms({ to, body, mediaUrl, mediaUrls, statusCallback, purpose }) {
   const config = twilioConfig();
   if (!twilioConfigured()) throw new Error('Twilio 尚未配置，请先设置 Railway 环境变量');
   if (purpose !== 'recruiting' && recruiting.hasCandidatePhone(readDb(), to)) throw new Error('此号码有应聘者档案，请在招聘与面试中心核实并联系');
   // MMS is more reliable when Twilio receives the exact MMS-capable sender.
   // Plain SMS keeps using the Messaging Service for its existing routing and
   // compliance configuration.
-  const sender = mediaUrl && config.fromNumber
+  const outboundMediaUrls = [...new Set([...(Array.isArray(mediaUrls) ? mediaUrls : []), mediaUrl]
+    .map(value => String(value || '').trim()).filter(Boolean))].slice(0, 3);
+  const sender = outboundMediaUrls.length && config.fromNumber
     ? { From: config.fromNumber }
     : config.messagingServiceSid
       ? { MessagingServiceSid: config.messagingServiceSid }
       : { From: config.fromNumber };
   const form = new URLSearchParams({ To: to, Body: body, ...sender });
-  if (mediaUrl) form.append('MediaUrl', mediaUrl);
+  outboundMediaUrls.forEach(url => form.append('MediaUrl', url));
   if (statusCallback) form.set('StatusCallback', statusCallback);
   let response;
   try {
@@ -6475,23 +6538,33 @@ function customerAiAutoReplyConsecutiveCount(item) {
   return count;
 }
 
-async function sendCustomerAiAutomaticReply(db, collection, item, channel, text) {
+async function sendCustomerAiAutomaticReply(db, collection, item, channel, text, attachments = []) {
   const actor = { id: 'customer-ai-auto-reply', name: 'AI自动客服', email: 'ai-auto-reply@system.local' };
   const now = new Date().toISOString();
+  const approvedAttachments = (Array.isArray(attachments) ? attachments : []).filter(row => row?.attachment?.url).slice(0, 3);
   let providerId = '';
   if (channel === 'meta') {
     const sent = await sendMetaMessengerReply(db, item, text);
     providerId = sent.messageId || '';
     appendMetaMessengerMessage(item, { mid: providerId || `quad-meta-${id()}`, text, timestamp: Date.parse(now) }, String(item.externalBusinessId || ''), metaPsidFromItem(item), 'outbound', actor.name);
+    for (const media of approvedAttachments) {
+      const imageSent = await sendMetaMessengerImage(db, item, media.attachment.url);
+      item.conversationMessages = [...(item.conversationMessages || []), {
+        id: imageSent.messageId || `quad-meta-media-${id()}`, speaker:'shop', speakerName:actor.name,
+        direction:'outbound', channel:'meta', text:media.caption || media.title || '', timestamp:new Date().toISOString(),
+        provider:'meta', status:'sent', autoReply:true, attachment:{ ...media.attachment }
+      }];
+    }
   } else if (channel === 'yelp') {
     const requestId = `quad-yelp-auto-${id()}`;
-    await sendYelpReply({ leadId: String(item.externalId || ''), businessId: String(item.externalBusinessId || ''), text, requestId });
+    const yelpText = [text, ...approvedAttachments.map(media => `${media.title || 'Photo'}: ${media.attachment.url}`)].filter(Boolean).join('\n\n');
+    await sendYelpReply({ leadId: String(item.externalId || ''), businessId: String(item.externalBusinessId || ''), text:yelpText, requestId });
     providerId = requestId;
-    item.conversationMessages = [...(item.conversationMessages || []), { id: requestId, externalEventId: requestId, speaker: 'shop', speakerName: actor.name, direction: 'outbound', channel: 'yelp', text, timestamp: now, provider: 'yelp-zapier', status: 'accepted', autoReply: true }];
+    item.conversationMessages = [...(item.conversationMessages || []), { id: requestId, externalEventId: requestId, speaker: 'shop', speakerName: actor.name, direction: 'outbound', channel: 'yelp', text:yelpText, timestamp: now, provider: 'yelp-zapier', status: 'accepted', autoReply: true }];
   } else if (channel === 'sms') {
     const digits = normalizedPhone(item.phone);
     const callbackBase = twilioConfig().webhookBaseUrl;
-    const sent = await sendTwilioSms({ to: `+1${digits}`, body: text, statusCallback: callbackBase ? `${callbackBase}/api/twilio/status` : '' });
+    const sent = await sendTwilioSms({ to: `+1${digits}`, body: text, mediaUrls:approvedAttachments.map(media => media.attachment.url), statusCallback: callbackBase ? `${callbackBase}/api/twilio/status` : '' });
     providerId = sent.sid || '';
     appendSmsMessage(item, { id: `twilio-${providerId || id()}`, speaker: 'shop', speakerName: actor.name, direction: 'outbound', channel: 'sms', text, timestamp: now, provider: 'twilio', providerSid: providerId, status: String(sent.status || 'queued'), autoReply: true });
   }
@@ -6556,7 +6629,7 @@ async function processCustomerAiAutoReplies() {
         const result = await saveCustomerAiReplyDraft(db, actor, item, collection, channel, 'reply');
         const draft = result.draft;
         if (draft.disposition === 'ready_for_review' && draft.riskLevel === 'low' && settings.autoSendLowRisk) {
-          await sendCustomerAiAutomaticReply(db, collection, item, channel, draft.replyText);
+          await sendCustomerAiAutomaticReply(db, collection, item, channel, draft.replyText, draft.attachments);
           addCustomerAiAutoReplyLog(db, { collection, recordId: item.id, customer: item.customer || item.phone, channel, status: 'sent', riskLevel: draft.riskLevel, detail: draft.note || '低风险回复已自动发送' });
           delete item.agentReplyDraft;
         } else {

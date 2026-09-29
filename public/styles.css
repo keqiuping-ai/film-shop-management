@@ -2528,6 +2528,17 @@ body.modal-lock .prospect-workspace { pointer-events: none; }
 .customer-ai-playbook-fields { display:grid; gap:10px; }
 .customer-ai-playbook-row { display:grid; grid-template-columns:1fr 1fr auto; gap:10px; align-items:end; }
 .customer-ai-playbook-fields textarea { min-height:90px; resize:vertical; }
+.customer-ai-media-rule { display:grid; gap:10px; padding:12px; border:1px solid #bddde5; border-radius:12px; background:#f7fcfd; }
+.customer-ai-media-rule-head { display:flex; justify-content:space-between; gap:12px; align-items:flex-start; }
+.customer-ai-media-rule-head p { margin:3px 0 0; color:var(--muted); font-size:12px; }
+.customer-ai-media-options { display:grid; grid-template-columns:minmax(180px,260px) minmax(0,1fr); gap:12px; align-items:end; }
+.customer-ai-media-categories { display:flex; flex-wrap:wrap; gap:8px 16px; margin:0; padding:10px 12px; border:1px solid var(--border); border-radius:9px; }
+.customer-ai-media-categories legend { padding:0 5px; color:var(--muted); font-size:12px; }
+.customer-ai-media-categories .check-row { min-width:150px; }
+.customer-agent-media { grid-column:1 / -1; display:flex; flex-wrap:wrap; gap:8px; margin-top:5px; }
+.customer-agent-media button { width:88px; padding:5px; border:1px solid #bddde5; border-radius:9px; background:#fff; color:var(--ink); cursor:pointer; text-align:left; }
+.customer-agent-media img { display:block; width:76px; height:54px; object-fit:cover; border-radius:6px; margin-bottom:4px; }
+.customer-agent-media small { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .customer-ai-rules-footer { position:sticky; bottom:12px; display:flex; justify-content:flex-end; padding:12px; border-radius:12px; background:rgba(255,255,255,.94); box-shadow:0 5px 20px rgba(0,0,0,.12); }
 .shipment-sku-field { position:relative; }
 .shipment-sku-search { position:relative; }
@@ -2565,7 +2576,7 @@ body.modal-lock .prospect-workspace { pointer-events: none; }
 .ai-coach-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px; }
 .ai-coach-actions { display:flex; align-items:center; gap:10px; }
 .ai-coach-preview { display:flex; justify-content:space-between; gap:12px; padding:12px; border-radius:10px; background:#eef8fa; }
-@media (max-width: 760px) { .customer-ai-branch-grid,.customer-ai-playbook-row { grid-template-columns:1fr; } .customer-ai-branch-grid .wide { grid-column:auto; } .customer-ai-rules-link { align-items:stretch; flex-direction:column; } }
+@media (max-width: 760px) { .customer-ai-branch-grid,.customer-ai-playbook-row,.customer-ai-media-options { grid-template-columns:1fr; } .customer-ai-media-rule-head { flex-direction:column; } .customer-ai-branch-grid .wide { grid-column:auto; } .customer-ai-rules-link { align-items:stretch; flex-direction:column; } }
 @media (max-width: 760px) { .customer-ai-experience-grid,.ai-coach-grid { grid-template-columns:1fr; } .ai-coach-panel { min-width:0; } }
 .customer-ai-knowledge-tools {
   display:flex;

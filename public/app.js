@@ -8931,9 +8931,19 @@ function customerAgentDraftHtml(item) {
     const factMismatch = customerAiDraftHasFactMismatch(draft);
     const missingChinese = lang === 'zh' ? '旧草稿没有中文，请点击“AI 生成回复”重新生成。' : 'This older draft has no Chinese version; generate a new AI reply.';
     const mismatchWarning = factMismatch ? `<div class="customer-agent-parity-warning">${lang === 'zh' ? '⚠️ 中英文关键数字或地址不一致，这条旧草稿不能直接使用，请重新生成。' : '⚠️ Key facts differ between Chinese and English. Regenerate before sending.'}</div>` : '';
-    return `<div class="customer-agent-draft ${factMismatch ? 'customer-agent-draft-mismatch' : ''}"><strong>${lang === 'zh' ? 'AI 建议（发送前请确认）' : 'AI draft (review before sending)'}</strong><span>${escapeHtml(draft.createdBy || '')} · ${escapeHtml(formatAppDateTime(draft.createdAt || ''))}</span>${mismatchWarning}<div class="customer-agent-language"><b>中文</b><p class="${chineseText ? '' : 'customer-agent-missing'}">${escapeHtml(chineseText || missingChinese)}</p></div><div class="customer-agent-language"><b>English</b><p>${escapeHtml(englishText)}</p></div></div>`;
+    const selectedMedia = (Array.isArray(draft.attachments) ? draft.attachments : []).filter(media => media?.attachment?.url);
+    const mediaHtml = selectedMedia.length ? `<div class="customer-agent-media"><strong>${lang === 'zh' ? `AI 已选 ${selectedMedia.length} 张图片` : `AI selected ${selectedMedia.length} image(s)`}</strong>${selectedMedia.map(media => `<button type="button" onclick="useCustomerAiSuggestedAttachment('${escapeHtml(media.id || '')}')" title="${lang === 'zh' ? '人工发送时点此放入待发送区' : 'Stage this image for manual sending'}"><img src="${escapeHtml(media.attachment.url)}" alt=""><small>${escapeHtml(media.title || media.attachment.name || '')}</small></button>`).join('')}</div>` : '';
+    return `<div class="customer-agent-draft ${factMismatch ? 'customer-agent-draft-mismatch' : ''}"><strong>${lang === 'zh' ? 'AI 建议（发送前请确认）' : 'AI draft (review before sending)'}</strong><span>${escapeHtml(draft.createdBy || '')} · ${escapeHtml(formatAppDateTime(draft.createdAt || ''))}</span>${mismatchWarning}<div class="customer-agent-language"><b>中文</b><p class="${chineseText ? '' : 'customer-agent-missing'}">${escapeHtml(chineseText || missingChinese)}</p></div><div class="customer-agent-language"><b>English</b><p>${escapeHtml(englishText)}</p></div>${mediaHtml}</div>`;
   }
   return `<div class="customer-agent-draft customer-agent-draft-empty"><strong>${lang === 'zh' ? 'AI 建议' : 'AI draft'}</strong><span>${lang === 'zh' ? '点击下方“AI 生成”，中文会显示在上，英文显示在下。' : 'Choose AI draft below to generate Chinese first and English below.'}</span></div>`;
+}
+
+function useCustomerAiSuggestedAttachment(templateId) {
+  const { item } = activeCustomerWorkspaceItem();
+  const media = (item?.agentReplyDraft?.attachments || []).find(row => row.id === templateId);
+  if (!media?.attachment?.url) return alert(lang === 'zh' ? '找不到这张已选图片。' : 'The selected image is unavailable.');
+  prospectPendingAttachment = { ...media.attachment };
+  renderProspectWorkspace();
 }
 
 function customerAiCustomerFacingText(text) {
@@ -11627,19 +11637,27 @@ function renderCustomerAiPlaybookEditors() {
   const container = document.getElementById('customerAiPlaybook');
   if (!container) return;
   const triggers = [['first','第一次回复'],['second','第二次回复'],['ongoing','第三次及后续'],['pricing','客户询问价格'],['visit','邀请到店'],['escalation','转人工'],['always','每次回复都执行']];
+  const mediaCategories = replyTemplateCategories.filter(category => category.id !== 'uncategorized');
   container.innerHTML = customerAiPlaybookDrafts.map((rule, index) => `<article class="customer-ai-playbook-card" data-rule-index="${index}">
     <div class="customer-ai-playbook-number">${index + 1}</div><div class="customer-ai-playbook-fields">
       <div class="customer-ai-playbook-row"><label>${lang === 'zh' ? '规则名称' : 'Rule name'}<input data-rule-field="name" value="${escapeHtml(rule.name || '')}"></label><label>${lang === 'zh' ? '什么时候使用' : 'When to apply'}<select data-rule-field="trigger">${triggers.map(([value,label]) => `<option value="${value}" ${rule.trigger === value ? 'selected' : ''}>${lang === 'zh' ? label : value}</option>`).join('')}</select></label><label class="check-row"><input data-rule-field="enabled" type="checkbox" ${rule.enabled !== false ? 'checked' : ''}><span>${lang === 'zh' ? '启用' : 'Enabled'}</span></label></div>
       <label>${lang === 'zh' ? '这一步必须遵守的详细规则' : 'Instructions for this step'}<textarea data-rule-field="instruction" rows="4" maxlength="3000">${escapeHtml(rule.instruction || '')}</textarea></label>
+      <div class="customer-ai-media-rule">
+        <div class="customer-ai-media-rule-head"><div><strong>${lang === 'zh' ? '自动带入照片和地址' : 'Automatically include photos and address'}</strong><p>${lang === 'zh' ? 'AI 只会从已批准的云端素材中选择；不相关或已经发过的素材不会重复发送。' : 'AI may only choose approved cloud media and must avoid irrelevant or repeated items.'}</p></div><label class="check-row"><input data-rule-field="autoSelectMedia" type="checkbox" ${rule.autoSelectMedia ? 'checked' : ''}><span>${lang === 'zh' ? '允许 AI 自动选图' : 'Allow AI media selection'}</span></label></div>
+        <div class="customer-ai-media-options"><label>${lang === 'zh' ? '本次最多发送图片' : 'Maximum images'}<select data-rule-field="maxImages">${[0,1,2,3].map(value => `<option value="${value}" ${Number(rule.maxImages || 0) === value ? 'selected' : ''}>${value === 0 ? (lang === 'zh' ? '不发送' : 'None') : `${value} ${lang === 'zh' ? '张' : 'image(s)'}`}</option>`).join('')}</select></label><label class="check-row"><input data-rule-field="includeBranchAddress" type="checkbox" ${rule.includeBranchAddress ? 'checked' : ''}><span>${lang === 'zh' ? '客户准备到店时附上已确认分店地址' : 'Include confirmed branch address for a visit'}</span></label></div>
+        <fieldset class="customer-ai-media-categories"><legend>${lang === 'zh' ? '允许 AI 选择的图片分类' : 'Image categories AI may use'}</legend>${mediaCategories.map(category => `<label class="check-row"><input data-rule-category="${category.id}" type="checkbox" ${(rule.mediaCategories || []).includes(category.id) ? 'checked' : ''}><span>${escapeHtml(category[lang === 'zh' ? 'zh' : 'en'])}</span></label>`).join('')}</fieldset>
+        <label>${lang === 'zh' ? 'AI 选图规则' : 'Media selection instructions'}<textarea data-rule-field="mediaInstruction" rows="3" maxlength="1200" placeholder="${lang === 'zh' ? '例如：PPF客户发断面图；改色膜发效果图和色卡；客户质疑品质时发品牌、施工或质保证明。' : 'Example: PPF cross-section; wrap examples and color cards; quality proof when quality is questioned.'}">${escapeHtml(rule.mediaInstruction || '')}</textarea></label>
+        <p class="note">${lang === 'zh' ? `当前云端图片库共有 ${(state.replyTemplates || []).filter(item => item.type === 'image' && item.attachment?.url).length} 张可配置图片。需要新增或调整素材时，请到“云端回复素材库”。` : `${(state.replyTemplates || []).filter(item => item.type === 'image' && item.attachment?.url).length} cloud images are available for configuration.`}</p>
+      </div>
       <div class="mini-actions"><button class="btn" onclick="moveCustomerAiPlaybookRule(${index},-1)">↑</button><button class="btn" onclick="moveCustomerAiPlaybookRule(${index},1)">↓</button><button class="btn danger" onclick="removeCustomerAiPlaybookRule(${index})">${lang === 'zh' ? '删除规则' : 'Delete'}</button></div>
     </div></article>`).join('');
 }
 
 function readCustomerAiPlaybook() {
-  return [...document.querySelectorAll('#customerAiPlaybook .customer-ai-playbook-card')].map((card,index) => { const existing=customerAiPlaybookDrafts[index]||{}; const value=field=>String(card.querySelector(`[data-rule-field="${field}"]`)?.value||'').trim(); return { id:existing.id||`rule-${Date.now()}-${index}`, name:value('name'), trigger:value('trigger'), enabled:Boolean(card.querySelector('[data-rule-field="enabled"]')?.checked), instruction:value('instruction') }; });
+  return [...document.querySelectorAll('#customerAiPlaybook .customer-ai-playbook-card')].map((card,index) => { const existing=customerAiPlaybookDrafts[index]||{}; const value=field=>String(card.querySelector(`[data-rule-field="${field}"]`)?.value||'').trim(); return { id:existing.id||`rule-${Date.now()}-${index}`, name:value('name'), trigger:value('trigger'), enabled:Boolean(card.querySelector('[data-rule-field="enabled"]')?.checked), instruction:value('instruction'), autoSelectMedia:Boolean(card.querySelector('[data-rule-field="autoSelectMedia"]')?.checked), includeBranchAddress:Boolean(card.querySelector('[data-rule-field="includeBranchAddress"]')?.checked), maxImages:Number(value('maxImages')||0), mediaCategories:[...card.querySelectorAll('[data-rule-category]:checked')].map(input=>input.dataset.ruleCategory), mediaInstruction:value('mediaInstruction') }; });
 }
 
-function addCustomerAiPlaybookRule() { customerAiPlaybookDrafts=readCustomerAiPlaybook(); customerAiPlaybookDrafts.push({id:`rule-${Date.now()}`,name:'',trigger:'always',enabled:true,instruction:''}); renderCustomerAiPlaybookEditors(); }
+function addCustomerAiPlaybookRule() { customerAiPlaybookDrafts=readCustomerAiPlaybook(); customerAiPlaybookDrafts.push({id:`rule-${Date.now()}`,name:'',trigger:'always',enabled:true,instruction:'',autoSelectMedia:false,includeBranchAddress:false,maxImages:0,mediaCategories:[],mediaInstruction:''}); renderCustomerAiPlaybookEditors(); }
 function removeCustomerAiPlaybookRule(index) { if(customerAiPlaybookDrafts.length<=1)return alert(lang==='zh'?'至少保留一条规则。':'Keep at least one rule.'); customerAiPlaybookDrafts=readCustomerAiPlaybook().filter((_,i)=>i!==index); renderCustomerAiPlaybookEditors(); }
 function moveCustomerAiPlaybookRule(index,offset) { const rows=readCustomerAiPlaybook(); const target=index+offset; if(target<0||target>=rows.length)return; [rows[index],rows[target]]=[rows[target],rows[index]]; customerAiPlaybookDrafts=rows; renderCustomerAiPlaybookEditors(); }
 
