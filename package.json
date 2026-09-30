@@ -13,6 +13,7 @@
     "audit:data": "node scripts/audit-data-integrity.js",
     "test:catalog-search": "node scripts/test-customer-cross-catalog-inventory-search.js",
     "test:customer-checkout": "node scripts/test-customer-checkout-idempotency.js",
+    "test:customer-ordering-navigation": "node scripts/test-customer-ordering-navigation.js",
     "test:portal-safety": "node scripts/test-portal-customer-safety.js",
     "test:portal-links": "node scripts/test-portal-customer-link-reconciliation.js",
     "test:yelp-import": "node scripts/test-yelp-partial-import.js",

@@ -1,11 +1,5 @@
 window.showOrderCenter = function () {
-  document.getElementById('landing')?.classList.add('hidden');
-  document.getElementById('login')?.classList.add('hidden');
-  document.getElementById('app')?.classList.add('hidden');
-  document.getElementById('ppfCatalog')?.classList.add('hidden');
-  document.getElementById('colorWrapCatalog')?.classList.add('hidden');
-  document.getElementById('windowFilmCatalog')?.classList.add('hidden');
-  document.getElementById('orderCenter')?.classList.remove('hidden');
+  showOnlyCustomerScreen('orderCenter');
   window.scrollTo({ top: 0, behavior: 'auto' });
 };
 
@@ -33,6 +27,15 @@ window.previewOrderCategory = function (name) {
 window.closeOrderCategoryNotice = function () {
   document.getElementById('orderCategoryNotice')?.classList.add('hidden');
 };
+
+document.querySelectorAll('#orderCenter .order-category-list article').forEach(article=>{
+  const openButton=article.querySelector('button');
+  if(!openButton)return;
+  article.tabIndex=0;
+  article.setAttribute('role','button');
+  article.addEventListener('click',event=>{if(!event.target.closest('button'))openButton.click()});
+  article.addEventListener('keydown',event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();openButton.click()}});
+});
 
 document.body.insertAdjacentHTML('beforeend', `
   <section id="ppfCatalog" class="ppf-catalog hidden">
@@ -136,8 +139,7 @@ window.selectCustomPattern = function (button,name) {
 };
 
 window.showColorWrapCatalog = function () {
-  ['landing','login','app','orderCenter','ppfCatalog','windowFilmCatalog'].forEach(id=>document.getElementById(id)?.classList.add('hidden'));
-  document.getElementById('colorWrapCatalog').classList.remove('hidden');
+  showOnlyCustomerScreen('colorWrapCatalog');
   activateWrapColorImages();
   window.scrollTo({top:0,behavior:'auto'});
 };
@@ -383,8 +385,15 @@ function ppfOrderControls(name) {
     ? '<option value="" disabled selected>请选择规格</option><option value="1.52*15m">1.52 米 × 15 米</option>'
     : '<option value="" disabled selected>请选择规格</option><option value="60*50">60 英寸 × 50 英尺</option><option value="72*50">72 英寸 × 50 英尺</option>';
 
-  return `<div class="ppf-variant-list"><div class="ppf-variant-row"><label class="ppf-model-field">具体型号 <small>${modelHint}</small><select>${modelOptions}</select></label><label>规格<select>${sizeOptions}</select></label><label>数量<input type="number" min="1" value="1"></label><button class="ppf-remove-variant hidden" type="button" aria-label="删除这一项" onclick="removePpfVariantRow(this)">×</button></div></div><button class="ppf-add-variant" type="button" onclick="addPpfVariantRow(this)">＋ 添加另一个型号</button><button class="ppf-preview-button" onclick="addPpfProductToCart(this,'${name}')">＋ 加入购物车</button>`;
+  return `<div class="ppf-variant-list"><div class="ppf-variant-row"><label class="ppf-model-field">具体型号 <small>${modelHint}</small><select onchange="syncPpfVariantRow(this)">${modelOptions}</select></label><label>规格<select>${sizeOptions}</select></label><label>数量<input type="number" min="1" value="1"></label><button class="ppf-remove-variant hidden" type="button" aria-label="删除这一项" onclick="removePpfVariantRow(this)">×</button></div></div><button class="ppf-add-variant" type="button" onclick="addPpfVariantRow(this)">＋ 添加另一个型号</button><button class="ppf-preview-button" onclick="addPpfProductToCart(this,'${name}')">＋ 加入购物车</button>`;
 }
+
+window.syncPpfVariantRow = function (modelSelect) {
+  const sizeSelect=modelSelect.closest('.ppf-variant-row')?.querySelectorAll('select')?.[1];
+  if(!sizeSelect)return;
+  const choices=[...sizeSelect.options].filter(option=>option.value&&!option.disabled);
+  if(modelSelect.value&&choices.length===1)sizeSelect.value=choices[0].value;
+};
 
 window.addPpfVariantRow = function (button) {
   const list = button.previousElementSibling;
@@ -401,13 +410,7 @@ window.removePpfVariantRow = function (button) {
 };
 
 window.showPpfCatalog = function () {
-  document.getElementById('landing')?.classList.add('hidden');
-  document.getElementById('login')?.classList.add('hidden');
-  document.getElementById('app')?.classList.add('hidden');
-  document.getElementById('orderCenter')?.classList.add('hidden');
-  document.getElementById('colorWrapCatalog')?.classList.add('hidden');
-  document.getElementById('windowFilmCatalog')?.classList.add('hidden');
-  document.getElementById('ppfCatalog')?.classList.remove('hidden');
+  showOnlyCustomerScreen('ppfCatalog');
   window.scrollTo({ top: 0, behavior: 'auto' });
 };
 
@@ -558,7 +561,7 @@ function renderWindowFilmSeries(s){return `<article class="window-film-series"><
 
 document.body.insertAdjacentHTML('beforeend',`<section id="windowFilmCatalog" class="window-film-catalog hidden"><header class="order-center-header"><button class="order-center-brand" onclick="showOrderCenter()"><img src="/quad-film-icon.png" alt="QUAD FILM"><span><b>QUAD FILM</b><small>汽车窗膜产品订购页</small></span></button><div><button class="order-home-button" onclick="showOrderCenter()">← 返回产品分类</button><button class="order-login-button" onclick="showLogin()">经销商登录</button></div></header><main class="window-film-main"><section class="window-film-intro"><span>03 · 汽车隔热膜</span><h1>选择窗膜型号</h1><p>按性能等级、透光率和应用位置选择产品。QUaD 窗膜重点突出高清、高透、低雾度、强隔热和良好的热收缩施工表现。</p><div><b>高清低雾度</b><b>高效隔热</b><b>收缩施工友好</b><b>多种透光率</b></div></section><nav class="window-film-tier-nav"><button onclick="document.getElementById('windowFilmTier1').scrollIntoView({behavior:'smooth'})">顶级双银</button><button onclick="document.getElementById('windowFilmTier2').scrollIntoView({behavior:'smooth'})">SP 混合系列</button><button onclick="document.getElementById('windowFilmTier3').scrollIntoView({behavior:'smooth'})">Nano 陶瓷</button><button onclick="document.getElementById('windowFilmTier4').scrollIntoView({behavior:'smooth'})">P 经济系列</button><button onclick="document.getElementById('windowFilmTier5').scrollIntoView({behavior:'smooth'})">TAI 天窗专用</button></nav><section class="window-film-series-list">${windowFilmSeries.map((s,i)=>`<div id="windowFilmTier${i+1}">${renderWindowFilmSeries(s)}</div>`).join('')}</section><section id="windowFilmQuickOrder" class="window-film-quick-order"><div class="window-film-inventory-search"><label>搜索其他库存型号<input id="windowFilmInventorySearch" type="search" autocomplete="off" placeholder="例如：A18、A20、A17" oninput="searchWindowFilmInventory(this.value)"></label><small>只显示当前可购买且有库存的窗膜；价格按当前登录客户的协议价或等级价结算。</small><div id="windowFilmInventoryResults" class="window-film-inventory-results hidden"></div></div><div><span>快速选货与下单</span><h2 id="windowFilmSelectedModel">请先选择上方型号</h2><p id="windowFilmSelectedSeries">型号参数将自动带入这里</p></div><label>卷材规格<select id="windowFilmSize">${windowFilmSizeOptions()}</select></label><label>数量<input id="windowFilmQty" type="number" min="1" value="1"></label><button onclick="addWindowFilmOrder()">＋ 加入订单</button></section><section id="windowFilmSelectedList" class="window-film-selected-list hidden"><header><div><span>当前订单</span><h2>窗膜订购清单</h2></div><b id="windowFilmSelectedCount">0 项</b></header><div id="windowFilmSelectedRows"></div><button onclick="previewWindowFilmCheckout()">下一步：去结账 →</button><p>当前为页面设计预览，不查询实时库存、不扣减库存，也不会生成正式订单。</p></section><div id="windowFilmCheckoutPreview" class="wrap-checkout-preview hidden"><b>下一步：统一结账</b><p>正式版本会把窗膜、PPF、改色膜等产品合并到同一个购物车，再统一核对库存、地址、运费、税费和付款信息。</p><button onclick="this.parentElement.classList.add('hidden')">继续检查本页</button></div></main></section>`);
 
-window.showWindowFilmCatalog=function(){['landing','login','app','orderCenter','ppfCatalog','colorWrapCatalog'].forEach(id=>document.getElementById(id)?.classList.add('hidden'));document.getElementById('windowFilmCatalog')?.classList.remove('hidden');window.scrollTo({top:0,behavior:'auto'})};
+window.showWindowFilmCatalog=function(){showOnlyCustomerScreen('windowFilmCatalog');window.scrollTo({top:0,behavior:'auto'})};
 window.searchWindowFilmInventory=function(value){
   const results=document.getElementById('windowFilmInventoryResults'),query=normalizeCatalogToken(value);
   if(!results)return;
@@ -675,7 +678,7 @@ function dealerPriceHtml(item){
 
 window.showDealerCheckout=function(){
   if(!token||!state?.customer){window.quadResumeDealerCheckout=true;showLogin();return}
-  ['landing','login','app','orderCenter','ppfCatalog','colorWrapCatalog','windowFilmCatalog'].forEach(id=>document.getElementById(id)?.classList.add('hidden'));
+  showOnlyCustomerScreen('dealerCheckout');
   const items=checkoutPreviewItems(),container=document.getElementById('checkoutItems');
   const unavailableCatalogItem=items.find(item=>item.type&&!dealerPriceForSku(item.sku));
   if(unavailableCatalogItem){alert('A selected model and size are no longer available. Please return to the product page and select again.');showOrderCenter();return}
