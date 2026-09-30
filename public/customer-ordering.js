@@ -586,7 +586,7 @@ window.updateWindowFilmCount=function(){const rows=document.getElementById('wind
 window.previewWindowFilmCheckout=function(){const preview=document.getElementById('windowFilmCheckoutPreview');preview.classList.remove('hidden');preview.scrollIntoView({behavior:'smooth',block:'center'})};
 
 // Unified dealer checkout. Card details are collected only by Stripe Checkout.
-document.body.insertAdjacentHTML('beforeend',`<section id="dealerCheckout" class="dealer-checkout hidden"><header class="order-center-header"><button class="order-center-brand" onclick="closeDealerCheckout()"><img src="/quad-film-icon.png" alt="QUAD FILM"><span><b>QUAD FILM</b><small>统一结账</small></span></button><div><button class="order-home-button" onclick="closeDealerCheckout()">← 返回继续选货</button><button class="order-login-button" onclick="showLogin()">经销商登录</button></div></header><main class="checkout-main"><section class="checkout-title"><span>QUAD FILM · 经销商采购</span><h1>核对订单并付款</h1><p>不同产品分类的商品集中在这里统一确认。当前为付款页面设计预览，不会产生真实订单或扣款。</p></section><div class="checkout-layout"><div class="checkout-left"><section class="checkout-card"><header><div><span>01</span><h2>订单商品</h2></div><b id="checkoutItemCount">0 项</b></header><div id="checkoutItems"></div><button class="checkout-add-more" onclick="showOrderCenter()">＋ 继续添加产品</button></section><section class="checkout-card"><header><div><span>02</span><h2>收货信息</h2></div></header><div class="checkout-fields"><label class="wide">公司 / 门店名称<input autocomplete="organization"></label><label>收货人<input autocomplete="name"></label><label>联系电话<input type="tel" placeholder="美国手机号码" autocomplete="tel"></label><label class="wide">街道地址<input placeholder="Street address" autocomplete="street-address"></label><label>城市<input placeholder="City" autocomplete="address-level2"></label><label>州<select autocomplete="address-level1"><option>NV · Nevada</option><option>CA · California</option><option>AZ · Arizona</option><option>TX · Texas</option></select></label><label>邮编<input inputmode="numeric" placeholder="ZIP Code" autocomplete="postal-code"></label></div></section><section class="checkout-card"><header><div><span>03</span><h2>配送方式</h2></div></header><label class="checkout-choice selected"><input type="radio" name="shipping" value="delivery" checked onchange="updateCheckoutTotals()"><i></i><span><b>标准商业配送</b><small>预计 3–5 个工作日 · 运费确认后计入</small></span><strong>待确认</strong></label><label class="checkout-choice"><input type="radio" name="shipping" value="pickup-las-vegas" onchange="updateCheckoutTotals()"><i></i><span><b>拉斯维加斯仓库自提</b><small>备货完成后通知取货 · 以拉斯维加斯仓库存为准</small></span><strong>$0</strong></label><label class="checkout-choice"><input type="radio" name="shipping" value="pickup-los-angeles" onchange="updateCheckoutTotals()"><i></i><span><b>洛杉矶仓库自提</b><small>备货完成后通知取货 · 以洛杉矶仓库存为准</small></span><strong>$0</strong></label></section><section class="checkout-card"><header><div><span>04</span><h2>付款方式</h2></div><em>安全支付</em></header><label class="checkout-choice selected"><input type="radio" name="payment" checked><i></i><span><b>信用卡 / 借记卡</b><small>Visa · Mastercard · American Express</small></span></label><div class="checkout-card-fields"><label class="wide">持卡人姓名<input placeholder="Name on card" autocomplete="cc-name"></label><label class="wide">卡号<div class="checkout-fake-input">••••&nbsp; ••••&nbsp; ••••&nbsp; •••• <span>VISA</span></div></label><label>有效期<input placeholder="MM / YY" autocomplete="cc-exp"></label><label>安全码<input placeholder="CVC" autocomplete="cc-csc"></label></div><p class="checkout-security">正式接入 Stripe 后，完整卡号将由支付平台安全处理，QUaD 系统不保存完整信用卡资料。</p></section><label class="checkout-notes">订单备注<textarea placeholder="填写送货要求、PO 编号或其他说明（选填）"></textarea></label></div><aside class="checkout-summary"><span>订单汇总</span><h2>付款明细</h2><dl><div><dt>商品小计</dt><dd id="checkoutSubtotal">登录后显示</dd></div><div><dt>配送费</dt><dd id="checkoutShippingFee">待确认</dd></div><div><dt>销售税</dt><dd>按收货或自提地址计算</dd></div></dl><div class="checkout-total"><span>应付总额</span><b>确认后显示</b></div><button type="button" onclick="previewCheckoutSubmit()">确认订单并付款</button><small>点击后仅查看设计提示，不会扣款。</small><div class="checkout-assurance"><b>✓ 库存确认后付款</b><b>✓ 美国信用卡安全支付</b><b>✓ 订单与物流统一跟踪</b></div></aside></div></main></section>`);
+document.body.insertAdjacentHTML('beforeend',`<section id="dealerCheckout" class="dealer-checkout hidden"><header class="order-center-header"><button class="order-center-brand" onclick="closeDealerCheckout()"><img src="/quad-film-icon.png" alt="QUAD FILM"><span><b>QUAD FILM</b><small>统一结账</small></span></button><div><button class="order-home-button" onclick="closeDealerCheckout()">← 返回继续选货</button><button class="order-login-button" onclick="showLogin()">经销商登录</button></div></header><main class="checkout-main"><section class="checkout-title"><span>QUAD FILM · 经销商采购</span><h1>核对订单并付款</h1><p>不同产品分类的商品集中在这里统一确认。</p></section><div class="checkout-layout"><div class="checkout-left"><section class="checkout-card"><header><div><span>01</span><h2>订单商品</h2></div><b id="checkoutItemCount">0 项</b></header><div id="checkoutItems"></div><button class="checkout-add-more" onclick="showOrderCenter()">＋ 继续添加产品</button></section><section class="checkout-card"><header><div><span>02</span><h2>收货信息</h2></div></header><div class="checkout-fields"><label class="wide">公司 / 门店名称<input autocomplete="organization"></label><label>收货人<input autocomplete="name"></label><label>联系电话<input type="tel" placeholder="美国手机号码" autocomplete="tel"></label><label class="wide">街道地址<input placeholder="Street address" autocomplete="street-address"></label><label>城市<input placeholder="City" autocomplete="address-level2"></label><label>州<select autocomplete="address-level1"><option>NV · Nevada</option><option>CA · California</option><option>AZ · Arizona</option><option>TX · Texas</option></select></label><label>邮编<input inputmode="numeric" placeholder="ZIP Code" autocomplete="postal-code"></label></div></section><section class="checkout-card"><header><div><span>03</span><h2>配送方式</h2></div></header><label class="checkout-choice selected"><input type="radio" name="shipping" value="delivery" checked onchange="updateCheckoutTotals()"><i></i><span><b>标准商业配送</b><small>预计 3–5 个工作日 · 运费确认后计入</small></span><strong>待确认</strong></label><label class="checkout-choice"><input type="radio" name="shipping" value="pickup-las-vegas" onchange="updateCheckoutTotals()"><i></i><span><b>拉斯维加斯仓库自提</b><small>备货完成后通知取货 · 以拉斯维加斯仓库存为准</small></span><strong>$0</strong></label><label class="checkout-choice"><input type="radio" name="shipping" value="pickup-los-angeles" onchange="updateCheckoutTotals()"><i></i><span><b>洛杉矶仓库自提</b><small>备货完成后通知取货 · 以洛杉矶仓库存为准</small></span><strong>$0</strong></label></section><section class="checkout-card"><header><div><span>04</span><h2>付款方式</h2></div><em>安全支付</em></header><label class="checkout-choice selected"><input type="radio" name="payment" checked><i></i><span><b>信用卡 / 借记卡</b><small>Visa · Mastercard · American Express</small></span></label><p class="checkout-security">卡号、有效期和安全码仅在 Stripe 安全付款页面填写，QUaD 系统不保存完整信用卡资料。</p></section><label class="checkout-notes">订单备注<textarea placeholder="填写送货要求、PO 编号或其他说明（选填）"></textarea></label></div><aside class="checkout-summary"><span>订单汇总</span><h2>付款明细</h2><dl><div><dt>商品小计</dt><dd id="checkoutSubtotal">登录后显示</dd></div><div><dt>配送费</dt><dd id="checkoutShippingFee">待确认</dd></div><div><dt>销售税</dt><dd>按收货或自提地址计算</dd></div></dl><div class="checkout-total"><span>应付总额</span><b>确认后显示</b></div><div id="checkoutProgress" class="checkout-progress hidden" role="status" aria-live="polite"><b>请稍后，不要重复点击或关闭页面</b><div><i></i></div><span>正在准备付款…</span></div><button type="button" onclick="previewCheckoutSubmit()">确认订单并付款</button><small>系统将核对价格和库存，然后打开 Stripe 安全付款。</small><div class="checkout-assurance"><b>✓ 库存确认后付款</b><b>✓ 美国信用卡安全支付</b><b>✓ 订单与物流统一跟踪</b></div></aside></div></main></section>`);
 
 const dealerCheckout=document.getElementById('dealerCheckout');
 dealerCheckout.querySelector('.checkout-title')?.insertAdjacentHTML('afterend','<section class="checkout-customer-session"><span>CURRENT CUSTOMER</span><div data-i18n-user-content><strong id="checkoutCustomerIdentity"></strong><small id="checkoutCustomerAccount"></small></div><button type="button" onclick="logout()">SIGN OUT</button></section>');
@@ -714,8 +714,32 @@ window.updateCheckoutTotals=function(){
   if(button)button.textContent=pickup?`CONTINUE TO STRIPE ${state?.paymentEnvironment==='live'?'LIVE':'TEST'} CHECKOUT`:'PAY FOR PRODUCTS (SHIPPING CONFIRMED LATER)';
   document.querySelectorAll('input[name="shipping"]').forEach(input=>input.closest('.checkout-choice')?.classList.toggle('selected',input.checked));
 };
+let dealerCheckoutSubmitting=false;
+function dealerCheckoutProgress(step,text){
+  const box=document.getElementById('checkoutProgress');
+  if(!box)return;
+  box.classList.toggle('hidden',!step);
+  box.dataset.step=String(step||0);
+  const label=box.querySelector('span');if(label&&text)label.textContent=text;
+}
+function stableDealerCheckoutRequestId(payload){
+  const signature=JSON.stringify(payload);
+  const storageKey='quadCustomer.checkoutRequest';
+  try{
+    const saved=JSON.parse(sessionStorage.getItem(storageKey)||'null');
+    if(saved?.signature===signature&&saved?.requestId)return saved.requestId;
+    const requestId=`customer-checkout-${Date.now()}-${Math.random().toString(36).slice(2,10)}`;
+    sessionStorage.setItem(storageKey,JSON.stringify({signature,requestId}));
+    return requestId;
+  }catch{return `customer-checkout-${Date.now()}-${Math.random().toString(36).slice(2,10)}`}
+}
 window.previewCheckoutSubmit=async function(){
   const button=document.querySelector('#dealerCheckout .checkout-summary button');
+  if(dealerCheckoutSubmitting)return;
+  dealerCheckoutSubmitting=true;
+  document.getElementById('dealerCheckout')?.classList.add('checkout-processing');
+  if(button){button.disabled=true;button.textContent='PLEASE WAIT…'}
+  dealerCheckoutProgress(1,'1/4 · Saving delivery information…');
   try{
     if(!token||!state?.customer){window.quadResumeDealerCheckout=true;showLogin();throw new Error('Please sign in with your dealer account. You will return to checkout after sign-in.')}
     const rows=[...document.querySelectorAll('#checkoutItems .checkout-item')];
@@ -728,12 +752,17 @@ window.previewCheckoutSubmit=async function(){
     const shippingAddress=fulfillment==='delivery'?checkoutDeliveryProfile():null;
     if(shippingAddress&&(!shippingAddress.recipient||!shippingAddress.phone||!shippingAddress.street||!shippingAddress.city||!shippingAddress.state||!shippingAddress.postalCode))throw new Error('For shipment, enter the recipient, phone, street, city, state, and ZIP code.');
     await saveCheckoutDeliveryProfile(false);
-    button.disabled=true;button.textContent='VERIFYING PRICE AND INVENTORY…';
+    dealerCheckoutProgress(2,'2/4 · Verifying price and inventory…');
     const locale=window.QuadI18n?.locale||localStorage.getItem('quadCustomer.locale')||'en';
-    const result=await api('/api/customer/checkout-session',{method:'POST',body:JSON.stringify({requestId:`customer-checkout-${Date.now()}`,items:[...grouped].map(([sku,qty])=>({sku,qty})),fulfillment,shippingAddress,notes:document.querySelector('.checkout-notes textarea')?.value||'',locale})});
+    const checkoutPayload={items:[...grouped].map(([sku,qty])=>({sku,qty})),fulfillment,shippingAddress,notes:document.querySelector('.checkout-notes textarea')?.value||'',locale};
+    checkoutPayload.requestId=stableDealerCheckoutRequestId(checkoutPayload);
+    dealerCheckoutProgress(3,'3/4 · Creating secure Stripe payment…');
+    const result=await api('/api/customer/checkout-session',{method:'POST',headers:{'Idempotency-Key':checkoutPayload.requestId},body:JSON.stringify(checkoutPayload)});
     if(!result.checkoutUrl)throw new Error('Stripe Checkout did not return a secure payment URL.');
+    dealerCheckoutProgress(4,'4/4 · Redirecting to Stripe. Please do not click again…');
+    button.textContent='OPENING STRIPE…';
     location.href=result.checkoutUrl;
-  }catch(error){alert(error.message);if(button){button.disabled=false;updateCheckoutTotals()}}
+  }catch(error){alert(error.message);dealerCheckoutSubmitting=false;document.getElementById('dealerCheckout')?.classList.remove('checkout-processing');dealerCheckoutProgress(0);if(button){button.disabled=false;updateCheckoutTotals()}}
 };
 window.previewWrapCheckout=window.showDealerCheckout;
 window.previewWindowFilmCheckout=window.showDealerCheckout;

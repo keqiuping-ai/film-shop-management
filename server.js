@@ -7786,7 +7786,13 @@ function releaseOrderInventoryReservations(db, orderId, status = 'released') {
   (db.inventoryReservations || []).filter(row => row.orderId === orderId && ['pending_payment','paid'].includes(row.status)).forEach(row => { row.status = status; row.updatedAt = new Date().toISOString(); });
 }
 
-async function stripeFormRequest(pathname, fields) {
+const customerCheckoutRequestsInFlight = new Map();
+
+function customerCheckoutIdempotencyKey(...parts) {
+  return `quad-customer-checkout-${crypto.createHash('sha256').update(parts.map(value => String(value || '')).join('\n')).digest('hex')}`;
+}
+
+async function stripeFormRequest(pathname, fields, { idempotencyKey = '' } = {}) {
   const secretKey = String(process.env.STRIPE_SECRET_KEY || '').trim();
   if (!secretKey) throw new Error('Stripe sandbox secret key is not configured.');
   if (secretKey.startsWith('sk_live_') && process.env.STRIPE_CUSTOMER_ORDER_LIVE_ENABLED !== 'true') throw new Error('Live Stripe payments are locked. Set STRIPE_CUSTOMER_ORDER_LIVE_ENABLED=true only after final approval.');
@@ -7795,7 +7801,21 @@ async function stripeFormRequest(pathname, fields) {
   const stripeApiBase = process.env.NODE_ENV === 'test' && process.env.STRIPE_API_BASE_URL
     ? String(process.env.STRIPE_API_BASE_URL).replace(/\/$/, '')
     : 'https://api.stripe.com';
-  const response = await fetch(`${stripeApiBase}/v1/${pathname}`, { method:'POST', headers:{ Authorization:`Bearer ${secretKey}`, 'Content-Type':'application/x-www-form-urlencoded' }, body:form });
+  const headers = { Authorization:`Bearer ${secretKey}`, 'Content-Type':'application/x-www-form-urlencoded' };
+  if (idempotencyKey) headers['Idempotency-Key'] = String(idempotencyKey).slice(0,255);
+  const response = await fetch(`${stripeApiBase}/v1/${pathname}`, { method:'POST', headers, body:form });
+  const body = await response.json().catch(()=>({}));
+  if (!response.ok) throw new Error(body?.error?.message || `Stripe request failed (${response.status}).`);
+  return body;
+}
+
+async function stripeGetRequest(pathname) {
+  const secretKey = String(process.env.STRIPE_SECRET_KEY || '').trim();
+  if (!secretKey) throw new Error('Stripe secret key is not configured.');
+  const stripeApiBase = process.env.NODE_ENV === 'test' && process.env.STRIPE_API_BASE_URL
+    ? String(process.env.STRIPE_API_BASE_URL).replace(/\/$/, '')
+    : 'https://api.stripe.com';
+  const response = await fetch(`${stripeApiBase}/v1/${pathname}`, { headers:{ Authorization:`Bearer ${secretKey}` } });
   const body = await response.json().catch(()=>({}));
   if (!response.ok) throw new Error(body?.error?.message || `Stripe request failed (${response.status}).`);
   return body;
@@ -7834,7 +7854,9 @@ async function createCustomPrintedFilmStripeSession(req, db, customer, order, lo
     'line_items[0][quantity]':1
   };
   applyCustomerStripeFields(fields, customer, locale);
-  const session = await stripeFormRequest('checkout/sessions', fields);
+  const session = await stripeFormRequest('checkout/sessions', fields, {
+    idempotencyKey:customerCheckoutIdempotencyKey(customer.id, order.portalRequestId || order.id, 'custom-printed-film')
+  });
   order.stripeCheckoutSessionId=String(session.id || '');
   order.checkoutUrl=String(session.url || '');
   order.paymentStatus='pending';
@@ -7982,6 +8004,11 @@ async function api(req, res) {
       eventRecord.processed = result.ok;
       eventRecord.result = result.error || (result.duplicate ? 'duplicate' : 'paid');
       eventRecord.orderId = result.order?.id || '';
+      if (!result.ok) {
+        console.error('Stripe customer-order webhook reconciliation failed:',eventRecord);
+        audit(db,{ id:'stripe-customer-order-webhook',name:'Stripe' },'stripe-customer-order-webhook-failed',{ collection:'salesOrders',recordId:eventRecord.orderId,detail:`${eventRecord.id} · ${eventRecord.result}` });
+        notifyDataChanged('stripe-customer-order-webhook-failed',eventRecord.orderId || eventRecord.id);
+      }
     } else if (event.type === 'charge.refunded') {
       const paymentIntentId = String(session.payment_intent || '').trim();
       const order = (db.salesOrders || []).find(row => row.portalSource && row.stripePaymentIntentId === paymentIntentId);
@@ -8280,6 +8307,30 @@ async function api(req, res) {
       writeDb(db);
       return send(res,200,{ ok:true,deliveryProfile:profile });
     }
+    if (req.method === 'POST' && url.pathname === '/api/customer/checkout-session/confirm') {
+      const body = await readBody(req);
+      const sessionId = String(body.sessionId || '').trim();
+      if (!/^cs_[A-Za-z0-9_]+$/.test(sessionId)) return send(res,400,{ error:'The Stripe Checkout Session ID is invalid.' });
+      try {
+        const session = await stripeGetRequest(`checkout/sessions/${encodeURIComponent(sessionId)}`);
+        const orderId = String(session.client_reference_id || session.metadata?.orderId || '').trim();
+        const order = (db.salesOrders || []).find(row => row.id === orderId && row.portalSource && row.portalCustomerId === customer.id);
+        if (!order || String(session.metadata?.portalCustomerId || '') !== customer.id) return send(res,404,{ error:'This payment does not belong to the signed-in customer.' });
+        if (session.payment_status === 'paid') {
+          const reconciliation = { id:`checkout-return:${session.id}`,type:'checkout.session.return_reconciliation',livemode:session.livemode === true };
+          const result = confirmCustomerCheckout(db,session,reconciliation);
+          if (!result.ok) throw new Error(result.error || 'Payment reconciliation failed.');
+          audit(db,{ id:`customer-${customer.id}`,name:customer.businessName || customer.contactName },'reconcile-customer-checkout',{ collection:'salesOrders',recordId:order.id,recordLabel:order.customer,detail:`Stripe return reconciliation ${session.id}` });
+          writeDb(db);notifyDataChanged('stripe-customer-order-reconciled',order.id);
+        }
+        return send(res,200,{ orderId:order.id,paymentStatus:order.paymentStatus || 'pending',paid:Number(order.paid || 0),stripePaymentStatus:session.payment_status || 'unpaid' });
+      } catch(error) {
+        console.error('Stripe checkout return reconciliation failed:',error);
+        audit(db,{ id:'stripe-return-reconciliation',name:'Stripe' },'stripe-customer-order-reconciliation-failed',{ detail:String(error.message || error).slice(0,500) });
+        writeDb(db);notifyDataChanged('stripe-customer-order-reconciliation-failed',sessionId);
+        return send(res,502,{ error:'Payment was received by Stripe, but QUaD is still confirming the order. Please do not pay again.',code:'PAYMENT_RECONCILIATION_PENDING' });
+      }
+    }
     if (req.method === 'POST' && url.pathname === '/api/customer/custom-printed-film/checkout-session') {
       const body = await readBody(req);
       const requestId = String(body.requestId || '').trim().slice(0,120);
@@ -8341,6 +8392,8 @@ async function api(req, res) {
     }
     if (req.method === 'POST' && url.pathname === '/api/customer/checkout-session') {
       const body = await readBody(req);
+      const requestId = String(body.requestId || req.headers['idempotency-key'] || '').trim().slice(0,120);
+      if (!requestId) return send(res,400,{ error:'The checkout request ID is missing.' });
       const fulfillment = String(body.fulfillment || '');
       if (!['delivery','pickup-las-vegas','pickup-los-angeles'].includes(fulfillment)) return send(res,400,{ error:'请选择发货、拉斯维加斯自提或洛杉矶自提。' });
       const rawRequested = (Array.isArray(body.items) ? body.items : []).slice(0,50);
@@ -8376,7 +8429,21 @@ async function api(req, res) {
       }
       if (!items.length) return send(res,400,{ error:'Select at least one product.' });
       const subtotal = Math.round(items.reduce((sum,line)=>sum+line.qty*line.unitPrice,0)*100)/100;
-      const orderId = id();
+      const requestKey = `${customer.id}:${requestId}`;
+      const pendingRequest = customerCheckoutRequestsInFlight.get(requestKey);
+      if (pendingRequest) {
+        const repeated = await pendingRequest;
+        return send(res,repeated.status,repeated.body);
+      }
+      const existingOrder = (db.salesOrders || []).find(order => order.portalCustomerId === customer.id && order.portalRequestId === requestId);
+      if (existingOrder) {
+        if (String(existingOrder.paymentStatus || '').toLowerCase() === 'paid') return send(res,409,{ error:'This order has already been paid.',orderId:existingOrder.id,code:'ORDER_ALREADY_PAID' });
+        if (existingOrder.checkoutUrl) return send(res,200,{ orderId:existingOrder.id,checkoutUrl:existingOrder.checkoutUrl,expiresAt:existingOrder.checkoutExpiresAt,total:Number(existingOrder.checkoutTotal||subtotal),currency:'usd',duplicate:true });
+      }
+      let finishCheckoutRequest;
+      const checkoutRequestPromise = new Promise(resolve => { finishCheckoutRequest = resolve; });
+      customerCheckoutRequestsInFlight.set(requestKey, checkoutRequestPromise);
+      const orderId = existingOrder?.id || id();
       const now = new Date();
       const expiresAt = new Date(now.getTime()+CUSTOMER_CHECKOUT_HOLD_MINUTES*60_000).toISOString();
       const fulfillmentBranchIds = fulfillment === 'delivery' ? deliveryBranchIds : [branchId];
@@ -8385,8 +8452,12 @@ async function api(req, res) {
       const customerPhone = String(fulfillment === 'delivery' ? (shippingAddress.phone || customer.deliveryProfile?.phone || customer.phone || '') : (customer.phone || '')).trim().slice(0,80);
       const customerEmail = String(customer.email || '').trim().toLowerCase().slice(0,160);
       const paymentEnvironment = customerStripePaymentEnvironment();
-      const order = { id:orderId, date:dateInTimezone(db.settings?.timezone || 'America/Los_Angeles',0), branchId, fulfillmentBranchIds, warehouse:branchId, type:'wholesale-us', customer:customer.businessName || customer.contactName, recipientName, customerPhone, customerEmail, customerAddress:fulfillment === 'delivery' ? formattedAddress : String(body.address || customer.address || '').trim().slice(0,500), shippingAddress:fulfillment === 'delivery' ? shippingAddress : null, customerContact:[recipientName,customerPhone,customerEmail].filter(Boolean).join(' · '), salesRep:customer.salesRep || '', preparedBy:'客户客户端', items, item:items[0].item, qty:items[0].qty, unitPrice:items[0].unitPrice, subtotal, shippingFee:0, shippingFeeStatus:fulfillment === 'delivery' ? 'pending_confirmation' : 'not_applicable', salesTax:0, checkoutTotal:subtotal, fulfillment, status:'待付款', paymentStatus:'pending', paymentEnvironment, shipping:fulfillment === 'delivery' ? `Delivery from ${deliveryWarehouseLabel} · shipping fee pending` : fulfillment === 'pickup-las-vegas' ? 'Las Vegas warehouse pickup' : 'Los Angeles warehouse pickup', trackingNo:'', paid:0, paymentMethod:'Stripe', note:String(body.notes || '').trim().slice(0,2000), customerDemand:String(body.notes || '').trim().slice(0,2000), portalCustomerId:customer.id, portalRequestId:String(body.requestId || `checkout-${orderId}`).slice(0,120), portalSource:true, portalNew:true, paymentTransactions:[], createdAt:now.toISOString(), checkoutExpiresAt:expiresAt };
-      db.salesOrders.push(order);
+      const order = existingOrder || { id:orderId, date:dateInTimezone(db.settings?.timezone || 'America/Los_Angeles',0), branchId, fulfillmentBranchIds, warehouse:branchId, type:'wholesale-us', customer:customer.businessName || customer.contactName, recipientName, customerPhone, customerEmail, customerAddress:fulfillment === 'delivery' ? formattedAddress : String(body.address || customer.address || '').trim().slice(0,500), shippingAddress:fulfillment === 'delivery' ? shippingAddress : null, customerContact:[recipientName,customerPhone,customerEmail].filter(Boolean).join(' · '), salesRep:customer.salesRep || '', preparedBy:'客户客户端', items, item:items[0].item, qty:items[0].qty, unitPrice:items[0].unitPrice, subtotal, shippingFee:0, shippingFeeStatus:fulfillment === 'delivery' ? 'pending_confirmation' : 'not_applicable', salesTax:0, checkoutTotal:subtotal, fulfillment, status:'待付款', paymentStatus:'pending', paymentEnvironment, shipping:fulfillment === 'delivery' ? `Delivery from ${deliveryWarehouseLabel} · shipping fee pending` : fulfillment === 'pickup-las-vegas' ? 'Las Vegas warehouse pickup' : 'Los Angeles warehouse pickup', trackingNo:'', paid:0, paymentMethod:'Stripe', note:String(body.notes || '').trim().slice(0,2000), customerDemand:String(body.notes || '').trim().slice(0,2000), portalCustomerId:customer.id, portalRequestId:requestId, portalSource:true, portalNew:true, paymentTransactions:[], createdAt:now.toISOString(), checkoutExpiresAt:expiresAt };
+      if (!existingOrder) db.salesOrders.push(order);
+      else {
+        Object.assign(order,{ branchId,fulfillmentBranchIds,warehouse:branchId,items,item:items[0].item,qty:items[0].qty,unitPrice:items[0].unitPrice,subtotal,checkoutTotal:subtotal,fulfillment,status:'待付款',paymentStatus:'pending',paymentMethod:'Stripe',paymentError:'',checkoutExpiresAt:expiresAt,updatedAt:now.toISOString() });
+        releaseOrderInventoryReservations(db,order.id,'released');
+      }
       const checkoutAllocations = fulfillment === 'delivery' ? deliveryAllocations : items.map(line=>({ sku:line.item,qty:line.qty,branchId }));
       checkoutAllocations.forEach(line=>db.inventoryReservations.push({ id:id(), orderId, portalCustomerId:customer.id, sku:line.sku, qty:line.qty, branchId:line.branchId, status:'pending_payment', createdAt:now.toISOString(), expiresAt }));
       writeDb(db);
@@ -8395,14 +8466,20 @@ async function api(req, res) {
         const fields = { mode:'payment', client_reference_id:orderId, 'metadata[orderId]':orderId, 'metadata[portalCustomerId]':customer.id, 'metadata[paymentEnvironment]':paymentEnvironment, success_url:`${baseUrl}/customer.html?checkout=success&session_id={CHECKOUT_SESSION_ID}`, cancel_url:`${baseUrl}/customer.html?checkout=canceled`, expires_at:Math.floor(new Date(expiresAt).getTime()/1000), 'payment_method_types[0]':'card' };
         applyCustomerStripeFields(fields,customer,body.locale);
         items.forEach((line,index)=>{ fields[`line_items[${index}][price_data][currency]`]='usd'; fields[`line_items[${index}][price_data][unit_amount]`]=Math.round(line.unitPrice*100); fields[`line_items[${index}][price_data][product_data][name]`]=line.name; fields[`line_items[${index}][price_data][product_data][metadata][sku]`]=line.item; fields[`line_items[${index}][quantity]`]=line.qty; });
-        const session = await stripeFormRequest('checkout/sessions',fields);
+        const session = await stripeFormRequest('checkout/sessions',fields,{ idempotencyKey:customerCheckoutIdempotencyKey(customer.id,requestId,'catalog-order') });
         order.stripeCheckoutSessionId=String(session.id || ''); order.checkoutUrl=String(session.url || ''); order.stripeLivemode=session.livemode === true; order.paymentEnvironment=session.livemode === true ? 'live' : session.livemode === false ? 'test' : paymentEnvironment; order.updatedAt=new Date().toISOString();
         audit(db,{ id:`customer-${customer.id}`,name:customer.businessName || customer.contactName },'create-customer-checkout',{ collection:'salesOrders',recordId:order.id,recordLabel:order.customer,detail:`Stripe checkout ${order.customer} $${subtotal.toFixed(2)}` });
         writeDb(db); notifyDataChanged('customer-checkout-created',order.id);
-        return send(res,201,{ orderId:order.id, checkoutUrl:order.checkoutUrl, expiresAt, total:subtotal, currency:'usd' });
+        const responseBody = { orderId:order.id, checkoutUrl:order.checkoutUrl, expiresAt, total:subtotal, currency:'usd' };
+        finishCheckoutRequest({ status:201,body:responseBody });
+        customerCheckoutRequestsInFlight.delete(requestKey);
+        return send(res,201,responseBody);
       } catch (error) {
         order.status='付款建立失败'; order.paymentStatus='checkout_failed'; order.paymentError=String(error.message || error).slice(0,500); order.updatedAt=new Date().toISOString(); releaseOrderInventoryReservations(db,order.id,'released'); writeDb(db);
-        return send(res,502,{ error:order.paymentError });
+        const responseBody = { error:order.paymentError };
+        finishCheckoutRequest({ status:502,body:responseBody });
+        customerCheckoutRequestsInFlight.delete(requestKey);
+        return send(res,502,responseBody);
       }
     }
     const resumeCheckoutMatch = req.method === 'POST' && url.pathname.match(/^\/api\/customer\/orders\/([^/]+)\/checkout-session$/);
@@ -8451,7 +8528,7 @@ async function api(req, res) {
         const fields={ mode:'payment',client_reference_id:order.id,'metadata[orderId]':order.id,'metadata[portalCustomerId]':customer.id,'metadata[paymentEnvironment]':paymentEnvironment,success_url:`${baseUrl}/customer.html?checkout=success&session_id={CHECKOUT_SESSION_ID}`,cancel_url:`${baseUrl}/customer.html?checkout=canceled`,expires_at:Math.floor(new Date(expiresAt).getTime()/1000),'payment_method_types[0]':'card' };
         applyCustomerStripeFields(fields,customer,body.locale);
         items.forEach((line,index)=>{ fields[`line_items[${index}][price_data][currency]`]='usd';fields[`line_items[${index}][price_data][unit_amount]`]=Math.round(line.unitPrice*100);fields[`line_items[${index}][price_data][product_data][name]`]=line.name;fields[`line_items[${index}][price_data][product_data][metadata][sku]`]=line.item;fields[`line_items[${index}][quantity]`]=line.qty; });
-        const session=await stripeFormRequest('checkout/sessions',fields);
+        const session=await stripeFormRequest('checkout/sessions',fields,{ idempotencyKey:customerCheckoutIdempotencyKey(customer.id,order.id,expiresAt,'resume-order') });
         order.fulfillment=fulfillment;order.checkoutTotal=total;order.stripeCheckoutSessionId=String(session.id||'');order.checkoutUrl=String(session.url||'');order.checkoutExpiresAt=expiresAt;order.paymentStatus='pending';order.status='待付款';order.paymentMethod='Stripe';order.stripeLivemode=session.livemode === true;order.paymentEnvironment=session.livemode === true?'live':session.livemode === false?'test':paymentEnvironment;order.updatedAt=new Date().toISOString();
         writeDb(db);notifyDataChanged('customer-checkout-renewed',order.id);
         return send(res,201,{ orderId:order.id,checkoutUrl:order.checkoutUrl,expiresAt,total,currency:'usd' });

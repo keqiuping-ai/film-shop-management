@@ -34,7 +34,7 @@ assert(ordering.includes('searchColorWrapInventory'));
 assert(ordering.includes("dataset.directSku=product.sku"));
 assert(ordering.includes("findBySku(state?.products||[],order.dataset.productSku,'ppf')"));
 assert(ordering.includes("findBySku(state?.products||[],quickOrder.dataset.productSku,'color-wrap')"));
-assert(html.indexOf('customer-catalog-utils.js?v=1') < html.indexOf('customer-ordering.js?v=49'), 'catalog utility must load before ordering code');
+assert(html.indexOf('customer-catalog-utils.js?v=1') < html.indexOf('customer-ordering.js?v=50'), 'catalog utility must load before ordering code');
 assert(i18n.includes('SEARCH OTHER IN-STOCK PPF MODELS'));
 assert(i18n.includes('SEARCH OTHER IN-STOCK COLOR-WRAP MODELS'));
 
