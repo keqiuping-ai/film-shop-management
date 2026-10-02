@@ -59,14 +59,14 @@ async function run() {
   assert.match(appSource, /正在发送…/, 'Pending text must show a visible sending status');
   assert.match(appSource, /visibleMessagesBeforeRefresh\.length && !visibleMessagesAfterRefresh\.length/, 'Transient empty refreshes must preserve a visible thread');
   assert.match(appSource, /visibleMessagesBeforeRead\.length && !visibleMessagesAfterRead\.length/, 'A transient empty read response must preserve a visible thread');
-  assert(indexSource.includes('/app.js?v=151'), 'Desktop app asset marker must be bumped');
-  assert(indexSource.includes('/styles.css?v=102'), 'Desktop stylesheet marker must be bumped');
+  assert(indexSource.includes('/app.js?v=152'), 'Desktop app asset marker must be bumped');
+  assert(indexSource.includes('/styles.css?v=103'), 'Desktop stylesheet marker must be bumped');
   assert.match(mobileSource, /const mobileMessageSendQueue = new Map\(\)/, 'Mobile text sends must survive bootstrap replacement');
   assert.match(mobileSource, /mobileMessageSendQueue\.set\(pendingId/, 'Mobile text must render optimistically');
   assert.match(mobileSource, /正在发送…/, 'Mobile pending text must show sending status');
   assert.match(mobileSource, /preserveMobileMessageSnapshot/, 'Mobile refreshes must preserve a visible non-empty thread');
   assert(mobileHtml.includes('/mobile.js?v=69'), 'Mobile app asset marker must be bumped');
-  assert(serviceWorker.includes('film-shop-v142-call-domain-speech'), 'Service worker cache must be bumped');
+  assert(serviceWorker.includes('film-shop-v143-portal-message-status'), 'Service worker cache must be bumped');
   assert.match(appSource, /function capturePageContinuityState\(\)/, 'Desktop refreshes must capture page and nested-scroll positions');
   assert.match(appSource, /function restorePageContinuityState\(snapshot\)/, 'Desktop refreshes must restore page and nested-scroll positions');
   assert.match(appSource, /const unchangedBackgroundRefresh = Boolean\(/, 'Unchanged background refreshes must not rebuild the current page');

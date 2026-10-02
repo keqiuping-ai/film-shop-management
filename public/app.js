@@ -10859,7 +10859,23 @@ const portalOrderPendingReplies = new Map();
 function portalOrderConversationHtml(order) {
   if (!order.portalCustomerId) return '';
   const pending = portalOrderPendingReplies.get(order.id) || [];
-  const messages = [...(order.portalMessages || []), ...pending].map(message => `<div class="portal-order-message ${message.sender === 'staff' ? 'staff' : 'customer'} ${message.pending ? 'pending' : ''} ${message.failed ? 'failed' : ''}"><strong>${escapeHtml(message.senderName || (message.sender === 'staff' ? '客服' : '客户'))}</strong><div>${escapeHtml(message.text || '')}</div>${message.attachment ? `<a href="${escapeHtml(message.attachment.url || '')}" target="_blank">📎 ${escapeHtml(message.attachment.name || '附件')}</a>` : ''}<small>${message.pending ? (lang === 'zh' ? '正在发送…' : 'Sending…') : message.failed ? `${lang === 'zh' ? '发送失败' : 'Not sent'} · <button class="portal-message-retry" type="button" onclick="sendPortalOrderReply('${order.id}','${escapeHtml(message.clientMessageId)}')">${lang === 'zh' ? '重试' : 'Retry'}</button>` : formatAppDateTime(message.createdAt)}</small></div>`).join('');
+  const messages = [...(order.portalMessages || []), ...pending].map(message => {
+    const receipt = message.sender === 'staff'
+      ? message.readState === 'read'
+        ? `${lang === 'zh' ? '客户已读' : 'Read by customer'}${message.readAt ? ` · ${formatAppDateTime(message.readAt)}` : ''}`
+        : message.readState === 'unread'
+          ? (lang === 'zh' ? '客户未读' : 'Unread by customer')
+          : (lang === 'zh' ? '历史消息，读取状态未记录' : 'Historical message; read status unavailable')
+      : message.readState === 'read'
+        ? (lang === 'zh' ? '客服已读' : 'Read by staff')
+        : message.readState === 'unread'
+          ? (lang === 'zh' ? '客服未读' : 'Unread by staff')
+          : (lang === 'zh' ? '历史消息' : 'Historical message');
+    const deleteButton = message.sender === 'staff' && message.id && !message.pending
+      ? `<button class="portal-message-delete" type="button" title="${lang === 'zh' ? '双方删除这条消息' : 'Delete this message for both sides'}" onclick="deletePortalOrderMessage('${order.id}','${message.id}')">删除</button>`
+      : '';
+    return `<div class="portal-order-message ${message.sender === 'staff' ? 'staff' : 'customer'} ${message.pending ? 'pending' : ''} ${message.failed ? 'failed' : ''}"><div class="portal-message-head"><strong>${escapeHtml(message.senderName || (message.sender === 'staff' ? '客服' : '客户'))}</strong>${deleteButton}</div><div>${escapeHtml(message.text || '')}</div>${message.attachment ? `<a href="${escapeHtml(message.attachment.url || '')}" target="_blank">📎 ${escapeHtml(message.attachment.name || '附件')}</a>` : ''}<small>${message.pending ? (lang === 'zh' ? '正在发送…' : 'Sending…') : message.failed ? `${lang === 'zh' ? '发送失败' : 'Not sent'} · <button class="portal-message-retry" type="button" onclick="sendPortalOrderReply('${order.id}','${escapeHtml(message.clientMessageId)}')">${lang === 'zh' ? '重试' : 'Retry'}</button>` : `${formatAppDateTime(message.createdAt)} · <span class="portal-message-read-status ${message.readState === 'read' ? 'read' : 'unread'}">${receipt}</span>`}</small></div>`;
+  }).join('');
   const receipts = (order.portalAttachments || []).map(file => `<a href="${escapeHtml(file.url || '')}" target="_blank">📎 ${escapeHtml(file.name || '客户附件')}</a>`).join(' ');
   return `<div class="wide portal-order-conversation"><h4>${lang === 'zh' ? '客户客户端沟通' : 'Customer portal conversation'}</h4>${order.customerDemand ? `<p><strong>${lang === 'zh' ? '客户需求：' : 'Request: '}</strong>${escapeHtml(order.customerDemand)}</p>` : ''}${receipts ? `<p>${receipts}</p>` : ''}<div class="portal-order-messages">${messages || `<p class="note">${lang === 'zh' ? '暂无留言' : 'No messages'}</p>`}</div><div class="portal-order-reply"><input id="portalOrderReply" placeholder="${lang === 'zh' ? '回复客户…' : 'Reply to customer…'}"><button class="btn" id="portalOrderReplyButton" type="button" onclick="sendPortalOrderReply('${order.id}')">${lang === 'zh' ? '发送回复' : 'Send'}</button></div></div>`;
 }
@@ -10888,6 +10904,16 @@ async function sendPortalOrderReply(id, retryId = '') {
   } catch (err) {
     message.pending = false; message.failed = true;
     openSalesOrder(id);
+  }
+}
+
+async function deletePortalOrderMessage(orderId, messageId) {
+  if (!confirm(lang === 'zh' ? '删除后客户和后台都不再看到这条消息。确定删除吗？' : 'Delete this message for both the customer and staff?')) return;
+  try {
+    state = await api(`/api/portal-orders/${encodeURIComponent(orderId)}/messages/${encodeURIComponent(messageId)}`, { method: 'DELETE' });
+    closeModal(); render(); openSalesOrder(orderId);
+  } catch (error) {
+    alert(error.message || (lang === 'zh' ? '删除失败' : 'Unable to delete the message'));
   }
 }
 

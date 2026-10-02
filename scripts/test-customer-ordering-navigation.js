@@ -23,7 +23,7 @@ assert(ordering.includes('article.addEventListener(\'click\''), 'the complete pr
 assert(ordering.includes('onchange="syncPpfVariantRow(this)"'), 'PPF model selection must update its single valid size');
 assert(ordering.includes('choices.length===1'), 'PPF size auto-selection must be limited to one valid choice');
 
-assert(html.includes('/customer.js?v=20'));
+assert(html.includes('/customer.js?v=21'));
 assert(html.includes('/customer-ordering.js?v=51'));
 assert(html.includes('LIVE DEALER ORDERING'));
 assert(!html.includes('Product pricing, payment, and live inventory are not connected yet.'));

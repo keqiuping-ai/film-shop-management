@@ -545,7 +545,9 @@ function portalCustomerSnapshot(db, customer) {
   const names = new Set([customer.businessName, customer.contactName].map(normalizedWarrantyName).filter(Boolean));
   const warranties = (db.warranties || []).filter(item => (phone && normalizedWarrantyPhone(item.phone) === phone) || names.has(normalizedWarrantyName(item.customerName))).sort((a,b)=>String(b.installDate||'').localeCompare(String(a.installDate||''))).map(publicWarrantyRecord);
   const paymentEnvironment = customerStripePaymentEnvironment();
-  return { customer: { ...safePortalCustomer(customer), priceTierName: tier?.name || '批发价' }, tierProgress: portalCustomerTierProgress(db, customer), paymentEnvironment, products: (db.products || []).filter(product => product.portalVisible !== false).map(product => portalProductForCustomer(db, product, customer)), orders: (db.salesOrders || []).filter(order => order.portalCustomerId === customer.id).sort((a, b) => String(b.updatedAt || b.createdAt || '').localeCompare(String(a.updatedAt || a.createdAt || ''))).map(order => ({ id: order.id, orderNo: order.orderNo || '', date: order.date, status: order.status, paymentStatus: order.paymentStatus || '', items: salesOrderItems(order), subtotal: Number(order.subtotal || 0), shippingFee: Number(order.shippingFee || 0), salesTax: Number(order.salesTax || 0), checkoutTotal: Number(order.checkoutTotal || 0), fulfillment: order.fulfillment || '', customerDemand: order.customerDemand || '', shipping: order.shipping || '', shippingCarrier: order.shippingCarrier || '', trackingNo: order.trackingNo || '', paid: Number(order.paid || 0), paymentMethod: order.paymentMethod || '', createdAt: order.createdAt, updatedAt: order.updatedAt || '', portalMessages: order.portalMessages || [], attachments: order.portalAttachments || [], customPrintedFilm:order.customPrintedFilm === true, customPrintedFilmDescription:order.customPrintedFilmDescription || '', customPrintedFilmMeters:Number(order.customPrintedFilmMeters || 0), customPrintedFilmPattern:order.customPrintedFilmPattern || '', customPrintedFilmVehicle:order.customPrintedFilmVehicle || null })), warranties };
+  const orders = (db.salesOrders || []).filter(order => order.portalCustomerId === customer.id).sort((a, b) => String(b.updatedAt || b.createdAt || '').localeCompare(String(a.updatedAt || a.createdAt || '')));
+  const unreadMessageCount = orders.reduce((count, order) => count + (order.portalMessages || []).filter(message => message.sender === 'staff' && message.readState === 'unread').length, 0);
+  return { customer: { ...safePortalCustomer(customer), priceTierName: tier?.name || '批发价' }, tierProgress: portalCustomerTierProgress(db, customer), paymentEnvironment, unreadMessageCount, products: (db.products || []).filter(product => product.portalVisible !== false).map(product => portalProductForCustomer(db, product, customer)), orders: orders.map(order => ({ id: order.id, orderNo: order.orderNo || '', date: order.date, status: order.status, paymentStatus: order.paymentStatus || '', items: salesOrderItems(order), subtotal: Number(order.subtotal || 0), shippingFee: Number(order.shippingFee || 0), salesTax: Number(order.salesTax || 0), checkoutTotal: Number(order.checkoutTotal || 0), fulfillment: order.fulfillment || '', customerDemand: order.customerDemand || '', shipping: order.shipping || '', shippingCarrier: order.shippingCarrier || '', trackingNo: order.trackingNo || '', paid: Number(order.paid || 0), paymentMethod: order.paymentMethod || '', createdAt: order.createdAt, updatedAt: order.updatedAt || '', portalMessages: order.portalMessages || [], attachments: order.portalAttachments || [], customPrintedFilm:order.customPrintedFilm === true, customPrintedFilmDescription:order.customPrintedFilmDescription || '', customPrintedFilmMeters:Number(order.customPrintedFilmMeters || 0), customPrintedFilmPattern:order.customPrintedFilmPattern || '', customPrintedFilmVehicle:order.customPrintedFilmVehicle || null })), warranties };
 }
 
 function seedDb() {
@@ -8569,7 +8571,7 @@ async function api(req, res) {
       if (!items.length && !customerDemand) return send(res, 400, { error: 'Select a product or enter a special request.' });
       if (!items.length) items.push({ item: 'CUSTOM-CUSTOMER-REQUEST', qty: 1, unitPrice: 0 });
       const now = new Date().toISOString();
-      const order = { id: id(), date: dateInTimezone(db.settings?.timezone || 'America/Los_Angeles', 0), type: 'wholesale-us', customer: customer.businessName || customer.contactName, salesRep: customer.salesRep || '', preparedBy: '客户客户端', items, item: items[0].item, qty: items[0].qty, unitPrice: items[0].unitPrice, status: '待客服确认', shipping: '', trackingNo: '', paid: 0, paymentMethod: '', note: customerDemand, customerDemand, portalCustomerId: customer.id, portalRequestId: requestId, portalSource: true, portalNew: true, portalAttachments: Array.isArray(body.attachments) ? body.attachments.slice(0, 10) : [], portalMessages: [{ id: id(), sender: 'customer', senderName: customer.contactName || customer.businessName, text: customerDemand || 'The customer submitted a new order.', createdAt: now }], createdAt: now };
+      const order = { id: id(), date: dateInTimezone(db.settings?.timezone || 'America/Los_Angeles', 0), type: 'wholesale-us', customer: customer.businessName || customer.contactName, salesRep: customer.salesRep || '', preparedBy: '客户客户端', items, item: items[0].item, qty: items[0].qty, unitPrice: items[0].unitPrice, status: '待客服确认', shipping: '', trackingNo: '', paid: 0, paymentMethod: '', note: customerDemand, customerDemand, portalCustomerId: customer.id, portalRequestId: requestId, portalSource: true, portalNew: true, portalCustomerUnread: true, portalAttachments: Array.isArray(body.attachments) ? body.attachments.slice(0, 10) : [], portalMessages: [{ id: id(), sender: 'customer', senderName: customer.contactName || customer.businessName, text: customerDemand || 'The customer submitted a new order.', readState: 'unread', readAt: '', createdAt: now }], createdAt: now };
       order.orderNo = salesOrderNumber(db, order);
       db.salesOrders.push(order);
       audit(db, { id: `customer-${customer.id}`, name: customer.businessName || customer.contactName }, 'create-customer-portal-order', { collection: 'salesOrders', recordId: order.id, recordLabel: order.customer, detail: `客户客户端提交新订单 ${order.customer}` });
@@ -8583,8 +8585,39 @@ async function api(req, res) {
       const body = await readBody(req); const text = String(body.text || '').trim().slice(0, 4000); const attachment = body.attachment && String(body.attachment.url || '').includes('/customer-media/') ? body.attachment : null; const clientMessageId = String(body.clientMessageId || '').trim().slice(0, 120);
       if (!text && !attachment) return send(res, 400, { error: 'Enter a message or upload an attachment.' });
       if (clientMessageId && (order.portalMessages || []).some(message => message.clientMessageId === clientMessageId)) return send(res, 200, portalCustomerSnapshot(db, customer));
-      order.portalMessages = [...(order.portalMessages || []), { id: id(), clientMessageId, sender: 'customer', senderName: customer.contactName || customer.businessName, text, attachment, createdAt: new Date().toISOString() }];
+      order.portalMessages = [...(order.portalMessages || []), { id: id(), clientMessageId, sender: 'customer', senderName: customer.contactName || customer.businessName, text, attachment, readState: 'unread', readAt: '', createdAt: new Date().toISOString() }];
       order.portalCustomerUnread = true; order.updatedAt = new Date().toISOString(); writeDb(db); notifyDataChanged('customer-portal-message', order.id);
+      return send(res, 200, portalCustomerSnapshot(db, customer));
+    }
+    const customerMessageReadMatch = url.pathname.match(/^\/api\/customer\/orders\/([^/]+)\/messages\/read$/);
+    if (req.method === 'POST' && customerMessageReadMatch) {
+      const order = (db.salesOrders || []).find(item => item.id === customerMessageReadMatch[1] && item.portalCustomerId === customer.id);
+      if (!order) return send(res, 404, { error: 'Order not found.' });
+      const readAt = new Date().toISOString();
+      let updated = 0;
+      (order.portalMessages || []).forEach(message => {
+        if (message.sender !== 'staff' || message.readState !== 'unread') return;
+        message.readState = 'read'; message.readAt = readAt; message.readBy = customer.contactName || customer.businessName || customer.account;
+        updated += 1;
+      });
+      order.portalStaffUnread = false;
+      if (updated) order.updatedAt = readAt;
+      writeDb(db);
+      if (updated) notifyDataChanged('customer-portal-message-read', order.id);
+      return send(res, 200, portalCustomerSnapshot(db, customer));
+    }
+    const customerMessageDeleteMatch = url.pathname.match(/^\/api\/customer\/orders\/([^/]+)\/messages\/([^/]+)$/);
+    if (req.method === 'DELETE' && customerMessageDeleteMatch) {
+      const order = (db.salesOrders || []).find(item => item.id === customerMessageDeleteMatch[1] && item.portalCustomerId === customer.id);
+      if (!order) return send(res, 404, { error: 'Order not found.' });
+      const message = (order.portalMessages || []).find(item => item.id === customerMessageDeleteMatch[2]);
+      if (!message) return send(res, 404, { error: 'Message not found.' });
+      if (message.sender !== 'customer') return send(res, 403, { error: 'You can only delete messages you sent.' });
+      order.portalMessages = (order.portalMessages || []).filter(item => item.id !== message.id);
+      order.portalCustomerUnread = order.portalMessages.some(item => item.sender === 'customer' && item.readState === 'unread');
+      order.updatedAt = new Date().toISOString();
+      audit(db, { id: `customer-${customer.id}`, name: customer.businessName || customer.contactName }, 'delete-customer-portal-message', { collection: 'salesOrders', recordId: order.id, recordLabel: order.customer, detail: `Customer deleted portal message ${message.id}` });
+      writeDb(db); notifyDataChanged('customer-portal-message-deleted', order.id);
       return send(res, 200, portalCustomerSnapshot(db, customer));
     }
     return send(res, 404, { error: 'Not found' });
@@ -9070,7 +9103,13 @@ async function api(req, res) {
   if (req.method === 'POST' && portalOrderReadMatch) {
     if (!canAccess(user, 'ordersView')) return send(res, 403, { error: '没有订单权限' });
     const order = db.salesOrders.find(item => item.id === portalOrderReadMatch[1]); if (!order) return send(res, 404, { error: '找不到订单' });
-    order.portalNew = false; order.portalCustomerUnread = false; order.portalReadAt = new Date().toISOString(); order.portalReadBy = user.name || user.email; writeDb(db); notifyDataChanged('portal-order-read', order.id);
+    const readAt = new Date().toISOString();
+    (order.portalMessages || []).forEach(message => {
+      if (message.sender === 'customer' && message.readState !== 'read') {
+        message.readState = 'read'; message.readAt = readAt; message.readBy = user.name || user.email;
+      }
+    });
+    order.portalNew = false; order.portalCustomerUnread = false; order.portalReadAt = readAt; order.portalReadBy = user.name || user.email; writeDb(db); notifyDataChanged('portal-order-read', order.id);
     return send(res, 200, sanitizeDbForUser(db, user));
   }
 
@@ -9080,7 +9119,23 @@ async function api(req, res) {
     const order = db.salesOrders.find(item => item.id === portalStaffMessageMatch[1]); if (!order?.portalCustomerId) return send(res, 404, { error: '找不到客户订单' });
     const body = await readBody(req); const text = String(body.text || '').trim().slice(0, 4000); const clientMessageId = String(body.clientMessageId || '').trim().slice(0, 120); if (!text) return send(res, 400, { error: '请输入回复内容' });
     if (clientMessageId && (order.portalMessages || []).some(message => message.clientMessageId === clientMessageId)) return send(res, 200, sanitizeDbForUser(db, user));
-    order.portalMessages = [...(order.portalMessages || []), { id: id(), clientMessageId, sender: 'staff', senderName: user.name || user.email, text, createdAt: new Date().toISOString() }]; order.updatedAt = new Date().toISOString(); writeDb(db); notifyDataChanged('portal-staff-message', order.id);
+    order.portalMessages = [...(order.portalMessages || []), { id: id(), clientMessageId, sender: 'staff', senderName: user.name || user.email, text, readState: 'unread', readAt: '', createdAt: new Date().toISOString() }]; order.portalStaffUnread = true; order.updatedAt = new Date().toISOString(); writeDb(db); notifyDataChanged('portal-staff-message', order.id);
+    return send(res, 200, sanitizeDbForUser(db, user));
+  }
+
+  const portalStaffMessageDeleteMatch = url.pathname.match(/^\/api\/portal-orders\/([^/]+)\/messages\/([^/]+)$/);
+  if (req.method === 'DELETE' && portalStaffMessageDeleteMatch) {
+    if (!canAccess(user, 'ordersEdit')) return send(res, 403, { error: '没有订单编辑权限' });
+    const order = db.salesOrders.find(item => item.id === portalStaffMessageDeleteMatch[1]);
+    if (!order?.portalCustomerId) return send(res, 404, { error: '找不到客户订单' });
+    const message = (order.portalMessages || []).find(item => item.id === portalStaffMessageDeleteMatch[2]);
+    if (!message) return send(res, 404, { error: '找不到消息' });
+    if (message.sender !== 'staff') return send(res, 403, { error: '只能删除客服发出的消息' });
+    order.portalMessages = (order.portalMessages || []).filter(item => item.id !== message.id);
+    order.portalStaffUnread = order.portalMessages.some(item => item.sender === 'staff' && item.readState === 'unread');
+    order.updatedAt = new Date().toISOString();
+    audit(db, user, 'delete-portal-staff-message', { collection: 'salesOrders', recordId: order.id, recordLabel: order.customer, detail: `Staff deleted portal message ${message.id}` });
+    writeDb(db); notifyDataChanged('portal-staff-message-deleted', order.id);
     return send(res, 200, sanitizeDbForUser(db, user));
   }
 
