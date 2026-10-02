@@ -6840,8 +6840,11 @@ function retailWholesaleSalesTable(orders = []) {
 function portalCustomerTable() {
   const rows = state.portalCustomers || [];
   const tierName = id => (state.portalPriceTiers || []).find(tier => tier.id === (id || 'standard'))?.name || '批发价';
-  return `<div class="table-wrap"><table><thead><tr><th>${lang === 'zh' ? '客户/公司' : 'Customer'}</th><th>${lang === 'zh' ? '联系人' : 'Contact'}</th><th>${lang === 'zh' ? '登录账号' : 'Login'}</th><th>${lang === 'zh' ? '当前等级' : 'Current tier'}</th><th>${lang === 'zh' ? '本月实付销售额' : 'Paid sales this month'}</th><th>${lang === 'zh' ? '升级进度' : 'Progress'}</th><th>${t('status')}</th><th></th></tr></thead><tbody>${rows.map(c => { const p=c.tierProgress||{}; return `<tr><td><strong>${escapeHtml(c.businessName || '')}</strong><br><span class="note">${escapeHtml(c.address || '')}</span></td><td>${escapeHtml(c.contactName || '')}<br><span class="note">${escapeHtml(c.phone || '')}<br>${escapeHtml(c.email || '')}</span></td><td>${escapeHtml(c.account || '')}</td><td><span class="pill info">${escapeHtml(tierName(c.priceTier))}</span>${p.recommendedTier&&p.recommendedTier!==p.tier?`<br><span class="note">建议：${escapeHtml(p.recommendedTierName)}</span>`:''}</td><td>${currency.format(Number(p.currentSales||0))}</td><td><div class="portal-tier-progress"><i style="width:${Number(p.progressPercent||0)}%"></i></div><span class="note">${Number(p.progressPercent||0)}%</span></td><td>${statusPill(c.referenceOnly ? '资料客户' : (c.active === false ? '停用' : (c.status || '正常')))}</td><td>${hasPerm('portalCustomersEdit') ? `<button class="btn" onclick="openPortalCustomer('${c.id}')">${t('edit')}</button>` : ''}</td></tr>` }).join('')}${rows.length ? '' : `<tr><td colspan="8" class="note">${lang === 'zh' ? '还没有客户账号。' : 'No customer accounts.'}</td></tr>`}</tbody></table></div>`;
+  return `<div class="table-wrap"><table><thead><tr><th>${lang === 'zh' ? '客户/公司' : 'Customer'}</th><th>${lang === 'zh' ? '联系人' : 'Contact'}</th><th>${lang === 'zh' ? '登录账号' : 'Login'}</th><th>${lang === 'zh' ? '当前等级' : 'Current tier'}</th><th>${lang === 'zh' ? '本月实付销售额' : 'Paid sales this month'}</th><th>${lang === 'zh' ? '升级进度' : 'Progress'}</th><th>${t('status')}</th><th></th></tr></thead><tbody>${rows.map(c => { const p=c.tierProgress||{},unread=portalCustomerUnreadCount(c.id); return `<tr><td><strong>${escapeHtml(c.businessName || '')}</strong><br><span class="note">${escapeHtml(c.address || '')}</span></td><td>${escapeHtml(c.contactName || '')}<br><span class="note">${escapeHtml(c.phone || '')}<br>${escapeHtml(c.email || '')}</span></td><td>${escapeHtml(c.account || '')}</td><td><span class="pill info">${escapeHtml(tierName(c.priceTier))}</span>${p.recommendedTier&&p.recommendedTier!==p.tier?`<br><span class="note">建议：${escapeHtml(p.recommendedTierName)}</span>`:''}</td><td>${currency.format(Number(p.currentSales||0))}</td><td><div class="portal-tier-progress"><i style="width:${Number(p.progressPercent||0)}%"></i></div><span class="note">${Number(p.progressPercent||0)}%</span></td><td>${statusPill(c.referenceOnly ? '资料客户' : (c.active === false ? '停用' : (c.status || '正常')))}</td><td><div class="portal-customer-row-actions">${hasPerm('ordersView') ? `<button class="portal-customer-mailbox-button" type="button" onclick="openPortalCustomerMailbox('${c.id}')" title="${lang === 'zh' ? '读取该客户全部信息' : 'Open this customer mailbox'}" aria-label="${lang === 'zh' ? '读取该客户全部信息' : 'Open this customer mailbox'}"><span aria-hidden="true">✉</span>${unread?`<b>${unread}</b>`:''}</button>` : ''}${hasPerm('portalCustomersEdit') ? `<button class="btn" onclick="openPortalCustomer('${c.id}')">${t('edit')}</button>` : ''}</div></td></tr>` }).join('')}${rows.length ? '' : `<tr><td colspan="8" class="note">${lang === 'zh' ? '还没有客户账号。' : 'No customer accounts.'}</td></tr>`}</tbody></table></div>`;
 }
+
+function portalCustomerOrders(customerId) { return (state.salesOrders || []).filter(order => order.portalCustomerId === customerId); }
+function portalCustomerUnreadCount(customerId) { return portalCustomerOrders(customerId).reduce((sum, order) => sum + (order.portalMessages || []).filter(message => message.sender === 'customer' && message.readState === 'unread').length, 0); }
 
 function setPortalCustomerTab(tab) { portalCustomerTab = tab; render(); }
 
@@ -10917,6 +10920,57 @@ async function deletePortalOrderMessage(orderId, messageId) {
   }
 }
 
+function portalCustomerMailboxMessageHtml(order, message) {
+  const receipt = message.sender === 'staff'
+    ? message.readState === 'read' ? (lang === 'zh' ? '客户已读' : 'Read by customer') : message.readState === 'unread' ? (lang === 'zh' ? '客户未读' : 'Unread by customer') : (lang === 'zh' ? '历史消息' : 'Historical message')
+    : message.readState === 'read' ? (lang === 'zh' ? '客服已读' : 'Read by staff') : message.readState === 'unread' ? (lang === 'zh' ? '客服未读' : 'Unread by staff') : (lang === 'zh' ? '历史消息' : 'Historical message');
+  const remove = message.sender === 'staff' && message.id ? `<button class="portal-message-delete" type="button" onclick="deletePortalCustomerMailboxMessage('${order.portalCustomerId}','${order.id}','${message.id}')">${lang === 'zh' ? '删除' : 'Delete'}</button>` : '';
+  return `<div class="portal-order-message ${message.sender === 'staff' ? 'staff' : 'customer'}"><div class="portal-message-head"><strong>${escapeHtml(message.senderName || (message.sender === 'staff' ? '客服' : '客户'))}</strong>${remove}</div><div>${escapeHtml(message.text || '')}</div>${message.attachment ? `<a href="${escapeHtml(message.attachment.url || '')}" target="_blank">📎 ${escapeHtml(message.attachment.name || '附件')}</a>` : ''}<small>${formatAppDateTime(message.createdAt)} · <span class="portal-message-read-status ${message.readState === 'read' ? 'read' : 'unread'}">${receipt}</span></small></div>`;
+}
+
+function portalCustomerMailboxHtml(customer) {
+  const orders = portalCustomerOrders(customer.id).filter(order => (order.portalMessages || []).length).sort((a, b) => String(b.updatedAt || b.date || '').localeCompare(String(a.updatedAt || a.date || '')));
+  if (!orders.length) return `<div class="portal-customer-mailbox-empty"><span aria-hidden="true">✉</span><p>${lang === 'zh' ? '该客户目前没有聊天信息。' : 'This customer has no messages yet.'}</p></div>`;
+  return `<div class="portal-customer-mailbox">${orders.map(order => `<section class="portal-customer-mailbox-thread"><header><div><small>${lang === 'zh' ? '订单' : 'Order'}</small><strong>${escapeHtml(order.orderNo || order.id || order.date || '')}</strong></div><span>${escapeHtml(order.date || '')} · ${escapeHtml(salesOrderItemsSummary(order) || '')}</span></header><div class="portal-order-messages">${(order.portalMessages || []).map(message => portalCustomerMailboxMessageHtml(order, message)).join('')}</div><div class="portal-order-reply"><input id="portalCustomerReply-${order.id}" placeholder="${lang === 'zh' ? '回复该客户…' : 'Reply to this customer…'}"><button class="btn" id="portalCustomerReplyButton-${order.id}" type="button" onclick="sendPortalCustomerMailboxReply('${customer.id}','${order.id}')">${lang === 'zh' ? '发送' : 'Send'}</button></div></section>`).join('')}</div>`;
+}
+
+async function openPortalCustomerMailbox(customerId, skipRead = false) {
+  const customer = (state.portalCustomers || []).find(item => item.id === customerId);
+  if (!customer) return;
+  openModal(`${customer.businessName || customer.contactName || ''} · ${lang === 'zh' ? '客户信箱' : 'Customer Mailbox'}`, portalCustomerMailboxHtml(customer), closeModal);
+  document.getElementById('modal')?.classList.add('portal-customer-mailbox-open');
+  const save = document.getElementById('modalSave'); if (save) save.hidden = true;
+  if (skipRead) return;
+  const unreadOrders = portalCustomerOrders(customerId).filter(order => (order.portalMessages || []).some(message => message.sender === 'customer' && message.readState === 'unread'));
+  if (!unreadOrders.length) return;
+  for (const order of unreadOrders) await markPortalOrderRead(order.id);
+  render();
+  openPortalCustomerMailbox(customerId, true);
+}
+
+async function sendPortalCustomerMailboxReply(customerId, orderId) {
+  const input = document.getElementById(`portalCustomerReply-${orderId}`), button = document.getElementById(`portalCustomerReplyButton-${orderId}`), text = String(input?.value || '').trim();
+  if (!text) return;
+  if (button) button.disabled = true;
+  try {
+    state = await api(`/api/portal-orders/${orderId}/messages`, { method: 'POST', body: JSON.stringify({ text, clientMessageId: `staff-mailbox-${Date.now()}-${Math.random().toString(36).slice(2, 9)}` }) });
+    render();
+    openPortalCustomerMailbox(customerId, true);
+  } catch (error) {
+    alert(error.message || (lang === 'zh' ? '发送失败' : 'Unable to send'));
+    if (button) button.disabled = false;
+  }
+}
+
+async function deletePortalCustomerMailboxMessage(customerId, orderId, messageId) {
+  if (!confirm(lang === 'zh' ? '删除后客户和后台都不再看到这条消息。确定删除吗？' : 'Delete this message for both the customer and staff?')) return;
+  try {
+    state = await api(`/api/portal-orders/${encodeURIComponent(orderId)}/messages/${encodeURIComponent(messageId)}`, { method: 'DELETE' });
+    render();
+    openPortalCustomerMailbox(customerId, true);
+  } catch (error) { alert(error.message || (lang === 'zh' ? '删除失败' : 'Unable to delete the message')); }
+}
+
 function openShipment(id) {
   const item = (state.shipments || []).find(x => x.id === id) || {
     method: 'ocean',
@@ -12356,7 +12410,7 @@ function roleDefaultPermissions(role) {
 function openModal(title, html, onSave) {
   uiNavigationRevision += 1;
   stopMessageTimeZones();
-  document.getElementById('modal').classList.remove('message-modal-open', 'confirmation-modal-open', 'personal-note-modal-open', 'warranty-modal-open');
+  document.getElementById('modal').classList.remove('message-modal-open', 'confirmation-modal-open', 'personal-note-modal-open', 'warranty-modal-open', 'portal-customer-mailbox-open');
   document.body.classList.add('modal-lock');
   const workspace = document.getElementById('prospectWorkspace');
   if (workspace) workspace.style.pointerEvents = 'none';
@@ -12415,7 +12469,7 @@ function closeModal() {
   messageThreadResizeObserver?.disconnect();
   messageThreadResizeObserver = null;
   clearMessageThreadLatestTimers();
-  document.getElementById('modal').classList.remove('open', 'message-modal-open', 'confirmation-modal-open', 'personal-note-modal-open', 'warranty-modal-open');
+  document.getElementById('modal').classList.remove('open', 'message-modal-open', 'confirmation-modal-open', 'personal-note-modal-open', 'warranty-modal-open', 'portal-customer-mailbox-open');
   document.getElementById('modal').classList.remove('reply-library-open');
   document.body.classList.remove('modal-lock');
   const workspace = document.getElementById('prospectWorkspace');

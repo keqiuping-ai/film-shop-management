@@ -1,4 +1,4 @@
-const CACHE_NAME = 'film-shop-v143-portal-message-status';
+const CACHE_NAME = 'film-shop-v144-customer-mailbox';
 const ASSETS = [
     '/mobile.html',
     '/warranty.html',

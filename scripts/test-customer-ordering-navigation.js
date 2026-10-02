@@ -8,7 +8,7 @@ const ordering = fs.readFileSync(path.join(root, 'public/customer-ordering.js'),
 const html = fs.readFileSync(path.join(root, 'public/customer.html'), 'utf8');
 const i18n = fs.readFileSync(path.join(root, 'public/customer-i18n.js'), 'utf8');
 
-assert(customer.includes("const customerScreenIds=['landing','login','app','orderCenter','ppfCatalog','colorWrapCatalog','windowFilmCatalog','dealerCheckout']"));
+assert(customer.includes("const customerScreenIds=['landing','login','app','customerMailbox','orderCenter','ppfCatalog','colorWrapCatalog','windowFilmCatalog','dealerCheckout']"));
 assert(customer.includes("function showOnlyCustomerScreen(screenId)"));
 assert(customer.includes("function showLogin(){if(token&&state)return openCustomerArea('orders');showOnlyCustomerScreen('login')"));
 assert(customer.includes("function showHome(){showOnlyCustomerScreen('landing')}"));
@@ -23,7 +23,7 @@ assert(ordering.includes('article.addEventListener(\'click\''), 'the complete pr
 assert(ordering.includes('onchange="syncPpfVariantRow(this)"'), 'PPF model selection must update its single valid size');
 assert(ordering.includes('choices.length===1'), 'PPF size auto-selection must be limited to one valid choice');
 
-assert(html.includes('/customer.js?v=21'));
+assert(html.includes('/customer.js?v=22'));
 assert(html.includes('/customer-ordering.js?v=51'));
 assert(html.includes('LIVE DEALER ORDERING'));
 assert(!html.includes('Product pricing, payment, and live inventory are not connected yet.'));

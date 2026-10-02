@@ -33,10 +33,16 @@ async function run() {
   const customerHtml = fs.readFileSync(path.join(root, 'public', 'customer.html'), 'utf8');
   const appSource = fs.readFileSync(path.join(root, 'public', 'app.js'), 'utf8');
   assert(customerHtml.includes('customerUnreadIndicator'), 'Customer portal needs a global unread indicator');
+  assert(customerHtml.includes('data-customer-mailbox'), 'Customer portal needs a header mailbox button');
+  assert(customerHtml.includes('id="customerMailbox"'), 'Customer portal needs an account-wide mailbox screen');
+  assert(customerSource.includes('customerMailboxHtml'), 'Customer mailbox must aggregate conversations across orders');
+  assert(customerSource.includes('openCustomerMailbox'), 'Customer mailbox must be accessible from the header envelope');
   assert(customerSource.includes('markVisibleStaffMessagesRead'), 'Customer portal must acknowledge visible staff messages');
   assert(customerSource.includes("tab==='orders'&&!document.getElementById('app')?.classList.contains('hidden')"), 'Landing and catalog pages must keep unread messages unread until My Orders is opened');
   assert(customerSource.includes('deleteCustomerMessage'), 'Customer portal must support deleting its own sent messages');
   assert(appSource.includes('deletePortalOrderMessage'), 'Admin portal must support deleting its own sent messages');
+  assert(appSource.includes('openPortalCustomerMailbox'), 'Admin customer rows need a customer-specific mailbox');
+  assert(appSource.includes('sendPortalCustomerMailboxReply'), 'Admin customer mailbox must support direct replies');
 
   child = spawn(process.execPath, ['server.js'], {
     cwd: root,
