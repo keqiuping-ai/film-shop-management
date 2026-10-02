@@ -31,9 +31,12 @@ async function request(pathname, token = '', options = {}) {
 async function run() {
   const customerSource = fs.readFileSync(path.join(root, 'public', 'customer.js'), 'utf8');
   const customerHtml = fs.readFileSync(path.join(root, 'public', 'customer.html'), 'utf8');
+  const customerCss = fs.readFileSync(path.join(root, 'public', 'customer.css'), 'utf8');
   const appSource = fs.readFileSync(path.join(root, 'public', 'app.js'), 'utf8');
   assert(customerHtml.includes('customerUnreadIndicator'), 'Customer portal needs a global unread indicator');
   assert(customerHtml.includes('data-customer-mailbox'), 'Customer portal needs a header mailbox button');
+  assert(customerHtml.includes('/customer.css?v=32'), 'Customer mailbox shape update needs a fresh stylesheet version');
+  assert(customerCss.includes('width:78px;height:46px') && customerCss.includes('font-size:40px'), 'Customer mailbox button must be a wide rectangle with a large envelope icon');
   assert(customerHtml.includes('id="customerMailbox"'), 'Customer portal needs an account-wide mailbox screen');
   assert(customerSource.includes('customerMailboxHtml'), 'Customer mailbox must aggregate conversations across orders');
   assert(customerSource.includes('openCustomerMailbox'), 'Customer mailbox must be accessible from the header envelope');
