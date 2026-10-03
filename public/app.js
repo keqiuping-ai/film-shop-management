@@ -7580,12 +7580,20 @@ function sortedProspectRows() {
     if (!grouped.has(key)) grouped.set(key, []);
     grouped.get(key).push(item);
   }
+  const appointmentToday = today();
   return [...grouped.values()]
     .map(mergeAppointmentProspectGroup)
     .sort((a, b) => {
-      const appointmentDiff = new Date(`${a.appointmentDate || '9999-12-31'}T${a.appointmentTime || '23:59'}`).getTime()
-        - new Date(`${b.appointmentDate || '9999-12-31'}T${b.appointmentTime || '23:59'}`).getTime();
-      if (Number.isFinite(appointmentDiff) && appointmentDiff) return appointmentDiff;
+      // Keep today's and upcoming visits ahead of overdue and undated records.
+      const dateA = String(a.appointmentDate || '');
+      const dateB = String(b.appointmentDate || '');
+      const groupA = !dateA ? 2 : dateA < appointmentToday ? 1 : 0;
+      const groupB = !dateB ? 2 : dateB < appointmentToday ? 1 : 0;
+      if (groupA !== groupB) return groupA - groupB;
+      const dateDiff = groupA === 1 ? dateB.localeCompare(dateA) : dateA.localeCompare(dateB);
+      if (dateDiff) return dateDiff;
+      const timeDiff = String(a.appointmentTime || '23:59').localeCompare(String(b.appointmentTime || '23:59'));
+      if (timeDiff) return timeDiff;
       const activityDiff = new Date(prospectActivityTime(b)).getTime() - new Date(prospectActivityTime(a)).getTime();
       if (Number.isFinite(activityDiff) && activityDiff) return activityDiff;
       return String(b.date || '').localeCompare(String(a.date || ''));

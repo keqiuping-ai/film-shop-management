@@ -1,4 +1,4 @@
-const CACHE_NAME = 'film-shop-v145-mailbox-button-shape';
+const CACHE_NAME = 'film-shop-v146-appointment-order';
 const ASSETS = [
     '/mobile.html',
     '/warranty.html',
