@@ -7910,7 +7910,10 @@ function confirmCustomerCheckout(db, session, eventRecord) {
   return { ok:true, duplicate:false, order };
 }
 
+const retailService = require('./lib/retail')({readDb,writeDb,send,currentUser,canAccess,canAccessCollectionBranch,publicBaseUrl:customerCheckoutBaseUrl,notify:notifyDataChanged});
+
 async function api(req, res) {
+  if (req.url.startsWith('/api/retail/')) { await retailService.handle(req,res,new URL(req.url,`http://${req.headers.host}`)); return; }
   const db = readDb();
   const url = new URL(req.url, `http://${req.headers.host}`);
 

@@ -1,4 +1,4 @@
-const CACHE_NAME = 'film-shop-v146-appointment-order';
+const CACHE_NAME = 'film-shop-v147-retail-cloud';
 const ASSETS = [
     '/mobile.html',
     '/warranty.html',

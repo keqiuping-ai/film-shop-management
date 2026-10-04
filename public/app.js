@@ -8381,6 +8381,7 @@ function renderProspectWorkspace() {
         ${prospectIntentPill(item.intentLevel)} ${prospectStatusPill(item.status)}
       </div>
       <div class="prospect-workspace-actions">
+        ${hasPerm('prospectsEdit') && !prospectWorkspaceReadOnly ? `<button class="btn" onclick="openRetailCustomer()">${lang === 'zh' ? '零售专属链接 / 网页咨询' : 'Retail link / web chat'}</button>` : ''}
         ${collection === 'customerConversations' && item.promotedProspectId ? `<span class="pill good">${lang === 'zh' ? '已转入预约到店客户' : 'Promoted to appointment / arrival'}</span>` : ''}
         ${String(item.status || '') === '已转施工单' && !prospectHasGeneratedJob(item) ? `<span class="pill bad">${lang === 'zh' ? '转换异常：尚未生成施工单' : 'Conversion incomplete: no job created'}</span>` : ''}
         ${hasPerm('prospectsEdit') && !prospectWorkspaceReadOnly ? `<button class="btn primary prospect-header-save" onclick="saveProspectWorkspaceDetails()">${lang === 'zh' ? '保存客户资料' : 'Save customer details'}</button>` : ''}

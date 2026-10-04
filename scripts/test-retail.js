@@ -1,0 +1,38 @@
+'use strict';
+const assert=require('node:assert/strict'),http=require('node:http');
+let db={customerConversations:[{id:'alice',customer:'Alice',branchId:'A',conversationMessages:[{channel:'sms',text:'PRIVATE SMS'}]},{id:'bob',customer:'Bob',branchId:'B',conversationMessages:[]}],prospects:[]};
+const retail=require('../lib/retail')({readDb:()=>structuredClone(db),writeDb:x=>db=structuredClone(x),send:(res,n,data)=>{res.writeHead(n,{'Content-Type':'application/json'});res.end(JSON.stringify(data))},currentUser:req=>req.headers.authorization==='Bearer test-owner'?{name:'Test owner',role:'owner'}:req.headers.authorization==='Bearer test-branch'?{name:'Branch A',role:'branch'}:null,canAccess:()=>true,canAccessCollectionBranch:(d,u,c,b)=>u.role==='owner'||b==='A',publicBaseUrl:req=>'http://'+req.headers.host,notify:()=>{}});
+const server=http.createServer((req,res)=>retail.handle(req,res,new URL(req.url,'http://local')).catch(e=>{res.writeHead(500);res.end(JSON.stringify({error:e.message}))}));
+(async()=>{await new Promise(r=>server.listen(0,'127.0.0.1',r));const base='http://127.0.0.1:'+server.address().port;
+const call=async(route,body,headers={})=>{const r=await fetch(base+'/api/retail/'+route,{method:body===undefined?'GET':'POST',headers:{'Content-Type':'application/json',...headers},body:body===undefined?undefined:JSON.stringify(body)});return {status:r.status,data:await r.json(),cookie:r.headers.get('set-cookie')?.split(';')[0]}};
+const staff={Authorization:'Bearer test-owner'},scope={collection:'customerConversations',customerId:'alice'};
+assert.equal((await call('staff/link',scope)).status,401);
+assert.equal((await call('staff/link',{...scope,customerId:'bob'},{Authorization:'Bearer test-branch'})).status,404);
+const linked=await call('staff/link',scope,staff);assert.equal(linked.status,200);const token=linked.data.url.split('/').pop();assert(!JSON.stringify(db).includes(token));
+assert.equal((await call('redeem',{token:'invalid'})).status,403);
+const redeemed=await call('redeem',{token});assert.equal(redeemed.status,200);const alice={Cookie:redeemed.cookie};assert(!JSON.stringify(await call('session',undefined,alice)).includes('PRIVATE SMS'));
+const guest=await call('session');const other={Cookie:guest.cookie};assert.notEqual((await call('session',undefined,alice)).data.id,guest.data.id);
+assert.equal((await call('messages',{text:'Hi QUAD',requestKey:'one'},alice)).status,200);
+assert.equal((await call('messages',{text:'Hi QUAD',requestKey:'one'},alice)).status,200);
+assert.equal((await call('messages',{text:'Changed',requestKey:'one'},alice)).status,409);
+assert.equal((await call('session',undefined,alice)).data.messages.length,1);
+assert.equal((await call('session',undefined,other)).data.messages.length,0);
+assert.equal((await call('staff/reply',{...scope,text:'Hello Alice',requestKey:'reply'},staff)).status,200);
+assert.equal((await call('session',undefined,alice)).data.messages[1].role,'staff');
+assert.equal((await call('messages',{text:'X',requestKey:'csrf'},{...alice,Origin:'https://evil.invalid'})).status,403);
+let q={name:'Test Alice',contact:'2025550100',vehicle:'Synthetic Car',year:'2025',product:'ppf',finish:'亮面',parts:['front','hood','fenders'],deposit:100,requestKey:'q1'};
+const booking=await call('quotes',q,alice);assert.equal(booking.status,200);assert.equal((await call('quotes',q,alice)).data.id,booking.data.id);assert.equal((await call('quotes',{...q,deposit:200},alice)).status,409);
+assert.equal((await call('quotes',{...q,requestKey:'bad',parts:['fake']},alice)).status,400);
+assert.equal((await call('checkout',{quoteId:booking.data.id},other)).status,404);
+const checkout=await call('checkout',{quoteId:booking.data.id,locale:'ja'},alice);assert.equal(checkout.status,200);assert.equal(new URL(checkout.data.url).hostname,'buy.stripe.com');assert.equal(new URL(checkout.data.url).searchParams.get('client_reference_id'),booking.data.id);
+let snapshot=(await call('session',undefined,alice)).data;assert.equal(snapshot.quotes[0].estimate,1950);assert.equal(snapshot.quotes[0].paymentStatus,'awaiting_payment');
+for(const [series,models,total] of [['basic',['P20','P10'],350],['nano',['NA70','NA28','NA15','NA10'],650],['premium',['SP70','SP50','SP20','SP10'],850]]){
+ for(const model of models){const result=await call('quotes',{...q,product:'tint',parts:[],finish:'',requestKey:series+model,tint:{series,model,areas:['前挡','后挡','左前门','右前门','左后门','右后门']}},alice);assert.equal(result.status,200);assert.equal((await call('session',undefined,alice)).data.quotes.at(-1).estimate,total)}
+}
+assert.equal((await call('quotes',{...q,product:'tint',requestKey:'bad-tint',tint:{series:'premium',model:'fake',areas:['前挡']}},alice)).status,400);
+assert.equal(db.customerConversations.length,2);assert.equal(db.customerConversations[0].customer,'Alice');
+await call('staff/revoke',scope,staff);assert.equal((await call('messages',{text:'blocked',requestKey:'blocked'},alice)).status,401);assert.equal((await call('redeem',{token})).status,403);
+const newLink=await call('staff/link',scope,staff);db.retailSessions[0].inviteExpiresAt='2000-01-01';assert.equal((await call('redeem',{token:newLink.data.url.split('/').pop()})).status,403);
+assert.equal((await call('messages',{text:'Guest question',requestKey:'guest'},other)).status,200);assert.equal(db.customerConversations.length,3);assert.equal(db.customerConversations[0].source,'Retail web');
+console.log('PASS: guest isolation, staff/branch permissions, link hashing/expiry/revocation, SMS privacy, two-way chat, CSRF, retries, PPF & all 10 tint models, quote ownership, Stripe reference, unpaid status.');
+})().catch(e=>{console.error(e);process.exitCode=1}).finally(()=>server.close());
