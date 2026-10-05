@@ -3419,6 +3419,19 @@ function customerTranslationTexts(item) {
   const texts = (item.conversationMessages || []).filter(message => customerServiceMessageRole(message) === 'customer')
     .map(message => customerTranslationSource(message.text || message.message || message.content));
   const raw = customerTranslationSource(item.chatContext);
+  // Meta imports retain the customer's submitted answers as a system lead-form
+  // plus a legacy chatContext (with an optional City header). Verify that exact
+  // projection rather than treating arbitrary system/shop text as customer input.
+  const metaForms = (item.conversationMessages || []).filter(message =>
+    String(message.messageType || message.kind || '').toLowerCase() === 'lead-form'
+    && /meta|facebook|instagram/i.test([message.channel, message.provider, item.source].join(' '))
+  ).map(message => customerTranslationSource(message.text || message.message || message.content));
+  for (const form of metaForms) {
+    if (!form) continue;
+    texts.push(form);
+    const withoutCityHeader = raw.replace(/^City:[^\n]*\n/i, '');
+    if (raw === form || withoutCityHeader === form) texts.push(raw);
+  }
   const request = raw.match(/Customer request:\s*([\s\S]*?)(?=\s+\|\s+(Conversation:|Delivered|Sent|Received|My Leads|Contacted Lead Details)\b|$)/i);
   if (request) texts.push(customerTranslationSource(request[1]));
   const pattern = /\|\s*(Delivered|Sent|Received)\s*\|\s*([^|]{1,40})\s*\|\s*([\s\S]*?)(?=\s+\|\s*(Delivered|Sent|Received)\s*\||$)/gi;

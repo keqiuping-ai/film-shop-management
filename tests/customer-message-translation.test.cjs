@@ -48,3 +48,17 @@ test('UI only translates customer language content and escapes translation',()=>
  const html=context.customerTranslationHtml({customerMessageTranslations:{a:{sourceText:'Hello',text:'<你好>'}}},{role:'customer',text:'Hello'},0);
  assert.match(html,/&lt;你好>/); assert.match(html,/AI 中文/);
 });
+
+test('Meta customer lead form accepts its exact displayed City-header projection',async()=>{
+ const f=fixture();
+ const form='full_name: Example Customer\nwhat_service_are_you_looking_for?: vinyl_color_change_wrap\ncity: Redlands Ca';
+ const item=f.db().prospects[0];
+ item.source='Meta / Facebook';
+ item.conversationMessages.push({speaker:'system',messageType:'lead-form',channel:'meta',text:form});
+ item.chatContext='City: Redlands Ca\n'+form;
+ assert.ok(f.context.customerTranslationTexts(item).includes(item.chatContext));
+ const request=f.context.customerMessageTranslation(f.db(),'prospects','p',item.chatContext);
+ f.release(); assert.equal((await request).text,'你好世界');
+ item.chatContext='Unrelated staff note';
+ assert.ok(!f.context.customerTranslationTexts(item).includes(item.chatContext));
+});
