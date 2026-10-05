@@ -3439,17 +3439,31 @@ function customerTranslationTexts(item) {
   if (/yelp/i.test(item.source || '') && item.need && !isYelpSystemNotificationMessage({text:item.need, channel:item.source})) texts.push(customerTranslationSource(item.need));
   return texts;
 }
+function readableCustomerFormTranslation(translation) {
+  if (!translation?.text) return translation;
+  const values = {
+    vinyl_color_change_wrap: 'Vinyl 车身改色膜', color_ppf: '彩色漆面保护膜（改色 PPF）',
+    paint_protection: '漆面保护', gloss: '亮面', matte: '哑光', satin: '缎面',
+    metallic: '金属色', full_body: '全车', partial: '局部', this_month: '本月',
+    next_month: '下个月', asap: '尽快', just_researching: '暂时了解中'
+  };
+  // Translate only complete field values after a colon, never names or prose.
+  return {...translation, text: translation.text.split('\n').map(line => line.replace(
+    /([:：]\s*)([a-z_]+)\s*$/i,
+    (match, prefix, value) => values[value.toLowerCase()] ? prefix + values[value.toLowerCase()] : match
+  )).join('\n')};
+}
 async function customerMessageTranslation(db, collection, id, text) {
   const hash = crypto.createHash('sha256').update(text).digest('hex');
   const item = (db[collection] || []).find(row => row.id === id);
   if (!item || !customerTranslationTexts(item).includes(text)) throw new Error('找不到对应的客户来信');
   const cached = item.customerMessageTranslations?.[hash];
-  if (cached?.text) return cached;
+  if (cached?.text) return readableCustomerFormTranslation(cached);
   const key = `${collection}:${id}:${hash}`;
   if (customerTranslationJobs.has(key)) return customerTranslationJobs.get(key);
   if (customerTranslationJobs.size >= 4) throw new Error('翻译繁忙，请稍后重试');
   const job = (async () => {
-    const translation = await translateInternalMessageWithAi(db, text, {customer:true});
+    const translation = readableCustomerFormTranslation(await translateInternalMessageWithAi(db, text, {customer:true}));
     if (!translation) return null;
     // Reload after the network await: incoming messages and edits must survive.
     const fresh = readDb();

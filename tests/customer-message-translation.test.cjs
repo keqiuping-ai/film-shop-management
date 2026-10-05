@@ -78,3 +78,10 @@ test('customer translation forces Chinese structured output while internal chat 
  assert.equal(internal.targetLanguage,'en');
  assert.equal(requests[1].response_format.type,'json_object');
 });
+
+test('customer form option values are readable without modifying original text or names',()=>{
+ const f=fixture();
+ const translated=f.context.readableCustomerFormTranslation({text:'表面：gloss\n范围: full_body\n时间：this_month\n姓名：Sonia Santos\n车型：2022 Tesla Model 3',sourceText:'original'});
+ assert.equal(translated.text,'表面：亮面\n范围: 全车\n时间：本月\n姓名：Sonia Santos\n车型：2022 Tesla Model 3');
+ assert.equal(translated.sourceText,'original');
+});
