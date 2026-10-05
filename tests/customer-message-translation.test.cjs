@@ -62,3 +62,19 @@ test('Meta customer lead form accepts its exact displayed City-header projection
  item.chatContext='Unrelated staff note';
  assert.ok(!f.context.customerTranslationTexts(item).includes(item.chatContext));
 });
+test('customer translation forces Chinese structured output while internal chat keeps its direction',async()=>{
+ const requests=[];
+ const context=vm.createContext({
+  openAiCustomerReplyKey:()=> 'test-only', customerAiReplyModel:()=> 'gpt-5-mini',process:{env:{}},
+  parseAiBossDraft:JSON.parse,
+  fetchAiJson:async(url,options)=>{const request=JSON.parse(options.body); requests.push(request); return {choices:[{finish_reason:'stop',message:{content:JSON.stringify({translatedText:request.response_format.type==='json_schema'?'服务：全车改色，亮面':'Hello'})}}]};}
+ });
+ vm.runInContext(source.slice(source.indexOf('async function translateInternalMessageWithAi'),source.indexOf('// Translation is internal display')),context);
+ const customer=await context.translateInternalMessageWithAi({},'service: vinyl_color_change_wrap',{customer:true});
+ assert.equal(customer.targetLanguage,'zh');
+ assert.equal(customer.text,'服务：全车改色，亮面');
+ assert.equal(requests[0].response_format.json_schema.strict,true);
+ const internal=await context.translateInternalMessageWithAi({},'你好');
+ assert.equal(internal.targetLanguage,'en');
+ assert.equal(requests[1].response_format.type,'json_object');
+});
