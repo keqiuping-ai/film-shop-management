@@ -9130,7 +9130,7 @@ async function openWrapReplyPicker() {
     openModal(lang === 'zh' ? '改色色库 · 单张选择' : 'Wrap colors · individual images', `
       <p>勾选颜色后加入待发送区，每次发送一张清晰效果图。原有回复素材仍可照常使用。</p>
       <input id="wrapReplySearch" placeholder="搜索色号、颜色名称，如 TPUQD45、蓝色、Blue" oninput="renderWrapReplyGrid()">
-      <p id="wrapReplyCount"></p><div id="wrapReplyGrid" class="reply-library-grid"></div>`, addWrapReplySelection);
+      <div class="wrap-reply-toolbar"><p id="wrapReplyCount"></p><button type="button" class="btn primary" onclick="addWrapReplySelection()">加入待发送区</button></div><div id="wrapReplyGrid" class="reply-library-grid"></div>`, addWrapReplySelection);
     document.getElementById('modal').classList.add('reply-library-open');
     document.getElementById('modalSave').textContent = '加入待发送区';
     renderWrapReplyGrid();

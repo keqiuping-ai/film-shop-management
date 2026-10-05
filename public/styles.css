@@ -2616,3 +2616,5 @@ body.modal-lock .prospect-workspace { pointer-events: none; }
 .wrap-reply-queue img { width:100%; height:80px; object-fit:contain; }
 .wrap-reply-queue small { display:block; font-size:11px; }
 .wrap-reply-queue button { position:absolute; top:0; right:0; border:0; border-radius:50%; background:white; color:#b42318; }
+
+.wrap-reply-toolbar { position:sticky; top:0; z-index:2; background:white; display:flex; align-items:center; justify-content:space-between; gap:12px; padding:8px 0; }

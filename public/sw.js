@@ -1,4 +1,4 @@
-const CACHE_NAME = 'film-shop-v149-wrap-reply-picker';
+const CACHE_NAME = 'film-shop-v150-wrap-reply-toolbar';
 const ASSETS = [
     '/mobile.html',
     '/warranty.html',
