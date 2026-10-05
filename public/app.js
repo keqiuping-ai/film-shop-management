@@ -8334,6 +8334,50 @@ function stopProspectWorkspaceSync() {
   prospectWorkspaceSyncTimer = null;
 }
 
+const customerTranslationState = new Map();
+function customerTranslationEligible(segment) {
+  const probe = segment.text.replace(/(?:https?:\/\/|www\.)\S+|\b[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}\b/gi, '');
+  return segment.role === 'customer' && /[^\p{Script=Han}\P{L}]/u.test(probe) && !/^Meta attachment:/i.test(segment.text);
+}
+function customerTranslationHtml(item, segment, index) {
+  if (!customerTranslationEligible(segment)) return '';
+  const cached = Object.values(item.customerMessageTranslations || {}).find(row => row.sourceText === segment.text);
+  return `<div class="message-ai-translation customer-message-translation" data-customer-translation="${index}" lang="zh"><span>AI 中文</span><small>${cached?.text ? escapeHtml(cached.text) : '翻译中…'}</small></div>`;
+}
+async function translateCustomerMessages(collection, item, segments, workspace) {
+  const conversationKey = `${collection}:${item.id}`;
+  for (let index = segments.length - 1; index >= 0; index -= 1) {
+    if (workspace.dataset.conversationKey !== conversationKey) return;
+    const segment = segments[index];
+    if (!customerTranslationEligible(segment)) continue;
+    const key = JSON.stringify([collection, item.id, segment.text]);
+    let state = customerTranslationState.get(key);
+    const cached = Object.values(item.customerMessageTranslations || {}).find(row => row.sourceText === segment.text);
+    if (cached?.text) state = {text:cached.text};
+    if (!state || (state.error && Date.now() - state.at > 60000)) {
+      state = {pending:api('/api/customer-ai/translate-message', {method:'POST', body:JSON.stringify({collection, id:item.id, text:segment.text})})};
+      customerTranslationState.set(key, state);
+      // Bound browser memory; persisted translations remain on the customer record.
+      if (customerTranslationState.size > 1000) customerTranslationState.delete(customerTranslationState.keys().next().value);
+    }
+    if (state.pending) {
+      try { state.text = (await state.pending).translation?.text || ''; }
+      catch (error) { state.error = true; state.at = Date.now(); }
+      delete state.pending;
+    }
+    if (workspace.dataset.conversationKey !== conversationKey) return;
+    const node = workspace.querySelector(`[data-customer-translation="${index}"]`);
+    // An incoming-message render may have changed the indices while awaiting AI.
+    if (!node || node.closest('article').querySelector('.prospect-chat-text')?.textContent !== segment.text) continue;
+    const chat = workspace.querySelector('.prospect-workspace-chat');
+    const follow = chat && chat.scrollHeight - chat.scrollTop - chat.clientHeight < 80;
+    if (state.text) node.querySelector('small').textContent = state.text;
+    else if (state.error) node.querySelector('small').textContent = '翻译暂不可用，稍后打开会重试';
+    else node.hidden = true;
+    if (follow) chat.scrollTop = chat.scrollHeight;
+  }
+}
+
 function renderProspectWorkspace() {
   const { collection, item } = activeCustomerWorkspaceItem();
   if (!item) return closeProspectWorkspace();
@@ -8423,10 +8467,11 @@ function renderProspectWorkspace() {
       <section class="prospect-workspace-conversation">
         ${item.branchConflict && suggestedBranch ? `<div class="customer-branch-conflict"><strong>${lang === 'zh' ? '发现新的客户城市' : 'New customer city detected'}</strong><span>${escapeHtml(item.city || '')} ${lang === 'zh' ? `更符合“${suggestedBranch.name}”。系统已按客户最新明确位置更新，请保存客户资料确认。` : `matches ${suggestedBranch.name}. The latest explicit location has been applied; save to confirm.`}</span></div>` : ''}
         <main class="prospect-workspace-chat">
-          ${segments.length ? segments.map(segment => `<article class="prospect-chat-message ${segment.role} ${segment.messageId && segment.role === 'shop' ? 'has-delete' : ''}">
+          ${segments.length ? segments.map((segment, index) => `<article class="prospect-chat-message ${segment.role} ${segment.messageId && segment.role === 'shop' ? 'has-delete' : ''}">
             ${segment.messageId && segment.role === 'shop' ? `<button class="prospect-message-delete" type="button" onclick="deleteProspectMessage('${escapeHtml(segment.messageId)}')" title="${lang === 'zh' ? '删除这条记录' : 'Delete this message'}">×</button>` : ''}
             <div class="prospect-chat-role">${escapeHtml(segment.title)}</div>
             ${segment.text ? `<div class="prospect-chat-text">${escapeHtml(segment.text)}</div>` : ''}
+            ${customerTranslationHtml(item, segment, index)}
             ${prospectAttachmentHtml(segment.attachment)}
             ${segment.meta ? `<time>${escapeHtml(segment.meta)}</time>` : ''}
           </article>`).join('') : `<div class="prospect-chat-empty">${lang === 'zh' ? '还没有聊天记录。' : 'No conversation yet.'}</div>`}
@@ -8487,6 +8532,7 @@ function renderProspectWorkspace() {
     workspace.querySelectorAll('.prospect-message-delete').forEach(control => control.remove());
   }
   restoreProspectWorkspaceDraft();
+  void translateCustomerMessages(collection, item, segments, workspace);
   const agentDraftInput = document.getElementById('prospectReplyInput');
   if (agentDraftInput && !agentDraftInput.value && item.agentReplyDraft?.text && !customerAiDraftHasFactMismatch(item.agentReplyDraft)) agentDraftInput.value = customerAiCustomerFacingText(item.agentReplyDraft.text);
   updateProspectReplyChannel();
