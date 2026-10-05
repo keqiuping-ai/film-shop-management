@@ -11052,24 +11052,31 @@ async function api(req, res) {
     const collection = String(body.collection || '').trim();
     const recordId = String(body.id || '').trim();
     const text = String(body.text || '').trim();
+    const attachment = body.attachment && typeof body.attachment === 'object' ? body.attachment : null;
     if (!['customerConversations', 'prospects'].includes(collection)) return send(res, 400, { error: '客户类型不正确' });
     const item = (db[collection] || []).find(row => row.id === recordId);
     if (!item) return send(res, 404, { error: '找不到客户记录' });
     const requiredChannel = customerServiceRequiredReplyChannel(item);
     if (requiredChannel && requiredChannel !== 'meta') return send(res, 409, { error: `客户最后通过 ${requiredChannel === 'sms' ? '手机短信' : 'Yelp'} 联系，请继续使用原通道回复` });
     if (!metaPsidFromItem(item)) return send(res, 400, { error: '这条客户记录没有 Meta PSID，不能通过 Meta 私信回复' });
-    if (!text) return send(res, 400, { error: 'Meta 私信内容不能为空' });
+    if (!text && !attachment?.url) return send(res, 400, { error: 'Meta 私信内容不能为空' });
+    if (attachment && (text || !String(attachment.type || '').startsWith('image/') || !String(attachment.url || '').startsWith(`${requestPublicBaseUrl(req)}/customer-media/`))) return send(res, 400, {error:'请选择已上传的图片，并将文字与图片分开发送'});
     const languageError = customerOutboundLanguageError(text);
     if (languageError) return send(res, 400, { error: languageError });
     if (text.length > 1600) return send(res, 400, { error: 'Meta 私信内容不能超过 1600 个字符' });
-    const sent = await sendMetaMessengerReply(db, item, text);
+    const sent = attachment ? await sendMetaMessengerImage(db, item, attachment.url) : await sendMetaMessengerReply(db, item, text);
     const now = new Date().toISOString();
     appendMetaMessengerMessage(item, {
       mid: sent.messageId || `quad-meta-${id()}`,
       text,
+      ...(attachment ? {attachments:[{type:'image',payload:{url:attachment.url}}]} : {}),
       timestamp: Date.parse(now)
     }, String(item.externalBusinessId || ''), metaPsidFromItem(item), 'outbound', user.name || user.email);
     const savedMetaMessage = (item.conversationMessages || []).at(-1);
+    if (savedMetaMessage && attachment) {
+      savedMetaMessage.attachment = {name:String(attachment.name || 'Color preview.jpg'), type:String(attachment.type), url:String(attachment.url), size:Number(attachment.size || 0), kind:'image'};
+      savedMetaMessage.text = `Image: ${String(attachment.name || 'Color preview.jpg')}`;
+    }
     if (savedMetaMessage) savedMetaMessage.aiExperienceIds = Array.isArray(item.agentReplyDraft?.experienceIds) ? item.agentReplyDraft.experienceIds : [];
     if (item.followUpDate) {
       item.lastFollowUpCompletedAt = now;

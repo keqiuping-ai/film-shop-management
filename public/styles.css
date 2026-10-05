@@ -2607,3 +2607,12 @@ body.modal-lock .prospect-workspace { pointer-events: none; }
 
 .customer-message-translation { font-size: 13px; line-height: 1.5; }
 .customer-message-translation small { font-size: inherit; }
+
+.wrap-reply-card { padding:12px; cursor:pointer; gap:8px; }
+.wrap-reply-card input { width:20px; height:20px; vertical-align:middle; }
+.wrap-reply-queue { padding:8px; background:#eef8fa; border:1px solid #a9d2db; border-radius:10px; }
+.wrap-reply-queue > div { display:flex; gap:8px; overflow-x:auto; }
+.wrap-reply-queue > div > span { position:relative; flex:0 0 115px; padding:5px; }
+.wrap-reply-queue img { width:100%; height:80px; object-fit:contain; }
+.wrap-reply-queue small { display:block; font-size:11px; }
+.wrap-reply-queue button { position:absolute; top:0; right:0; border:0; border-radius:50%; background:white; color:#b42318; }

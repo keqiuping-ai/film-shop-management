@@ -8380,6 +8380,7 @@ async function translateCustomerMessages(collection, item, segments, workspace) 
 
 function renderProspectWorkspace() {
   const { collection, item } = activeCustomerWorkspaceItem();
+  if (prospectPendingAttachment?.wrapReplyKey && prospectPendingAttachment.wrapReplyKey !== `${collection}:${item?.id}`) prospectPendingAttachment = null;
   if (!item) return closeProspectWorkspace();
   const segments = prospectConversationSegments(item);
   const workspace = ensureProspectWorkspace();
@@ -8515,6 +8516,7 @@ function renderProspectWorkspace() {
             <input class="hidden" id="prospectFileInput" type="file" onchange="uploadProspectAttachment(this.files[0]); this.value=''">
           </div>
           ${prospectPendingAttachment ? prospectPendingAttachmentPreviewHtml(prospectPendingAttachment, defaultReplyChannel) : ''}
+          ${wrapReplyQueueHtml()}
           <div class="prospect-compose-row">
             <textarea id="prospectReplyInput" oninput="prospectReplyRevision += 1; updateCustomerReplyLanguageGuard()" onpaste="handleProspectReplyPaste(event)" placeholder="${lang === 'zh' ? '输入或粘贴文字、截图、图片…' : 'Write or paste text, screenshots, or images…'}"></textarea>
             <button id="prospectSendSmsButton" class="btn primary" onclick="sendProspectMessage()" ${hasPerm('prospectsEdit') ? '' : 'disabled'}>${defaultReplyChannel === 'yelp' ? (lang === 'zh' ? '通过 Yelp 发送' : 'Send via Yelp') : defaultReplyChannel === 'meta' ? (lang === 'zh' ? '通过 Meta 发送' : 'Send via Meta') : (lang === 'zh' ? '发送短信' : 'Send SMS')}</button>
@@ -8744,7 +8746,7 @@ function updateCustomerReplyLanguageGuard() {
   const button = document.getElementById('prospectSendSmsButton');
   const warning = document.getElementById('prospectReplyLanguageWarning');
   const blocked = customerReplyContainsChinese(input?.value || '');
-  if (button) button.disabled = blocked || !hasPerm('prospectsEdit');
+  if (button) button.disabled = blocked || customerMessageSending || !hasPerm('prospectsEdit');
   if (input) input.setAttribute('aria-invalid', blocked ? 'true' : 'false');
   if (warning) {
     warning.classList.toggle('hidden', !blocked);
@@ -9104,6 +9106,117 @@ function showReplyLibraryPageType(type, category = replyTemplateCategoryFilter) 
   render();
 }
 
+let wrapReplyCatalog = null;
+const wrapReplyQueues = new Map();
+let wrapReplySelection = new Set();
+let wrapReplyPickerKey = '';
+let customerMessageSending = false;
+function wrapReplyKey() {
+  const {collection, item} = activeCustomerWorkspaceItem();
+  return item ? `${collection}:${item.id}` : '';
+}
+async function openWrapReplyPicker() {
+  const key = wrapReplyKey();
+  if (!key) return;
+  try {
+    if (!wrapReplyCatalog) {
+      const response = await fetch('/retail/wrap-examples.json');
+      if (!response.ok) throw new Error('色库加载失败，请重试');
+      wrapReplyCatalog = (await response.json()).filter(row => row.group === 'stock' && row.image);
+    }
+    if (wrapReplyKey() !== key) return;
+    wrapReplyPickerKey = key;
+    wrapReplySelection = new Set((wrapReplyQueues.get(key) || []).map(row => row.id));
+    openModal(lang === 'zh' ? '改色色库 · 单张选择' : 'Wrap colors · individual images', `
+      <p>勾选颜色后加入待发送区，每次发送一张清晰效果图。原有回复素材仍可照常使用。</p>
+      <input id="wrapReplySearch" placeholder="搜索色号、颜色名称，如 TPUQD45、蓝色、Blue" oninput="renderWrapReplyGrid()">
+      <p id="wrapReplyCount"></p><div id="wrapReplyGrid" class="reply-library-grid"></div>`, addWrapReplySelection);
+    document.getElementById('modal').classList.add('reply-library-open');
+    document.getElementById('modalSave').textContent = '加入待发送区';
+    renderWrapReplyGrid();
+  } catch (error) { alert(error.message); }
+}
+function renderWrapReplyGrid() {
+  const query = String(document.getElementById('wrapReplySearch')?.value || '').trim().toLowerCase();
+  const rows = wrapReplyCatalog.filter(row => `${row.referenceCode} ${row.title} ${row.tags} ${row.finish} ${row.finish === 'matte' ? '哑光 磨砂' : '亮光 亮面'}`.toLowerCase().includes(query));
+  document.getElementById('wrapReplyCount').textContent = `找到 ${rows.length} 款 · 已选 ${wrapReplySelection.size} 张（最多 10 张）`;
+  document.getElementById('wrapReplyGrid').innerHTML = rows.map(row => `<label class="reply-library-card wrap-reply-card">
+    <div class="reply-library-card-preview"><img loading="lazy" src="${escapeHtml(row.thumbnail || row.image)}" alt="${escapeHtml(row.title)}"></div>
+    <strong>${escapeHtml(row.referenceCode)} · ${escapeHtml(row.title)}</strong>
+    <span>${escapeHtml(row.tags || '')} · ${row.finish === 'matte' ? '哑光' : '亮光'}</span>
+    <span><input type="checkbox" ${wrapReplySelection.has(row.id) ? 'checked' : ''} onchange="toggleWrapReplySelection('${escapeHtml(row.id)}',this)"> 勾选此图</span>
+    <a href="${escapeHtml(row.image)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">查看大图 ↗</a>
+  </label>`).join('') || '<p>没有匹配的颜色</p>';
+}
+function toggleWrapReplySelection(id, control) {
+  if (control.checked && wrapReplySelection.size >= 10) { control.checked = false; return alert('一次最多勾选 10 张，可分批选择。'); }
+  if (control.checked) wrapReplySelection.add(id); else wrapReplySelection.delete(id);
+  document.getElementById('wrapReplyCount').textContent = `已选 ${wrapReplySelection.size} 张（最多 10 张）`;
+}
+function addWrapReplySelection() {
+  if (wrapReplyKey() !== wrapReplyPickerKey) return alert('客户已切换，请重新打开色库选择。');
+  if (customerMessageSending) return alert('图片正在发送，请稍后再选择。');
+  const old = wrapReplyQueues.get(wrapReplyPickerKey) || [];
+  wrapReplyQueues.set(wrapReplyPickerKey, [...wrapReplySelection].map(id => old.find(row => row.id === id) || {...wrapReplyCatalog.find(row => row.id === id)}));
+  captureProspectWorkspaceDraft(true);
+  closeModal(); renderProspectWorkspace();
+}
+function removeWrapReplyImage(id) {
+  if (customerMessageSending) return;
+  const key = wrapReplyKey();
+  if (prospectPendingAttachment?.wrapReplyId === id) prospectPendingAttachment = null;
+  wrapReplyQueues.set(key, (wrapReplyQueues.get(key) || []).filter(row => row.id !== id));
+  captureProspectWorkspaceDraft(true); renderProspectWorkspace();
+}
+function wrapReplyQueueHtml() {
+  const rows = wrapReplyQueues.get(wrapReplyKey()) || [];
+  if (!rows.length) return '';
+  return `<div class="wrap-reply-queue"><strong>已选 ${rows.length} 张颜色图 · 每次发送一张${prospectPendingAttachment ? '（先发送当前附件）' : ''}</strong><div>${rows.map((row,index) => `<span><img src="${escapeHtml(row.thumbnail || row.image)}" alt="${escapeHtml(row.title)}"><small>${index === 0 ? '下一张 · ' : ''}${escapeHtml(row.referenceCode)} ${escapeHtml(row.title)}</small><button type="button" onclick="removeWrapReplyImage('${escapeHtml(row.id)}')" aria-label="移除 ${escapeHtml(row.referenceCode)}">×</button></span>`).join('')}</div></div>`;
+}
+async function prepareWrapReplyImage(row) {
+  if (row.attachment) return row.attachment;
+  const img = new Image();
+  img.src = row.image;
+  await img.decode();
+  const canvas = document.createElement('canvas');
+  const scale = Math.min(1, 1400 / Math.max(img.naturalWidth, img.naturalHeight));
+  canvas.width = Math.round(img.naturalWidth * scale); canvas.height = Math.round(img.naturalHeight * scale);
+  canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+  const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', .9));
+  if (!blob) throw new Error('图片准备失败，请重试');
+  const file = new File([blob], `${row.id}-${row.title}.jpg`, {type:'image/jpeg'});
+  const uploaded = await uploadCloudMedia('/api/customer-media/upload', file);
+  row.attachment = {name:uploaded.name,type:uploaded.type,size:uploaded.size,url:uploaded.url};
+  return row.attachment;
+}
+async function sendProspectMessage() {
+  if (customerMessageSending) return;
+  const key = wrapReplyKey();
+  const row = !prospectPendingAttachment ? (wrapReplyQueues.get(key) || [])[0] : null;
+  const channel = document.getElementById('prospectReplyChannel')?.value || 'sms';
+  const draft = String(document.getElementById('prospectReplyInput')?.value || '').trim();
+  if (customerReplyContainsChinese(draft)) return sendProspectMessageCore();
+  if (channel === 'meta' && (row || prospectPendingAttachment) && draft) return alert('Meta 图片和文字需分开发送，请先清空或保存文字，再发送图片。');
+  customerMessageSending = true;
+  try {
+    if (row) {
+      const button = document.getElementById('prospectSendSmsButton');
+      if (button) { button.disabled = true; button.textContent = '正在准备图片…'; }
+      const attachment = await prepareWrapReplyImage(row);
+      if (wrapReplyKey() !== key) return;
+      prospectPendingAttachment = {...attachment, wrapReplyId:row.id, wrapReplyKey:key};
+      if ((document.getElementById('prospectReplyChannel')?.value || 'sms') !== channel || String(document.getElementById('prospectReplyInput')?.value || '').trim() !== draft) return;
+    }
+    const selectedId = prospectPendingAttachment?.wrapReplyId;
+    const sent = await sendProspectMessageCore();
+    if (sent && selectedId) wrapReplyQueues.set(key, (wrapReplyQueues.get(key) || []).filter(image => image.id !== selectedId));
+  } catch(error) { alert(error.message); }
+  finally {
+    customerMessageSending = false;
+    if (wrapReplyKey() === key) { captureProspectWorkspaceDraft(true); renderProspectWorkspace(); }
+  }
+}
+
 function openReplyReferenceLibrary(type = 'text', category = replyTemplateCategoryFilter) {
   replyTemplateLibraryType = ['text', 'image', 'video'].includes(type) ? type : 'text';
   replyTemplateCategoryFilter = category === 'all' ? 'all' : normalizeReplyTemplateCategory(category);
@@ -9111,6 +9224,7 @@ function openReplyReferenceLibrary(type = 'text', category = replyTemplateCatego
     <div class="reply-library-picker">
       ${replyLibraryTabs(replyTemplateLibraryType, 'openReplyReferenceLibrary')}
       ${replyTemplateCategoryFilters(replyTemplateCategoryFilter, 'openReplyReferenceLibrary')}
+      ${replyTemplateLibraryType === 'image' ? '<button class="btn primary" type="button" onclick="openWrapReplyPicker()">🎨 改色色库 · 107 款单张勾选</button>' : ''}
       <p class="reply-library-help">${lang === 'zh' ? '点击“选用”后只会放入下面的待发送区，确认无误后再点击当前渠道的发送按钮。' : 'Choosing an item stages it in the composer. It will not send automatically.'}</p>
       ${replyTemplateCards(replyTemplateLibraryType, true, replyTemplateCategoryFilter)}
     </div>`, closeModal);
@@ -9339,11 +9453,12 @@ function updateProspectReplyChannel() {
     : (channel === 'yelp'
       ? (lang === 'zh' ? '这条回复会通过 Zapier 发回 Yelp；图片会转换成可点击的云端链接' : 'This reply goes to Yelp through Zapier; images are sent as clickable cloud links.')
       : (lang === 'zh' ? '通过 Twilio 发送和接收短信 · 发送号码：+1 725-241-2586' : 'Send and receive SMS through Twilio · Sender: +1 725-241-2586'));
-  attachmentButtons.forEach(control => { control.disabled = channel === 'meta'; });
+  attachmentButtons.forEach(control => { control.disabled = false; });
+  if (button && !prospectPendingAttachment && (wrapReplyQueues.get(wrapReplyKey()) || []).length) button.textContent += ' · 发送下一张';
   updateCustomerReplyLanguageGuard();
 }
 
-async function sendProspectMessage() {
+async function sendProspectMessageCore() {
   const { collection, item } = activeCustomerWorkspaceItem();
   const input = document.getElementById('prospectReplyInput');
   const button = document.getElementById('prospectSendSmsButton');
@@ -9374,11 +9489,11 @@ async function sendProspectMessage() {
     sourceType: 'edited_ai_draft'
   } : null;
   if (!item || (!text && !prospectPendingAttachment)) return;
-  if (channel === 'meta' && prospectPendingAttachment) return alert(lang === 'zh' ? 'Meta 私信第一版只发送文字；如需发送图片或视频，请切换到手机短信。' : 'Meta currently supports text replies here. Switch to SMS for attachments.');
+  if (channel === 'meta' && prospectPendingAttachment && !String(prospectPendingAttachment.type || '').startsWith('image/')) return alert('Meta 此处只支持图片附件，视频和文件请使用短信。');
   const workspaceKey = activeProspectWorkspaceId;
   const localMessageId = `local-send-${Date.now()}-${Math.random().toString(36).slice(2)}`;
   const localChannel = channel === 'yelp' ? 'yelp' : channel === 'meta' ? 'meta' : 'sms';
-  const localAttachment = channel !== 'meta' && prospectPendingAttachment ? { ...prospectPendingAttachment } : null;
+  const localAttachment = prospectPendingAttachment ? { ...prospectPendingAttachment } : null;
   const localText = text || (localAttachment ? (lang === 'zh' ? '正在发送附件...' : 'Sending attachment...') : '');
   if (button) {
     button.disabled = true;
@@ -9417,6 +9532,7 @@ async function sendProspectMessage() {
     }
     preserveProspectWorkspaceRender = false;
     render();
+    return true;
   } catch (err) {
     const metaReplyWindowExpired = channel === 'meta'
       && /(\(#?10\)|outside (?:the )?messaging window|消息发送时间窗|24[- ]?hour)/i.test(String(err.message || ''));
@@ -9428,6 +9544,7 @@ async function sendProspectMessage() {
         : (lang === 'zh' ? 'Meta 已超过允许回复时间，平台拒绝了这条消息；该客户没有可用手机号，暂时无法改用短信。' : 'Meta rejected this message because the reply window expired, and this customer has no usable phone number for SMS.'))
       : err.message);
     prospectPendingLocalMessages.delete(workspaceKey);
+    if (activeProspectWorkspaceId !== workspaceKey) return false;
     prospectPendingAttachment = localAttachment;
     renderProspectWorkspace();
     const nextInput = document.getElementById('prospectReplyInput');

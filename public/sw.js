@@ -1,4 +1,4 @@
-const CACHE_NAME = 'film-shop-v148-customer-translation';
+const CACHE_NAME = 'film-shop-v149-wrap-reply-picker';
 const ASSETS = [
     '/mobile.html',
     '/warranty.html',
