@@ -30,4 +30,5 @@ async function mountWrapGallery(){
  dialog.querySelector('.wrap-close').onclick=()=>dialog.close();dialog.querySelector('.wrap-prev').onclick=()=>display(current-1);dialog.querySelector('.wrap-next').onclick=()=>display(current+1);
  dialog.addEventListener('keydown',e=>{if(e.key==='ArrowLeft'){e.preventDefault();display(current-1)}if(e.key==='ArrowRight'){e.preventDefault();display(current+1)}});
  dialog.addEventListener('close',()=>opener?.focus({preventScroll:true}));
+ if(location.hash==='#product/wrap/colors'){window.RetailI18n?.apply();section.scrollIntoView({block:'start',behavior:'instant'});}
 }
