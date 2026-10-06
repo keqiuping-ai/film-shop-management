@@ -8717,6 +8717,7 @@ async function api(req, res) {
     return send(res, 200, {
       ok: true,
       service: 'film-shop-cloud-app',
+      customerIdentityRevision: '2026-10-06-v2',
       version: version.version,
       build: version.build,
       port: PORT,
@@ -10887,6 +10888,7 @@ async function api(req, res) {
     if (!item) return send(res, 404, { error: '找不到客户记录' });
     const message = (item.conversationMessages || []).find(row => String(row.id) === String(messageId));
     if (!message) return send(res, 404, { error: '找不到这条消息' });
+    item.deletedCustomerMessageIds = [...new Set([...(item.deletedCustomerMessageIds || []), String(messageId)])];
     item.conversationMessages = (item.conversationMessages || []).filter(row => String(row.id) !== String(messageId));
     item.updatedAt = new Date().toISOString();
     const attachmentUrl = String(message.attachment?.url || '');
@@ -12611,6 +12613,14 @@ async function api(req, res) {
       return send(res, 400, { error: '老板账号受保护，不能在员工权限里修改。请到设置里修改老板自己的邮箱和密码。' });
     }
     const next = { ...db[collection][idx], ...body, id: recordId };
+    if (collection === 'customerConversations' || collection === 'prospects') {
+      // Profile saves are not message writes: an older open browser must not roll
+      // back messages, delivery state, translations, merge aliases or channel IDs.
+      for (const field of ['conversationMessages', 'customerMessageTranslations', 'customerChannelIdentities', 'mergedDuplicateIds', 'deletedCustomerMessageIds', 'metaPsid', 'metaPlatform', 'externalId', 'externalBusinessId', 'lastMetaAt', 'lastMetaDirection', 'lastSmsAt', 'lastSmsDirection', 'lastYelpAt', 'lastYelpDirection', 'sourceUpdatedAt', 'customerVehicles']) {
+        if (Object.hasOwn(db[collection][idx], field)) next[field] = db[collection][idx][field];
+        else delete next[field];
+      }
+    }
     if (collection === 'users') {
       if (includesEmploymentVerificationInput(body) && user.role !== 'owner') return send(res, 403, { error: '只有老板账号可以管理法定姓名和 I-9 资料' });
       const error = validateUserInput(db, next, recordId, false, body);

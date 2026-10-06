@@ -67,3 +67,8 @@ test('a provider response on a record merged while awaiting network is retained'
  run(db);old.conversationMessages.push(msg('delayed','provider completed',{direction:'outbound',speaker:'shop'}));run(db);
  assert.ok(db.customerConversations[0].conversationMessages.some(x=>x.id==='delayed'));
 });
+
+test('a deleted message stays deleted across appointment copies and later merges',()=>{
+ const db={customerConversations:[record('a',{conversationMessages:[msg('delete','old')],deletedCustomerMessageIds:['delete']})],prospects:[{id:'p',promotedFromConversationId:'a',conversationMessages:[msg('delete','old')]}]};
+ run(db);assert.equal(db.customerConversations[0].conversationMessages.length,0);assert.equal(db.prospects[0].conversationMessages.length,0);
+});

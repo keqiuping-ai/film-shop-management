@@ -16,11 +16,15 @@ async function hook(mid,text){const body={object:'page',entry:[{id:'test-page',m
  r=await hook('m1','Full name: Adik\nPhone number: (619) 549-3277\nPlease send a quote');assert.equal(r.status,200,JSON.stringify(r.body));
  let rows=db().customerConversations.filter(x=>x.phone.replace(/\D/g,'').endsWith('6195493277'));assert.equal(rows.length,1);assert.equal(rows[0].id,original.id);assert.equal(rows[0].customer,'Adik');assert.equal(rows[0].metaPsid,'test-psid');assert.ok(rows[0].conversationMessages.some(x=>x.text.includes('Please send a quote')));
  const alias=rows[0].mergedDuplicateIds[0];assert.ok(alias);assert.ok(db().customerConversationMergeArchive.some(x=>x.original.id===alias));
+ const staleProfile=JSON.parse(JSON.stringify(rows[0]));
  await hook('m2','Can I visit tomorrow?');rows=db().customerConversations.filter(x=>x.id===original.id);assert.equal(rows[0].conversationMessages.filter(x=>x.providerSid==='m2').length,1);
  await hook('m2','Can I visit tomorrow?');assert.equal(db().customerConversations.find(x=>x.id===original.id).conversationMessages.filter(x=>x.providerSid==='m2').length,1);
  r=await request('/api/customerConversations',{...input,customer:'Meta Customer',phone:'(619) 549-3277'});assert.equal(r.status,200);assert.equal(db().customerConversations.filter(x=>x.phone.replace(/\D/g,'').endsWith('6195493277')).length,1);
  r=await request('/api/customerConversations/'+alias,{customer:'stale edit'},'PUT');assert.equal(r.status,409);
  r=await request('/api/customerConversations/'+alias,null,'DELETE');assert.equal(r.status,409);
+ r=await request('/api/customerConversations/'+original.id,{...staleProfile,ownerName:'Staff test'},'PUT');assert.equal(r.status,200);assert.ok(db().customerConversations.find(x=>x.id===original.id).conversationMessages.some(x=>x.providerSid==='m2'));
+ r=await request('/api/customer-messages/customerConversations/'+original.id+'/meta-m2',null,'DELETE');assert.equal(r.status,200);
+ r=await request('/api/customerConversations/'+original.id,staleProfile,'PUT');assert.equal(r.status,200);assert.ok(!db().customerConversations.find(x=>x.id===original.id).conversationMessages.some(x=>x.providerSid==='m2'));
  // Phone edits also enforce the same invariant.
  r=await request('/api/customerConversations',{...input,externalId:'other',customer:'Another',phone:'+13105550123'});assert.equal(r.status,200);
  const other=db().customerConversations.find(x=>x.phone==='+13105550123');assert.ok(other);
