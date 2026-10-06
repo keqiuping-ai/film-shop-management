@@ -6168,7 +6168,7 @@ function canonicalSourceLabel(value) {
 function prospectMetaPsid(item) {
   const direct = String(item?.metaPsid || item?.psid || '').trim();
   if (direct) return direct;
-  const match = String(item?.externalId || '').trim().match(/^meta-(?:messenger|psid):(.+)$/i);
+  const match = String(item?.externalId || '').trim().match(/^meta-(?:messenger|instagram|psid):(.+)$/i);
   return match ? match[1].trim() : '';
 }
 
@@ -8211,7 +8211,9 @@ function ensureProspectWorkspace() {
 
 function activeCustomerWorkspaceItem() {
   const [collection, id] = String(activeProspectWorkspaceId || '').split(':');
-  return { collection, item: (state[collection] || []).find(row => row.id === id) };
+  const item = (state[collection] || []).find(row => row.id === id || row.mergedDuplicateIds?.includes(id));
+  if (item && item.id !== id) activeProspectWorkspaceId = `${collection}:${item.id}`;
+  return { collection, item };
 }
 
 function openProspectWorkspace(collection, id, readOnly = false) {
@@ -8410,9 +8412,9 @@ function renderProspectWorkspace() {
   const branchOptions = [['', lang === 'zh' ? '待确认分店' : 'Branch not confirmed'], ...branches.map(branch => [branch.id, `${branch.name}${branch.city ? `（${branch.city}）` : ''}`])];
   const activeBranch = branches.find(branch => branch.id === item.branchId);
   const suggestedBranch = branches.find(branch => branch.id === item.suggestedBranchId);
-  const canReplyYelp = String(item.source || '').trim().toLowerCase() === 'yelp' && Boolean(String(item.externalId || '').trim());
+  const canReplyYelp = (String(item.source || '').trim().toLowerCase() === 'yelp' && Boolean(String(item.externalId || '').trim())) || (item.customerChannelIdentities || []).some(row => /yelp/i.test(row.source) && row.externalId);
   const canReplySms = customerPhoneMatchKey(item.phone).length === 10;
-  const isMetaSource = normalizeSourceKey(item.source) === 'meta';
+  const isMetaSource = normalizeSourceKey(item.source) === 'meta' || Boolean(prospectMetaPsid(item));
   const canReplyMeta = isMetaSource && Boolean(prospectMetaPsid(item));
   const requiredReplyChannel = requiredProspectReplyChannel(item);
   const savedReplyChannel = savedProspectReplyChannel(canReplyYelp, canReplySms, canReplyMeta);
@@ -8421,6 +8423,7 @@ function renderProspectWorkspace() {
     <header class="prospect-workspace-header">
       <div class="prospect-workspace-customer">
         <strong>${escapeHtml(item.customer || (lang === 'zh' ? '未命名客户' : 'Unnamed customer'))}</strong>
+        ${item.mergedDuplicateIds?.length ? `<span class="badge">${lang === 'zh' ? `已合并 ${item.mergedDuplicateIds.length + 1} 条客资 · 聊天已汇总` : `${item.mergedDuplicateIds.length + 1} records merged · shared history`}</span>` : ''}
         <span>${escapeHtml(item.phone || (lang === 'zh' ? '未填写电话' : 'No phone'))}</span>
         ${activeBranch ? `<span class="pill good">${escapeHtml(activeBranch.name)}</span>` : ''}
         ${prospectIntentPill(item.intentLevel)} ${prospectStatusPill(item.status)}
@@ -8445,6 +8448,7 @@ function renderProspectWorkspace() {
           ${field(lang === 'zh' ? '所属分店' : 'Branch', select('workspaceBranchId', item.branchId || '', branchOptions))}
         </div>
         ${field(t('vehicle'), `<input id="workspaceVehicle" value="${escapeHtml(item.vehicle || '')}" ${hasPerm('prospectsEdit') ? '' : 'disabled'}>`)}
+        ${item.customerVehicles?.length > 1 ? `<div class="prospect-sidebar-pair"><small>${lang === 'zh' ? '关联车型：' : 'Related vehicles: '}${escapeHtml(item.customerVehicles.join(' / '))}</small></div>` : ''}
         ${field(t('vehicleNeed'), `<textarea id="workspaceNeed" ${hasPerm('prospectsEdit') ? '' : 'disabled'}>${escapeHtml(prospectEditableNeed(item))}</textarea>`)}
         ${field(t('service'), select('workspaceService', item.service || 'tint', services))}
         <div class="prospect-sidebar-pair">

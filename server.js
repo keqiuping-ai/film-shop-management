@@ -1,3 +1,4 @@
+const customerIdentity = require('./lib/customer-identity');
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
@@ -785,6 +786,7 @@ function readDb() {
 }
 
 function writeDb(db) {
+  if (db.customerPhoneIdentityVersion) customerIdentity.reconcile(db, { merge: mergeProspect, enrich: enrichCustomerIdentity });
   // Never overwrite the live database file in place. A process or machine
   // interruption during writeFileSync could otherwise leave a truncated JSON
   // file that cannot be opened on the next start. Write the complete snapshot
@@ -4304,9 +4306,9 @@ function prospectTextKey(value) {
 
 function prospectIdentityKey(item) {
   const externalId = prospectTextKey(item.externalId || item.conversationId || item.profileUrl);
-  if (externalId) return `external:${prospectTextKey(item.source)}:${externalId}`;
-  const phone = normalizePhone(item.phone);
-  if (phone && phone.length >= 7) return `phone:${phone}`;
+  if (externalId) return `external:${prospectTextKey(item.source)}:${String(item.externalBusinessId || "")}:${externalId}`;
+  const phone = customerIdentity.phoneKey(item.phone);
+  if (phone) return `phone:${phone}`;
   const source = prospectTextKey(item.source);
   const customer = prospectTextKey(item.customer);
   const vehicle = prospectTextKey(item.vehicle || item.need);
@@ -4412,12 +4414,13 @@ function normalizeProspectMessages(value) {
       item.speaker || item.role || item.type || item.side || item.from || item.senderType,
       speakerName
     );
-    const text = cleanImportedConversationText(item.text || item.message || item.content || item.body || '');
+    const text = cleanImportedConversationText(item.text || item.message || item.content || item.body || (item.attachment?.url ? `Attachment: ${item.attachment.name || item.attachment.url}` : ''));
     if (!text) return null;
     const direction = String(item.direction || '').trim().toLowerCase()
       || (speaker === 'shop' ? 'outbound' : speaker === 'customer' ? 'inbound' : '');
     const channel = String(item.channel || item.provider || item.platform || '').trim().toLowerCase() || 'unknown';
     return {
+      ...item,
       id: String(item.id || item.externalEventId || item.eventId || '').trim(),
       speaker,
       speakerName,
@@ -4669,7 +4672,8 @@ function normalizeProspectInput(input, fallback = {}) {
     lastSyncedAt: new Date().toISOString(),
     syncStatus: String(input.syncStatus || 'received').trim(),
     rawPayload: normalizeRawPayload(input.rawPayload),
-    conversationMessages
+    conversationMessages,
+    customerChannelIdentities: customerIdentity.identities(input)
   };
   if (prospectTextKey(source).includes('yelp')) {
     const formTimestamp = base.sourceCreatedAt || (base.date ? `${base.date}T00:00:00` : '');
@@ -4741,6 +4745,14 @@ function normalizeProspectInput(input, fallback = {}) {
 }
 
 function findProspectDuplicate(prospects, candidate) {
+  const phone = customerIdentity.phoneKey(candidate?.phone);
+  if (phone) {
+    const samePhone = (prospects || []).find(item => customerIdentity.phoneKey(item.phone) === phone);
+    if (samePhone) return samePhone;
+  }
+  const candidateIdentities = customerIdentity.identities(candidate);
+  const channelMatch = (prospects || []).find(item => customerIdentity.identities(item).some(a => candidateIdentities.some(b => a.externalId && a.externalId === b.externalId && a.source === b.source && a.externalBusinessId === b.externalBusinessId)));
+  if (channelMatch) return channelMatch;
   const candidateKey = prospectIdentityKey(candidate);
   const exact = candidateKey ? (prospects || []).find(item => prospectIdentityKey(item) === candidateKey) : null;
   if (exact) return exact;
@@ -4748,27 +4760,14 @@ function findProspectDuplicate(prospects, candidate) {
   const safeMatch = safeKey ? (prospects || []).find(item => customerConversationSafeDuplicateKey(item) === safeKey) || null : null;
   if (safeMatch) return safeMatch;
 
-  // A Yelp status-only event may omit the stable lead ID and slightly alter the
-  // display name. If exactly one Yelp record has the same phone, it is safe to
-  // append the notification there. Do not use this fallback when Yelp supplied a
-  // different lead ID, because that can represent a genuinely new request.
-  if (prospectTextKey(candidate?.source).includes('yelp') && !String(candidate?.externalId || '').trim()) {
-    const phone = normalizedPhone(candidate?.phone);
-    if (phone.length >= 7) {
-      const matches = (prospects || []).filter(item =>
-        prospectTextKey(item?.source).includes('yelp') && normalizedPhone(item?.phone) === phone
-      );
-      if (matches.length === 1) return matches[0];
-    }
-  }
   return null;
 }
 
 function customerConversationSafeDuplicateKey(item) {
-  const phone = normalizedPhone(item?.phone);
+  const phone = customerIdentity.phoneKey(item?.phone);
   const source = prospectTextKey(item?.source);
   const customer = prospectTextKey(item?.customer);
-  if (phone.length < 7 || !source || !customer) return '';
+  if (!phone || !source || !customer) return '';
   return `${source}|${phone}|${customer}`;
 }
 
@@ -4802,9 +4801,23 @@ function mergeProspect(existing, incoming) {
   }
   next.intentLevel = inferProspectIntent(next, incoming.intentLevel || next.intentLevel);
   next.intentReason = appendUniqueText(next.intentReason, inferProspectIntentReason(next, mergedMessages, next.intentLevel), '\n');
+  customerIdentity.preserveIdentity(existing, incoming, next);
   next.duplicateStatus = 'updated';
   next.updatedAt = new Date().toISOString();
   return next;
+}
+
+function applyCustomerPhoneIdentityMigration() {
+  const db = readDb();
+  if (db.customerPhoneIdentityVersion === '2026-10-06-v1') return;
+  createDatabaseBackup(db, 'manual', { id: 'system', name: 'Customer phone identity migration' });
+  const merged = customerIdentity.reconcile(db, { merge: mergeProspect, enrich: enrichCustomerIdentity });
+  db.customerPhoneIdentityVersion = '2026-10-06-v1';
+  audit(db, { id: 'system', name: 'System' }, 'merge-customer-phone-duplicates', {
+    collection: 'customerConversations', detail: `按完整手机号合并 ${merged} 条重复客资；原始记录与渠道身份已归档保留`
+  });
+  writeDb(db);
+  console.log(`Customer phone identity migration merged ${merged} records.`);
 }
 
 function applyCustomerConversationDuplicateMerge() {
@@ -5109,7 +5122,11 @@ function readBody(req) {
     });
     req.on('end', () => {
       if (!data) return resolve({});
-      try { resolve(JSON.parse(data)); } catch { reject(new Error('Invalid JSON')); }
+      try {
+        const body = JSON.parse(data);
+        if (body?.collection === 'customerConversations' && body.id) body.id = customerIdentity.resolveId(readDb(), body.id);
+        resolve(body);
+      } catch { reject(new Error('Invalid JSON')); }
     });
   });
 }
@@ -5434,7 +5451,7 @@ function metaPsidFromItem(item) {
   if (direct) return direct;
   const external = String(item?.externalId || '').trim();
   const match = external.match(/^meta-(?:messenger|instagram|psid):(.+)$/i);
-  return match ? match[1].trim() : '';
+  return match ? match[1].trim() : (customerIdentity.identities(item).filter(row => row.metaPsid).at(-1)?.metaPsid || '');
 }
 
 function metaBusinessIdFromItem(item) {
@@ -5450,18 +5467,10 @@ function metaBusinessIdFromItem(item) {
 }
 
 function findMetaConversation(db, pageId, psid, platform = 'facebook') {
-  const normalizedPlatform = platform === 'instagram' ? 'instagram' : 'facebook';
-  const expectedExternalId = psid ? `meta-${normalizedPlatform === 'instagram' ? 'instagram' : 'messenger'}:${psid}` : '';
-  const collections = ['customerConversations', 'prospects'];
-  for (const collection of collections) {
-    const item = (db[collection] || []).find(row => {
-      const rowPsid = metaPsidFromItem(row);
-      const rowPlatform = String(row.metaPlatform || (String(row.externalId || '').startsWith('meta-instagram:') ? 'instagram' : 'facebook')).toLowerCase();
-      return rowPsid && rowPsid === psid && rowPlatform === normalizedPlatform;
-    });
+  for (const collection of ['customerConversations', 'prospects']) {
+    const item = (db[collection] || []).find(row => customerIdentity.identities(row).some(identity =>
+      identity.metaPsid === psid && identity.metaPlatform === platform && (!identity.externalBusinessId || identity.externalBusinessId === pageId)));
     if (item) return { collection, item };
-    const byExternal = expectedExternalId ? (db[collection] || []).find(row => String(row.externalId || '') === expectedExternalId) : null;
-    if (byExternal) return { collection, item: byExternal };
   }
   return null;
 }
@@ -5523,6 +5532,7 @@ function appendMetaMessengerMessage(item, message, pageId, psid, direction = 'in
   const after = mergeProspectMessages(before, [row]);
   const changed = after.length !== before.length;
   item.conversationMessages = after;
+  item.customerChannelIdentities = customerIdentity.identities(item);
   item.metaPsid = psid || item.metaPsid || '';
   item.metaPlatform = normalizedPlatform;
   // A returning Meta user can match an older conversation whose source was
@@ -5867,15 +5877,15 @@ function escapeXml(value) {
 }
 
 function findConversationByPhone(db, phone) {
-  const target = normalizedPhone(phone);
+  const target = customerIdentity.phoneKey(phone);
   if (!target) return null;
-  const regularMatches = (db.customerConversations || []).filter(row => normalizedPhone(row.phone) === target);
+  const regularMatches = (db.customerConversations || []).filter(row => customerIdentity.phoneKey(row.phone) === target);
   for (const regular of regularMatches) {
     if (!regular.promotedProspectId) continue;
     const promoted = (db.prospects || []).find(row => row.id === regular.promotedProspectId);
     if (promoted) return { collection: 'prospects', item: promoted };
   }
-  const prospect = (db.prospects || []).find(row => normalizedPhone(row.phone) === target);
+  const prospect = (db.prospects || []).find(row => customerIdentity.phoneKey(row.phone) === target);
   if (prospect) return { collection: 'prospects', item: prospect };
   if (regularMatches[0]) return { collection: 'customerConversations', item: regularMatches[0] };
   return null;
@@ -6628,7 +6638,7 @@ async function sendCustomerAiAutomaticReply(db, collection, item, channel, text,
   } else if (channel === 'yelp') {
     const requestId = `quad-yelp-auto-${id()}`;
     const yelpText = [text, ...approvedAttachments.map(media => `${media.title || 'Photo'}: ${media.attachment.url}`)].filter(Boolean).join('\n\n');
-    await sendYelpReply({ leadId: String(item.externalId || ''), businessId: String(item.externalBusinessId || ''), text:yelpText, requestId });
+    await sendYelpReply({ leadId: customerIdentity.yelpIdentity(item)?.externalId || '', businessId: customerIdentity.yelpIdentity(item)?.externalBusinessId || '', text:yelpText, requestId });
     providerId = requestId;
     item.conversationMessages = [...(item.conversationMessages || []), { id: requestId, externalEventId: requestId, speaker: 'shop', speakerName: actor.name, direction: 'outbound', channel: 'yelp', text:yelpText, timestamp: now, provider: 'yelp-zapier', status: 'accepted', autoReply: true }];
   } else if (channel === 'sms') {
@@ -7108,8 +7118,8 @@ function customerServiceRequiredReplyChannel(item) {
 
 function customerServiceAvailableChannels(item) {
   const channels = [];
-  if (prospectTextKey(item?.source) === 'yelp' && String(item?.externalId || '').trim()) channels.push('yelp');
-  if (prospectTextKey(item?.source).includes('meta') && metaPsidFromItem(item)) channels.push('meta');
+  if (customerIdentity.yelpIdentity(item)) channels.push('yelp');
+  if (metaPsidFromItem(item)) channels.push('meta');
   if (normalizedPhone(item?.phone).length === 10) channels.push('sms');
   const required = customerServiceRequiredReplyChannel(item);
   return required && channels.includes(required) ? [required] : channels;
@@ -7984,6 +7994,15 @@ async function api(req, res) {
   if (req.url.startsWith('/api/retail/')) { await retailService.handle(req,res,new URL(req.url,`http://${req.headers.host}`)); return; }
   const db = readDb();
   const url = new URL(req.url, `http://${req.headers.host}`);
+  const parts = url.pathname.split('/');
+  if (parts.includes('customerConversations')) {
+    const at = parts.indexOf('customerConversations') + 1;
+    const canonical = customerIdentity.resolveId(db, parts[at]);
+    if (canonical && canonical !== parts[at]) {
+      if (req.method === 'DELETE' || req.method === 'PUT') return send(res, 409, { error: '这条客资已合并，请刷新后打开合并后的客户再操作' });
+      parts[at] = canonical; url.pathname = parts.join('/');
+    }
+  }
 
   if (url.pathname === '/api/meta/webhook') {
     return handleMetaWebhook(req, res, db, url);
@@ -8199,8 +8218,8 @@ async function api(req, res) {
         let sendRecord;
         if (channel === 'yelp') {
           const sent = await sendYelpReply({
-            leadId: String(item.externalId).trim(),
-            businessId: String(item.externalBusinessId || '').trim(),
+            leadId: customerIdentity.yelpIdentity(item)?.externalId || '',
+            businessId: customerIdentity.yelpIdentity(item)?.externalBusinessId || '',
             text,
             requestId
           });
@@ -10984,7 +11003,7 @@ async function api(req, res) {
     if (!item) return send(res, 404, { error: '找不到客户记录' });
     const requiredChannel = customerServiceRequiredReplyChannel(item);
     if (requiredChannel && requiredChannel !== 'yelp') return send(res, 409, { error: '客户最后通过手机短信联系，请继续使用短信回复，不能同时切换到 Yelp' });
-    if (prospectTextKey(item.source) !== 'yelp' || !String(item.externalId || '').trim()) return send(res, 400, { error: '这条客户记录没有可用的 Yelp Lead ID' });
+    if (!customerIdentity.yelpIdentity(item)) return send(res, 400, { error: '这条客户记录没有可用的 Yelp Lead ID' });
     if (attachment?.url && !String(attachment.url).startsWith(`${requestPublicBaseUrl(req)}/customer-media/`)) {
       return send(res, 400, { error: '图片链接不正确，请重新选择回复图片' });
     }
@@ -11001,8 +11020,8 @@ async function api(req, res) {
     if (deliveryText.length > 5000) return send(res, 400, { error: 'Yelp 回复内容和图片链接合计不能超过 5000 个字符' });
     const requestId = `quad-yelp-${id()}`;
     await sendYelpReply({
-      leadId: String(item.externalId).trim(),
-      businessId: String(item.externalBusinessId || '').trim(),
+      leadId: customerIdentity.yelpIdentity(item).externalId,
+      businessId: customerIdentity.yelpIdentity(item).externalBusinessId,
       text: deliveryText,
       requestId
     });
@@ -13205,6 +13224,7 @@ applyCustomerConversationPromotionEligibilityMigration();
 applyCustomerAppointmentVisibilityRepairMigration();
 applyImportedCustomerEncodingMigration();
 applyCustomerConversationDuplicateMerge();
+applyCustomerPhoneIdentityMigration();
 applyYelpLeadFormMessageMigration();
 applyCustomerNumberRemoval();
 applyLasVegasLegacyBranchMigration();
