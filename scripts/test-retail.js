@@ -31,7 +31,12 @@ for(const [series,models,total] of [['basic',['P20','P10'],350],['nano',['NA70',
 }
 assert.equal((await call('quotes',{...q,product:'tint',requestKey:'bad-tint',tint:{series:'premium',model:'fake',areas:['前挡']}},alice)).status,400);
 assert.equal(db.customerConversations.length,2);assert.equal(db.customerConversations[0].customer,'Alice');
-await call('staff/revoke',scope,staff);assert.equal((await call('messages',{text:'blocked',requestKey:'blocked'},alice)).status,401);assert.equal((await call('redeem',{token})).status,403);
+const additional=await call('staff/link',{...scope,retainExisting:true},staff);
+const additionalToken=additional.data.url.split('/').pop();
+assert.equal((await call('redeem',{token})).status,200,'Previously sent link survives new link creation');
+assert.equal((await call('redeem',{token:additionalToken})).status,200);
+assert.equal((await call('session',undefined,alice)).data.linked,true,'Existing devices stay linked');
+await call('staff/revoke',scope,staff);assert.equal((await call('messages',{text:'blocked',requestKey:'blocked'},alice)).status,401);assert.equal((await call('redeem',{token})).status,403);assert.equal((await call('redeem',{token:additionalToken})).status,403);
 const newLink=await call('staff/link',scope,staff);db.retailSessions[0].inviteExpiresAt='2000-01-01';assert.equal((await call('redeem',{token:newLink.data.url.split('/').pop()})).status,403);
 assert.equal((await call('messages',{text:'Guest question',requestKey:'guest'},other)).status,200);assert.equal(db.customerConversations.length,3);assert.equal(db.customerConversations[0].source,'Retail web');
 console.log('PASS: guest isolation, staff/branch permissions, link hashing/expiry/revocation, SMS privacy, two-way chat, CSRF, retries, PPF & all 10 tint models, quote ownership, Stripe reference, unpaid status.');
