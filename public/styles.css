@@ -2627,6 +2627,7 @@ body.modal-lock .prospect-workspace { pointer-events: none; }
 .prospect-workspace-composer .prospect-compose-row { flex:0 0 88px; min-height:88px; grid-template-columns:minmax(0,1fr) 104px; grid-template-rows:88px; }
 .prospect-workspace-composer .prospect-compose-row textarea { height:88px; min-height:0; max-height:88px; resize:none; }
 .prospect-workspace-composer .prospect-reply-language-warning { flex-shrink:0; max-height:60px; overflow-y:auto; margin:0; }
+.prospect-workspace-composer .prospect-compose-row .btn { white-space:normal; overflow-wrap:anywhere; padding:8px; }
 .wrap-reply-queue small { overflow-wrap:anywhere; }
 @media (max-width:760px) {
   .prospect-workspace-composer { height:36vh; max-height:100%; }
