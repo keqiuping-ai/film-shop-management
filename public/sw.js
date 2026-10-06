@@ -1,4 +1,4 @@
-const CACHE_NAME = 'film-shop-v151-chat-send-layout';
+const CACHE_NAME = 'film-shop-v152-chat-send-label';
 const ASSETS = [
     '/mobile.html',
     '/warranty.html',
