@@ -8478,6 +8478,7 @@ function renderProspectWorkspace() {
           </article>`).join('') : `<div class="prospect-chat-empty">${lang === 'zh' ? '还没有聊天记录。' : 'No conversation yet.'}</div>`}
         </main>
         <footer class="prospect-workspace-composer">
+          <div class="prospect-composer-options">
           ${customerAgentDraftHtml(item)}
           <div id="prospectManualTranslation" class="prospect-manual-translation hidden"></div>
           <div class="prospect-sms-status" id="prospectChannelStatus">${canReplyYelp
@@ -8517,6 +8518,7 @@ function renderProspectWorkspace() {
           </div>
           ${prospectPendingAttachment ? prospectPendingAttachmentPreviewHtml(prospectPendingAttachment, defaultReplyChannel) : ''}
           ${wrapReplyQueueHtml()}
+          </div>
           <div class="prospect-compose-row">
             <textarea id="prospectReplyInput" oninput="prospectReplyRevision += 1; updateCustomerReplyLanguageGuard()" onpaste="handleProspectReplyPaste(event)" placeholder="${lang === 'zh' ? '输入或粘贴文字、截图、图片…' : 'Write or paste text, screenshots, or images…'}"></textarea>
             <button id="prospectSendSmsButton" class="btn primary" onclick="sendProspectMessage()" ${hasPerm('prospectsEdit') ? '' : 'disabled'}>${defaultReplyChannel === 'yelp' ? (lang === 'zh' ? '通过 Yelp 发送' : 'Send via Yelp') : defaultReplyChannel === 'meta' ? (lang === 'zh' ? '通过 Meta 发送' : 'Send via Meta') : (lang === 'zh' ? '发送短信' : 'Send SMS')}</button>

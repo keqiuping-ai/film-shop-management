@@ -2618,3 +2618,19 @@ body.modal-lock .prospect-workspace { pointer-events: none; }
 .wrap-reply-queue button { position:absolute; top:0; right:0; border:0; border-radius:50%; background:white; color:#b42318; }
 
 .wrap-reply-toolbar { position:sticky; top:0; z-index:2; background:white; display:flex; align-items:center; justify-content:space-between; gap:12px; padding:8px 0; }
+
+/* Reserve the send row; growing drafts and attachment queues scroll above it. */
+.prospect-workspace-composer { display:flex; flex-direction:column; min-height:0; overflow:hidden; }
+.prospect-composer-options { flex:1 1 auto; min-height:0; min-width:0; overflow-y:auto; overscroll-behavior:contain; display:flex; flex-direction:column; gap:5px; }
+.prospect-composer-options > * { flex-shrink:0; }
+.prospect-composer-options .customer-agent-draft { max-height:140px; }
+.prospect-workspace-composer .prospect-compose-row { flex:0 0 88px; min-height:88px; grid-template-columns:minmax(0,1fr) 104px; grid-template-rows:88px; }
+.prospect-workspace-composer .prospect-compose-row textarea { height:88px; min-height:0; max-height:88px; resize:none; }
+.prospect-workspace-composer .prospect-reply-language-warning { flex-shrink:0; max-height:60px; overflow-y:auto; margin:0; }
+.wrap-reply-queue small { overflow-wrap:anywhere; }
+@media (max-width:760px) {
+  .prospect-workspace-composer { height:36vh; max-height:100%; }
+  .prospect-workspace-composer .prospect-compose-row { flex-basis:64px; min-height:64px; grid-template-columns:minmax(0,1fr) 90px; grid-template-rows:64px; }
+  .prospect-workspace-composer .prospect-compose-row textarea { height:64px; max-height:64px; }
+  .prospect-workspace-composer .prospect-compose-row .btn { min-width:0; }
+}
