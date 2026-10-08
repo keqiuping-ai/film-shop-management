@@ -2635,3 +2635,6 @@ body.modal-lock .prospect-workspace { pointer-events: none; }
   .prospect-workspace-composer .prospect-compose-row textarea { height:64px; max-height:64px; }
   .prospect-workspace-composer .prospect-compose-row .btn { min-width:0; }
 }
+
+.prospect-chat-message.shop .customer-message-translation { color: #e2f2f7; border-top-color: rgba(255,255,255,.3); }
+.prospect-chat-message.shop .customer-message-translation span { color: #c7edf7; }

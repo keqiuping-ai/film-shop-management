@@ -29,22 +29,23 @@ test('deduplicates concurrent requests, caches, and preserves concurrent edits',
  await f.context.customerMessageTranslation(f.db(),'prospects','p','Hello world');
  assert.equal(f.calls(),1);
 });
-test('rejects shop and arbitrary text; does not persist deleted source',async()=>{
+test('rejects arbitrary text; does not persist deleted source',async()=>{
  const f=fixture();
- await assert.rejects(f.context.customerMessageTranslation(f.db(),'prospects','p','Shop reply'));
  await assert.rejects(f.context.customerMessageTranslation(f.db(),'prospects','p','Invented text'));
  const a=f.context.customerMessageTranslation(f.db(),'prospects','p','Hello world');
  f.db().prospects[0].conversationMessages=[]; f.release();
  assert.equal(await a,null);
  assert.equal(f.db().prospects[0].customerMessageTranslations,undefined);
 });
-test('UI only translates customer language content and escapes translation',()=>{
+test('UI translates both chat directions and escapes translation',()=>{
  const app=fs.readFileSync('public/app.js','utf8');
  const context=vm.createContext({escapeHtml:s=>s.replaceAll('<','&lt;')});
  vm.runInContext(app.slice(app.indexOf('function customerTranslationEligible('),app.indexOf('async function translateCustomerMessages(')),context);
  for(const text of ['你好！','12345','https://example.com','Meta attachment: template']) assert.equal(context.customerTranslationEligible({role:'customer',text}),false,text);
  for(const text of ['Hello','Hola','你好 hello','こんにちは']) assert.equal(context.customerTranslationEligible({role:'customer',text}),true,text);
- assert.equal(context.customerTranslationEligible({role:'shop',text:'Hello'}),false);
+ assert.equal(context.customerTranslationEligible({role:'shop',text:'Hello'}),true);
+ assert.equal(context.customerTranslationEligible({role:'system',text:'Hello'}),false);
+ assert.equal(context.customerTranslationEligible({role:'shop',text:'Hello',messageId:'local-send-123'}),false);
  const html=context.customerTranslationHtml({customerMessageTranslations:{a:{sourceText:'Hello',text:'<你好>'}}},{role:'customer',text:'Hello'},0);
  assert.match(html,/&lt;你好>/); assert.match(html,/AI 中文/);
 });
@@ -84,4 +85,18 @@ test('customer form option values are readable without modifying original text o
  const translated=f.context.readableCustomerFormTranslation({text:'表面：gloss\n范围: full_body\n时间：this_month\n姓名：Sonia Santos\n车型：2022 Tesla Model 3',sourceText:'original'});
  assert.equal(translated.text,'表面：亮面\n范围: 全车\n时间：本月\n姓名：Sonia Santos\n车型：2022 Tesla Model 3');
  assert.equal(translated.sourceText,'original');
+});
+
+test('persisted outbound replies translate and reuse cache without changing original',async()=>{
+ const f=fixture();
+ const job=f.context.customerMessageTranslation(f.db(),'prospects','p','Shop reply');
+ f.release(); assert.equal((await job).text,'你好世界');
+ assert.equal(f.db().prospects[0].conversationMessages[1].text,'Shop reply');
+ await f.context.customerMessageTranslation(f.db(),'prospects','p','Shop reply');
+ assert.equal(f.calls(),1);
+});
+test('legacy sent and delivered messages are eligible alongside received messages',()=>{
+ const f=fixture();
+ const texts=f.context.customerTranslationTexts({chatContext:'| Sent | Oct 6 | Our reply | Received | Oct 6 | Customer reply | Delivered | Oct 6 | Our second reply'});
+ for(const text of ['Our reply','Customer reply','Our second reply']) assert.ok(texts.includes(text));
 });

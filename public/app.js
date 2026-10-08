@@ -8339,7 +8339,7 @@ function stopProspectWorkspaceSync() {
 const customerTranslationState = new Map();
 function customerTranslationEligible(segment) {
   const probe = segment.text.replace(/(?:https?:\/\/|www\.)\S+|\b[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}\b/gi, '');
-  return segment.role === 'customer' && /[^\p{Script=Han}\P{L}]/u.test(probe) && !/^Meta attachment:/i.test(segment.text);
+  return ['customer', 'shop'].includes(segment.role) && !String(segment.messageId || '').startsWith('local-send-') && /[^\p{Script=Han}\P{L}]/u.test(probe) && !/^Meta attachment:/i.test(segment.text);
 }
 function customerTranslationHtml(item, segment, index) {
   if (!customerTranslationEligible(segment)) return '';

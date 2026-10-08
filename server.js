@@ -3418,7 +3418,7 @@ function customerTranslationSource(text) {
   return String(text || '').replace(/\r/g, '').replace(/[ \t]+/g, ' ').replace(/\s*\|\s*/g, ' | ').trim().replace(/^[:|-]+/, '').trim();
 }
 function customerTranslationTexts(item) {
-  const texts = (item.conversationMessages || []).filter(message => customerServiceMessageRole(message) === 'customer')
+  const texts = (item.conversationMessages || []).filter(message => ['customer', 'shop'].includes(customerServiceMessageRole(message)))
     .map(message => customerTranslationSource(message.text || message.message || message.content));
   const raw = customerTranslationSource(item.chatContext);
   // Meta imports retain the customer's submitted answers as a system lead-form
@@ -3436,8 +3436,8 @@ function customerTranslationTexts(item) {
   }
   const request = raw.match(/Customer request:\s*([\s\S]*?)(?=\s+\|\s+(Conversation:|Delivered|Sent|Received|My Leads|Contacted Lead Details)\b|$)/i);
   if (request) texts.push(customerTranslationSource(request[1]));
-  const pattern = /\|\s*(Delivered|Sent|Received)\s*\|\s*([^|]{1,40})\s*\|\s*([\s\S]*?)(?=\s+\|\s*(Delivered|Sent|Received)\s*\||$)/gi;
-  for (const match of raw.matchAll(pattern)) if (/received/i.test(match[1])) texts.push(customerTranslationSource(match[3]));
+  const pattern = /(?:^|\|)\s*(Delivered|Sent|Received)\s*\|\s*([^|]{1,40})\s*\|\s*([\s\S]*?)(?=\s+\|\s*(Delivered|Sent|Received)\s*\||$)/gi;
+  for (const match of raw.matchAll(pattern)) texts.push(customerTranslationSource(match[3]));
   if (/yelp/i.test(item.source || '') && item.need && !isYelpSystemNotificationMessage({text:item.need, channel:item.source})) texts.push(customerTranslationSource(item.need));
   return texts;
 }
@@ -3458,7 +3458,7 @@ function readableCustomerFormTranslation(translation) {
 async function customerMessageTranslation(db, collection, id, text) {
   const hash = crypto.createHash('sha256').update(text).digest('hex');
   const item = (db[collection] || []).find(row => row.id === id);
-  if (!item || !customerTranslationTexts(item).includes(text)) throw new Error('找不到对应的客户来信');
+  if (!item || !customerTranslationTexts(item).includes(text)) throw new Error('找不到对应的聊天消息');
   const cached = item.customerMessageTranslations?.[hash];
   if (cached?.text) return readableCustomerFormTranslation(cached);
   const key = `${collection}:${id}:${hash}`;
@@ -8944,7 +8944,7 @@ async function api(req, res) {
     if (!item || !canAccessCollectionBranch(db, user, body.collection, item.branchId)) return send(res, 404, {error:'找不到客户'});
     const text = customerTranslationSource(body.text);
     if (!text || text.length > 8000) return send(res, 400, {error:'消息为空或超过翻译长度限制'});
-    if (!customerTranslationTexts(item).includes(text)) return send(res, 400, {error:'只能翻译客户来信'});
+    if (!customerTranslationTexts(item).includes(text)) return send(res, 400, {error:'只能翻译此客户已有的聊天消息'});
     const probe = text.replace(/(?:https?:\/\/|www\.)\S+|\b[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}\b/gi, '');
     if (!/[^\p{Script=Han}\P{L}]/u.test(probe) || /^Meta attachment:/i.test(text)) return send(res, 200, {translation:null});
     const translation = await customerMessageTranslation(db, body.collection, body.id, text);
