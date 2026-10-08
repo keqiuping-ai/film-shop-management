@@ -1,4 +1,4 @@
-const CACHE_NAME = 'film-shop-v157-outbound-chat-translation';
+const CACHE_NAME = 'film-shop-v158-message-draft-delete-stability';
 const ASSETS = [
     '/mobile.html',
     '/warranty.html',

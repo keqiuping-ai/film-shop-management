@@ -104,6 +104,10 @@ const internalMessageUploadQueue = new Map();
 // updates and message polling may replace `state` while a slow send is still in
 // flight; a separate queue keeps the just-sent bubble visible until confirmed.
 const internalMessageSendQueue = new Map();
+// A delete can race with an older message poll or bootstrap request. Keep a
+// session-local tombstone so an already deleted message can never be painted
+// back onto the screen by that stale response.
+const deletedInternalMessageIds = new Set();
 let activeProspectWorkspaceId = '';
 let prospectWorkspaceReadOnly = false;
 let prospectWorkspaceSyncTimer = null;
@@ -1125,7 +1129,7 @@ async function sync(options = {}) {
     const body = await api('/api/bootstrap', { timeoutMs: 120000 });
     const previousUnreadIds = knownUnreadMessageIds;
     user = body.user;
-    const nextState = body.data;
+    const nextState = applyInternalMessageTombstones(body.data);
     const visibleMessagesBeforeSync = messageThreadMessagesForState(state, messageUserAtStart);
     const visibleMessagesAfterSync = messageThreadMessagesForState(nextState, messageUserAtStart);
     const retainedVisibleMessageSnapshot = Boolean(
@@ -1150,6 +1154,7 @@ async function sync(options = {}) {
     const liveInternalMessageInput = document.getElementById('messageText');
     const liveInternalMessageDraft = liveInternalMessageInput?.value ?? internalMessageDraft;
     const liveInternalMessageHadFocus = document.activeElement === liveInternalMessageInput;
+    if (internalMessageModalOpen && messageUserAtStart) saveInternalMessageDraft(liveInternalMessageDraft, messageUserAtStart);
     const workspaceAfter = activeProspectWorkspaceId ? JSON.stringify(activeCustomerWorkspaceItem().item || {}) : '';
     const uiChangedDuringSync = uiNavigationRevision !== uiRevisionAtStart;
     const sameMessageContext = !uiChangedDuringSync
@@ -2006,6 +2011,30 @@ function internalMessageThreadStorageKey() {
   return `filmShopCloud.internalMessageThread.${user?.id || user?.email || 'anonymous'}`;
 }
 
+function internalMessageDraftStorageKey(threadId = activeMessageUserId) {
+  return `filmShopCloud.internalMessageDraft.${user?.id || user?.email || 'anonymous'}.${encodeURIComponent(threadId || 'none')}`;
+}
+
+function internalMessageDraft(threadId = activeMessageUserId) {
+  if (!threadId) return '';
+  try { return String(localStorage.getItem(internalMessageDraftStorageKey(threadId)) || ''); } catch { return ''; }
+}
+
+function saveInternalMessageDraft(value, threadId = activeMessageUserId) {
+  if (!threadId) return;
+  try {
+    const key = internalMessageDraftStorageKey(threadId);
+    if (String(value || '') === '') localStorage.removeItem(key);
+    else localStorage.setItem(key, String(value));
+  } catch {}
+}
+
+function applyInternalMessageTombstones(snapshot) {
+  if (!snapshot || !Array.isArray(snapshot.messages) || !deletedInternalMessageIds.size) return snapshot;
+  snapshot.messages = snapshot.messages.filter(message => !deletedInternalMessageIds.has(String(message?.id || '')));
+  return snapshot;
+}
+
 function rememberInternalMessageThread(threadId) {
   if (!threadId || !user) return;
   try { localStorage.setItem(internalMessageThreadStorageKey(), threadId); } catch {}
@@ -2049,7 +2078,9 @@ async function refreshInternalMessages() {
     try {
       const result = await api('/api/messages', { timeoutMs: 30000 });
       if (!state || activeMessageUserId !== threadId) return;
-      const incomingMessages = Array.isArray(result.messages) ? result.messages : null;
+      const incomingMessages = Array.isArray(result.messages)
+        ? result.messages.filter(message => !deletedInternalMessageIds.has(String(message?.id || '')))
+        : null;
       const visibleMessagesBeforeRefresh = messageThreadMessagesForState(state, threadId);
       const visibleMessagesAfterRefresh = messageThreadMessagesForState({ messages: incomingMessages || [] }, threadId);
       // A transient empty response must never erase a thread that is already on
@@ -2192,6 +2223,10 @@ function renderMessageModal(title = (lang === 'zh' ? '站内留言' : 'Messages'
   const users = messageUsers();
   resolveActiveMessageThread(users);
   const previousThread = document.getElementById('messageThread');
+  const previousInput = document.getElementById('messageText');
+  if (previousInput && previousThread?.dataset.conversationId) {
+    saveInternalMessageDraft(previousInput.value, previousThread.dataset.conversationId);
+  }
   const sameConversation = previousThread?.dataset.conversationId === activeMessageUserId;
   const previousScrollTop = sameConversation ? previousThread.scrollTop : 0;
   const previousScrollAnchor = sameConversation ? captureMessageThreadScrollAnchor(previousThread) : null;
@@ -2204,6 +2239,8 @@ function renderMessageModal(title = (lang === 'zh' ? '站内留言' : 'Messages'
   messageThreadResizeObserver = null;
   document.getElementById('modalTitle').textContent = title;
   document.getElementById('modalBody').innerHTML = messageModalHtml(users);
+  const restoredInput = document.getElementById('messageText');
+  if (restoredInput) restoredInput.value = internalMessageDraft(activeMessageUserId);
   document.getElementById('modalSave').textContent = lang === 'zh' ? '关闭' : 'Close';
   document.getElementById('modalSave').onclick = closeModal;
   document.getElementById('modal').classList.add('open', 'message-modal-open');
@@ -2293,8 +2330,9 @@ function messageModalHtml(users) {
         </div>
         <div id="internalMessagePendingImage">${internalMessagePendingImageHtml()}</div>
         <textarea id="messageText" lang="zh-CN" autocomplete="off" autocorrect="on" spellcheck="true"
+          oninput="saveInternalMessageDraft(this.value)"
           oncompositionstart="internalMessageComposing=true"
-          oncompositionend="internalMessageComposing=false"
+          oncompositionend="internalMessageComposing=false; saveInternalMessageDraft(this.value)"
           onpaste="handleInternalMessagePaste(event)"
           placeholder="${lang === 'zh' ? '输入留言内容，可直接粘贴照片...' : 'Type a message or paste an image...'}"></textarea>
         <button class="btn primary" onclick="sendInternalMessage()">${lang === 'zh' ? '发送' : 'Send'}</button>
@@ -2511,12 +2549,25 @@ function resetMessageAudioButton(audio) {
 async function deleteMessage(messageId) {
   const ok = confirm(lang === 'zh' ? '确定删除/撤销这条留言吗？删除后双方都会看不到。' : 'Delete this message? It will disappear for both sides.');
   if (!ok) return;
+  const previousMessages = Array.isArray(state?.messages) ? state.messages : [];
+  deletedInternalMessageIds.add(String(messageId));
+  if (state?.messages) state.messages = state.messages.filter(message => String(message?.id || '') !== String(messageId));
+  renderMessageModal();
+  updateMessageBadge();
   try {
-    state = await api(`/api/messages/${encodeURIComponent(messageId)}`, { method: 'DELETE' });
+    state = applyInternalMessageTombstones(await api(`/api/messages/${encodeURIComponent(messageId)}`, { method: 'DELETE' }));
     broadcastDataChange();
     renderMessageModal();
     updateMessageBadge();
   } catch (err) {
+    if (String(err?.message || '').includes('留言不存在')) {
+      void refreshInternalMessages();
+      return;
+    }
+    deletedInternalMessageIds.delete(String(messageId));
+    if (state) state.messages = previousMessages;
+    renderMessageModal();
+    updateMessageBadge();
     alert(err.message);
   }
 }
@@ -2526,7 +2577,11 @@ async function selectMessageUser(id) {
     alert(lang === 'zh' ? '请先点击发送，结束当前录音。' : 'Tap send to finish the current recording first.');
     return;
   }
-  if (id !== activeMessageUserId) clearInternalMessagePendingImage();
+  if (id !== activeMessageUserId) {
+    const currentInput = document.getElementById('messageText');
+    if (currentInput) saveInternalMessageDraft(currentInput.value, activeMessageUserId);
+    clearInternalMessagePendingImage();
+  }
   uiNavigationRevision += 1;
   activeMessageUserId = id;
   rememberInternalMessageThread(id);
@@ -2580,12 +2635,12 @@ async function markMessagesRead(fromUserId, options = {}) {
   try {
     const messagesBeforeRead = state.messages;
     const usersBeforeRead = state.messageUsers;
-    const nextState = await api('/api/messages/read', {
+    const nextState = applyInternalMessageTombstones(await api('/api/messages/read', {
       method: 'PUT',
       body: JSON.stringify(fromUserId === GROUP_CHAT_ID
         ? { groupId: 'all-staff' }
         : (fromUserId === CUSTOMER_CODEX_ID ? { groupId: CUSTOMER_CODEX_GROUP_ID } : { fromUserId }))
-    });
+    }));
     const visibleMessagesBeforeRead = messageThreadMessagesForState({ messages: messagesBeforeRead }, fromUserId);
     const visibleMessagesAfterRead = messageThreadMessagesForState(nextState, fromUserId);
     if (visibleMessagesBeforeRead.length && !visibleMessagesAfterRead.length) {
@@ -2608,6 +2663,7 @@ async function sendInternalMessage() {
   const pendingImage = internalMessagePendingImage;
   if (!activeMessageUserId || (!text && !pendingImage?.file)) return;
   input.value = '';
+  saveInternalMessageDraft('', activeMessageUserId);
   if (!pendingImage?.file) {
     await postInternalMessage({ text });
     return;
@@ -2657,7 +2713,7 @@ async function runInternalMessageUpload(pendingId) {
     });
     if (queued.localUrl) URL.revokeObjectURL(queued.localUrl);
     internalMessageUploadQueue.delete(pendingId);
-    state = result;
+    state = applyInternalMessageTombstones(result);
     broadcastDataChange();
     if (document.getElementById('messageThread') && !internalMessageInputActive()) renderMessageModal();
     updateMessageBadge();
@@ -2716,7 +2772,7 @@ async function runInternalMessageSend(pendingId) {
         ? { groupId: pendingMessage.groupId, text: pendingMessage.text, attachment: pendingMessage.attachment, clientRequestId: pendingId }
         : { toUserId: pendingMessage.toUserId, text: pendingMessage.text, attachment: pendingMessage.attachment, clientRequestId: pendingId })
     });
-    state = result;
+    state = applyInternalMessageTombstones(result);
     internalMessageSendQueue.delete(pendingId);
     broadcastDataChange();
     if (!internalMessageInputActive()) renderMessageModal(undefined, { forceLatest:true });

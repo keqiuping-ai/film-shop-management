@@ -11625,7 +11625,10 @@ async function api(req, res) {
   if (req.method === 'DELETE' && url.pathname.startsWith('/api/messages/')) {
     const messageId = path.basename(decodeURIComponent(url.pathname.replace('/api/messages/', '')));
     const message = (db.messages || []).find(item => item.id === messageId);
-    if (!message) return send(res, 404, { error: '留言不存在' });
+    // DELETE is intentionally idempotent. A delayed retry or another open tab
+    // may repeat a successful deletion; return the current state instead of an
+    // alarming "message not found" error.
+    if (!message) return send(res, 200, sanitizeDbForUser(db, user));
     const involved = message.scope === 'group'
       ? message.fromUserId === user.id || user.role === 'owner'
       : message.fromUserId === user.id || message.toUserId === user.id;

@@ -59,14 +59,19 @@ async function run() {
   assert.match(appSource, /正在发送…/, 'Pending text must show a visible sending status');
   assert.match(appSource, /visibleMessagesBeforeRefresh\.length && !visibleMessagesAfterRefresh\.length/, 'Transient empty refreshes must preserve a visible thread');
   assert.match(appSource, /visibleMessagesBeforeRead\.length && !visibleMessagesAfterRead\.length/, 'A transient empty read response must preserve a visible thread');
-  assert(indexSource.includes('/app.js?v=153'), 'Desktop app asset marker must be bumped');
-  assert(indexSource.includes('/styles.css?v=104'), 'Desktop stylesheet marker must be bumped');
+  assert.match(appSource, /internalMessageDraftStorageKey/, 'Each conversation must retain its own local text draft');
+  assert.match(appSource, /oninput="saveInternalMessageDraft\(this\.value\)"/, 'Typing must persist the draft before a background refresh can rebuild the composer');
+  assert.match(appSource, /const deletedInternalMessageIds = new Set\(\)/, 'Deleted messages must retain a local tombstone against stale refresh responses');
+  assert.match(appSource, /applyInternalMessageTombstones/, 'Every message snapshot must remove locally deleted ids');
+  assert.match(serverSource, /DELETE is intentionally idempotent/, 'Repeated deletes must return current state without a false not-found error');
+  assert(indexSource.includes('/app.js?v=162'), 'Desktop app asset marker must be bumped');
+  assert(indexSource.includes('/styles.css?v=110'), 'Desktop stylesheet marker must match the current release');
   assert.match(mobileSource, /const mobileMessageSendQueue = new Map\(\)/, 'Mobile text sends must survive bootstrap replacement');
   assert.match(mobileSource, /mobileMessageSendQueue\.set\(pendingId/, 'Mobile text must render optimistically');
   assert.match(mobileSource, /正在发送…/, 'Mobile pending text must show sending status');
   assert.match(mobileSource, /preserveMobileMessageSnapshot/, 'Mobile refreshes must preserve a visible non-empty thread');
   assert(mobileHtml.includes('/mobile.js?v=69'), 'Mobile app asset marker must be bumped');
-  assert(serviceWorker.includes('film-shop-v145-mailbox-button-shape'), 'Service worker cache must be bumped');
+  assert(serviceWorker.includes('film-shop-v158-message-draft-delete-stability'), 'Service worker cache must be bumped');
   assert.match(appSource, /function capturePageContinuityState\(\)/, 'Desktop refreshes must capture page and nested-scroll positions');
   assert.match(appSource, /function restorePageContinuityState\(snapshot\)/, 'Desktop refreshes must restore page and nested-scroll positions');
   assert.match(appSource, /const unchangedBackgroundRefresh = Boolean\(/, 'Unchanged background refreshes must not rebuild the current page');
@@ -141,6 +146,13 @@ async function run() {
   const afterRead = await request('/api/messages', token);
   assert.equal(afterRead.response.status, 200);
   assert.deepEqual(afterRead.body.messages.map(message => message.id), idsBeforeRead, 'Marking a thread read must never remove or reorder its messages');
+  const messageToDelete = afterRead.body.messages.at(-1);
+  const firstDelete = await request(`/api/messages/${encodeURIComponent(messageToDelete.id)}`, token, { method: 'DELETE' });
+  assert.equal(firstDelete.response.status, 200, JSON.stringify(firstDelete.body));
+  assert(!firstDelete.body.messages.some(message => message.id === messageToDelete.id), 'A deleted message must disappear from the returned state');
+  const repeatedDelete = await request(`/api/messages/${encodeURIComponent(messageToDelete.id)}`, token, { method: 'DELETE' });
+  assert.equal(repeatedDelete.response.status, 200, 'Deleting an already removed message must be idempotent');
+  assert(!repeatedDelete.body.messages.some(message => message.id === messageToDelete.id), 'A repeated delete must not restore the message');
   console.log('Internal message stability regression tests passed.');
 }
 
