@@ -1,4 +1,4 @@
-const CACHE_NAME = 'film-shop-v159-retail-card-entry';
+const CACHE_NAME = 'film-shop-v160-tint-preview-image';
 const ASSETS = [
     '/mobile.html',
     '/warranty.html',
