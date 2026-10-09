@@ -1,4 +1,4 @@
-const CACHE_NAME = 'film-shop-v158-message-draft-delete-stability';
+const CACHE_NAME = 'film-shop-v159-retail-card-entry';
 const ASSETS = [
     '/mobile.html',
     '/warranty.html',

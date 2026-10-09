@@ -85,3 +85,10 @@
 #retailLanguage{background:#fff;color:#111;padding:10px 6px;border-radius:5px;max-width:120px}.retail-contact{padding:10px 18px;font-size:12px}.retail-contact form{display:grid;gap:8px;margin:10px 0}.retail-contact input{width:100%}@media(max-width:650px){header{gap:8px;padding:14px 12px}.brand{font-size:15px}.brand img{width:30px;height:30px}nav{gap:6px}#retailLanguage{max-width:85px;font-size:12px;padding:10px 3px}.retail-deposit{right:auto;left:12px;font-size:13px;max-width:calc(56% - 18px);padding:14px 12px}.chat-launch{right:12px;max-width:40%;font-size:12px;padding:14px 12px}}
 /* Both primary actions stay readable in all five languages. */
 @media(max-width:650px){.retail-deposit{font-size:16px;line-height:1.2;min-height:58px;width:calc(55% - 18px);max-width:none;padding:10px 12px}.chat-launch{font-size:14px;line-height:1.2;min-height:58px;width:calc(45% - 18px);max-width:none;padding:10px 10px}.finish-price .finish-discount{white-space:normal;max-width:160px}}
+
+/* Make the existing product link cover the full home card. */
+.collection-feed .card{position:relative;isolation:isolate;cursor:pointer;touch-action:manipulation}
+.collection-feed .card a.cta::after{content:"";position:absolute;inset:0;z-index:1}
+.collection-feed .card:has(a.cta:focus-visible){outline:3px solid #548018;outline-offset:4px}
+.collection-feed .card:has(a.cta:hover) .cta{color:var(--lime)}
+.collection-feed .video-toggle{z-index:2}
