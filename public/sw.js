@@ -1,4 +1,4 @@
-const CACHE_NAME = 'film-shop-v162-customer-catalog-language';
+const CACHE_NAME = 'film-shop-v164-customer-tint-experience';
 const ASSETS = [
     '/mobile.html',
     '/warranty.html',

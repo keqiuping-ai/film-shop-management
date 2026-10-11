@@ -24,7 +24,7 @@ assert(ordering.includes('onchange="syncPpfVariantRow(this)"'), 'PPF model selec
 assert(ordering.includes('choices.length===1'), 'PPF size auto-selection must be limited to one valid choice');
 
 assert(html.includes('/customer.js?v=22'));
-assert(html.includes('/customer-ordering.js?v=53'));
+assert(html.includes('/customer-ordering.js?v=54'));
 assert(ordering.includes("fetch('/retail/wrap-examples.json')"), 'Color-wrap cards must load the vehicle preview library');
 assert(ordering.includes('color.vehicleImage'), 'Color-wrap cards must render vehicle previews instead of plain swatch photos');
 assert(ordering.includes('function catalogProductName(product)'), 'Live catalog results need locale-aware product names');
