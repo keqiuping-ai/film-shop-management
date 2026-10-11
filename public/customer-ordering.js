@@ -113,6 +113,14 @@ document.body.insertAdjacentHTML('beforeend', `
     <header class="order-center-header"><button class="order-center-brand" onclick="showOrderCenter()"><img src="/quad-film-icon.png" alt="QUAD FILM"><span><b>QUAD FILM</b><small>改色膜产品订购页</small></span></button><div><button class="order-home-button" onclick="showOrderCenter()">← 返回产品分类</button><button class="order-login-button" onclick="showLogin()">经销商登录</button></div></header>
     <main class="wrap-main">
       <div class="wrap-heading"><span>02 · 色彩与质感</span><h1>选择改色膜颜色</h1><p>点击色卡查看大色样和订货选项。当前色号为页面演示，正式色号将由 QUaD 库存系统同步。</p></div>
+      <section class="wrap-material-guide" aria-labelledby="wrapMaterialTitle">
+        <div class="wrap-material-guide-heading"><span>02 / VINYL & TPU</span><h2 id="wrapMaterialTitle">选颜色前，先看懂材质差别</h2><p>用实拍图比较 PVC / Vinyl 与 TPU 在表面效果、日常保护和未来更换成本上的区别。下方选色和库存下单方式保持不变。</p></div>
+        <div class="wrap-material-compare">
+          <article class="wrap-material-card"><header><span>01 / PVC</span><h3>PVC / Vinyl 改色膜</h3><p>主要用于改变车身颜色与造型</p></header><img src="/retail/assets/wrap-comparison/vinyl-swirl-detail.jpeg" alt="Vinyl surface scratches and swirl-mark example" loading="lazy"><div><h4>划痕与旋纹</h4><p>灯光下可见日常累积的划痕与旋纹，表面状态会影响观感。</p><ul><li><b>颜色与造型</b><span>适合以改变车辆外观为主要目的。</span></li><li><b>无自修复层</b><span>普通 Vinyl 的轻微划痕会逐渐累积。</span></li><li><b>养护与移除</b><span>需要关注耐候等级和建议移除期限。</span></li></ul></div></article>
+          <article class="wrap-material-card"><header><span>02 / TPU</span><h3>TPU 彩色保护膜</h3><p>改色，同时兼顾漆面日常保护</p></header><img src="/retail/assets/wrap-comparison/tpu-reflection-clean.png" alt="TPU clear reflections and gloss example" loading="lazy"><div><h4>清晰反光与光泽</h4><p>清晰的环境倒影用于比较表面光泽、平整度与橘皮纹表现。</p><ul><li><b>轻微划痕修复</b><span>带修复涂层的型号可修复轻微表面划痕。</span></li><li><b>日常保护</b><span>帮助防护小石子和轻微擦伤，性能以型号资料为准。</span></li><li><b>选购确认</b><span>下单时仍需核对具体型号、规格和库存。</span></li></ul></div></article>
+        </div>
+        <details class="wrap-material-lifecycle"><summary>了解使用年限与未来更换成本</summary><div><img src="/retail/assets/wrap-comparison/vinyl-aged-two-years.jpeg" alt="Aged Vinyl surface cracking example" loading="lazy"><section><span>LOOK BEYOND DAY ONE</span><h3>选膜时，也要考虑以后拆膜。</h3><p>这个实车案例的 Vinyl 表面已出现明显龟裂。膜材寿命会受产品、日晒和养护影响，不能只按年份判断。</p><p><b>建议定期检查脆化、龟裂和翘边。</b>老化膜可能需要分段移除和清胶，增加施工时间与费用；具体情况由门店查看实车后确认。</p><small>单个实车案例，仅用于说明检查与养护的重要性，不代表所有 Vinyl 产品都会出现相同情况。</small></section></div></details>
+      </section>
       <div class="wrap-tools"><nav class="wrap-filter"><button class="active" onclick="filterWrapSwatches('all',this)">全部</button><button onclick="filterWrapSwatches('gloss',this)">亮光</button><button onclick="filterWrapSwatches('satin',this)">缎面</button><button onclick="filterWrapSwatches('matte',this)">哑光</button></nav><input id="wrapColorSearch" type="search" placeholder="搜索型号或颜色名称" oninput="searchWrapColors(this.value)"></div>
       <section class="wrap-swatch-grid">${colorWrapSamples.map(([code,zh,en,color,finish,label])=>`<button class="wrap-swatch" data-finish="${finish}" onclick="selectWrapSwatch('${code}','${zh}','${en}','${color}','${label}')"><i style="--swatch:${color}" class="${finish}"></i><b>${zh}</b><small>${code} · ${label}</small></button>`).join('')}</section>
       <section class="wrap-manual"><div><span>搜索其他改色膜库存型号</span><h2>快速选货与下单</h2><p>输入仓库型号，选择搜索结果后自动带入颜色名称、规格和客户价格。</p></div><div class="wrap-manual-fields"><label class="wrap-model-search">库存型号<input id="manualWrapCode" autocomplete="off" placeholder="例如：TPUQD42、QD111" oninput="searchColorWrapInventory(this.value)"><div id="manualWrapSuggestions" class="window-film-inventory-results hidden"></div></label><label>颜色名称<input id="manualWrapName" readonly placeholder="选择型号后自动带入"></label><label>规格<select id="manualWrapSize" disabled><option value="">选择后自动带入</option></select></label><label>数量<input id="manualWrapQty" type="number" min="1" value="1"></label></div><button onclick="addManualWrapColor()">＋ 加入订单</button><small>只显示当前可购买且有库存的改色膜；价格按当前登录客户的协议价或等级价结算。</small></section>
@@ -193,8 +201,8 @@ window.addManualWrapColor = function () {
 };
 
 window.searchWrapColors = function (query) {
-  const value=query.trim().toLowerCase();
-  document.querySelectorAll('.wrap-swatch').forEach(item=>item.classList.toggle('hidden',value&&!item.textContent.toLowerCase().includes(value)));
+  const normalized=query.trim().toLowerCase();
+  document.querySelectorAll('.wrap-swatch').forEach(item=>item.classList.toggle('hidden',Boolean(normalized)&&!item.textContent.toLowerCase().includes(normalized)));
 };
 
 let realWrapColors=[];

@@ -1,4 +1,4 @@
-const CACHE_NAME = 'film-shop-v164-customer-tint-experience';
+const CACHE_NAME = 'film-shop-v168-customer-wrap-material-guide';
 const ASSETS = [
     '/mobile.html',
     '/warranty.html',
