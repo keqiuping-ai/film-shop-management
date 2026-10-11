@@ -1,4 +1,4 @@
-const CACHE_NAME = 'film-shop-v161-customer-wrap-vehicle-previews';
+const CACHE_NAME = 'film-shop-v162-customer-catalog-language';
 const ASSETS = [
     '/mobile.html',
     '/warranty.html',

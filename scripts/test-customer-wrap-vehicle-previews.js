@@ -33,6 +33,6 @@ assert(css.includes('grid-template-columns:repeat(4,minmax(0,1fr))'), 'Desktop v
 assert(css.includes('grid-template-columns:repeat(2,minmax(0,1fr))'), 'Mobile vehicle cards should use a readable two-column grid');
 assert(css.includes('aspect-ratio:3/4'), 'Vehicle cards must preserve portrait preview framing');
 assert(html.includes('/customer.css?v=33'));
-assert(html.includes('/customer-ordering.js?v=52'));
+assert(html.includes('/customer-ordering.js?v=53'));
 
 console.log(`Customer wrap vehicle preview tests passed: ${catalog.length}/${catalog.length} colors resolve to existing vehicle images.`);

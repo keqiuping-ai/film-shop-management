@@ -500,8 +500,20 @@ function windowFilmProductForSelection(model,size){return catalogProductForSelec
 function isWindowFilmInventoryProduct(product){return /window|tint|窗膜|隔热膜|汽车膜|太阳膜/i.test(`${product?.category||''} ${product?.name||''} ${product?.description||''}`)}
 function windowFilmAvailableQty(product){return catalogInventoryUtils().availableQty(product)}
 function resetWindowFilmSizeOptions(){const select=document.getElementById('windowFilmSize');if(select)select.innerHTML=windowFilmSizeOptions()}
+function catalogLocale(){return window.QuadI18n?.locale||localStorage.getItem('quadCustomer.locale')||'en'}
+function catalogProductName(product){
+  const name=String(product?.name||'').trim(),fallback=String(product?.model||product?.sku||'').trim();
+  if(catalogLocale()==='zh-CN'||!/[\u3400-\u9fff\uf900-\ufaff]/.test(name))return name||fallback;
+  return fallback;
+}
+function catalogProductDetail(product){
+  const model=String(product?.model||product?.sku||'').trim(),name=catalogProductName(product),spec=String(product?.specification||'').trim(),parts=[];
+  if(name&&normalizeCatalogToken(name)!==normalizeCatalogToken(model))parts.push(name);
+  if(spec&&!parts.some(value=>normalizeCatalogToken(value)===normalizeCatalogToken(spec)))parts.push(spec);
+  return parts.join(' · ')||model;
+}
 function inventorySearchCopy(kind,key){
-  const locale=window.QuadI18n?.locale||localStorage.getItem('quadCustomer.locale')||'en';
+  const locale=catalogLocale();
   const copy={
     en:{login:'Sign in to search live inventory and your dealer pricing.',stock:'in stock',ppfEmpty:'No in-stock PPF model matched this search.',wrapEmpty:'No in-stock color-wrap model matched this search.',ppfSelect:'Select an in-stock PPF model from the search results.',wrapSelect:'Select an in-stock color-wrap model from the search results.'},
     ja:{login:'最新在庫と販売店価格を検索するにはログインしてください。',stock:'在庫あり',ppfEmpty:'一致する在庫ありのPPFモデルがありません。',wrapEmpty:'一致する在庫ありのカーラップモデルがありません。',ppfSelect:'検索結果から在庫ありのPPFモデルを選択してください。',wrapSelect:'検索結果から在庫ありのカーラップモデルを選択してください。'},
@@ -522,7 +534,7 @@ function renderCatalogInventoryResults({value,kind,resultsId,selectProduct}){
   if(!state?.customer){const message=document.createElement('button');message.type='button';message.className='inventory-search-message';message.setAttribute('data-i18n-user-content','');message.textContent=inventorySearchCopy(kind,'login');message.onclick=()=>showLogin();results.appendChild(message);results.classList.remove('hidden');return}
   const matches=catalogInventoryUtils().search(state.products||[],value,kind,12);
   if(!matches.length){const message=document.createElement('p');message.className='inventory-search-empty';message.setAttribute('data-i18n-user-content','');message.textContent=inventorySearchCopy(kind,'empty');results.appendChild(message)}
-  matches.forEach(product=>{const button=document.createElement('button');button.type='button';button.className='inventory-search-result';button.setAttribute('data-i18n-user-content','');button.innerHTML=`<b>${esc(product.model||product.sku)}</b><span>${esc(product.name||product.sku)}${product.specification?` · ${esc(product.specification)}`:''}</span><strong>$${Number(product.price).toFixed(2)} · ${catalogInventoryUtils().availableQty(product)} ${esc(inventorySearchCopy(kind,'stock'))}</strong>`;button.onclick=()=>selectProduct(product.sku);results.appendChild(button)});
+  matches.forEach(product=>{const button=document.createElement('button');button.type='button';button.className='inventory-search-result';button.setAttribute('data-i18n-user-content','');button.innerHTML=`<b>${esc(product.model||product.sku)}</b><span>${esc(catalogProductDetail(product))}</span><strong>$${Number(product.price).toFixed(2)} · ${catalogInventoryUtils().availableQty(product)} ${esc(inventorySearchCopy(kind,'stock'))}</strong>`;button.onclick=()=>selectProduct(product.sku);results.appendChild(button)});
   results.classList.remove('hidden');
 }
 window.searchPpfInventory=function(value){renderCatalogInventoryResults({value,kind:'ppf',resultsId:'ppfInventoryResults',selectProduct:window.selectPpfInventoryProduct})};
@@ -532,7 +544,7 @@ window.selectPpfInventoryProduct=function(sku){
   const order=document.getElementById('ppfInventoryOrder'),size=document.getElementById('ppfInventorySize');
   order.dataset.productSku=product.sku;
   document.getElementById('ppfInventorySelectedModel').textContent=product.model||product.sku;
-  document.getElementById('ppfInventorySelectedDetail').textContent=`${product.name||product.sku} · $${Number(product.price).toFixed(2)}`;
+  document.getElementById('ppfInventorySelectedDetail').textContent=`${catalogProductName(product)} · $${Number(product.price).toFixed(2)}`;
   size.innerHTML='';const option=document.createElement('option');option.value=product.specification||product.sku;option.textContent=product.specification||product.sku;option.selected=true;size.appendChild(option);
   document.getElementById('ppfInventoryResults').classList.add('hidden');
   order.scrollIntoView({behavior:'smooth',block:'center'});
@@ -542,7 +554,7 @@ window.addPpfInventoryProduct=function(){
   if(!product){alert(inventorySearchCopy('ppf','select'));return}
   const qty=Math.max(1,Number(document.getElementById('ppfInventoryQty').value||1)),rows=document.getElementById('ppfSelectedRows'),row=document.createElement('div'),model=product.model||product.sku,size=product.specification||product.sku;
   row.dataset.model=model;row.dataset.size=size;row.dataset.sku=product.sku;row.dataset.directSku=product.sku;
-  row.innerHTML=`<div data-i18n-user-content><b>${esc(model)}</b><small>${esc(product.name||product.sku)} · ${esc(size)}</small></div><strong>× ${qty}</strong><button aria-label="删除这一项" onclick="this.parentElement.remove();updatePpfCartCount()">×</button>`;
+  row.innerHTML=`<div data-i18n-user-content><b>${esc(model)}</b><small>${esc(catalogProductName(product))} · ${esc(size)}</small></div><strong>× ${qty}</strong><button aria-label="删除这一项" onclick="this.parentElement.remove();updatePpfCartCount()">×</button>`;
   rows.appendChild(row);document.getElementById('ppfSelectedList').classList.remove('hidden');document.getElementById('ppfInventoryQty').value=1;updatePpfCartCount();document.getElementById('ppfSelectedList').scrollIntoView({behavior:'smooth',block:'center'});
 };
 window.searchColorWrapInventory=function(value){
@@ -552,10 +564,10 @@ window.searchColorWrapInventory=function(value){
 window.selectColorWrapInventoryProduct=function(sku){
   const product=catalogInventoryUtils().findBySku(state?.products||[],sku,'color-wrap');
   if(!product)return;
-  fillQuickWrapOrder({code:product.model||product.sku,name:product.name||product.sku,finish:'库存型号',color:'#888',product});
+  fillQuickWrapOrder({code:product.model||product.sku,name:catalogProductName(product),finish:'库存型号',color:'#888',product});
 };
 function windowFilmSearchCopy(key){
-  const locale=window.QuadI18n?.locale||localStorage.getItem('quadCustomer.locale')||'en';
+  const locale=catalogLocale();
   const copy={
     en:{login:'Sign in to search live inventory and your dealer pricing.',empty:'No in-stock window-film model matched this search.',stock:'in stock'},
     ja:{login:'最新在庫と販売店価格を検索するにはログインしてください。',empty:'一致する在庫ありのウインドウフィルムがありません。',stock:'在庫あり'},
@@ -584,7 +596,7 @@ window.searchWindowFilmInventory=function(value){
   if(!state?.customer){const message=document.createElement('button');message.type='button';message.className='inventory-search-message';message.setAttribute('data-i18n-user-content','');message.textContent=windowFilmSearchCopy('login');message.onclick=()=>showLogin();results.appendChild(message);results.classList.remove('hidden');return}
   const matches=catalogInventoryUtils().search(state.products||[],value,'window-film',10);
   if(!matches.length){const message=document.createElement('p');message.className='inventory-search-empty';message.setAttribute('data-i18n-user-content','');message.textContent=windowFilmSearchCopy('empty');results.appendChild(message)}
-  matches.forEach(product=>{const button=document.createElement('button');button.type='button';button.className='inventory-search-result';button.setAttribute('data-i18n-user-content','');button.innerHTML=`<b>${esc(product.model||product.sku)}</b><span>${esc(product.name||product.sku)}${product.specification?` · ${esc(product.specification)}`:''}</span><strong>$${Number(product.price).toFixed(2)} · ${windowFilmAvailableQty(product)} ${esc(windowFilmSearchCopy('stock'))}</strong>`;button.onclick=()=>selectWindowFilmInventoryProduct(product.sku);results.appendChild(button)});
+  matches.forEach(product=>{const button=document.createElement('button');button.type='button';button.className='inventory-search-result';button.setAttribute('data-i18n-user-content','');button.innerHTML=`<b>${esc(product.model||product.sku)}</b><span>${esc(catalogProductDetail(product))}</span><strong>$${Number(product.price).toFixed(2)} · ${windowFilmAvailableQty(product)} ${esc(windowFilmSearchCopy('stock'))}</strong>`;button.onclick=()=>selectWindowFilmInventoryProduct(product.sku);results.appendChild(button)});
   results.classList.remove('hidden');
 };
 window.selectWindowFilmInventoryProduct=function(sku){
@@ -592,8 +604,8 @@ window.selectWindowFilmInventoryProduct=function(sku){
   if(!product)return;
   document.querySelectorAll('.window-film-models button').forEach(item=>item.classList.remove('selected'));
   const quick=document.getElementById('windowFilmQuickOrder'),model=product.model||product.sku,sizeLabel=product.specification||product.sku;
-  quick.dataset.series=product.name||product.category||'Automotive Window Film';quick.dataset.model=model;quick.dataset.productSku=product.sku;
-  const selectedModel=document.getElementById('windowFilmSelectedModel'),selectedSeries=document.getElementById('windowFilmSelectedSeries');selectedModel.setAttribute('data-i18n-user-content','');selectedSeries.setAttribute('data-i18n-user-content','');selectedModel.textContent=model;selectedSeries.textContent=`${product.name||product.sku} · $${Number(product.price).toFixed(2)}`;
+  quick.dataset.series=catalogProductName(product)||product.category||'Automotive Window Film';quick.dataset.model=model;quick.dataset.productSku=product.sku;
+  const selectedModel=document.getElementById('windowFilmSelectedModel'),selectedSeries=document.getElementById('windowFilmSelectedSeries');selectedModel.setAttribute('data-i18n-user-content','');selectedSeries.setAttribute('data-i18n-user-content','');selectedModel.textContent=model;selectedSeries.textContent=`${catalogProductName(product)} · $${Number(product.price).toFixed(2)}`;
   const sizeSelect=document.getElementById('windowFilmSize');sizeSelect.innerHTML='';const option=document.createElement('option');option.value=product.sku;option.textContent=sizeLabel;option.selected=true;sizeSelect.appendChild(option);
   document.getElementById('windowFilmInventoryResults').classList.add('hidden');
 };
