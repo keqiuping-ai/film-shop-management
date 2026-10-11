@@ -225,20 +225,34 @@ function activateWrapColorImages() {
 
 async function loadRealWrapColors() {
   try {
-    const colors=await fetch('/assets/wrap-colors/catalog.json').then(response=>response.json());
-    realWrapColors=colors;
+    const [colors,vehiclePreviews]=await Promise.all([
+      fetch('/assets/wrap-colors/catalog.json').then(response=>response.json()),
+      fetch('/retail/wrap-examples.json').then(response=>response.json())
+    ]);
+    const sourceKey=value=>String(value||'').split('/').pop().replace(/\.[^.]+$/,'').toLowerCase();
+    const codeKey=value=>String(value||'').replace(/[^a-z0-9]/gi,'').toLowerCase();
+    const stockPreviews=vehiclePreviews.filter(item=>item.group==='stock');
+    const previewBySource=new Map(stockPreviews.map(item=>[sourceKey(item.sourcePhoto),item]));
+    const previewByCode=new Map(stockPreviews.map(item=>[codeKey(item.referenceCode),item]));
+    realWrapColors=colors.map(color=>{
+      const preview=previewBySource.get(sourceKey(color.sourceFile||color.image))||previewByCode.get(codeKey(color.code));
+      const vehicleImage=preview?.thumbnail||(sourceKey(color.sourceFile||color.image)==='img_5693'
+        ?'/retail/assets/wrap-swatches/matte-pending-thumb.png'
+        :color.image);
+      return {...color,vehicleImage};
+    });
     const grid=document.querySelector('.wrap-swatch-grid');
     grid.innerHTML='';
-    colors.forEach(color=>{
+    realWrapColors.forEach(color=>{
       const button=document.createElement('button');
       button.className='wrap-swatch real-photo';
       button.dataset.finish=color.finish;
-      button.innerHTML=`<img data-src="${color.image}" alt="${color.code} ${color.name}" loading="lazy" decoding="async"><b>${color.name}</b><small>${color.code}</small>`;
+      button.innerHTML=`<img data-src="${color.vehicleImage}" alt="${color.code} ${color.name} vehicle wrap preview" loading="lazy" decoding="async"><b>${color.name}</b><small>${color.code}</small>`;
       button.addEventListener('click',()=>selectRealWrapSwatch(button,color));
       grid.appendChild(button);
     });
   } catch (error) {
-    console.warn('Unable to load the photographed wrap color catalog.',error);
+    console.warn('Unable to load the vehicle wrap preview catalog.',error);
   }
 }
 

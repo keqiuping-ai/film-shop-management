@@ -71,7 +71,7 @@ async function run() {
   assert.match(mobileSource, /正在发送…/, 'Mobile pending text must show sending status');
   assert.match(mobileSource, /preserveMobileMessageSnapshot/, 'Mobile refreshes must preserve a visible non-empty thread');
   assert(mobileHtml.includes('/mobile.js?v=69'), 'Mobile app asset marker must be bumped');
-  assert(serviceWorker.includes('film-shop-v158-message-draft-delete-stability'), 'Service worker cache must be bumped');
+  assert(serviceWorker.includes('film-shop-v161-customer-wrap-vehicle-previews'), 'Service worker cache must be bumped');
   assert.match(appSource, /function capturePageContinuityState\(\)/, 'Desktop refreshes must capture page and nested-scroll positions');
   assert.match(appSource, /function restorePageContinuityState\(snapshot\)/, 'Desktop refreshes must restore page and nested-scroll positions');
   assert.match(appSource, /const unchangedBackgroundRefresh = Boolean\(/, 'Unchanged background refreshes must not rebuild the current page');

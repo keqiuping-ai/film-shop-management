@@ -24,7 +24,9 @@ assert(ordering.includes('onchange="syncPpfVariantRow(this)"'), 'PPF model selec
 assert(ordering.includes('choices.length===1'), 'PPF size auto-selection must be limited to one valid choice');
 
 assert(html.includes('/customer.js?v=22'));
-assert(html.includes('/customer-ordering.js?v=51'));
+assert(html.includes('/customer-ordering.js?v=52'));
+assert(ordering.includes("fetch('/retail/wrap-examples.json')"), 'Color-wrap cards must load the vehicle preview library');
+assert(ordering.includes('color.vehicleImage'), 'Color-wrap cards must render vehicle previews instead of plain swatch photos');
 assert(html.includes('LIVE DEALER ORDERING'));
 assert(!html.includes('Product pricing, payment, and live inventory are not connected yet.'));
 assert(i18n.includes('Sign in to use live inventory, dealer pricing, unified checkout, and Stripe secure payment.'));
