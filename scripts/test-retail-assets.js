@@ -7,4 +7,4 @@ for(const file of ['app.js','tint.js','wrap-gallery.js','style.css','index.html'
  const source=fs.readFileSync(path.join(root,'retail',file),'utf8');
  for(const m of source.matchAll(/(?:src|href)=["'](\/[^"'`$<>]+)["']/g))check(m[1]);
 }
-console.log(`PASS: ${count} retail assets exist, including all 228 gallery records and 3 videos.`);
+console.log(`PASS: ${count} retail assets exist, including all ${require('../public/retail/wrap-examples.json').length} gallery records and 3 videos.`);

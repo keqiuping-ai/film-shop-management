@@ -1,4 +1,4 @@
-const CACHE_NAME = 'film-shop-v168-customer-wrap-material-guide';
+const CACHE_NAME = 'film-shop-v169-retail-racing-selection';
 const ASSETS = [
     '/mobile.html',
     '/warranty.html',

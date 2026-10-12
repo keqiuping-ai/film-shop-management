@@ -4,7 +4,7 @@ async function mountWrapGallery(){
  section.innerHTML='<div class="wrap-groups" aria-live="polite">正在加载色卡…</div>';
  document.querySelector('#configure').after(section);
  let rows;
- try{const response=await fetch('/retail/wrap-examples.json');if(!response.ok)throw Error();rows=await response.json();}catch{section.querySelector('.wrap-groups').innerHTML='<p>色卡暂时无法加载。</p><button id="retryGallery">重新加载</button>';section.querySelector('button').onclick=()=>{section.remove();mountWrapGallery()};return}
+ try{const response=await fetch('/retail/wrap-examples.json?v=2');if(!response.ok)throw Error();rows=await response.json();}catch{section.querySelector('.wrap-groups').innerHTML='<p>色卡暂时无法加载。</p><button id="retryGallery">重新加载</button>';section.querySelector('button').onclick=()=>{section.remove();mountWrapGallery()};return}
  if(!section.isConnected)return;
  const stock=rows.filter(r=>r.group==='stock');
  let picked=new Set();try{picked=new Set(JSON.parse(localStorage.getItem('quad-wrap-picks')||'[]').filter(id=>rows.some(r=>r.id===id)))}catch{}
