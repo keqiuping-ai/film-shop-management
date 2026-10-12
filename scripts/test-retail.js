@@ -26,6 +26,19 @@ assert.equal((await call('quotes',{...q,requestKey:'bad',parts:['fake']},alice))
 assert.equal((await call('checkout',{quoteId:booking.data.id},other)).status,404);
 const checkout=await call('checkout',{quoteId:booking.data.id,locale:'ja'},alice);assert.equal(checkout.status,200);assert.equal(new URL(checkout.data.url).hostname,'buy.stripe.com');assert.equal(new URL(checkout.data.url).searchParams.get('client_reference_id'),booking.data.id);
 let snapshot=(await call('session',undefined,alice)).data;assert.equal(snapshot.quotes[0].estimate,1950);assert.equal(snapshot.quotes[0].paymentStatus,'awaiting_payment');
+const express={...q,name:'',contact:'',vehicle:'',year:'',express:true,requestKey:'express'};
+const quick=await call('quotes',express,alice);assert.equal(quick.status,200);
+assert.equal((await call('quotes',express,alice)).data.id,quick.data.id,'Express retry stays idempotent');
+assert.equal((await call('quotes',{...express,express:false,requestKey:'required'},alice)).status,400);
+assert.equal((await call('quotes',{...express,deposit:1,requestKey:'amount'},alice)).status,400);
+assert.equal((await call('quotes',{...express,parts:['fake'],requestKey:'parts'},alice)).status,400);
+const quickState=(await call('session',undefined,alice)).data;
+assert.equal(quickState.profile.name,'Test Alice','Express does not clear existing contact');
+assert.equal(quickState.quotes.at(-1).status,'details_pending');
+assert.equal(quickState.quotes.at(-1).paymentStatus,'awaiting_payment');
+const quickCheckout=await call('checkout',{quoteId:quick.data.id,locale:'en'},alice);
+assert.equal(new URL(quickCheckout.data.url).searchParams.get('client_reference_id'),quick.data.id);
+assert.equal((await call('checkout',{quoteId:quick.data.id},other)).status,404);
 for(const [series,models,total] of [['basic',['P20','P10'],350],['nano',['NA70','NA28','NA15','NA10'],650],['premium',['SP70','SP50','SP20','SP10'],850]]){
  for(const model of models){const result=await call('quotes',{...q,product:'tint',parts:[],finish:'',requestKey:series+model,tint:{series,model,areas:['前挡','后挡','左前门','右前门','左后门','右后门']}},alice);assert.equal(result.status,200);assert.equal((await call('session',undefined,alice)).data.quotes.at(-1).estimate,total)}
 }

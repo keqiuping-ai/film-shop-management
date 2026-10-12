@@ -1,7 +1,7 @@
 /* Retail UI only: never translates customer messages, form values or product codes. */
 (() => {
  const languages=['zh','en','es','ja','ko'];
- let lang='en';try{const saved=localStorage.getItem('quad-retail-language');if(languages.includes(saved))lang=saved}catch{}
+ let lang='en'; // Every newly opened customer link starts in English.
  const rows=window.RETAIL_TRANSLATIONS||[];
  const dictionaries=Object.fromEntries(languages.map((code,index)=>[code,new Map(rows.map(row=>[row[0],row[index]]))]));
  const sources=new WeakMap(),attributes=new WeakMap();

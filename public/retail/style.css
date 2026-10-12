@@ -95,3 +95,5 @@
 
 /* Explicit image sizing avoids background-only preview painting failures. */
 .tint-landscape-photo{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block;pointer-events:none}
+
+.booking-details{margin-top:24px;border-top:1px solid var(--line);padding-top:18px}.booking-details summary{cursor:pointer;font-weight:700;margin-bottom:18px}
