@@ -27,7 +27,7 @@ assert(ordering.includes('<article><div class="ppf-product-media"><img src="/ass
 assert(!ordering.includes('<section class="ppf-hero">\n        <div><span>01 · 漆面保护膜</span><h1>PPF 产品订购</h1><p>'), 'Legacy split hero markup must not return');
 
 assert(html.includes('/customer.js?v=22'));
-assert(html.includes('/customer-ordering.js?v=59'));
+assert(html.includes('/customer-ordering.js?v=60'));
 assert(ordering.includes("fetch('/retail/wrap-examples.json')"), 'Color-wrap cards must load the vehicle preview library');
 assert(ordering.includes('color.vehicleImage'), 'Color-wrap cards must render vehicle previews instead of plain swatch photos');
 assert(ordering.includes('function catalogProductName(product)'), 'Live catalog results need locale-aware product names');

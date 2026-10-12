@@ -1,15 +1,27 @@
+.custom-patterns {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
 .custom-patterns img {
   display: block;
   width: 100%;
-  height: 90px;
+  aspect-ratio: 3 / 4;
+  height: auto;
   object-fit: cover;
   background: #e5e8e5;
 }
 
 .custom-patterns b {
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  padding-bottom: 0;
+}
+
+.custom-patterns small {
+  display: block;
+  min-height: 2.5em;
+  padding: 2px 3px 6px;
+  color: #56615b;
+  font-size: 8px;
+  line-height: 1.25;
 }
 
 .custom-art {
@@ -24,6 +36,7 @@
   .custom-patterns img,
   .custom-patterns i {
     width: 100%;
-    height: 92px;
+    height: auto;
+    aspect-ratio: 3 / 4;
   }
 }

@@ -83,29 +83,30 @@ const colorWrapSamples = [
 ];
 
 const customWrapPatterns = [
-  ['烈焰流金','custom-wrap-13-crimson-gold-supercar.png'],
-  ['蓝晶赛博','custom-wrap-14-blue-crystal-cyber-pickup.png'],
-  ['珊瑚海风','custom-wrap-15-coral-teal-model-y.png'],
-  ['翡翠地形','custom-wrap-16-emerald-topographic-suv.png'],
-  ['深海电路','custom-wrap-17-midnight-circuit-gt.png'],
-  ['铜影锋芒','custom-wrap-18-copper-velocity-supercar.png'],
-  ['海洋日轮','custom-wrap-19-ocean-sun-crossover.png'],
-  ['赤红墨痕','custom-wrap-20-red-brush-sedan.png'],
-  ['紫境星云','custom-wrap-21-purple-galaxy-cyber-pickup.png'],
-  ['沙漠群峰','custom-wrap-22-desert-mountain-suv.png'],
-  ['极光幻彩','custom-wrap-23-aurora-roadster.png'],
-  ['粉黑疾影','custom-wrap-24-pink-shark-model-y.png'],
-  ['水墨鎏金','custom-wrap-25-ink-gold-coupe.png'],
-  ['荧光战甲','custom-wrap-26-lime-x-cyber-pickup.png'],
-  ['紫蓝极光','custom-wrap-27-purple-aurora-gt.png'],
-  ['黄黑赛道','custom-wrap-28-yellow-track-supercar.png'],
-  ['欢乐涂鸦','custom-wrap-29-pop-art-model-y.png'],
-  ['勃艮第流光','custom-wrap-30-burgundy-flow-sedan.png'],
-  ['冰川迷彩','custom-wrap-31-glacier-camo-pickup.png'],
-  ['经典绿赛','custom-wrap-32-classic-green-coupe.png']
+  ['R-01','石墨灰 · 黄色双条纹','Graphite · Yellow Twin Stripes','racing-01.webp'],
+  ['R-02','冰蓝 · 米白中置条纹','Ice Blue · Ivory Center Stripe','racing-02.webp'],
+  ['R-03','黑白几何 · 77号','Black & White Geometry · No. 77','racing-03.webp'],
+  ['R-04','青白斜切 · 06号','Teal & White Diagonal · No. 06','racing-04.webp'],
+  ['R-05','薄荷绿 · 白色双条纹','Mint Green · White Twin Stripes','racing-05.webp'],
+  ['R-06','紫白碎片几何','Purple & White Fragment Geometry','racing-06.webp'],
+  ['R-07','黑黄竞速双线','Black & Yellow Racing Twin Lines','racing-07.webp'],
+  ['R-08','黑白三角拼接','Black & White Triangle Geometry','racing-08.webp'],
+  ['R-09','明黄 · 黑色中轴线','Bright Yellow · Black Centerline','racing-09.webp'],
+  ['R-10','墨绿 · 双线拉花','Dark Green · Twin-Line Graphics','racing-10.webp'],
+  ['R-11','灰蓝 · 白色纵向条纹','Gray Blue · White Longitudinal Stripes','racing-11.webp'],
+  ['R-12','黑青轮廓勾边','Black & Teal Contour Lines','racing-12.webp'],
+  ['R-13','黄黑动感侧纹','Yellow & Black Dynamic Side Graphics','racing-13.webp'],
+  ['R-14','橙蓝手绘线条','Orange & Blue Hand-Drawn Lines','racing-14.webp'],
+  ['R-15','黑红横向色带','Black & Red Horizontal Bands','racing-15.webp'],
+  ['R-16','香槟黑色动感线条','Champagne & Black Motion Lines','racing-16.webp'],
+  ['R-17','红黄竞速线条','Red & Yellow Racing Lines','racing-17.webp'],
+  ['R-18','银蓝侧面斜纹','Silver & Blue Side Diagonals','racing-18.webp'],
+  ['R-19','天蓝赛车条纹','Sky Blue Racing Stripes','racing-19.webp'],
+  ['R-20','白蓝经典双条纹','White & Blue Classic Twin Stripes','racing-20.webp'],
+  ['R-21','冰蓝 · 双轨竞速','Ice Blue · Twin Track','racing-21.webp']
 ];
 
-document.head.insertAdjacentHTML('beforeend','<link rel="stylesheet" href="/customer-custom-wrap.css?v=2">');
+document.head.insertAdjacentHTML('beforeend','<link rel="stylesheet" href="/customer-custom-wrap.css?v=3">');
 
 document.body.insertAdjacentHTML('beforeend', `
   <section id="colorWrapCatalog" class="wrap-catalog hidden">
@@ -125,7 +126,7 @@ document.body.insertAdjacentHTML('beforeend', `
       <section class="wrap-manual"><div><span>搜索其他改色膜库存型号</span><h2>快速选货与下单</h2><p>输入仓库型号，选择搜索结果后自动带入颜色名称、规格和客户价格。</p></div><div class="wrap-manual-fields"><label class="wrap-model-search">库存型号<input id="manualWrapCode" autocomplete="off" placeholder="例如：TPUQD42、QD111" oninput="searchColorWrapInventory(this.value)"><div id="manualWrapSuggestions" class="window-film-inventory-results hidden"></div></label><label>颜色名称<input id="manualWrapName" readonly placeholder="选择型号后自动带入"></label><label>规格<select id="manualWrapSize" disabled><option value="">选择后自动带入</option></select></label><label>数量<input id="manualWrapQty" type="number" min="1" value="1"></label></div><button onclick="addManualWrapColor()">＋ 加入订单</button><small>只显示当前可购买且有库存的改色膜；价格按当前登录客户的协议价或等级价结算。</small></section>
       <section id="wrapSelection" class="wrap-selection hidden"><div id="wrapLargeSwatch" class="wrap-large-swatch"></div><div class="wrap-selection-copy"><span id="wrapSelectedFinish"></span><h2 id="wrapSelectedName"></h2><small id="wrapSelectedCode"></small><div class="wrap-order-line"><label>卷材规格<select id="wrapSelectedSize"><option value="1.52*18m" selected>1.52 米 × 18 米</option></select></label><label>数量<input id="wrapSelectedQty" type="number" min="1" value="1"></label></div><button class="ppf-preview-button" onclick="addSelectedWrapColor()">＋ 加入选色清单</button><p>可继续选择其他颜色；当前为页面预览，不会扣减库存。</p></div></section>
       <section id="wrapSelectedList" class="wrap-selected-list hidden"><header><div><span>本次已选</span><h2>选色清单</h2></div><b id="wrapSelectedCount">0 项</b></header><div id="wrapSelectedRows"></div><button class="wrap-continue" onclick="document.querySelector('.wrap-swatch-grid').scrollIntoView({behavior:'smooth'})">＋ 继续添加其他颜色</button><button class="wrap-review-order" onclick="previewWrapCheckout()">下一步：核对订单 →</button><p>正式接入后，提交时会统一检查每个色号、规格和数量的可售库存。</p></section>
-      <section class="custom-wrap"><div class="custom-wrap-heading"><span>定制付款</span><h2>彩绘膜与定金付款</h2><p>填写本次彩绘膜、设计费或定金说明，自由输入制作米数和已确认的付款金额，然后进入 Stripe 安全付款。</p></div><div class="custom-wrap-layout"><div><h3>1. 选择参考图案</h3><div class="custom-patterns"><button onclick="selectCustomPattern(this,'灰红渐变')"><i class="gradient-red"></i><b>灰红渐变</b></button><button onclick="selectCustomPattern(this,'赛车拉花')"><i class="racing-stripe"></i><b>赛车拉花</b></button><button onclick="selectCustomPattern(this,'几何切面')"><i class="geometric"></i><b>几何切面</b></button><button onclick="selectCustomPattern(this,'自定义图案')"><i class="custom-art">＋</i><b>自定义图案</b></button></div><input id="customPatternValue" type="hidden"></div><div class="custom-upload"><h3>2. 上传图片或设计文件（可选）</h3><label class="custom-upload-box"><input id="customWrapFile" type="file" accept="image/*,.pdf" onchange="showCustomWrapFile(this)"><b>＋ 选择图片或设计文件</b><small>支持图片或 PDF，文件小于 5 MB；付款订单会保留此附件。</small></label><div id="customWrapFileName" class="custom-file-name">尚未选择文件</div></div></div><div class="custom-vehicle"><h3>3. 车辆与付款资料</h3><div><label>年份<input id="customVehicleYear" inputmode="numeric" placeholder="例如：2025"></label><label>品牌<input id="customVehicleMake" placeholder="例如：Tesla"></label><label>车型<input id="customVehicleModel" placeholder="例如：Model Y"></label></div><div class="custom-payment-fields"><label>付款说明<input id="customPaymentDescription" maxlength="500" placeholder="例如：Model Y 彩绘膜定金"></label><label>制作米数（米）<input id="customPrintedMeters" type="number" min="0.01" max="1000" step="0.01" inputmode="decimal" placeholder="例如：15 或 18"></label><label>付款金额（美元）<input id="customPaymentAmount" type="number" min="1" max="100000" step="0.01" inputmode="decimal" placeholder="例如：500.00"></label></div><label>设计要求与备注<textarea id="customWrapNotes" maxlength="2000" placeholder="可填写颜色、图案位置、文字内容、定金用途或其他要求"></textarea></label><button id="customWrapPayButton" onclick="submitCustomPrintedFilmPayment()">进入 Stripe 安全付款</button><p>金额由客户按已确认的报价或定金填写。此项目不扣成品库存；生产、余款、运费和交付方式由工作人员另行确认。</p></div></section>
+      <section class="custom-wrap"><div class="custom-wrap-heading"><span>定制付款</span><h2>彩绘膜与定金付款</h2><p>填写本次彩绘膜、设计费或定金说明，自由输入制作米数和已确认的付款金额，然后进入 Stripe 安全付款。</p></div><div class="custom-wrap-layout"><div><h3>1. 选择参考图案</h3><div class="custom-patterns" aria-label="QUAD racing wrap reference designs"></div><input id="customPatternValue" type="hidden"></div><div class="custom-upload"><h3>2. 上传图片或设计文件（可选）</h3><label class="custom-upload-box"><input id="customWrapFile" type="file" accept="image/*,.pdf" onchange="showCustomWrapFile(this)"><b>＋ 选择图片或设计文件</b><small>支持图片或 PDF，文件小于 5 MB；付款订单会保留此附件。</small></label><div id="customWrapFileName" class="custom-file-name">尚未选择文件</div></div></div><div class="custom-vehicle"><h3>3. 车辆与付款资料</h3><div><label>年份<input id="customVehicleYear" inputmode="numeric" placeholder="例如：2025"></label><label>品牌<input id="customVehicleMake" placeholder="例如：Tesla"></label><label>车型<input id="customVehicleModel" placeholder="例如：Model Y"></label></div><div class="custom-payment-fields"><label>付款说明<input id="customPaymentDescription" maxlength="500" placeholder="例如：Model Y 彩绘膜定金"></label><label>制作米数（米）<input id="customPrintedMeters" type="number" min="0.01" max="1000" step="0.01" inputmode="decimal" placeholder="例如：15 或 18"></label><label>付款金额（美元）<input id="customPaymentAmount" type="number" min="1" max="100000" step="0.01" inputmode="decimal" placeholder="例如：500.00"></label></div><label>设计要求与备注<textarea id="customWrapNotes" maxlength="2000" placeholder="可填写颜色、图案位置、文字内容、定金用途或其他要求"></textarea></label><button id="customWrapPayButton" onclick="submitCustomPrintedFilmPayment()">进入 Stripe 安全付款</button><p>金额由客户按已确认的报价或定金填写。此项目不扣成品库存；生产、余款、运费和交付方式由工作人员另行确认。</p></div></section>
       <div id="wrapCheckoutPreview" class="wrap-checkout-preview hidden"><b>下一步：核对订单</b><p>正式版本将在这里核对颜色、规格、数量、库存、收货地址、运费和税费，确认无误后才进入信用卡付款。</p><button onclick="this.parentElement.classList.add('hidden')">继续检查本页</button></div>
     </main>
   </section>
@@ -133,7 +134,12 @@ document.body.insertAdjacentHTML('beforeend', `
 
 const customPatternsContainer = document.querySelector('#colorWrapCatalog .custom-patterns');
 if (customPatternsContainer) {
-  customPatternsContainer.innerHTML = `${customWrapPatterns.map(([name,file])=>`<button onclick="selectCustomPattern(this,'${name}')"><img src="/assets/custom-wrap-concepts/${file}" alt="${name}" loading="lazy"><b>${name}</b></button>`).join('')}<button onclick="selectCustomPattern(this,'自定义图案')"><i class="custom-art">＋</i><b>自定义图案</b></button>`;
+  const wrapPatternLocale = localStorage.getItem('quadCustomer.locale') || 'en';
+  customPatternsContainer.innerHTML = `${customWrapPatterns.map(([code,zh,en,file])=>{
+    const title = wrapPatternLocale === 'zh-CN' ? zh : en;
+    const value = `${code} · ${title}`;
+    return `<button onclick="selectCustomPattern(this,'${value}')"><img src="/retail/assets/wrap-garage/${file}" alt="QUAD ${value}" loading="lazy"><b>QUAD ${code}</b><small>${title}</small></button>`;
+  }).join('')}<button onclick="selectCustomPattern(this,'自定义图案')"><i class="custom-art">＋</i><b>自定义图案</b></button>`;
   customPatternsContainer.querySelectorAll('button').forEach(button=>button.addEventListener('click',()=>{
     customPatternsContainer.querySelectorAll('button').forEach(item=>item.classList.toggle('selected',item===button));
     document.getElementById('customPatternValue').value=button.querySelector('b').textContent;

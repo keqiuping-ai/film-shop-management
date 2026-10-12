@@ -1,4 +1,4 @@
-const CACHE_NAME = 'film-shop-v170-ppf-card-image-layout';
+const CACHE_NAME = 'film-shop-v171-customer-racing-reference-gallery';
 const ASSETS = [
     '/mobile.html',
     '/warranty.html',

@@ -28,7 +28,7 @@ assert(css.includes('.customer-tint-experience'), 'Customer tint experience styl
 assert(css.includes('.customer-tint-shade'), 'VLT preview shade styling is required');
 assert(i18n.includes("Where Does the Sun's Heat Go?"), 'Interactive tint copy must be translated');
 assert(html.includes('/customer.css?v=38'));
-assert(html.includes('/customer-ordering.js?v=59'));
+assert(html.includes('/customer-ordering.js?v=60'));
 assert(html.includes('/customer-i18n.js?v=39'));
 
 console.log('Customer tint experience tests passed: heat videos, VLT preview, model-to-order synchronization, localization, and cache versions.');
