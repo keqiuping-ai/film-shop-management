@@ -22,9 +22,12 @@ assert(!ordering.includes("['landing','login','app','orderCenter','ppfCatalog','
 assert(ordering.includes('article.addEventListener(\'click\''), 'the complete product-category card must be clickable');
 assert(ordering.includes('onchange="syncPpfVariantRow(this)"'), 'PPF model selection must update its single valid size');
 assert(ordering.includes('choices.length===1'), 'PPF size auto-selection must be limited to one valid choice');
+assert(ordering.includes('<section class="ppf-hero ppf-hero-copy-only">'), 'PPF page intro must not detach the gloss product image from its product card');
+assert(ordering.includes('<article><div class="ppf-product-media"><img src="/assets/ppf-gloss-green-hero-v1.png" alt="绿色高端汽车透明亮面 PPF 镜面光泽效果">'), 'Gloss PPF card must contain its complete vehicle image');
+assert(!ordering.includes('<section class="ppf-hero">\n        <div><span>01 · 漆面保护膜</span><h1>PPF 产品订购</h1><p>'), 'Legacy split hero markup must not return');
 
 assert(html.includes('/customer.js?v=22'));
-assert(html.includes('/customer-ordering.js?v=58'));
+assert(html.includes('/customer-ordering.js?v=59'));
 assert(ordering.includes("fetch('/retail/wrap-examples.json')"), 'Color-wrap cards must load the vehicle preview library');
 assert(ordering.includes('color.vehicleImage'), 'Color-wrap cards must render vehicle previews instead of plain swatch photos');
 assert(ordering.includes('function catalogProductName(product)'), 'Live catalog results need locale-aware product names');

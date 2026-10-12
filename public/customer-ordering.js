@@ -44,16 +44,15 @@ document.body.insertAdjacentHTML('beforeend', `
       <div><button class="order-home-button" onclick="showOrderCenter()">← 返回产品分类</button><button class="order-login-button" onclick="showLogin()">经销商登录</button></div>
     </header>
     <main class="ppf-main">
-      <section class="ppf-hero">
+      <section class="ppf-hero ppf-hero-copy-only">
         <div><span>01 · 漆面保护膜</span><h1>PPF 产品订购</h1><p>根据表面效果和应用需求选择产品。当前为页面设计预览，型号、价格、库存和下单功能尚未连接。</p></div>
-        <img src="/assets/ppf-gloss-green-hero-v1.png" alt="绿色高端汽车透明亮面 PPF 镜面光泽效果">
       </section>
       <section id="ppfInventoryOrder" class="catalog-inventory-order">
         <div class="window-film-inventory-search"><label>搜索其他车衣库存型号<input id="ppfInventorySearch" type="search" autocomplete="off" placeholder="例如：G18、G20PLUS、DS13S" oninput="searchPpfInventory(this.value)"></label><small>只显示当前可购买且有库存的车衣；价格按当前登录客户的协议价或等级价结算。</small><div id="ppfInventoryResults" class="window-film-inventory-results hidden"></div></div>
         <div class="catalog-inventory-selection"><div><span>快速选货与下单</span><h2 id="ppfInventorySelectedModel">请选择一个库存型号</h2><p id="ppfInventorySelectedDetail">型号、规格和客户价格将自动带入这里</p></div><label>卷材规格<select id="ppfInventorySize" disabled><option value="">选择后自动带入</option></select></label><label>数量<input id="ppfInventoryQty" type="number" min="1" value="1"></label><button type="button" onclick="addPpfInventoryProduct()">＋ 加入购物车</button></div>
       </section>
       <section class="ppf-grid">
-        <article><div class="ppf-product-media"><img src="/assets/quad-premium-automotive-hero-v1.png" alt="透明亮面 PPF"></div><div class="ppf-product-copy"><span>透明系列</span><h2>高亮透明 PPF</h2><p>突出原车漆光泽，适用于整车及重点部位的日常防护。</p>${ppfOrderControls('高亮透明 PPF')}</div></article>
+        <article><div class="ppf-product-media"><img src="/assets/ppf-gloss-green-hero-v1.png" alt="绿色高端汽车透明亮面 PPF 镜面光泽效果"></div><div class="ppf-product-copy"><span>透明系列</span><h2>高亮透明 PPF</h2><p>突出原车漆光泽，适用于整车及重点部位的日常防护。</p>${ppfOrderControls('高亮透明 PPF')}</div></article>
         <article><div class="ppf-product-media"><img src="/assets/ppf-matte-hero-v1.png" alt="深哑光 PPF 的高雾度低反光效果"></div><div class="ppf-product-copy"><span>高雾度系列</span><h2>深哑光 PPF</h2><p>雾度更高、反光更少，呈现均匀柔和、更加纯粹的深哑光效果。</p>${ppfOrderControls('深哑光 PPF')}</div></article>
         <article><div class="ppf-product-media"><img src="/assets/ppf-satin-hero-v1.png" alt="缎面 PPF 的柔和丝绸光泽效果"></div><div class="ppf-product-copy"><span>轻雾度系列</span><h2>缎面 PPF</h2><p>保留细腻的柔和光泽，比亮面低调、比深哑光更有层次和质感。</p>${ppfOrderControls('缎面 PPF')}</div></article>
         <article><div class="ppf-product-media"><img src="/assets/quad-f1-installation-process.jpg" alt="汽车重点部位 PPF"></div><div class="ppf-product-copy"><span>专项保护系列</span><h2>重点部位保护膜</h2><p>适用于前保险杠、引擎盖、后视镜、门边及其他高风险区域。</p>${ppfOrderControls('重点部位保护膜')}</div></article>
