@@ -1,11 +1,12 @@
 {
-  "version": "san-francisco-field-sales-2026-10-14-v1",
+  "version": "san-francisco-field-sales-2026-10-14-v2",
   "marketId": "san-francisco",
   "marketLabel": "旧金山",
   "sourceWorkbook": "SanFrancisco_100km_Visit_Routes_EN_CN.xlsx",
+  "supplementalSourceWorkbook": "Architectural_Film_Four_Cities_EN_CN.xlsx",
   "sourceCenter": "1 Dr. Carlton B. Goodlett Place, San Francisco, CA 94102",
-  "recordCount": 269,
-  "photoCount": 222,
+  "recordCount": 271,
+  "photoCount": 253,
   "routeCount": 7,
   "batchCount": 60,
   "records": [
@@ -17,8 +18,8 @@
       "address": "601 Van Ness Ave #E305, San Francisco, CA 94102, United States",
       "distanceKm": 0.4,
       "distanceBand": "0–50 km / 公里",
-      "services": "Automotive window tint / 汽车隔热膜",
-      "filmBrands": "3M、Madico",
+      "services": "Automotive window tint / 汽车隔热膜\n建筑膜业务 / Architectural film: Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜; Solar and heat-control film / 隔热防晒膜; Safety and security film / 安全防爆膜; Privacy and frosted film / 隐私磨砂膜; Anti-graffiti film / 防涂鸦膜",
+      "filmBrands": "3M、Madico\n3M, FASARA",
       "serviceEvidence": "Directory classification only; review required\n仅目录分类，待复核",
       "phone": "+1 415-251-8462",
       "website": "https://www.sftintshop.com/",
@@ -26,11 +27,12 @@
       "directorySource": "https://findawrap.com/shops/san-francisco-ca/sf-tint-shop-san-francisco-ca",
       "serviceSources": [
         "https://www.sftintshop.com/",
-        "https://www.sftintshop.com/contactus/index.html"
+        "https://www.sftintshop.com/contactus/index.html",
+        "https://www.sftintshop.com/commercial/index.html"
       ],
       "lat": 37.7811165,
       "lng": -122.4213309,
-      "researchNotes": "Directory category only; confirm services before visiting / 仅目录分类，出访前确认业务。Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认",
+      "researchNotes": "Directory category only; confirm services before visiting / 仅目录分类，出访前确认业务。Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认\nPublic address and branch require confirmation before visiting / 出访前确认当前地址及分店\nArchitecture services are separately identified; automotive-only services excluded / 建筑业务单独确认，不以汽车膜业务代替\nBrand mentions require building-product and branch confirmation / 页面品牌提及需另核实建筑产品系列及分店供应",
       "route": "A",
       "visitRegion": "旧金山及半岛北部",
       "visitBatch": "A-01",
@@ -38,7 +40,31 @@
       "navigationUrl": "https://www.google.com/maps/dir/?api=1&origin=1+Dr.+Carlton+B.+Goodlett+Place%2C+San+Francisco%2C+CA+94102&destination=601+Van+Ness+Ave+%23E305%2C+San+Francisco%2C+CA+94102%2C+United+States&travelmode=driving",
       "socialLinks": {},
       "photoVerification": "No usable public photo found / 未找到可用公开照片",
-      "referencePhotos": []
+      "referencePhotos": [
+        {
+          "url": "/assets/field-sales-prospects/ARCH-SF002-01.jpg",
+          "fileName": "ARCH-SF002-01.jpg",
+          "contentType": "image/jpeg",
+          "sourceLabel": "Public architectural-film website image; location unverified",
+          "sourceUrl": "https://www.sftintshop.com/commercial/index.html"
+        },
+        {
+          "url": "/assets/field-sales-prospects/ARCH-SF002-02.jpg",
+          "fileName": "ARCH-SF002-02.jpg",
+          "contentType": "image/jpeg",
+          "sourceLabel": "Public architectural-film website image; location unverified",
+          "sourceUrl": "https://www.sftintshop.com/commercial/index.html"
+        }
+      ],
+      "architecturalSourceIds": [
+        "ARCH-SF002"
+      ],
+      "architecturalSourceId": "ARCH-SF002",
+      "architecturalServices": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜; Solar and heat-control film / 隔热防晒膜; Safety and security film / 安全防爆膜; Privacy and frosted film / 隐私磨砂膜; Anti-graffiti film / 防涂鸦膜",
+      "interestedProducts": [
+        "建筑玻璃膜"
+      ],
+      "currentProducts": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜; Solar and heat-control film / 隔热防晒膜; Safety and security film / 安全防爆膜; Privacy and frosted film / 隐私磨砂膜; Anti-graffiti film / 防涂鸦膜"
     },
     {
       "publicRecordId": "SF003",
@@ -84,7 +110,7 @@
       "address": "77 Van Ness Ave, San Francisco, CA 94102, United States",
       "distanceKm": 0.3,
       "distanceBand": "0–50 km / 公里",
-      "services": "Automotive window tint / 汽车隔热膜",
+      "services": "Automotive window tint / 汽车隔热膜\n建筑膜业务 / Architectural film: Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜; Safety and security film / 安全防爆膜; Anti-graffiti film / 防涂鸦膜",
       "filmBrands": "LLumar",
       "serviceEvidence": "Directory classification only; review required\n仅目录分类，待复核",
       "phone": "+1 209-352-7926",
@@ -97,7 +123,7 @@
       ],
       "lat": 37.7760549,
       "lng": -122.4199372,
-      "researchNotes": "Directory category only; confirm services before visiting / 仅目录分类，出访前确认业务。Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认",
+      "researchNotes": "Directory category only; confirm services before visiting / 仅目录分类，出访前确认业务。Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认\nPublic address and branch require confirmation before visiting / 出访前确认当前地址及分店\nArchitecture services are separately identified; automotive-only services excluded / 建筑业务单独确认，不以汽车膜业务代替\nBrand mentions require building-product and branch confirmation / 页面品牌提及需另核实建筑产品系列及分店供应",
       "route": "A",
       "visitRegion": "旧金山及半岛北部",
       "visitBatch": "A-01",
@@ -114,8 +140,31 @@
           "contentType": "image/jpeg",
           "sourceLabel": "Public website or directory image; location unverified",
           "sourceUrl": "https://www.sierranevadatint.com/"
+        },
+        {
+          "url": "/assets/field-sales-prospects/ARCH-SF001-01.jpg",
+          "fileName": "ARCH-SF001-01.jpg",
+          "contentType": "image/jpeg",
+          "sourceLabel": "Public architectural-film website image; location unverified",
+          "sourceUrl": "https://www.sierranevadatint.com/"
+        },
+        {
+          "url": "/assets/field-sales-prospects/ARCH-SF001-02.jpg",
+          "fileName": "ARCH-SF001-02.jpg",
+          "contentType": "image/jpeg",
+          "sourceLabel": "Public architectural-film website image; location unverified",
+          "sourceUrl": "https://www.sierranevadatint.com/"
         }
-      ]
+      ],
+      "architecturalSourceIds": [
+        "ARCH-SF001"
+      ],
+      "architecturalSourceId": "ARCH-SF001",
+      "architecturalServices": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜; Safety and security film / 安全防爆膜; Anti-graffiti film / 防涂鸦膜",
+      "interestedProducts": [
+        "建筑玻璃膜"
+      ],
+      "currentProducts": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜; Safety and security film / 安全防爆膜; Anti-graffiti film / 防涂鸦膜"
     },
     {
       "publicRecordId": "SF001",
@@ -393,8 +442,8 @@
       "address": "850 S Van Ness Ave, San Francisco, CA 94110, United States",
       "distanceKm": 2.1,
       "distanceBand": "0–50 km / 公里",
-      "services": "Automotive window tint / 汽车隔热膜",
-      "filmBrands": "3M",
+      "services": "Automotive window tint / 汽车隔热膜\n建筑膜业务 / Architectural film: Commercial glass film / 商业建筑玻璃膜; Solar and heat-control film / 隔热防晒膜",
+      "filmBrands": "3M\n3M, FASARA",
       "serviceEvidence": "Directory classification only; review required\n仅目录分类，待复核",
       "phone": "+1 415-650-5200",
       "website": "https://windowworks.co/",
@@ -402,11 +451,12 @@
       "directorySource": "https://findawrap.com/shops/san-francisco-ca/window-works-san-francisco-ca",
       "serviceSources": [
         "https://windowworks.co/",
-        "https://windowworks.co/contact-us/"
+        "https://windowworks.co/contact-us/",
+        "https://windowworks.co/customer-care/construction-commercial/"
       ],
       "lat": 37.7594558,
       "lng": -122.4175184,
-      "researchNotes": "Directory category only; confirm services before visiting / 仅目录分类，出访前确认业务。Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认",
+      "researchNotes": "Directory category only; confirm services before visiting / 仅目录分类，出访前确认业务。Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认\nPublic address and branch require confirmation before visiting / 出访前确认当前地址及分店\nArchitecture services are separately identified; automotive-only services excluded / 建筑业务单独确认，不以汽车膜业务代替\nBrand mentions require building-product and branch confirmation / 页面品牌提及需另核实建筑产品系列及分店供应",
       "route": "A",
       "visitRegion": "旧金山及半岛北部",
       "visitBatch": "A-02",
@@ -425,7 +475,16 @@
           "sourceLabel": "Public website or directory image; location unverified",
           "sourceUrl": "https://windowworks.co/"
         }
-      ]
+      ],
+      "architecturalSourceIds": [
+        "ARCH-SF003"
+      ],
+      "architecturalSourceId": "ARCH-SF003",
+      "architecturalServices": "Commercial glass film / 商业建筑玻璃膜; Solar and heat-control film / 隔热防晒膜",
+      "interestedProducts": [
+        "建筑玻璃膜"
+      ],
+      "currentProducts": "Commercial glass film / 商业建筑玻璃膜; Solar and heat-control film / 隔热防晒膜"
     },
     {
       "publicRecordId": "SF008",
@@ -521,8 +580,8 @@
       "address": "3239 Mission St, San Francisco, CA 94110, United States",
       "distanceKm": 3.7,
       "distanceBand": "0–50 km / 公里",
-      "services": "Automotive window tint / 汽车隔热膜",
-      "filmBrands": "3M、Madico",
+      "services": "Automotive window tint / 汽车隔热膜\n建筑膜业务 / Architectural film: Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜; Safety and security film / 安全防爆膜",
+      "filmBrands": "3M、Madico\nUnverified / 未核实",
       "serviceEvidence": "Official automotive-film service evidence / 官网汽车膜服务佐证",
       "phone": "+1 415-813-0672",
       "website": "http://www.filminstallpros.com/",
@@ -534,7 +593,7 @@
       ],
       "lat": 37.7449665,
       "lng": -122.4199372,
-      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认",
+      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认\nPublic address and branch require confirmation before visiting / 出访前确认当前地址及分店\nArchitecture services are separately identified; automotive-only services excluded / 建筑业务单独确认，不以汽车膜业务代替\nBrand mentions require building-product and branch confirmation / 页面品牌提及需另核实建筑产品系列及分店供应",
       "route": "A",
       "visitRegion": "旧金山及半岛北部",
       "visitBatch": "A-03",
@@ -545,7 +604,24 @@
         "yelp": "https://www.yelp.com/biz/film-install-pros-san-francisco"
       },
       "photoVerification": "No usable public photo found / 未找到可用公开照片",
-      "referencePhotos": []
+      "referencePhotos": [
+        {
+          "url": "/assets/field-sales-prospects/ARCH-SF005-01.jpg",
+          "fileName": "ARCH-SF005-01.jpg",
+          "contentType": "image/jpeg",
+          "sourceLabel": "Public architectural-film website image; location unverified",
+          "sourceUrl": "https://www.filminstallpros.com/about-us"
+        }
+      ],
+      "architecturalSourceIds": [
+        "ARCH-SF005"
+      ],
+      "architecturalSourceId": "ARCH-SF005",
+      "architecturalServices": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜; Safety and security film / 安全防爆膜",
+      "interestedProducts": [
+        "建筑玻璃膜"
+      ],
+      "currentProducts": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜; Safety and security film / 安全防爆膜"
     },
     {
       "publicRecordId": "SF022",
@@ -626,8 +702,8 @@
       "address": "4104 24th St #433, San Francisco, CA 94114, United States",
       "distanceKm": 3.3,
       "distanceBand": "0–50 km / 公里",
-      "services": "Automotive window tint / 汽车隔热膜",
-      "filmBrands": "Not publicly verified\n未公开核实",
+      "services": "Automotive window tint / 汽车隔热膜\n建筑膜业务 / Architectural film: Commercial glass film / 商业建筑玻璃膜",
+      "filmBrands": "Not publicly verified\n未公开核实\nUnverified / 未核实",
       "serviceEvidence": "Directory classification only; review required\n仅目录分类，待复核",
       "phone": "+1 415-643-3315",
       "website": "http://pwtsf.com/",
@@ -635,11 +711,12 @@
       "directorySource": "https://findawrap.com/shops/san-francisco-ca/professional-window-tinting-san-francisco-ca",
       "serviceSources": [
         "http://pwtsf.com/",
-        "http://pwtsf.com/#/about"
+        "http://pwtsf.com/#/about",
+        "http://pwtsf.com/#/commercial"
       ],
       "lat": 37.7514372,
       "lng": -122.4342692,
-      "researchNotes": "Directory category only; confirm services before visiting / 仅目录分类，出访前确认业务。Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认",
+      "researchNotes": "Directory category only; confirm services before visiting / 仅目录分类，出访前确认业务。Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认\nPublic address and branch require confirmation before visiting / 出访前确认当前地址及分店\nArchitecture services are separately identified; automotive-only services excluded / 建筑业务单独确认，不以汽车膜业务代替\nBrand mentions require building-product and branch confirmation / 页面品牌提及需另核实建筑产品系列及分店供应",
       "route": "A",
       "visitRegion": "旧金山及半岛北部",
       "visitBatch": "A-03",
@@ -649,7 +726,16 @@
         "yelp": "https://www.yelp.com/biz/professional-window-tinting-san-francisco"
       },
       "photoVerification": "No usable public photo found / 未找到可用公开照片",
-      "referencePhotos": []
+      "referencePhotos": [],
+      "architecturalSourceIds": [
+        "ARCH-SF004"
+      ],
+      "architecturalSourceId": "ARCH-SF004",
+      "architecturalServices": "Commercial glass film / 商业建筑玻璃膜",
+      "interestedProducts": [
+        "建筑玻璃膜"
+      ],
+      "currentProducts": "Commercial glass film / 商业建筑玻璃膜"
     },
     {
       "publicRecordId": "SF013",
@@ -765,8 +851,8 @@
       "address": "2907 San Bruno Ave, San Francisco, CA 94134",
       "distanceKm": 6.1,
       "distanceBand": "0–50 km / 公里",
-      "services": "Automotive window tint / 汽车隔热膜; Color change & vinyl wraps / 改色膜及车身包覆",
-      "filmBrands": "Not publicly verified\n未公开核实",
+      "services": "Automotive window tint / 汽车隔热膜; Color change & vinyl wraps / 改色膜及车身包覆\n建筑膜业务 / Architectural film: Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜; Solar and heat-control film / 隔热防晒膜; Safety and security film / 安全防爆膜; Privacy and frosted film / 隐私磨砂膜",
+      "filmBrands": "Not publicly verified\n未公开核实\nLLumar",
       "serviceEvidence": "Official automotive-film service evidence / 官网汽车膜服务佐证",
       "phone": "(415) 267-9136",
       "website": "https://www.savswindowtint.com",
@@ -774,11 +860,14 @@
       "directorySource": "https://findawrap.com/shops/san-francisco-ca/savs-window-tint-ca",
       "serviceSources": [
         "https://www.savswindowtint.com",
-        "https://www.savswindowtint.com/about-us"
+        "https://www.savswindowtint.com/about-us",
+        "https://savswindowtint.com/",
+        "https://savswindowtint.com/savs-window-tinting-services/residential-window-tinting",
+        "https://savswindowtint.com/about-us"
       ],
       "lat": 37.72512469999999,
       "lng": -122.4023263,
-      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认",
+      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认\nPublic address and branch require confirmation before visiting / 出访前确认当前地址及分店\nArchitecture services are separately identified; automotive-only services excluded / 建筑业务单独确认，不以汽车膜业务代替\nBrand mentions require building-product and branch confirmation / 页面品牌提及需另核实建筑产品系列及分店供应",
       "route": "A",
       "visitRegion": "旧金山及半岛北部",
       "visitBatch": "A-04",
@@ -794,7 +883,16 @@
           "sourceLabel": "Public website or directory image; location unverified",
           "sourceUrl": "https://www.savswindowtint.com"
         }
-      ]
+      ],
+      "architecturalSourceIds": [
+        "ARCH-SF006"
+      ],
+      "architecturalSourceId": "ARCH-SF006",
+      "architecturalServices": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜; Solar and heat-control film / 隔热防晒膜; Safety and security film / 安全防爆膜; Privacy and frosted film / 隐私磨砂膜",
+      "interestedProducts": [
+        "建筑玻璃膜"
+      ],
+      "currentProducts": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜; Solar and heat-control film / 隔热防晒膜; Safety and security film / 安全防爆膜; Privacy and frosted film / 隐私磨砂膜"
     },
     {
       "publicRecordId": "SF023",
@@ -908,8 +1006,8 @@
       "address": "197 87th St, Daly City, CA 94015, United States",
       "distanceKm": 10.6,
       "distanceBand": "0–50 km / 公里",
-      "services": "Automotive window tint / 汽车隔热膜; Paint protection film (PPF) / 漆面保护膜; Color change & vinyl wraps / 改色膜及车身包覆; Ceramic coating / 陶瓷镀膜",
-      "filmBrands": "XPEL、3M、Avery Dennison、Ceramic Pro",
+      "services": "Automotive window tint / 汽车隔热膜; Paint protection film (PPF) / 漆面保护膜; Color change & vinyl wraps / 改色膜及车身包覆; Ceramic coating / 陶瓷镀膜\n建筑膜业务 / Architectural film: Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜",
+      "filmBrands": "XPEL、3M、Avery Dennison、Ceramic Pro\nUnverified / 未核实",
       "serviceEvidence": "Official automotive-film service evidence / 官网汽车膜服务佐证",
       "phone": "+1 415-299-7206",
       "website": "http://mcarppf.com/",
@@ -921,7 +1019,7 @@
       ],
       "lat": 37.6930847,
       "lng": -122.4720291,
-      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认",
+      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认\nPublic address and branch require confirmation before visiting / 出访前确认当前地址及分店\nArchitecture services are separately identified; automotive-only services excluded / 建筑业务单独确认，不以汽车膜业务代替\nBrand mentions require building-product and branch confirmation / 页面品牌提及需另核实建筑产品系列及分店供应",
       "route": "A",
       "visitRegion": "旧金山及半岛北部",
       "visitBatch": "A-05",
@@ -940,7 +1038,16 @@
           "sourceLabel": "Public website or directory image; location unverified",
           "sourceUrl": "http://mcarppf.com/"
         }
-      ]
+      ],
+      "architecturalSourceIds": [
+        "ARCH-SF007"
+      ],
+      "architecturalSourceId": "ARCH-SF007",
+      "architecturalServices": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜",
+      "interestedProducts": [
+        "建筑玻璃膜"
+      ],
+      "currentProducts": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜"
     },
     {
       "publicRecordId": "SF028",
@@ -1155,8 +1262,8 @@
       "address": "611 Gateway Blvd Ste 120, South San Francisco, CA 94080, United States",
       "distanceKm": 13.4,
       "distanceBand": "0–50 km / 公里",
-      "services": "Automotive window tint / 汽车隔热膜",
-      "filmBrands": "3M",
+      "services": "Automotive window tint / 汽车隔热膜\n建筑膜业务 / Architectural film: Furniture and interior surface wraps / 家具及室内表面装饰膜; Solar and heat-control film / 隔热防晒膜; Safety and security film / 安全防爆膜; Privacy and frosted film / 隐私磨砂膜; Anti-graffiti film / 防涂鸦膜; Switchable smart film / 调光智能膜",
+      "filmBrands": "3M\n3M, DI-NOC, FASARA",
       "serviceEvidence": "Official automotive-film service evidence / 官网汽车膜服务佐证",
       "phone": "+1 714-315-8993",
       "website": "https://www.coolvu.com/sanfrancisco/",
@@ -1164,11 +1271,13 @@
       "directorySource": "https://findawrap.com/shops/south-san-francisco-ca/coolvu-of-san-francisco-south-san-francisco-ca",
       "serviceSources": [
         "https://www.coolvu.com/sanfrancisco/",
-        "https://www.coolvu.com/contact/"
+        "https://www.coolvu.com/contact/",
+        "https://www.coolvu.com/surface-finishes/architectural-vinyl/",
+        "https://www.coolvu.com/wall-window-coverings/commercial-graphics-branding-solutions/"
       ],
       "lat": 37.65869929999999,
       "lng": -122.4001555,
-      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认",
+      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认\nPublic address and branch require confirmation before visiting / 出访前确认当前地址及分店\nArchitecture services are separately identified; automotive-only services excluded / 建筑业务单独确认，不以汽车膜业务代替\nBrand mentions require building-product and branch confirmation / 页面品牌提及需另核实建筑产品系列及分店供应",
       "route": "A",
       "visitRegion": "旧金山及半岛北部",
       "visitBatch": "A-06",
@@ -1186,8 +1295,31 @@
           "contentType": "image/jpeg",
           "sourceLabel": "Public website or directory image; location unverified",
           "sourceUrl": "https://www.coolvu.com/sanfrancisco/"
+        },
+        {
+          "url": "/assets/field-sales-prospects/ARCH-SF008-01.jpg",
+          "fileName": "ARCH-SF008-01.jpg",
+          "contentType": "image/jpeg",
+          "sourceLabel": "Public architectural-film website image; location unverified",
+          "sourceUrl": "https://www.coolvu.com/sanfrancisco/"
+        },
+        {
+          "url": "/assets/field-sales-prospects/ARCH-SF008-02.jpg",
+          "fileName": "ARCH-SF008-02.jpg",
+          "contentType": "image/jpeg",
+          "sourceLabel": "Public architectural-film website image; location unverified",
+          "sourceUrl": "https://www.coolvu.com/sanfrancisco/"
         }
-      ]
+      ],
+      "architecturalSourceIds": [
+        "ARCH-SF008"
+      ],
+      "architecturalSourceId": "ARCH-SF008",
+      "architecturalServices": "Furniture and interior surface wraps / 家具及室内表面装饰膜; Solar and heat-control film / 隔热防晒膜; Safety and security film / 安全防爆膜; Privacy and frosted film / 隐私磨砂膜; Anti-graffiti film / 防涂鸦膜; Switchable smart film / 调光智能膜",
+      "interestedProducts": [
+        "建筑玻璃膜"
+      ],
+      "currentProducts": "Furniture and interior surface wraps / 家具及室内表面装饰膜; Solar and heat-control film / 隔热防晒膜; Safety and security film / 安全防爆膜; Privacy and frosted film / 隐私磨砂膜; Anti-graffiti film / 防涂鸦膜; Switchable smart film / 调光智能膜"
     },
     {
       "publicRecordId": "SF047",
@@ -1327,19 +1459,21 @@
       "address": "301 San Bruno Ave E, San Bruno, CA 94066, United States",
       "distanceKm": 16.4,
       "distanceBand": "0–50 km / 公里",
-      "services": "Automotive window tint / 汽车隔热膜; Paint protection film (PPF) / 漆面保护膜; Color change & vinyl wraps / 改色膜及车身包覆; Ceramic coating / 陶瓷镀膜",
-      "filmBrands": "XPEL、3M、Avery Dennison、Ceramic Pro",
+      "services": "Automotive window tint / 汽车隔热膜; Paint protection film (PPF) / 漆面保护膜; Color change & vinyl wraps / 改色膜及车身包覆; Ceramic coating / 陶瓷镀膜\n建筑膜业务 / Architectural film: Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜",
+      "filmBrands": "XPEL、3M、Avery Dennison、Ceramic Pro\nUnverified / 未核实",
       "serviceEvidence": "Official automotive-film service evidence / 官网汽车膜服务佐证",
       "phone": "+1 415-528-8182",
       "website": "https://www.mcarppf.com/",
       "googleMapsUrl": "https://www.google.com/maps/search/?api=1&query=%E2%9C%85%20MCAR%20PPF%20%26%20Window%20Tint%2C%20301%20San%20Bruno%20Ave%20E%2C%20San%20Bruno%2C%20CA%2094066%2C%20United%20States",
       "directorySource": "https://findawrap.com/shops/san-bruno-ca/mcar-ppf-window-tint-san-bruno-ca",
       "serviceSources": [
-        "https://www.mcarppf.com/"
+        "https://www.mcarppf.com/",
+        "http://mcarppf.com/",
+        "https://mcarppf.com/mcar-ppf-and-window-tinting/contact-us/"
       ],
       "lat": 37.6309632,
       "lng": -122.4102533,
-      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认",
+      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认\nPublic address and branch require confirmation before visiting / 出访前确认当前地址及分店\nArchitecture services are separately identified; automotive-only services excluded / 建筑业务单独确认，不以汽车膜业务代替\nBrand mentions require building-product and branch confirmation / 页面品牌提及需另核实建筑产品系列及分店供应",
       "route": "A",
       "visitRegion": "旧金山及半岛北部",
       "visitBatch": "A-07",
@@ -1358,7 +1492,16 @@
           "sourceLabel": "Public website or directory image; location unverified",
           "sourceUrl": "https://www.mcarppf.com/"
         }
-      ]
+      ],
+      "architecturalSourceIds": [
+        "ARCH-SF012"
+      ],
+      "architecturalSourceId": "ARCH-SF012",
+      "architecturalServices": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜",
+      "interestedProducts": [
+        "建筑玻璃膜"
+      ],
+      "currentProducts": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜"
     },
     {
       "publicRecordId": "SF054",
@@ -1445,8 +1588,8 @@
       "address": "1457 Rollins Rd, Burlingame, CA 94010, United States",
       "distanceKm": 21.2,
       "distanceBand": "0–50 km / 公里",
-      "services": "Automotive window tint / 汽车隔热膜; Paint protection film (PPF) / 漆面保护膜; Color change & vinyl wraps / 改色膜及车身包覆",
-      "filmBrands": "Not publicly verified\n未公开核实",
+      "services": "Automotive window tint / 汽车隔热膜; Paint protection film (PPF) / 漆面保护膜; Color change & vinyl wraps / 改色膜及车身包覆\n建筑膜业务 / Architectural film: Commercial glass film / 商业建筑玻璃膜",
+      "filmBrands": "Not publicly verified\n未公开核实\nUnverified / 未核实",
       "serviceEvidence": "Official automotive-film service evidence / 官网汽车膜服务佐证",
       "phone": "+1 628-628-0549",
       "website": "https://signstudiun.com/",
@@ -1458,7 +1601,7 @@
       ],
       "lat": 37.592153,
       "lng": -122.3697764,
-      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认",
+      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认\nPublic address and branch require confirmation before visiting / 出访前确认当前地址及分店\nArchitecture services are separately identified; automotive-only services excluded / 建筑业务单独确认，不以汽车膜业务代替\nBrand mentions require building-product and branch confirmation / 页面品牌提及需另核实建筑产品系列及分店供应",
       "route": "B",
       "visitRegion": "半岛及硅谷西北",
       "visitBatch": "B-01",
@@ -1469,7 +1612,16 @@
         "facebook": "https://www.facebook.com/MSWRAPTINT\nhttps://www.facebook.com/pitstopbayarea"
       },
       "photoVerification": "No usable public photo found / 未找到可用公开照片",
-      "referencePhotos": []
+      "referencePhotos": [],
+      "architecturalSourceIds": [
+        "ARCH-SF015"
+      ],
+      "architecturalSourceId": "ARCH-SF015",
+      "architecturalServices": "Commercial glass film / 商业建筑玻璃膜",
+      "interestedProducts": [
+        "建筑玻璃膜"
+      ],
+      "currentProducts": "Commercial glass film / 商业建筑玻璃膜"
     },
     {
       "publicRecordId": "SF082",
@@ -1479,19 +1631,20 @@
       "address": "402 Birch Ave, San Mateo, CA 94402, United States",
       "distanceKm": 26,
       "distanceBand": "0–50 km / 公里",
-      "services": "Automotive window tint / 汽车隔热膜; Paint protection film (PPF) / 漆面保护膜; Ceramic coating / 陶瓷镀膜; Detailing & paint correction / 精洗及漆面修复",
-      "filmBrands": "LLumar",
+      "services": "Automotive window tint / 汽车隔热膜; Paint protection film (PPF) / 漆面保护膜; Ceramic coating / 陶瓷镀膜; Detailing & paint correction / 精洗及漆面修复\n建筑膜业务 / Architectural film: Residential glass film / 住宅玻璃膜",
+      "filmBrands": "LLumar\nLLumar, SunTek",
       "serviceEvidence": "Official automotive-film service evidence / 官网汽车膜服务佐证",
       "phone": "+1 650-539-8626",
       "website": "http://www.goldenstateautosalon.com/",
       "googleMapsUrl": "https://www.google.com/maps/search/?api=1&query=Golden%20State%20Auto%20Salon%20-%20Paint%20Protection%20Film%E2%80%A6%2C%20402%20Birch%20Ave%2C%20San%20Mateo%2C%20CA%2094402%2C%20United%20States",
       "directorySource": "https://findawrap.com/shops/san-mateo-ca/golden-state-auto-salon-paint-protection-film-san-mateo-ca",
       "serviceSources": [
-        "http://www.goldenstateautosalon.com/"
+        "http://www.goldenstateautosalon.com/",
+        "http://www.goldenstateautosalon.com/about-us-1"
       ],
       "lat": 37.55969109999999,
       "lng": -122.3138962,
-      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认",
+      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认\nPublic address and branch require confirmation before visiting / 出访前确认当前地址及分店\nArchitecture services are separately identified; automotive-only services excluded / 建筑业务单独确认，不以汽车膜业务代替\nBrand mentions require building-product and branch confirmation / 页面品牌提及需另核实建筑产品系列及分店供应",
       "route": "B",
       "visitRegion": "半岛及硅谷西北",
       "visitBatch": "B-01",
@@ -1512,7 +1665,16 @@
           "sourceLabel": "Public website or directory image; location unverified",
           "sourceUrl": "http://www.goldenstateautosalon.com/"
         }
-      ]
+      ],
+      "architecturalSourceIds": [
+        "ARCH-SF019"
+      ],
+      "architecturalSourceId": "ARCH-SF019",
+      "architecturalServices": "Residential glass film / 住宅玻璃膜",
+      "interestedProducts": [
+        "建筑玻璃膜"
+      ],
+      "currentProducts": "Residential glass film / 住宅玻璃膜"
     },
     {
       "publicRecordId": "SF080",
@@ -1648,7 +1810,7 @@
       "address": "4011 Pacific Blvd, San Mateo, CA 94403, United States",
       "distanceKm": 29.8,
       "distanceBand": "0–50 km / 公里",
-      "services": "Automotive window tint / 汽车隔热膜; Paint protection film (PPF) / 漆面保护膜; Ceramic coating / 陶瓷镀膜; Detailing & paint correction / 精洗及漆面修复",
+      "services": "Automotive window tint / 汽车隔热膜; Paint protection film (PPF) / 漆面保护膜; Ceramic coating / 陶瓷镀膜; Detailing & paint correction / 精洗及漆面修复\n建筑膜业务 / Architectural film: Residential glass film / 住宅玻璃膜",
       "filmBrands": "XPEL",
       "serviceEvidence": "Official automotive-film service evidence / 官网汽车膜服务佐证",
       "phone": "+1 408-608-0008",
@@ -1661,7 +1823,7 @@
       ],
       "lat": 37.5310826,
       "lng": -122.288843,
-      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认",
+      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认\nPublic address and branch require confirmation before visiting / 出访前确认当前地址及分店\nArchitecture services are separately identified; automotive-only services excluded / 建筑业务单独确认，不以汽车膜业务代替\nBrand mentions require building-product and branch confirmation / 页面品牌提及需另核实建筑产品系列及分店供应",
       "route": "B",
       "visitRegion": "半岛及硅谷西北",
       "visitBatch": "B-02",
@@ -1671,7 +1833,16 @@
         "yelp": "https://www.yelp.com/biz/lion-window-tinting-san-mateo"
       },
       "photoVerification": "No usable public photo found / 未找到可用公开照片",
-      "referencePhotos": []
+      "referencePhotos": [],
+      "architecturalSourceIds": [
+        "ARCH-SF021"
+      ],
+      "architecturalSourceId": "ARCH-SF021",
+      "architecturalServices": "Residential glass film / 住宅玻璃膜",
+      "interestedProducts": [
+        "建筑玻璃膜"
+      ],
+      "currentProducts": "Residential glass film / 住宅玻璃膜"
     },
     {
       "publicRecordId": "SF098",
@@ -1950,7 +2121,7 @@
       "address": "1479 Laurelwood Rd, Santa Clara, CA 95054",
       "distanceKm": 60.2,
       "distanceBand": "50–100 km / 公里",
-      "services": "Automotive window tint / 汽车隔热膜\nSeries mentioned / 提及系列: PRIME XR PLUS; PRIME XR; PRIME CS",
+      "services": "Automotive window tint / 汽车隔热膜\nSeries mentioned / 提及系列: PRIME XR PLUS; PRIME XR; PRIME CS\n建筑膜业务 / Architectural film: Residential glass film / 住宅玻璃膜",
       "filmBrands": "XPEL",
       "serviceEvidence": "Directory classification only; review required\n仅目录分类，待复核",
       "phone": "+1 408-890-1440",
@@ -1962,7 +2133,7 @@
       ],
       "lat": 37.3803449,
       "lng": -121.9556986,
-      "researchNotes": "Directory category only; confirm services before visiting / 仅目录分类，出访前确认业务。Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认",
+      "researchNotes": "Directory category only; confirm services before visiting / 仅目录分类，出访前确认业务。Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认\nPublic address and branch require confirmation before visiting / 出访前确认当前地址及分店\nArchitecture services are separately identified; automotive-only services excluded / 建筑业务单独确认，不以汽车膜业务代替\nBrand mentions require building-product and branch confirmation / 页面品牌提及需另核实建筑产品系列及分店供应",
       "route": "C",
       "visitRegion": "南湾及圣何塞",
       "visitBatch": "C-02",
@@ -1974,7 +2145,16 @@
         "yelp": "https://www.yelp.com/biz/ys-window-tinting-santa-clara"
       },
       "photoVerification": "No usable public photo found / 未找到可用公开照片",
-      "referencePhotos": []
+      "referencePhotos": [],
+      "architecturalSourceIds": [
+        "ARCH-SF038"
+      ],
+      "architecturalSourceId": "ARCH-SF038",
+      "architecturalServices": "Residential glass film / 住宅玻璃膜",
+      "interestedProducts": [
+        "建筑玻璃膜"
+      ],
+      "currentProducts": "Residential glass film / 住宅玻璃膜"
     },
     {
       "publicRecordId": "SF172",
@@ -1984,8 +2164,8 @@
       "address": "2560 Lafayette St, Santa Clara, CA 95050",
       "distanceKm": 61.5,
       "distanceBand": "50–100 km / 公里",
-      "services": "Automotive window tint / 汽车隔热膜; Paint protection film (PPF) / 漆面保护膜; Color change & vinyl wraps / 改色膜及车身包覆; Ceramic coating / 陶瓷镀膜; Detailing & paint correction / 精洗及漆面修复",
-      "filmBrands": "XPEL、3M、Avery Dennison",
+      "services": "Automotive window tint / 汽车隔热膜; Paint protection film (PPF) / 漆面保护膜; Color change & vinyl wraps / 改色膜及车身包覆; Ceramic coating / 陶瓷镀膜; Detailing & paint correction / 精洗及漆面修复\n建筑膜业务 / Architectural film: Residential glass film / 住宅玻璃膜",
+      "filmBrands": "XPEL、3M、Avery Dennison\n3M, XPEL, Avery Dennison",
       "serviceEvidence": "Official automotive-film service evidence / 官网汽车膜服务佐证",
       "phone": "+1 408-332-2760",
       "website": "http://4aswindowtint.com/",
@@ -1997,7 +2177,7 @@
       ],
       "lat": 37.3675786,
       "lng": -121.9508217,
-      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认",
+      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认\nPublic address and branch require confirmation before visiting / 出访前确认当前地址及分店\nArchitecture services are separately identified; automotive-only services excluded / 建筑业务单独确认，不以汽车膜业务代替\nBrand mentions require building-product and branch confirmation / 页面品牌提及需另核实建筑产品系列及分店供应",
       "route": "C",
       "visitRegion": "南湾及圣何塞",
       "visitBatch": "C-02",
@@ -2005,7 +2185,16 @@
       "navigationUrl": "https://www.google.com/maps/dir/?api=1&origin=1479+Laurelwood+Rd%2C+Santa+Clara%2C+CA+95054&destination=2560+Lafayette+St%2C+Santa+Clara%2C+CA+95050&travelmode=driving",
       "socialLinks": {},
       "photoVerification": "No usable public photo found / 未找到可用公开照片",
-      "referencePhotos": []
+      "referencePhotos": [],
+      "architecturalSourceIds": [
+        "ARCH-SF041"
+      ],
+      "architecturalSourceId": "ARCH-SF041",
+      "architecturalServices": "Residential glass film / 住宅玻璃膜",
+      "interestedProducts": [
+        "建筑玻璃膜"
+      ],
+      "currentProducts": "Residential glass film / 住宅玻璃膜"
     },
     {
       "publicRecordId": "SF167",
@@ -2015,8 +2204,8 @@
       "address": "950 Comstock St, Santa Clara, CA 95054",
       "distanceKm": 60.9,
       "distanceBand": "50–100 km / 公里",
-      "services": "Automotive window tint / 汽车隔热膜; Color change & vinyl wraps / 改色膜及车身包覆; Fleet graphics & commercial wraps / 商用车图文及包覆",
-      "filmBrands": "Not publicly verified\n未公开核实",
+      "services": "Automotive window tint / 汽车隔热膜; Color change & vinyl wraps / 改色膜及车身包覆; Fleet graphics & commercial wraps / 商用车图文及包覆\n建筑膜业务 / Architectural film: Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜",
+      "filmBrands": "Not publicly verified\n未公开核实\nUnverified / 未核实",
       "serviceEvidence": "Official automotive-film service evidence / 官网汽车膜服务佐证",
       "phone": "408-634-3202",
       "website": "https://www.02creation.com/",
@@ -2024,11 +2213,12 @@
       "directorySource": "https://www.waze.com/live-map/directions/us/ca/santa-clara/02creation?to=place.ChIJAaUQl33Jj4ARpdLeAHFXQLA",
       "serviceSources": [
         "https://www.02creation.com/",
-        "https://www.02creation.com/contact-1"
+        "https://www.02creation.com/contact-1",
+        "https://www.02creation.com/copy-of-commercial"
       ],
       "lat": 37.3749939,
       "lng": -121.9510889,
-      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认。Official contact labels San Jose; map/installer sources label Santa Clara 95054 / 官网写San Jose，地图及安装商目录写Santa Clara 95054，需预约时确认",
+      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认。Official contact labels San Jose; map/installer sources label Santa Clara 95054 / 官网写San Jose，地图及安装商目录写Santa Clara 95054，需预约时确认\nPublic address and branch require confirmation before visiting / 出访前确认当前地址及分店\nArchitecture services are separately identified; automotive-only services excluded / 建筑业务单独确认，不以汽车膜业务代替\nBrand mentions require building-product and branch confirmation / 页面品牌提及需另核实建筑产品系列及分店供应\nPublic address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认\nOfficial contact labels San Jose; map/installer sources label Santa Clara 95054 / 官网写San Jose，地图及安装商目录写Santa Clara 95054，需预约时确认",
       "route": "C",
       "visitRegion": "南湾及圣何塞",
       "visitBatch": "C-02",
@@ -2047,7 +2237,16 @@
           "sourceLabel": "Public website or directory image; location unverified",
           "sourceUrl": "https://www.02creation.com/"
         }
-      ]
+      ],
+      "architecturalSourceIds": [
+        "ARCH-SF039"
+      ],
+      "architecturalSourceId": "ARCH-SF039",
+      "architecturalServices": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜",
+      "interestedProducts": [
+        "建筑玻璃膜"
+      ],
+      "currentProducts": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜"
     },
     {
       "publicRecordId": "SF162",
@@ -2362,8 +2561,8 @@
       "address": "527 Charcot Ave #329, San Jose, CA 95131",
       "distanceKm": 62.3,
       "distanceBand": "50–100 km / 公里",
-      "services": "Automotive window tint / 汽车隔热膜; Paint protection film (PPF) / 漆面保护膜; Color change & vinyl wraps / 改色膜及车身包覆; Ceramic coating / 陶瓷镀膜; Detailing & paint correction / 精洗及漆面修复",
-      "filmBrands": "3M、SunTek、KPMF、Ceramic Pro",
+      "services": "Automotive window tint / 汽车隔热膜; Paint protection film (PPF) / 漆面保护膜; Color change & vinyl wraps / 改色膜及车身包覆; Ceramic coating / 陶瓷镀膜; Detailing & paint correction / 精洗及漆面修复\n建筑膜业务 / Architectural film: Residential glass film / 住宅玻璃膜",
+      "filmBrands": "3M、SunTek、KPMF、Ceramic Pro\n3M, SunTek",
       "serviceEvidence": "Official automotive-film service evidence / 官网汽车膜服务佐证",
       "phone": "+1 408-621-3161",
       "website": "http://www.supremedetailworks.com/",
@@ -2375,7 +2574,7 @@
       ],
       "lat": 37.3846734,
       "lng": -121.9150329,
-      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认",
+      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认\nPublic address and branch require confirmation before visiting / 出访前确认当前地址及分店\nArchitecture services are separately identified; automotive-only services excluded / 建筑业务单独确认，不以汽车膜业务代替\nBrand mentions require building-product and branch confirmation / 页面品牌提及需另核实建筑产品系列及分店供应",
       "route": "C",
       "visitRegion": "南湾及圣何塞",
       "visitBatch": "C-04",
@@ -2387,7 +2586,16 @@
         "yelp": "https://www.yelp.com/biz/supreme-detailworks-san-jose"
       },
       "photoVerification": "No usable public photo found / 未找到可用公开照片",
-      "referencePhotos": []
+      "referencePhotos": [],
+      "architecturalSourceIds": [
+        "ARCH-SF042"
+      ],
+      "architecturalSourceId": "ARCH-SF042",
+      "architecturalServices": "Residential glass film / 住宅玻璃膜",
+      "interestedProducts": [
+        "建筑玻璃膜"
+      ],
+      "currentProducts": "Residential glass film / 住宅玻璃膜"
     },
     {
       "publicRecordId": "SF171",
@@ -2513,19 +2721,20 @@
       "address": "903 Commercial St Ste 10, San Jose, CA 95112",
       "distanceKm": 65.4,
       "distanceBand": "50–100 km / 公里",
-      "services": "Automotive window tint / 汽车隔热膜; Paint protection film (PPF) / 漆面保护膜",
-      "filmBrands": "Not publicly verified\n未公开核实",
+      "services": "Automotive window tint / 汽车隔热膜; Paint protection film (PPF) / 漆面保护膜\n建筑膜业务 / Architectural film: Residential glass film / 住宅玻璃膜",
+      "filmBrands": "Not publicly verified\n未公开核实\nUnverified / 未核实",
       "serviceEvidence": "Official automotive-film service evidence / 官网汽车膜服务佐证",
       "phone": "+1 408-392-9032",
       "website": "http://bestautoglass.net/",
       "googleMapsUrl": "https://www.google.com/maps/search/?api=1&query=Best%20Auto%20Glass%20And%20Tint%2C%20903%20Commercial%20St%20Ste%2010%2C%20San%20Jose%2C%20CA%2095112",
       "directorySource": "https://findawrap.com/shops/san-jose-ca/best-auto-glass-and-tint-san-jose-ca",
       "serviceSources": [
-        "http://bestautoglass.net/"
+        "http://bestautoglass.net/",
+        "https://www.bestautoglass.net/about"
       ],
       "lat": 37.366909,
       "lng": -121.8887863,
-      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认",
+      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认\nPublic address and branch require confirmation before visiting / 出访前确认当前地址及分店\nArchitecture services are separately identified; automotive-only services excluded / 建筑业务单独确认，不以汽车膜业务代替\nBrand mentions require building-product and branch confirmation / 页面品牌提及需另核实建筑产品系列及分店供应",
       "route": "C",
       "visitRegion": "南湾及圣何塞",
       "visitBatch": "C-05",
@@ -2536,7 +2745,16 @@
         "yelp": "https://www.yelp.com/biz/best-auto-glass-and-tint-san-jose-3"
       },
       "photoVerification": "No usable public photo found / 未找到可用公开照片",
-      "referencePhotos": []
+      "referencePhotos": [],
+      "architecturalSourceIds": [
+        "ARCH-SF044"
+      ],
+      "architecturalSourceId": "ARCH-SF044",
+      "architecturalServices": "Residential glass film / 住宅玻璃膜",
+      "interestedProducts": [
+        "建筑玻璃膜"
+      ],
+      "currentProducts": "Residential glass film / 住宅玻璃膜"
     },
     {
       "publicRecordId": "SF175",
@@ -2620,8 +2838,8 @@
       "address": "90 S White Rd, San Jose, CA 95127",
       "distanceKm": 69.6,
       "distanceBand": "50–100 km / 公里",
-      "services": "Automotive window tint / 汽车隔热膜; Paint protection film (PPF) / 漆面保护膜; Color change & vinyl wraps / 改色膜及车身包覆; Ceramic coating / 陶瓷镀膜",
-      "filmBrands": "Solar Gard",
+      "services": "Automotive window tint / 汽车隔热膜; Paint protection film (PPF) / 漆面保护膜; Color change & vinyl wraps / 改色膜及车身包覆; Ceramic coating / 陶瓷镀膜\n建筑膜业务 / Architectural film: Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜",
+      "filmBrands": "Solar Gard\nUnverified / 未核实",
       "serviceEvidence": "Official automotive-film service evidence / 官网汽车膜服务佐证",
       "phone": "+1 408-300-5414",
       "website": "http://www.lucazwindowtinting.com/",
@@ -2633,7 +2851,7 @@
       ],
       "lat": 37.364723,
       "lng": -121.826471,
-      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认",
+      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认\nPublic address and branch require confirmation before visiting / 出访前确认当前地址及分店\nArchitecture services are separately identified; automotive-only services excluded / 建筑业务单独确认，不以汽车膜业务代替\nBrand mentions require building-product and branch confirmation / 页面品牌提及需另核实建筑产品系列及分店供应",
       "route": "C",
       "visitRegion": "南湾及圣何塞",
       "visitBatch": "C-06",
@@ -2653,7 +2871,16 @@
           "sourceLabel": "Public website or directory image; location unverified",
           "sourceUrl": "http://www.lucazwindowtinting.com/"
         }
-      ]
+      ],
+      "architecturalSourceIds": [
+        "ARCH-SF050"
+      ],
+      "architecturalSourceId": "ARCH-SF050",
+      "architecturalServices": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜",
+      "interestedProducts": [
+        "建筑玻璃膜"
+      ],
+      "currentProducts": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜"
     },
     {
       "publicRecordId": "SF207",
@@ -2819,7 +3046,7 @@
       "address": "1585 N 4th St Ste l, San Jose, CA 95112",
       "distanceKm": 64.2,
       "distanceBand": "50–100 km / 公里",
-      "services": "Automotive window tint / 汽车隔热膜\nSeries mentioned / 提及系列: Ceramic IR; Crystalline",
+      "services": "Automotive window tint / 汽车隔热膜\nSeries mentioned / 提及系列: Ceramic IR; Crystalline\n建筑膜业务 / Architectural film: Residential glass film / 住宅玻璃膜",
       "filmBrands": "3M",
       "serviceEvidence": "Official automotive-film service evidence / 官网汽车膜服务佐证",
       "phone": "+1 408-966-4065",
@@ -2832,7 +3059,7 @@
       ],
       "lat": 37.3656255,
       "lng": -121.9092152,
-      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认",
+      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认\nPublic address and branch require confirmation before visiting / 出访前确认当前地址及分店\nArchitecture services are separately identified; automotive-only services excluded / 建筑业务单独确认，不以汽车膜业务代替\nBrand mentions require building-product and branch confirmation / 页面品牌提及需另核实建筑产品系列及分店供应",
       "route": "C",
       "visitRegion": "南湾及圣何塞",
       "visitBatch": "C-07",
@@ -2859,7 +3086,16 @@
           "sourceLabel": "Public website or directory image; location unverified",
           "sourceUrl": "https://www.tinttechsj.com/contact"
         }
-      ]
+      ],
+      "architecturalSourceIds": [
+        "ARCH-SF043"
+      ],
+      "architecturalSourceId": "ARCH-SF043",
+      "architecturalServices": "Residential glass film / 住宅玻璃膜",
+      "interestedProducts": [
+        "建筑玻璃膜"
+      ],
+      "currentProducts": "Residential glass film / 住宅玻璃膜"
     },
     {
       "publicRecordId": "SF183",
@@ -2903,7 +3139,7 @@
       "address": "2221 Stevens Creek Blvd Ste F, San Jose, CA 95128",
       "distanceKm": 66.2,
       "distanceBand": "50–100 km / 公里",
-      "services": "Automotive window tint / 汽车隔热膜; Paint protection film (PPF) / 漆面保护膜; Color change & vinyl wraps / 改色膜及车身包覆; Ceramic coating / 陶瓷镀膜; Detailing & paint correction / 精洗及漆面修复",
+      "services": "Automotive window tint / 汽车隔热膜; Paint protection film (PPF) / 漆面保护膜; Color change & vinyl wraps / 改色膜及车身包覆; Ceramic coating / 陶瓷镀膜; Detailing & paint correction / 精洗及漆面修复\n建筑膜业务 / Architectural film: Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜; Solar and heat-control film / 隔热防晒膜; Safety and security film / 安全防爆膜; Privacy and frosted film / 隐私磨砂膜",
       "filmBrands": "XPEL",
       "serviceEvidence": "Official automotive-film service evidence / 官网汽车膜服务佐证",
       "phone": "+1 408-684-5491",
@@ -2912,11 +3148,13 @@
       "directorySource": "https://findawrap.com/shops/san-jose-ca/magic-auto-shine-ca",
       "serviceSources": [
         "http://www.magicautoshine.com/",
-        "http://www.magicautoshine.com/contact/"
+        "http://www.magicautoshine.com/contact/",
+        "https://magicautoshine.com/residential-window-tint-san-jose/",
+        "https://magicautoshine.com/contact/"
       ],
       "lat": 37.3238133,
       "lng": -121.9328894,
-      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认",
+      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认\nPublic address and branch require confirmation before visiting / 出访前确认当前地址及分店\nArchitecture services are separately identified; automotive-only services excluded / 建筑业务单独确认，不以汽车膜业务代替\nBrand mentions require building-product and branch confirmation / 页面品牌提及需另核实建筑产品系列及分店供应",
       "route": "C",
       "visitRegion": "南湾及圣何塞",
       "visitBatch": "C-08",
@@ -2941,8 +3179,31 @@
           "contentType": "image/jpeg",
           "sourceLabel": "Public website or directory image; location unverified",
           "sourceUrl": "http://www.magicautoshine.com/"
+        },
+        {
+          "url": "/assets/field-sales-prospects/ARCH-SF046-01.jpg",
+          "fileName": "ARCH-SF046-01.jpg",
+          "contentType": "image/jpeg",
+          "sourceLabel": "Public architectural-film website image; location unverified",
+          "sourceUrl": "https://magicautoshine.com/residential-window-tint-san-jose/"
+        },
+        {
+          "url": "/assets/field-sales-prospects/ARCH-SF046-02.jpg",
+          "fileName": "ARCH-SF046-02.jpg",
+          "contentType": "image/jpeg",
+          "sourceLabel": "Public architectural-film website image; location unverified",
+          "sourceUrl": "https://magicautoshine.com/residential-window-tint-san-jose/"
         }
-      ]
+      ],
+      "architecturalSourceIds": [
+        "ARCH-SF046"
+      ],
+      "architecturalSourceId": "ARCH-SF046",
+      "architecturalServices": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜; Solar and heat-control film / 隔热防晒膜; Safety and security film / 安全防爆膜; Privacy and frosted film / 隐私磨砂膜",
+      "interestedProducts": [
+        "建筑玻璃膜"
+      ],
+      "currentProducts": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜; Solar and heat-control film / 隔热防晒膜; Safety and security film / 安全防爆膜; Privacy and frosted film / 隐私磨砂膜"
     },
     {
       "publicRecordId": "SF203",
@@ -3205,19 +3466,20 @@
       "address": "550 N 11th St, San Jose, CA 95112",
       "distanceKm": 66.7,
       "distanceBand": "50–100 km / 公里",
-      "services": "Automotive window tint / 汽车隔热膜; Paint protection film (PPF) / 漆面保护膜; Ceramic coating / 陶瓷镀膜",
-      "filmBrands": "Not publicly verified\n未公开核实",
+      "services": "Automotive window tint / 汽车隔热膜; Paint protection film (PPF) / 漆面保护膜; Ceramic coating / 陶瓷镀膜\n建筑膜业务 / Architectural film: Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜",
+      "filmBrands": "Not publicly verified\n未公开核实\nUnverified / 未核实",
       "serviceEvidence": "Official automotive-film service evidence / 官网汽车膜服务佐证",
       "phone": "+1 408-466-4891",
       "website": "http://www.tintlabplus.com/",
       "googleMapsUrl": "https://www.google.com/maps/search/?api=1&query=Tint%20Lab%20Plus%2C%20550%20N%2011th%20St%2C%20San%20Jose%2C%20CA%2095112",
       "directorySource": "https://findawrap.com/shops/san-jose-ca/tint-lab-plus-san-jose-ca",
       "serviceSources": [
-        "http://www.tintlabplus.com/"
+        "http://www.tintlabplus.com/",
+        "https://tintlabplus.com/contact-us/"
       ],
       "lat": 37.3509807,
       "lng": -121.8869677,
-      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认",
+      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认\nPublic address and branch require confirmation before visiting / 出访前确认当前地址及分店\nArchitecture services are separately identified; automotive-only services excluded / 建筑业务单独确认，不以汽车膜业务代替\nBrand mentions require building-product and branch confirmation / 页面品牌提及需另核实建筑产品系列及分店供应",
       "route": "C",
       "visitRegion": "南湾及圣何塞",
       "visitBatch": "C-10",
@@ -3237,7 +3499,16 @@
           "sourceLabel": "Public website or directory image; location unverified",
           "sourceUrl": "http://www.tintlabplus.com/"
         }
-      ]
+      ],
+      "architecturalSourceIds": [
+        "ARCH-SF047"
+      ],
+      "architecturalSourceId": "ARCH-SF047",
+      "architecturalServices": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜",
+      "interestedProducts": [
+        "建筑玻璃膜"
+      ],
+      "currentProducts": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜"
     },
     {
       "publicRecordId": "SF199",
@@ -3465,8 +3736,8 @@
       "address": "1187 Crescent Dr, San Jose, CA 95125",
       "distanceKm": 69.4,
       "distanceBand": "50–100 km / 公里",
-      "services": "Automotive window tint / 汽车隔热膜",
-      "filmBrands": "3M、LLumar、Avery Dennison、Solar Gard",
+      "services": "Automotive window tint / 汽车隔热膜\n建筑膜业务 / Architectural film: Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜; Solar and heat-control film / 隔热防晒膜; Safety and security film / 安全防爆膜; Privacy and frosted film / 隐私磨砂膜; Anti-graffiti film / 防涂鸦膜",
+      "filmBrands": "3M、LLumar、Avery Dennison、Solar Gard\nLLumar, Avery Dennison",
       "serviceEvidence": "Directory classification only; review required\n仅目录分类，待复核",
       "phone": "+1 408-309-2237",
       "website": "http://www.coolviewtint.com/",
@@ -3474,11 +3745,12 @@
       "directorySource": "https://findawrap.com/shops/san-jose-ca/coolview-tint-inc-san-jose-ca",
       "serviceSources": [
         "http://www.coolviewtint.com/",
-        "http://www.coolviewtint.com/about"
+        "http://www.coolviewtint.com/about",
+        "http://www.coolviewtint.com/services/commercial-services"
       ],
       "lat": 37.3065962,
       "lng": -121.9037293,
-      "researchNotes": "Directory category only; confirm services before visiting / 仅目录分类，出访前确认业务。Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认",
+      "researchNotes": "Directory category only; confirm services before visiting / 仅目录分类，出访前确认业务。Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认\nPublic address and branch require confirmation before visiting / 出访前确认当前地址及分店\nArchitecture services are separately identified; automotive-only services excluded / 建筑业务单独确认，不以汽车膜业务代替\nBrand mentions require building-product and branch confirmation / 页面品牌提及需另核实建筑产品系列及分店供应",
       "route": "C",
       "visitRegion": "南湾及圣何塞",
       "visitBatch": "C-11",
@@ -3504,7 +3776,16 @@
           "sourceLabel": "Public website or directory image; location unverified",
           "sourceUrl": "http://www.coolviewtint.com/"
         }
-      ]
+      ],
+      "architecturalSourceIds": [
+        "ARCH-SF049"
+      ],
+      "architecturalSourceId": "ARCH-SF049",
+      "architecturalServices": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜; Solar and heat-control film / 隔热防晒膜; Safety and security film / 安全防爆膜; Privacy and frosted film / 隐私磨砂膜; Anti-graffiti film / 防涂鸦膜",
+      "interestedProducts": [
+        "建筑玻璃膜"
+      ],
+      "currentProducts": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜; Solar and heat-control film / 隔热防晒膜; Safety and security film / 安全防爆膜; Privacy and frosted film / 隐私磨砂膜; Anti-graffiti film / 防涂鸦膜"
     },
     {
       "publicRecordId": "SF205",
@@ -3670,8 +3951,8 @@
       "address": "1460 White Oaks Rd #7, Campbell, CA 95008",
       "distanceKm": 70.5,
       "distanceBand": "50–100 km / 公里",
-      "services": "Automotive window tint / 汽车隔热膜; Paint protection film (PPF) / 漆面保护膜; Color change & vinyl wraps / 改色膜及车身包覆; Ceramic coating / 陶瓷镀膜",
-      "filmBrands": "Not publicly verified\n未公开核实",
+      "services": "Automotive window tint / 汽车隔热膜; Paint protection film (PPF) / 漆面保护膜; Color change & vinyl wraps / 改色膜及车身包覆; Ceramic coating / 陶瓷镀膜\n建筑膜业务 / Architectural film: Residential glass film / 住宅玻璃膜",
+      "filmBrands": "Not publicly verified\n未公开核实\nUnverified / 未核实",
       "serviceEvidence": "Official automotive-film service evidence / 官网汽车膜服务佐证",
       "phone": "+1 408-705-8139",
       "website": "https://elitewindowtintandvinylwraps.com/",
@@ -3682,7 +3963,7 @@
       ],
       "lat": 37.266484,
       "lng": -121.9464206,
-      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认",
+      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认\nPublic address and branch require confirmation before visiting / 出访前确认当前地址及分店\nArchitecture services are separately identified; automotive-only services excluded / 建筑业务单独确认，不以汽车膜业务代替\nBrand mentions require building-product and branch confirmation / 页面品牌提及需另核实建筑产品系列及分店供应",
       "route": "C",
       "visitRegion": "南湾及圣何塞",
       "visitBatch": "C-13",
@@ -3694,7 +3975,16 @@
         "yelp": "https://www.yelp.com/biz/elite-window-tint-and-vinyl-wrap-campbell-10?osq=Elite+Window+Tinting"
       },
       "photoVerification": "No usable public photo found / 未找到可用公开照片",
-      "referencePhotos": []
+      "referencePhotos": [],
+      "architecturalSourceIds": [
+        "ARCH-SF051"
+      ],
+      "architecturalSourceId": "ARCH-SF051",
+      "architecturalServices": "Residential glass film / 住宅玻璃膜",
+      "interestedProducts": [
+        "建筑玻璃膜"
+      ],
+      "currentProducts": "Residential glass film / 住宅玻璃膜"
     },
     {
       "publicRecordId": "SF222",
@@ -3704,19 +3994,21 @@
       "address": "2059 Camden Ave #135, San Jose, CA 95124",
       "distanceKm": 71.5,
       "distanceBand": "50–100 km / 公里",
-      "services": "Automotive window tint / 汽车隔热膜",
-      "filmBrands": "Not publicly verified\n未公开核实",
+      "services": "Automotive window tint / 汽车隔热膜\n建筑膜业务 / Architectural film: Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜; Solar and heat-control film / 隔热防晒膜; Safety and security film / 安全防爆膜; Privacy and frosted film / 隐私磨砂膜; Anti-graffiti film / 防涂鸦膜",
+      "filmBrands": "Not publicly verified\n未公开核实\nUnverified / 未核实",
       "serviceEvidence": "Directory classification only; review required\n仅目录分类，待复核",
       "phone": "+1 408-334-7391",
       "website": "https://www.crystalshadetint.com/",
       "googleMapsUrl": "https://www.google.com/maps/search/?api=1&query=Crystal%20Shade%20Window%20Tinting%2C%202059%20Camden%20Ave%20%23135%2C%20San%20Jose%2C%20CA%2095124",
       "directorySource": "https://findawrap.com/shops/san-jose-ca/crystal-shade-window-tinting-san-jose-ca",
       "serviceSources": [
-        "https://www.crystalshadetint.com/"
+        "https://www.crystalshadetint.com/",
+        "https://crystalshadetint.com/residential-window-tinting/",
+        "https://crystalshadetint.com/about-crystal-shade-window-tinting/"
       ],
       "lat": 37.2628504,
       "lng": -121.9339561,
-      "researchNotes": "Directory category only; confirm services before visiting / 仅目录分类，出访前确认业务。Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认",
+      "researchNotes": "Directory category only; confirm services before visiting / 仅目录分类，出访前确认业务。Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认\nPublic address and branch require confirmation before visiting / 出访前确认当前地址及分店\nArchitecture services are separately identified; automotive-only services excluded / 建筑业务单独确认，不以汽车膜业务代替\nBrand mentions require building-product and branch confirmation / 页面品牌提及需另核实建筑产品系列及分店供应",
       "route": "C",
       "visitRegion": "南湾及圣何塞",
       "visitBatch": "C-13",
@@ -3733,8 +4025,31 @@
           "contentType": "image/jpeg",
           "sourceLabel": "Public website or directory image; location unverified",
           "sourceUrl": "https://www.crystalshadetint.com/"
+        },
+        {
+          "url": "/assets/field-sales-prospects/ARCH-SF052-01.jpg",
+          "fileName": "ARCH-SF052-01.jpg",
+          "contentType": "image/jpeg",
+          "sourceLabel": "Public architectural-film website image; location unverified",
+          "sourceUrl": "https://www.crystalshadetint.com/"
+        },
+        {
+          "url": "/assets/field-sales-prospects/ARCH-SF052-02.jpg",
+          "fileName": "ARCH-SF052-02.jpg",
+          "contentType": "image/jpeg",
+          "sourceLabel": "Public architectural-film website image; location unverified",
+          "sourceUrl": "https://www.crystalshadetint.com/"
         }
-      ]
+      ],
+      "architecturalSourceIds": [
+        "ARCH-SF052"
+      ],
+      "architecturalSourceId": "ARCH-SF052",
+      "architecturalServices": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜; Solar and heat-control film / 隔热防晒膜; Safety and security film / 安全防爆膜; Privacy and frosted film / 隐私磨砂膜; Anti-graffiti film / 防涂鸦膜",
+      "interestedProducts": [
+        "建筑玻璃膜"
+      ],
+      "currentProducts": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜; Solar and heat-control film / 隔热防晒膜; Safety and security film / 安全防爆膜; Privacy and frosted film / 隐私磨砂膜; Anti-graffiti film / 防涂鸦膜"
     },
     {
       "publicRecordId": "SF239",
@@ -4101,19 +4416,21 @@
       "address": "735 W Capitol Expy Suite A, San Jose, CA 95136",
       "distanceKm": 74.2,
       "distanceBand": "50–100 km / 公里",
-      "services": "Automotive window tint / 汽车隔热膜",
-      "filmBrands": "Not publicly verified\n未公开核实",
+      "services": "Automotive window tint / 汽车隔热膜\n建筑膜业务 / Architectural film: Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜",
+      "filmBrands": "Not publicly verified\n未公开核实\nUnverified / 未核实",
       "serviceEvidence": "Official automotive-film service evidence / 官网汽车膜服务佐证",
       "phone": "+1 408-265-8468",
       "website": "https://www.drtintca.com/",
       "googleMapsUrl": "https://www.google.com/maps/search/?api=1&query=Dr.%20Tint%20California%20Window%20Tinting%2C%20735%20W%20Capitol%20Expy%20Suite%20A%2C%20San%20Jose%2C%20CA%2095136",
       "directorySource": "https://findawrap.com/shops/san-jose-ca/dr-tint-california-window-tinting-san-jose-ca",
       "serviceSources": [
-        "https://www.drtintca.com/"
+        "https://www.drtintca.com/",
+        "https://drtintca.com/commercial-window-tint-in-san-jose/",
+        "https://drtintca.com/about-dr-tint-california/"
       ],
       "lat": 37.2753214,
       "lng": -121.8657519,
-      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认",
+      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认\nPublic address and branch require confirmation before visiting / 出访前确认当前地址及分店\nArchitecture services are separately identified; automotive-only services excluded / 建筑业务单独确认，不以汽车膜业务代替\nBrand mentions require building-product and branch confirmation / 页面品牌提及需另核实建筑产品系列及分店供应",
       "route": "C",
       "visitRegion": "南湾及圣何塞",
       "visitBatch": "C-16",
@@ -4121,7 +4438,16 @@
       "navigationUrl": "https://www.google.com/maps/dir/?api=1&origin=1+Dr.+Carlton+B.+Goodlett+Place%2C+San+Francisco%2C+CA+94102&destination=735+W+Capitol+Expy+Suite+A%2C+San+Jose%2C+CA+95136&travelmode=driving",
       "socialLinks": {},
       "photoVerification": "No usable public photo found / 未找到可用公开照片",
-      "referencePhotos": []
+      "referencePhotos": [],
+      "architecturalSourceIds": [
+        "ARCH-SF055"
+      ],
+      "architecturalSourceId": "ARCH-SF055",
+      "architecturalServices": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜",
+      "interestedProducts": [
+        "建筑玻璃膜"
+      ],
+      "currentProducts": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜"
     },
     {
       "publicRecordId": "SF236",
@@ -4382,8 +4708,8 @@
       "address": "5725 Winfield Blvd #3, San Jose, CA 95123",
       "distanceKm": 76.3,
       "distanceBand": "50–100 km / 公里",
-      "services": "Automotive window tint / 汽车隔热膜; Paint protection film (PPF) / 漆面保护膜; Ceramic coating / 陶瓷镀膜; Detailing & paint correction / 精洗及漆面修复",
-      "filmBrands": "3M、Avery Dennison、Rayno、Autobahn",
+      "services": "Automotive window tint / 汽车隔热膜; Paint protection film (PPF) / 漆面保护膜; Ceramic coating / 陶瓷镀膜; Detailing & paint correction / 精洗及漆面修复\n建筑膜业务 / Architectural film: Residential glass film / 住宅玻璃膜",
+      "filmBrands": "3M、Avery Dennison、Rayno、Autobahn\nUnverified / 未核实",
       "serviceEvidence": "Official automotive-film service evidence / 官网汽车膜服务佐证",
       "phone": "+1 408-334-5282",
       "website": "http://cubamobiletinting.com/",
@@ -4395,7 +4721,7 @@
       ],
       "lat": 37.2487686,
       "lng": -121.868013,
-      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认",
+      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认\nPublic address and branch require confirmation before visiting / 出访前确认当前地址及分店\nArchitecture services are separately identified; automotive-only services excluded / 建筑业务单独确认，不以汽车膜业务代替\nBrand mentions require building-product and branch confirmation / 页面品牌提及需另核实建筑产品系列及分店供应",
       "route": "C",
       "visitRegion": "南湾及圣何塞",
       "visitBatch": "C-18",
@@ -4421,7 +4747,16 @@
           "sourceLabel": "Public website or directory image; location unverified",
           "sourceUrl": "http://cubamobiletinting.com/"
         }
-      ]
+      ],
+      "architecturalSourceIds": [
+        "ARCH-SF057"
+      ],
+      "architecturalSourceId": "ARCH-SF057",
+      "architecturalServices": "Residential glass film / 住宅玻璃膜",
+      "interestedProducts": [
+        "建筑玻璃膜"
+      ],
+      "currentProducts": "Residential glass film / 住宅玻璃膜"
     },
     {
       "publicRecordId": "SF243",
@@ -4431,8 +4766,8 @@
       "address": "5725 Winfield Blvd #1, San Jose, CA 95123",
       "distanceKm": 76.4,
       "distanceBand": "50–100 km / 公里",
-      "services": "Automotive window tint / 汽车隔热膜; Paint protection film (PPF) / 漆面保护膜; Color change & vinyl wraps / 改色膜及车身包覆; Ceramic coating / 陶瓷镀膜",
-      "filmBrands": "Not publicly verified\n未公开核实",
+      "services": "Automotive window tint / 汽车隔热膜; Paint protection film (PPF) / 漆面保护膜; Color change & vinyl wraps / 改色膜及车身包覆; Ceramic coating / 陶瓷镀膜\n建筑膜业务 / Architectural film: Residential glass film / 住宅玻璃膜",
+      "filmBrands": "Not publicly verified\n未公开核实\nUnverified / 未核实",
       "serviceEvidence": "Official automotive-film service evidence / 官网汽车膜服务佐证",
       "phone": "+1 650-690-4182",
       "website": "https://www.essencecardetailing.com/",
@@ -4444,7 +4779,7 @@
       ],
       "lat": 37.2487806,
       "lng": -121.8675184,
-      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认。Mobile or appointment business; contact before travel / 移动施工或预约业务，出发前联系",
+      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认。Mobile or appointment business; contact before travel / 移动施工或预约业务，出发前联系\nPublic address and branch require confirmation before visiting / 出访前确认当前地址及分店\nArchitecture services are separately identified; automotive-only services excluded / 建筑业务单独确认，不以汽车膜业务代替\nBrand mentions require building-product and branch confirmation / 页面品牌提及需另核实建筑产品系列及分店供应",
       "route": "C",
       "visitRegion": "南湾及圣何塞",
       "visitBatch": "C-18",
@@ -4452,7 +4787,16 @@
       "navigationUrl": "https://www.google.com/maps/dir/?api=1&origin=5725+Winfield+Blvd+%233%2C+San+Jose%2C+CA+95123&destination=5725+Winfield+Blvd+%231%2C+San+Jose%2C+CA+95123&travelmode=driving",
       "socialLinks": {},
       "photoVerification": "No usable public photo found / 未找到可用公开照片",
-      "referencePhotos": []
+      "referencePhotos": [],
+      "architecturalSourceIds": [
+        "ARCH-SF058"
+      ],
+      "architecturalSourceId": "ARCH-SF058",
+      "architecturalServices": "Residential glass film / 住宅玻璃膜",
+      "interestedProducts": [
+        "建筑玻璃膜"
+      ],
+      "currentProducts": "Residential glass film / 住宅玻璃膜"
     },
     {
       "publicRecordId": "SF031",
@@ -4852,7 +5196,7 @@
       "address": "5327 Jacuzzi St # 2F, Richmond, CA 94804, United States",
       "distanceKm": 16.3,
       "distanceBand": "0–50 km / 公里",
-      "services": "Automotive window tint / 汽车隔热膜; Paint protection film (PPF) / 漆面保护膜; Ceramic coating / 陶瓷镀膜; Detailing & paint correction / 精洗及漆面修复",
+      "services": "Automotive window tint / 汽车隔热膜; Paint protection film (PPF) / 漆面保护膜; Ceramic coating / 陶瓷镀膜; Detailing & paint correction / 精洗及漆面修复\n建筑膜业务 / Architectural film: Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜; Solar and heat-control film / 隔热防晒膜; Safety and security film / 安全防爆膜; Privacy and frosted film / 隐私磨砂膜",
       "filmBrands": "XPEL",
       "serviceEvidence": "Official automotive-film service evidence / 官网汽车膜服务佐证",
       "phone": "+1 510-705-1293",
@@ -4861,11 +5205,13 @@
       "directorySource": "https://findawrap.com/shops/richmond-ca/the-tint-co-paint-protection-film-ppf-richmond-ca",
       "serviceSources": [
         "http://www.thetintcobayarea.com/",
-        "http://www.thetintcobayarea.com/contact-us-richmond-ca/"
+        "http://www.thetintcobayarea.com/contact-us-richmond-ca/",
+        "https://thetintcobayarea.com/residential-window-tinting-richmond-ca/",
+        "https://thetintcobayarea.com/contact-us-richmond-ca/"
       ],
       "lat": 37.89834829999999,
       "lng": -122.3105728,
-      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认",
+      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认\nPublic address and branch require confirmation before visiting / 出访前确认当前地址及分店\nArchitecture services are separately identified; automotive-only services excluded / 建筑业务单独确认，不以汽车膜业务代替\nBrand mentions require building-product and branch confirmation / 页面品牌提及需另核实建筑产品系列及分店供应",
       "route": "D",
       "visitRegion": "奥克兰、伯克利及东湾内侧",
       "visitBatch": "D-02",
@@ -4885,8 +5231,31 @@
           "contentType": "image/jpeg",
           "sourceLabel": "Public website or directory image; location unverified",
           "sourceUrl": "http://www.thetintcobayarea.com/"
+        },
+        {
+          "url": "/assets/field-sales-prospects/ARCH-SF011-01.jpg",
+          "fileName": "ARCH-SF011-01.jpg",
+          "contentType": "image/jpeg",
+          "sourceLabel": "Public architectural-film website image; location unverified",
+          "sourceUrl": "http://www.thetintcobayarea.com/"
+        },
+        {
+          "url": "/assets/field-sales-prospects/ARCH-SF011-02.jpg",
+          "fileName": "ARCH-SF011-02.jpg",
+          "contentType": "image/jpeg",
+          "sourceLabel": "Public architectural-film website image; location unverified",
+          "sourceUrl": "http://www.thetintcobayarea.com/"
         }
-      ]
+      ],
+      "architecturalSourceIds": [
+        "ARCH-SF011"
+      ],
+      "architecturalSourceId": "ARCH-SF011",
+      "architecturalServices": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜; Solar and heat-control film / 隔热防晒膜; Safety and security film / 安全防爆膜; Privacy and frosted film / 隐私磨砂膜",
+      "interestedProducts": [
+        "建筑玻璃膜"
+      ],
+      "currentProducts": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜; Solar and heat-control film / 隔热防晒膜; Safety and security film / 安全防爆膜; Privacy and frosted film / 隐私磨砂膜"
     },
     {
       "publicRecordId": "SF042",
@@ -4896,8 +5265,8 @@
       "address": "1734 Clement Ave, Alameda, CA 94501, United States",
       "distanceKm": 14.6,
       "distanceBand": "0–50 km / 公里",
-      "services": "Color change & vinyl wraps / 改色膜及车身包覆; Fleet graphics & commercial wraps / 商用车图文及包覆",
-      "filmBrands": "Not publicly verified\n未公开核实",
+      "services": "Color change & vinyl wraps / 改色膜及车身包覆; Fleet graphics & commercial wraps / 商用车图文及包覆\n建筑膜业务 / Architectural film: Wall vinyl graphics and wraps / 墙面图文及装饰包覆; Anti-graffiti film / 防涂鸦膜; Architectural surface finishes / 建筑表面装饰膜",
+      "filmBrands": "Not publicly verified\n未公开核实\n3M, DI-NOC",
       "serviceEvidence": "Official automotive-film service evidence / 官网汽车膜服务佐证",
       "phone": "+1 510-930-3539",
       "website": "https://www.speedpro.com/east-bay",
@@ -4905,11 +5274,13 @@
       "directorySource": "https://findawrap.com/shops/alameda-ca/speedpro-east-bay-alameda-ca",
       "serviceSources": [
         "https://www.speedpro.com/east-bay",
-        "https://www.speedpro.com/east-bay/about-us-speedpro-east-bay/"
+        "https://www.speedpro.com/east-bay/about-us-speedpro-east-bay/",
+        "https://www.speedpro.com/east-bay/architectural-finishes/",
+        "https://www.speedpro.com/east-bay/furniture-graphics/"
       ],
       "lat": 37.7755182,
       "lng": -122.2518736,
-      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认",
+      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认\nPublic address and branch require confirmation before visiting / 出访前确认当前地址及分店\nArchitecture services are separately identified; automotive-only services excluded / 建筑业务单独确认，不以汽车膜业务代替\nBrand mentions require building-product and branch confirmation / 页面品牌提及需另核实建筑产品系列及分店供应",
       "route": "D",
       "visitRegion": "奥克兰、伯克利及东湾内侧",
       "visitBatch": "D-03",
@@ -4936,7 +5307,16 @@
           "sourceLabel": "Public website or directory image; location unverified",
           "sourceUrl": "https://www.speedpro.com/east-bay"
         }
-      ]
+      ],
+      "architecturalSourceIds": [
+        "ARCH-SF009"
+      ],
+      "architecturalSourceId": "ARCH-SF009",
+      "architecturalServices": "Wall vinyl graphics and wraps / 墙面图文及装饰包覆; Anti-graffiti film / 防涂鸦膜; Architectural surface finishes / 建筑表面装饰膜",
+      "interestedProducts": [
+        "建筑玻璃膜"
+      ],
+      "currentProducts": "Wall vinyl graphics and wraps / 墙面图文及装饰包覆; Anti-graffiti film / 防涂鸦膜; Architectural surface finishes / 建筑表面装饰膜"
     },
     {
       "publicRecordId": "SF048",
@@ -4976,19 +5356,20 @@
       "address": "1800 Park St, Alameda, CA 94501, United States",
       "distanceKm": 15.8,
       "distanceBand": "0–50 km / 公里",
-      "services": "Automotive window tint / 汽车隔热膜; Color change & vinyl wraps / 改色膜及车身包覆",
-      "filmBrands": "Not publicly verified\n未公开核实",
+      "services": "Automotive window tint / 汽车隔热膜; Color change & vinyl wraps / 改色膜及车身包覆\n建筑膜业务 / Architectural film: Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜",
+      "filmBrands": "Not publicly verified\n未公开核实\nUnverified / 未核实",
       "serviceEvidence": "Official automotive-film service evidence / 官网汽车膜服务佐证",
       "phone": "+1 510-584-1852",
       "website": "http://alamedatintnglass.com/",
       "googleMapsUrl": "https://www.google.com/maps/search/?api=1&query=Alameda%20Tint%20N%20Auto%20glass%2C%201800%20Park%20St%2C%20Alameda%2C%20CA%2094501%2C%20United%20States",
       "directorySource": "https://findawrap.com/shops/alameda-ca/alameda-tint-n-auto-glass-alameda-ca",
       "serviceSources": [
-        "http://alamedatintnglass.com/"
+        "http://alamedatintnglass.com/",
+        "https://www.alamedatintnglass.com/about-us"
       ],
       "lat": 37.76906,
       "lng": -122.2384232,
-      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认",
+      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认\nPublic address and branch require confirmation before visiting / 出访前确认当前地址及分店\nArchitecture services are separately identified; automotive-only services excluded / 建筑业务单独确认，不以汽车膜业务代替\nBrand mentions require building-product and branch confirmation / 页面品牌提及需另核实建筑产品系列及分店供应",
       "route": "D",
       "visitRegion": "奥克兰、伯克利及东湾内侧",
       "visitBatch": "D-03",
@@ -4996,10 +5377,20 @@
       "navigationUrl": "https://www.google.com/maps/dir/?api=1&origin=2318+Clement+Ave%2C+Alameda%2C+CA+94501%2C+United+States&destination=1800+Park+St%2C+Alameda%2C+CA+94501%2C+United+States&travelmode=driving",
       "socialLinks": {
         "instagram": "https://www.instagram.com/alamedatintnautoglass",
+        "facebook": "https://www.facebook.com/wix",
         "tiktok": "https://www.tiktok.com/@alamedatintnglass.com?_r=1&_t=ZP-92sdpPyfPjy"
       },
       "photoVerification": "No usable public photo found / 未找到可用公开照片",
-      "referencePhotos": []
+      "referencePhotos": [],
+      "architecturalSourceIds": [
+        "ARCH-SF010"
+      ],
+      "architecturalSourceId": "ARCH-SF010",
+      "architecturalServices": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜",
+      "interestedProducts": [
+        "建筑玻璃膜"
+      ],
+      "currentProducts": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜"
     },
     {
       "publicRecordId": "SF052",
@@ -5234,8 +5625,8 @@
       "address": "215 Hunter Ave, Oakland, CA 94603, United States",
       "distanceKm": 21.3,
       "distanceBand": "0–50 km / 公里",
-      "services": "Automotive window tint / 汽车隔热膜; Color change & vinyl wraps / 改色膜及车身包覆; Ceramic coating / 陶瓷镀膜",
-      "filmBrands": "Not publicly verified\n未公开核实",
+      "services": "Automotive window tint / 汽车隔热膜; Color change & vinyl wraps / 改色膜及车身包覆; Ceramic coating / 陶瓷镀膜\n建筑膜业务 / Architectural film: Residential glass film / 住宅玻璃膜",
+      "filmBrands": "Not publicly verified\n未公开核实\nUnverified / 未核实",
       "serviceEvidence": "Official automotive-film service evidence / 官网汽车膜服务佐证",
       "phone": "+1 510-417-0675",
       "website": "https://www.7starautoglass.com/",
@@ -5247,7 +5638,7 @@
       ],
       "lat": 37.73110399999999,
       "lng": -122.184069,
-      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认",
+      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认\nPublic address and branch require confirmation before visiting / 出访前确认当前地址及分店\nArchitecture services are separately identified; automotive-only services excluded / 建筑业务单独确认，不以汽车膜业务代替\nBrand mentions require building-product and branch confirmation / 页面品牌提及需另核实建筑产品系列及分店供应",
       "route": "D",
       "visitRegion": "奥克兰、伯克利及东湾内侧",
       "visitBatch": "D-04",
@@ -5255,10 +5646,20 @@
       "navigationUrl": "https://www.google.com/maps/dir/?api=1&origin=215+Hunter+Ave%2C+Oakland%2C+CA+94603%2C+United+States&destination=215+Hunter+Ave%2C+Oakland%2C+CA+94603%2C+United+States&travelmode=driving",
       "socialLinks": {
         "instagram": "https://www.instagram.com/bay_window_tint",
+        "facebook": "https://www.facebook.com/dialog/send",
         "tiktok": "https://www.tiktok.com/@bayareatint?_r=1&_t=ZT-97uawQb6JUT"
       },
       "photoVerification": "No usable public photo found / 未找到可用公开照片",
-      "referencePhotos": []
+      "referencePhotos": [],
+      "architecturalSourceIds": [
+        "ARCH-SF016"
+      ],
+      "architecturalSourceId": "ARCH-SF016",
+      "architecturalServices": "Residential glass film / 住宅玻璃膜",
+      "interestedProducts": [
+        "建筑玻璃膜"
+      ],
+      "currentProducts": "Residential glass film / 住宅玻璃膜"
     },
     {
       "publicRecordId": "SF075",
@@ -5328,8 +5729,8 @@
       "address": "999 W Cutting Blvd #11, Richmond, CA 94804",
       "distanceKm": 16.8,
       "distanceBand": "0–50 km / 公里",
-      "services": "Color change & vinyl wraps / 改色膜及车身包覆",
-      "filmBrands": "Not publicly verified\n未公开核实",
+      "services": "Color change & vinyl wraps / 改色膜及车身包覆\n建筑膜业务 / Architectural film: Commercial glass film / 商业建筑玻璃膜; Wall vinyl graphics and wraps / 墙面图文及装饰包覆",
+      "filmBrands": "Not publicly verified\n未公开核实\nUnverified / 未核实",
       "serviceEvidence": "Official automotive-film service evidence / 官网汽车膜服务佐证",
       "phone": "+1 510-737-3403",
       "website": "http://www.westwraps.com/",
@@ -5341,7 +5742,7 @@
       ],
       "lat": 37.9261209,
       "lng": -122.3796552,
-      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认",
+      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认\nPublic address and branch require confirmation before visiting / 出访前确认当前地址及分店\nArchitecture services are separately identified; automotive-only services excluded / 建筑业务单独确认，不以汽车膜业务代替\nBrand mentions require building-product and branch confirmation / 页面品牌提及需另核实建筑产品系列及分店供应",
       "route": "D",
       "visitRegion": "奥克兰、伯克利及东湾内侧",
       "visitBatch": "D-05",
@@ -5365,8 +5766,24 @@
           "contentType": "image/jpeg",
           "sourceLabel": "Public website or directory image; location unverified",
           "sourceUrl": "http://www.westwraps.com/"
+        },
+        {
+          "url": "/assets/field-sales-prospects/ARCH-SF013-02.jpg",
+          "fileName": "ARCH-SF013-02.jpg",
+          "contentType": "image/jpeg",
+          "sourceLabel": "Public architectural-film website image; location unverified",
+          "sourceUrl": "http://www.westwraps.com/"
         }
-      ]
+      ],
+      "architecturalSourceIds": [
+        "ARCH-SF013"
+      ],
+      "architecturalSourceId": "ARCH-SF013",
+      "architecturalServices": "Commercial glass film / 商业建筑玻璃膜; Wall vinyl graphics and wraps / 墙面图文及装饰包覆",
+      "interestedProducts": [
+        "建筑玻璃膜"
+      ],
+      "currentProducts": "Commercial glass film / 商业建筑玻璃膜; Wall vinyl graphics and wraps / 墙面图文及装饰包覆"
     },
     {
       "publicRecordId": "SF079",
@@ -5681,8 +6098,8 @@
       "address": "494 McCormick St, San Leandro, CA 94577",
       "distanceKm": 20.9,
       "distanceBand": "0–50 km / 公里",
-      "services": "Automotive window tint / 汽车隔热膜; Paint protection film (PPF) / 漆面保护膜; Color change & vinyl wraps / 改色膜及车身包覆; Ceramic coating / 陶瓷镀膜; Detailing & paint correction / 精洗及漆面修复",
-      "filmBrands": "Not publicly verified\n未公开核实",
+      "services": "Automotive window tint / 汽车隔热膜; Paint protection film (PPF) / 漆面保护膜; Color change & vinyl wraps / 改色膜及车身包覆; Ceramic coating / 陶瓷镀膜; Detailing & paint correction / 精洗及漆面修复\n建筑膜业务 / Architectural film: Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜; Solar and heat-control film / 隔热防晒膜; Safety and security film / 安全防爆膜; Privacy and frosted film / 隐私磨砂膜; Anti-graffiti film / 防涂鸦膜",
+      "filmBrands": "Not publicly verified\n未公开核实\nUnverified / 未核实",
       "serviceEvidence": "Official automotive-film service evidence / 官网汽车膜服务佐证",
       "phone": "+1 510-518-5009",
       "website": "https://www.protekshinestudio.com/",
@@ -5690,11 +6107,12 @@
       "directorySource": "https://findawrap.com/shops/san-leandro-ca/protek-shine-studio-ppf-ceramic-coating-san-leandro-ca",
       "serviceSources": [
         "https://www.protekshinestudio.com/",
-        "https://www.protekshinestudio.com/about-us"
+        "https://www.protekshinestudio.com/about-us",
+        "https://www.protekshinestudio.com/services/residential-surface-protection"
       ],
       "lat": 37.7253688,
       "lng": -122.1901988,
-      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认",
+      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认\nPublic address and branch require confirmation before visiting / 出访前确认当前地址及分店\nArchitecture services are separately identified; automotive-only services excluded / 建筑业务单独确认，不以汽车膜业务代替\nBrand mentions require building-product and branch confirmation / 页面品牌提及需另核实建筑产品系列及分店供应",
       "route": "E",
       "visitRegion": "海沃德及弗里蒙特走廊",
       "visitBatch": "E-01",
@@ -5706,7 +6124,16 @@
         "yelp": "https://www.yelp.com/biz/protek-shine-studio-san-leandro-2"
       },
       "photoVerification": "No usable public photo found / 未找到可用公开照片",
-      "referencePhotos": []
+      "referencePhotos": [],
+      "architecturalSourceIds": [
+        "ARCH-SF014"
+      ],
+      "architecturalSourceId": "ARCH-SF014",
+      "architecturalServices": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜; Solar and heat-control film / 隔热防晒膜; Safety and security film / 安全防爆膜; Privacy and frosted film / 隐私磨砂膜; Anti-graffiti film / 防涂鸦膜",
+      "interestedProducts": [
+        "建筑玻璃膜"
+      ],
+      "currentProducts": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜; Solar and heat-control film / 隔热防晒膜; Safety and security film / 安全防爆膜; Privacy and frosted film / 隐私磨砂膜; Anti-graffiti film / 防涂鸦膜"
     },
     {
       "publicRecordId": "SF072",
@@ -5746,19 +6173,21 @@
       "address": "14110 Washington Ave, San Leandro, CA 94578",
       "distanceKm": 25.3,
       "distanceBand": "0–50 km / 公里",
-      "services": "Color change & vinyl wraps / 改色膜及车身包覆",
-      "filmBrands": "Not publicly verified\n未公开核实",
+      "services": "Color change & vinyl wraps / 改色膜及车身包覆\n建筑膜业务 / Architectural film: Wall vinyl graphics and wraps / 墙面图文及装饰包覆",
+      "filmBrands": "Not publicly verified\n未公开核实\nUnverified / 未核实",
       "serviceEvidence": "Official automotive-film service evidence / 官网汽车膜服务佐证",
       "phone": "+1 510-667-0109",
       "website": "https://www.kuttek.com/",
       "googleMapsUrl": "https://www.google.com/maps/search/?api=1&query=Kuttek%20Signs%20%26%20Wraps%20%28%20San%20Leandro%29%2C%2014110%20Washington%20Ave%2C%20San%20Leandro%2C%20CA%2094578",
       "directorySource": "https://findawrap.com/shops/san-leandro-ca/kuttek-signs-wraps-san-leandro-san-leandro-ca",
       "serviceSources": [
-        "https://www.kuttek.com/"
+        "https://www.kuttek.com/",
+        "https://kuttek.com/commercial-signage-dallas-texas/",
+        "https://kuttek.com/about-kuttek/"
       ],
       "lat": 37.7084388,
       "lng": -122.1448669,
-      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认",
+      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认\nPublic address and branch require confirmation before visiting / 出访前确认当前地址及分店\nArchitecture services are separately identified; automotive-only services excluded / 建筑业务单独确认，不以汽车膜业务代替\nBrand mentions require building-product and branch confirmation / 页面品牌提及需另核实建筑产品系列及分店供应",
       "route": "E",
       "visitRegion": "海沃德及弗里蒙特走廊",
       "visitBatch": "E-01",
@@ -5785,7 +6214,16 @@
           "sourceLabel": "Public website or directory image; location unverified",
           "sourceUrl": "https://www.kuttek.com/"
         }
-      ]
+      ],
+      "architecturalSourceIds": [
+        "ARCH-SF018"
+      ],
+      "architecturalSourceId": "ARCH-SF018",
+      "architecturalServices": "Wall vinyl graphics and wraps / 墙面图文及装饰包覆",
+      "interestedProducts": [
+        "建筑玻璃膜"
+      ],
+      "currentProducts": "Wall vinyl graphics and wraps / 墙面图文及装饰包覆"
     },
     {
       "publicRecordId": "SF083",
@@ -5795,8 +6233,8 @@
       "address": "16330 E 14th St, San Leandro, CA 94578, United States",
       "distanceKm": 28.2,
       "distanceBand": "0–50 km / 公里",
-      "services": "Automotive window tint / 汽车隔热膜",
-      "filmBrands": "3M、SunTek、Madico",
+      "services": "Automotive window tint / 汽车隔热膜\n建筑膜业务 / Architectural film: Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜",
+      "filmBrands": "3M、SunTek、Madico\n3M",
       "serviceEvidence": "Official automotive-film service evidence / 官网汽车膜服务佐证",
       "phone": "+1 510-705-3962",
       "website": "http://eagletinting.net/",
@@ -5808,7 +6246,7 @@
       ],
       "lat": 37.6958083,
       "lng": -122.1146272,
-      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认",
+      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认\nPublic address and branch require confirmation before visiting / 出访前确认当前地址及分店\nArchitecture services are separately identified; automotive-only services excluded / 建筑业务单独确认，不以汽车膜业务代替\nBrand mentions require building-product and branch confirmation / 页面品牌提及需另核实建筑产品系列及分店供应",
       "route": "E",
       "visitRegion": "海沃德及弗里蒙特走廊",
       "visitBatch": "E-01",
@@ -5828,7 +6266,16 @@
           "sourceLabel": "Public website or directory image; location unverified",
           "sourceUrl": "http://eagletinting.net/about-us"
         }
-      ]
+      ],
+      "architecturalSourceIds": [
+        "ARCH-SF020"
+      ],
+      "architecturalSourceId": "ARCH-SF020",
+      "architecturalServices": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜",
+      "interestedProducts": [
+        "建筑玻璃膜"
+      ],
+      "currentProducts": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜"
     },
     {
       "publicRecordId": "SF078",
@@ -5866,19 +6313,21 @@
       "address": "1366 Doolittle Dr, San Leandro, CA 94577",
       "distanceKm": 21.7,
       "distanceBand": "0–50 km / 公里",
-      "services": "Automotive window tint / 汽车隔热膜; Paint protection film (PPF) / 漆面保护膜; Color change & vinyl wraps / 改色膜及车身包覆; Ceramic coating / 陶瓷镀膜",
-      "filmBrands": "Not publicly verified\n未公开核实",
+      "services": "Automotive window tint / 汽车隔热膜; Paint protection film (PPF) / 漆面保护膜; Color change & vinyl wraps / 改色膜及车身包覆; Ceramic coating / 陶瓷镀膜\n建筑膜业务 / Architectural film: Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜; Solar and heat-control film / 隔热防晒膜; Safety and security film / 安全防爆膜; Privacy and frosted film / 隐私磨砂膜; Anti-graffiti film / 防涂鸦膜",
+      "filmBrands": "Not publicly verified\n未公开核实\nUnverified / 未核实",
       "serviceEvidence": "Official automotive-film service evidence / 官网汽车膜服务佐证",
       "phone": "+1 510-712-7843",
       "website": "https://thetintfactory.net/",
       "googleMapsUrl": "https://www.google.com/maps/search/?api=1&query=The%20Tint%20Factory%20%7C%20Window%20Tint%2C%20Vinyl%20Wrap%20%26%20PPF%2C%201366%20Doolittle%20Dr%2C%20San%20Leandro%2C%20CA%2094577",
       "directorySource": "https://findawrap.com/shops/san-leandro-ca/the-tint-factory-window-tint-vinyl-wrap-ppf-san-leandro-ca",
       "serviceSources": [
-        "https://thetintfactory.net/"
+        "https://thetintfactory.net/",
+        "https://thetintfactory.net/commercial-window-tint",
+        "https://thetintfactory.net/contact-us"
       ],
       "lat": 37.7150525,
       "lng": -122.1852256,
-      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认",
+      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认\nPublic address and branch require confirmation before visiting / 出访前确认当前地址及分店\nArchitecture services are separately identified; automotive-only services excluded / 建筑业务单独确认，不以汽车膜业务代替\nBrand mentions require building-product and branch confirmation / 页面品牌提及需另核实建筑产品系列及分店供应",
       "route": "E",
       "visitRegion": "海沃德及弗里蒙特走廊",
       "visitBatch": "E-01",
@@ -5900,8 +6349,31 @@
           "contentType": "image/jpeg",
           "sourceLabel": "Public website or directory image; location unverified",
           "sourceUrl": "https://thetintfactory.net/"
+        },
+        {
+          "url": "/assets/field-sales-prospects/ARCH-SF017-01.jpg",
+          "fileName": "ARCH-SF017-01.jpg",
+          "contentType": "image/jpeg",
+          "sourceLabel": "Public architectural-film website image; location unverified",
+          "sourceUrl": "https://thetintfactory.net/commercial-window-tint"
+        },
+        {
+          "url": "/assets/field-sales-prospects/ARCH-SF017-02.jpg",
+          "fileName": "ARCH-SF017-02.jpg",
+          "contentType": "image/jpeg",
+          "sourceLabel": "Public architectural-film website image; location unverified",
+          "sourceUrl": "https://thetintfactory.net/commercial-window-tint"
         }
-      ]
+      ],
+      "architecturalSourceIds": [
+        "ARCH-SF017"
+      ],
+      "architecturalSourceId": "ARCH-SF017",
+      "architecturalServices": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜; Solar and heat-control film / 隔热防晒膜; Safety and security film / 安全防爆膜; Privacy and frosted film / 隐私磨砂膜; Anti-graffiti film / 防涂鸦膜",
+      "interestedProducts": [
+        "建筑玻璃膜"
+      ],
+      "currentProducts": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜; Solar and heat-control film / 隔热防晒膜; Safety and security film / 安全防爆膜; Privacy and frosted film / 隐私磨砂膜; Anti-graffiti film / 防涂鸦膜"
     },
     {
       "publicRecordId": "SF088",
@@ -5911,8 +6383,8 @@
       "address": "21348 Montgomery Ave, Hayward, CA 94541",
       "distanceKm": 30.4,
       "distanceBand": "0–50 km / 公里",
-      "services": "Automotive window tint / 汽车隔热膜; Paint protection film (PPF) / 漆面保护膜; Color change & vinyl wraps / 改色膜及车身包覆; Ceramic coating / 陶瓷镀膜; Fleet graphics & commercial wraps / 商用车图文及包覆",
-      "filmBrands": "Not publicly verified\n未公开核实",
+      "services": "Automotive window tint / 汽车隔热膜; Paint protection film (PPF) / 漆面保护膜; Color change & vinyl wraps / 改色膜及车身包覆; Ceramic coating / 陶瓷镀膜; Fleet graphics & commercial wraps / 商用车图文及包覆\n建筑膜业务 / Architectural film: Commercial glass film / 商业建筑玻璃膜",
+      "filmBrands": "Not publicly verified\n未公开核实\nUnverified / 未核实",
       "serviceEvidence": "Official automotive-film service evidence / 官网汽车膜服务佐证",
       "phone": "+1 510-415-3993",
       "website": "https://www.thelionskingswraps.com/",
@@ -5920,11 +6392,12 @@
       "directorySource": "https://findawrap.com/shops/hayward-ca/the-lions-kings-car-wraps-hayward-ca",
       "serviceSources": [
         "https://www.thelionskingswraps.com/",
-        "https://www.thelionskingswraps.com/about-us"
+        "https://www.thelionskingswraps.com/about-us",
+        "https://www.thelionskingswraps.com/commercial-vehicle-wraps/"
       ],
       "lat": 37.6806724,
       "lng": -122.0958798,
-      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认",
+      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认\nPublic address and branch require confirmation before visiting / 出访前确认当前地址及分店\nArchitecture services are separately identified; automotive-only services excluded / 建筑业务单独确认，不以汽车膜业务代替\nBrand mentions require building-product and branch confirmation / 页面品牌提及需另核实建筑产品系列及分店供应",
       "route": "E",
       "visitRegion": "海沃德及弗里蒙特走廊",
       "visitBatch": "E-02",
@@ -5949,7 +6422,16 @@
           "sourceLabel": "Public website or directory image; location unverified",
           "sourceUrl": "https://www.thelionskingswraps.com/"
         }
-      ]
+      ],
+      "architecturalSourceIds": [
+        "ARCH-SF022"
+      ],
+      "architecturalSourceId": "ARCH-SF022",
+      "architecturalServices": "Commercial glass film / 商业建筑玻璃膜",
+      "interestedProducts": [
+        "建筑玻璃膜"
+      ],
+      "currentProducts": "Commercial glass film / 商业建筑玻璃膜"
     },
     {
       "publicRecordId": "SF089",
@@ -5959,8 +6441,8 @@
       "address": "25356 Cypress Ave, Hayward, CA 94544, United States",
       "distanceKm": 32.6,
       "distanceBand": "0–50 km / 公里",
-      "services": "Automotive window tint / 汽车隔热膜; Color change & vinyl wraps / 改色膜及车身包覆",
-      "filmBrands": "Not publicly verified\n未公开核实",
+      "services": "Automotive window tint / 汽车隔热膜; Color change & vinyl wraps / 改色膜及车身包覆\n建筑膜业务 / Architectural film: Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜; Solar and heat-control film / 隔热防晒膜; Safety and security film / 安全防爆膜; Privacy and frosted film / 隐私磨砂膜",
+      "filmBrands": "Not publicly verified\n未公开核实\nLLumar",
       "serviceEvidence": "Official automotive-film service evidence / 官网汽车膜服务佐证",
       "phone": "+1 415-685-1004",
       "website": "https://savswindowtint.com/",
@@ -5968,11 +6450,12 @@
       "directorySource": "https://findawrap.com/shops/hayward-ca/savskustoms-hayward-ca",
       "serviceSources": [
         "https://savswindowtint.com/",
-        "https://savswindowtint.com/about-us"
+        "https://savswindowtint.com/about-us",
+        "https://savswindowtint.com/savs-window-tinting-services/residential-window-tinting"
       ],
       "lat": 37.6498731,
       "lng": -122.0852189,
-      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认",
+      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认\nPublic address and branch require confirmation before visiting / 出访前确认当前地址及分店\nArchitecture services are separately identified; automotive-only services excluded / 建筑业务单独确认，不以汽车膜业务代替\nBrand mentions require building-product and branch confirmation / 页面品牌提及需另核实建筑产品系列及分店供应",
       "route": "E",
       "visitRegion": "海沃德及弗里蒙特走廊",
       "visitBatch": "E-02",
@@ -5988,7 +6471,16 @@
           "sourceLabel": "Public website or directory image; location unverified",
           "sourceUrl": "https://savswindowtint.com/"
         }
-      ]
+      ],
+      "architecturalSourceIds": [
+        "ARCH-SF023"
+      ],
+      "architecturalSourceId": "ARCH-SF023",
+      "architecturalServices": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜; Solar and heat-control film / 隔热防晒膜; Safety and security film / 安全防爆膜; Privacy and frosted film / 隐私磨砂膜",
+      "interestedProducts": [
+        "建筑玻璃膜"
+      ],
+      "currentProducts": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜; Solar and heat-control film / 隔热防晒膜; Safety and security film / 安全防爆膜; Privacy and frosted film / 隐私磨砂膜"
     },
     {
       "publicRecordId": "SF090",
@@ -6164,8 +6656,8 @@
       "address": "37525 Glenmoor Dr #18, Fremont, CA 94536, United States",
       "distanceKm": 43.9,
       "distanceBand": "0–50 km / 公里",
-      "services": "Automotive window tint / 汽车隔热膜; Paint protection film (PPF) / 漆面保护膜; Color change & vinyl wraps / 改色膜及车身包覆; Ceramic coating / 陶瓷镀膜; Detailing & paint correction / 精洗及漆面修复",
-      "filmBrands": "3M、Solar Gard",
+      "services": "Automotive window tint / 汽车隔热膜; Paint protection film (PPF) / 漆面保护膜; Color change & vinyl wraps / 改色膜及车身包覆; Ceramic coating / 陶瓷镀膜; Detailing & paint correction / 精洗及漆面修复\n建筑膜业务 / Architectural film: Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜; Solar and heat-control film / 隔热防晒膜; Safety and security film / 安全防爆膜; Privacy and frosted film / 隐私磨砂膜",
+      "filmBrands": "3M、Solar Gard\n3M, Solar Gard",
       "serviceEvidence": "Official automotive-film service evidence / 官网汽车膜服务佐证",
       "phone": "+1 510-823-7860",
       "website": "https://www.786tintservice.com/",
@@ -6173,11 +6665,13 @@
       "directorySource": "https://findawrap.com/shops/fremont-ca/786-tint-service-fremont-ca",
       "serviceSources": [
         "https://www.786tintservice.com/",
-        "https://www.786tintservice.com/#contact"
+        "https://www.786tintservice.com/#contact",
+        "https://786tintservice.com/service/residential-window-tinting-fremont-ca/",
+        "https://786tintservice.com/about/"
       ],
       "lat": 37.5497063,
       "lng": -122.0116852,
-      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认",
+      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认\nPublic address and branch require confirmation before visiting / 出访前确认当前地址及分店\nArchitecture services are separately identified; automotive-only services excluded / 建筑业务单独确认，不以汽车膜业务代替\nBrand mentions require building-product and branch confirmation / 页面品牌提及需另核实建筑产品系列及分店供应",
       "route": "E",
       "visitRegion": "海沃德及弗里蒙特走廊",
       "visitBatch": "E-03",
@@ -6203,8 +6697,24 @@
           "contentType": "image/jpeg",
           "sourceLabel": "Public website or directory image; location unverified",
           "sourceUrl": "https://www.786tintservice.com/"
+        },
+        {
+          "url": "/assets/field-sales-prospects/ARCH-SF030-01.jpg",
+          "fileName": "ARCH-SF030-01.jpg",
+          "contentType": "image/jpeg",
+          "sourceLabel": "Public architectural-film website image; location unverified",
+          "sourceUrl": "https://786tintservice.com/service/residential-window-tinting-fremont-ca/"
         }
-      ]
+      ],
+      "architecturalSourceIds": [
+        "ARCH-SF030"
+      ],
+      "architecturalSourceId": "ARCH-SF030",
+      "architecturalServices": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜; Solar and heat-control film / 隔热防晒膜; Safety and security film / 安全防爆膜; Privacy and frosted film / 隐私磨砂膜",
+      "interestedProducts": [
+        "建筑玻璃膜"
+      ],
+      "currentProducts": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜; Solar and heat-control film / 隔热防晒膜; Safety and security film / 安全防爆膜; Privacy and frosted film / 隐私磨砂膜"
     },
     {
       "publicRecordId": "SF116",
@@ -6332,8 +6842,8 @@
       "address": "1240 Pacific St, Union City, CA 94587, United States",
       "distanceKm": 39.5,
       "distanceBand": "0–50 km / 公里",
-      "services": "Automotive window tint / 汽车隔热膜; Paint protection film (PPF) / 漆面保护膜; Color change & vinyl wraps / 改色膜及车身包覆; Ceramic coating / 陶瓷镀膜; Detailing & paint correction / 精洗及漆面修复",
-      "filmBrands": "Not publicly verified\n未公开核实",
+      "services": "Automotive window tint / 汽车隔热膜; Paint protection film (PPF) / 漆面保护膜; Color change & vinyl wraps / 改色膜及车身包覆; Ceramic coating / 陶瓷镀膜; Detailing & paint correction / 精洗及漆面修复\n建筑膜业务 / Architectural film: Residential glass film / 住宅玻璃膜",
+      "filmBrands": "Not publicly verified\n未公开核实\nUnverified / 未核实",
       "serviceEvidence": "Official automotive-film service evidence / 官网汽车膜服务佐证",
       "phone": "+1 510-759-3444",
       "website": "http://www.crystaltintcustoms.com/",
@@ -6341,11 +6851,12 @@
       "directorySource": "https://findawrap.com/shops/union-city-ca/crystal-tint-customs-union-city-ca",
       "serviceSources": [
         "http://www.crystaltintcustoms.com/",
-        "http://www.crystaltintcustoms.com/contact-us/"
+        "http://www.crystaltintcustoms.com/contact-us/",
+        "https://crystaltintcustoms.com/about/"
       ],
       "lat": 37.595739,
       "lng": -122.033538,
-      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认",
+      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认\nPublic address and branch require confirmation before visiting / 出访前确认当前地址及分店\nArchitecture services are separately identified; automotive-only services excluded / 建筑业务单独确认，不以汽车膜业务代替\nBrand mentions require building-product and branch confirmation / 页面品牌提及需另核实建筑产品系列及分店供应",
       "route": "E",
       "visitRegion": "海沃德及弗里蒙特走廊",
       "visitBatch": "E-03",
@@ -6368,7 +6879,16 @@
           "sourceLabel": "Public website or directory image; location unverified",
           "sourceUrl": "http://www.crystaltintcustoms.com/"
         }
-      ]
+      ],
+      "architecturalSourceIds": [
+        "ARCH-SF027"
+      ],
+      "architecturalSourceId": "ARCH-SF027",
+      "architecturalServices": "Residential glass film / 住宅玻璃膜",
+      "interestedProducts": [
+        "建筑玻璃膜"
+      ],
+      "currentProducts": "Residential glass film / 住宅玻璃膜"
     },
     {
       "publicRecordId": "SF109",
@@ -6378,7 +6898,7 @@
       "address": "35325 Fircrest St Ste G, Newark, CA 94560",
       "distanceKm": 41.2,
       "distanceBand": "0–50 km / 公里",
-      "services": "Automotive window tint / 汽车隔热膜; Paint protection film (PPF) / 漆面保护膜; Color change & vinyl wraps / 改色膜及车身包覆; Fleet graphics & commercial wraps / 商用车图文及包覆",
+      "services": "Automotive window tint / 汽车隔热膜; Paint protection film (PPF) / 漆面保护膜; Color change & vinyl wraps / 改色膜及车身包覆; Fleet graphics & commercial wraps / 商用车图文及包覆\n建筑膜业务 / Architectural film: Commercial glass film / 商业建筑玻璃膜; Wall vinyl graphics and wraps / 墙面图文及装饰包覆",
       "filmBrands": "3M",
       "serviceEvidence": "Official automotive-film service evidence / 官网汽车膜服务佐证",
       "phone": "+1 510-552-5658",
@@ -6387,11 +6907,12 @@
       "directorySource": "https://findawrap.com/shops/newark-ca/sfg-wraps-custom-vehicle-wraps-in-san-newark-ca",
       "serviceSources": [
         "https://sfgwraps.com/",
-        "https://sfgwraps.com/about/"
+        "https://sfgwraps.com/about/",
+        "https://sfgwraps.com/commercial-vehicle-wraps/"
       ],
       "lat": 37.5437579,
       "lng": -122.0558433,
-      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认",
+      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认\nPublic address and branch require confirmation before visiting / 出访前确认当前地址及分店\nArchitecture services are separately identified; automotive-only services excluded / 建筑业务单独确认，不以汽车膜业务代替\nBrand mentions require building-product and branch confirmation / 页面品牌提及需另核实建筑产品系列及分店供应",
       "route": "E",
       "visitRegion": "海沃德及弗里蒙特走廊",
       "visitBatch": "E-04",
@@ -6417,7 +6938,16 @@
           "sourceLabel": "Public website or directory image; location unverified",
           "sourceUrl": "https://sfgwraps.com/about/"
         }
-      ]
+      ],
+      "architecturalSourceIds": [
+        "ARCH-SF028"
+      ],
+      "architecturalSourceId": "ARCH-SF028",
+      "architecturalServices": "Commercial glass film / 商业建筑玻璃膜; Wall vinyl graphics and wraps / 墙面图文及装饰包覆",
+      "interestedProducts": [
+        "建筑玻璃膜"
+      ],
+      "currentProducts": "Commercial glass film / 商业建筑玻璃膜; Wall vinyl graphics and wraps / 墙面图文及装饰包覆"
     },
     {
       "publicRecordId": "SF119",
@@ -6708,8 +7238,8 @@
       "address": "42630 Christy St, Fremont, CA 94538",
       "distanceKm": 49.1,
       "distanceBand": "0–50 km / 公里",
-      "services": "Automotive window tint / 汽车隔热膜; Paint protection film (PPF) / 漆面保护膜; Fleet graphics & commercial wraps / 商用车图文及包覆",
-      "filmBrands": "3M、LLumar、Madico",
+      "services": "Automotive window tint / 汽车隔热膜; Paint protection film (PPF) / 漆面保护膜; Fleet graphics & commercial wraps / 商用车图文及包覆\n建筑膜业务 / Architectural film: Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜; Solar and heat-control film / 隔热防晒膜; Safety and security film / 安全防爆膜",
+      "filmBrands": "3M、LLumar、Madico\n3M",
       "serviceEvidence": "Official automotive-film service evidence / 官网汽车膜服务佐证",
       "phone": "+1 510-623-1308",
       "website": "http://www.premiermobilegroup.com/",
@@ -6721,7 +7251,7 @@
       ],
       "lat": 37.5101033,
       "lng": -121.9752156,
-      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认",
+      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认\nPublic address and branch require confirmation before visiting / 出访前确认当前地址及分店\nArchitecture services are separately identified; automotive-only services excluded / 建筑业务单独确认，不以汽车膜业务代替\nBrand mentions require building-product and branch confirmation / 页面品牌提及需另核实建筑产品系列及分店供应",
       "route": "E",
       "visitRegion": "海沃德及弗里蒙特走廊",
       "visitBatch": "E-05",
@@ -6731,7 +7261,16 @@
         "facebook": "https://www.facebook.com/premierprotectivefilms"
       },
       "photoVerification": "No usable public photo found / 未找到可用公开照片",
-      "referencePhotos": []
+      "referencePhotos": [],
+      "architecturalSourceIds": [
+        "ARCH-SF033"
+      ],
+      "architecturalSourceId": "ARCH-SF033",
+      "architecturalServices": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜; Solar and heat-control film / 隔热防晒膜; Safety and security film / 安全防爆膜",
+      "interestedProducts": [
+        "建筑玻璃膜"
+      ],
+      "currentProducts": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜; Solar and heat-control film / 隔热防晒膜; Safety and security film / 安全防爆膜"
     },
     {
       "publicRecordId": "SF131",
@@ -7606,6 +8145,62 @@
       ]
     },
     {
+      "publicRecordId": "ARCH-SF031",
+      "businessName": "Low Price Window Tint",
+      "marketId": "san-francisco",
+      "city": "Dublin / 都柏林",
+      "address": "6355 Scarlett Ct Ste 8, Dublin, CA 94568",
+      "distanceKm": 45.7,
+      "distanceBand": "0–50 km / 公里",
+      "services": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜; Solar and heat-control film / 隔热防晒膜; Safety and security film / 安全防爆膜; Privacy and frosted film / 隐私磨砂膜; Anti-graffiti film / 防涂鸦膜",
+      "filmBrands": "Solar Gard, Huper Optik, Avery Dennison",
+      "serviceEvidence": "建筑膜公开资料 / Architectural-film public research",
+      "phone": "+19255152979",
+      "website": "https://www.lowpricewindowtint.com/",
+      "googleMapsUrl": "https://www.google.com/maps/search/?api=1&query=Low%20Price%20Window%20Tint%2C%206355%20Scarlett%20Ct%20Ste%208%2C%20Dublin%2C%20CA%2094568",
+      "directorySource": "https://www.lowpricewindowtint.com/",
+      "serviceSources": [
+        "https://www.lowpricewindowtint.com/",
+        "https://www.lowpricewindowtint.com/commercial-window-tinting",
+        "https://www.lowpricewindowtint.com/about"
+      ],
+      "lat": 37.703443364638,
+      "lng": -121.907340298079,
+      "researchNotes": "Public address and branch require confirmation before visiting / 出访前确认当前地址及分店\nArchitecture services are separately identified; automotive-only services excluded / 建筑业务单独确认，不以汽车膜业务代替\nBrand mentions require building-product and branch confirmation / 页面品牌提及需另核实建筑产品系列及分店供应",
+      "route": "F",
+      "visitRegion": "旧金山 · 建筑膜路线 F",
+      "visitBatch": "F-02",
+      "visitStop": 1,
+      "navigationUrl": "https://www.google.com/maps/dir/?api=1&origin=1+Dr.+Carlton+B.+Goodlett+Place%2C+San+Francisco%2C+CA+94102&destination=6355+Scarlett+Ct+Ste+8%2C+Dublin%2C+CA+94568&travelmode=driving",
+      "socialLinks": {},
+      "photoVerification": "Website display image; project/location unverified / 官网展示图，案例及地点待核实\nWebsite display image; project/location unverified / 官网展示图，案例及地点待核实",
+      "referencePhotos": [
+        {
+          "url": "/assets/field-sales-prospects/ARCH-SF031-01.jpg",
+          "fileName": "ARCH-SF031-01.jpg",
+          "contentType": "image/jpeg",
+          "sourceLabel": "Public architectural-film website image; location unverified",
+          "sourceUrl": "https://www.lowpricewindowtint.com/"
+        },
+        {
+          "url": "/assets/field-sales-prospects/ARCH-SF031-02.jpg",
+          "fileName": "ARCH-SF031-02.jpg",
+          "contentType": "image/jpeg",
+          "sourceLabel": "Public architectural-film website image; location unverified",
+          "sourceUrl": "https://www.lowpricewindowtint.com/"
+        }
+      ],
+      "architecturalSourceIds": [
+        "ARCH-SF031"
+      ],
+      "architecturalSourceId": "ARCH-SF031",
+      "architecturalServices": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜; Solar and heat-control film / 隔热防晒膜; Safety and security film / 安全防爆膜; Privacy and frosted film / 隐私磨砂膜; Anti-graffiti film / 防涂鸦膜",
+      "interestedProducts": [
+        "建筑玻璃膜"
+      ],
+      "currentProducts": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜; Solar and heat-control film / 隔热防晒膜; Safety and security film / 安全防爆膜; Privacy and frosted film / 隐私磨砂膜; Anti-graffiti film / 防涂鸦膜"
+    },
+    {
       "publicRecordId": "SF101",
       "businessName": "CERAMIC PRO BAY AREA / EXCLSV MOTORSPORTS",
       "marketId": "san-francisco",
@@ -7647,8 +8242,8 @@
       "address": "1931 Market St Ste B, Concord, CA 94520, United States",
       "distanceKm": 39.2,
       "distanceBand": "0–50 km / 公里",
-      "services": "Automotive window tint / 汽车隔热膜; Paint protection film (PPF) / 漆面保护膜; Ceramic coating / 陶瓷镀膜; Fleet graphics & commercial wraps / 商用车图文及包覆; Detailing & paint correction / 精洗及漆面修复",
-      "filmBrands": "Not publicly verified\n未公开核实",
+      "services": "Automotive window tint / 汽车隔热膜; Paint protection film (PPF) / 漆面保护膜; Ceramic coating / 陶瓷镀膜; Fleet graphics & commercial wraps / 商用车图文及包覆; Detailing & paint correction / 精洗及漆面修复\n建筑膜业务 / Architectural film: Commercial glass film / 商业建筑玻璃膜; Solar and heat-control film / 隔热防晒膜; Privacy and frosted film / 隐私磨砂膜",
+      "filmBrands": "Not publicly verified\n未公开核实\nUnverified / 未核实",
       "serviceEvidence": "Official automotive-film service evidence / 官网汽车膜服务佐证",
       "phone": "+1 925-496-0888",
       "website": "https://www.tintworld.com/locations/ca/concord-162/",
@@ -7656,11 +8251,12 @@
       "directorySource": "https://findawrap.com/shops/concord-ca/tint-world-concord-ca",
       "serviceSources": [
         "https://www.tintworld.com/locations/ca/concord-162/",
-        "https://www.tintworld.com/about-us/"
+        "https://www.tintworld.com/about-us/",
+        "https://www.tintworld.com/locations/ca/concord-162/commercial-window-tinting/"
       ],
       "lat": 37.9725005,
       "lng": -122.0455049,
-      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认",
+      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认\nPublic address and branch require confirmation before visiting / 出访前确认当前地址及分店\nArchitecture services are separately identified; automotive-only services excluded / 建筑业务单独确认，不以汽车膜业务代替\nBrand mentions require building-product and branch confirmation / 页面品牌提及需另核实建筑产品系列及分店供应",
       "route": "F",
       "visitRegion": "东湾内陆及三谷区",
       "visitBatch": "F-02",
@@ -7679,8 +8275,24 @@
           "contentType": "image/jpeg",
           "sourceLabel": "Public website or directory image; location unverified",
           "sourceUrl": "https://www.tintworld.com/about-us/"
+        },
+        {
+          "url": "/assets/field-sales-prospects/ARCH-SF026-02.jpg",
+          "fileName": "ARCH-SF026-02.jpg",
+          "contentType": "image/jpeg",
+          "sourceLabel": "Public architectural-film website image; location unverified",
+          "sourceUrl": "https://www.tintworld.com/locations/ca/concord-162/commercial-window-tinting/"
         }
-      ]
+      ],
+      "architecturalSourceIds": [
+        "ARCH-SF026"
+      ],
+      "architecturalSourceId": "ARCH-SF026",
+      "architecturalServices": "Commercial glass film / 商业建筑玻璃膜; Solar and heat-control film / 隔热防晒膜; Privacy and frosted film / 隐私磨砂膜",
+      "interestedProducts": [
+        "建筑玻璃膜"
+      ],
+      "currentProducts": "Commercial glass film / 商业建筑玻璃膜; Solar and heat-control film / 隔热防晒膜; Privacy and frosted film / 隐私磨砂膜"
     },
     {
       "publicRecordId": "SF108",
@@ -7767,7 +8379,7 @@
       "address": "1281 Franquette Ave Ste B, Concord, CA 94520, United States",
       "distanceKm": 38.3,
       "distanceBand": "0–50 km / 公里",
-      "services": "Automotive window tint / 汽车隔热膜; Ceramic coating / 陶瓷镀膜\nSeries mentioned / 提及系列: PRIME XR PLUS; PRIME XR",
+      "services": "Automotive window tint / 汽车隔热膜; Ceramic coating / 陶瓷镀膜\nSeries mentioned / 提及系列: PRIME XR PLUS; PRIME XR\n建筑膜业务 / Architectural film: Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜; Safety and security film / 安全防爆膜",
       "filmBrands": "XPEL",
       "serviceEvidence": "Official automotive-film service evidence / 官网汽车膜服务佐证",
       "phone": "+1 925-476-4907",
@@ -7776,11 +8388,12 @@
       "directorySource": "https://findawrap.com/shops/concord-ca/tru-tints-concord-ca",
       "serviceSources": [
         "http://tru-tints.com/",
-        "https://tru-tints.com/about/"
+        "https://tru-tints.com/about/",
+        "https://tru-tints.com/residential-window-tinting-concord/"
       ],
       "lat": 37.9642613,
       "lng": -122.051147,
-      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认",
+      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认\nPublic address and branch require confirmation before visiting / 出访前确认当前地址及分店\nArchitecture services are separately identified; automotive-only services excluded / 建筑业务单独确认，不以汽车膜业务代替\nBrand mentions require building-product and branch confirmation / 页面品牌提及需另核实建筑产品系列及分店供应",
       "route": "F",
       "visitRegion": "东湾内陆及三谷区",
       "visitBatch": "F-02",
@@ -7799,8 +8412,31 @@
           "contentType": "image/jpeg",
           "sourceLabel": "Public website or directory image; location unverified",
           "sourceUrl": "http://tru-tints.com/"
+        },
+        {
+          "url": "/assets/field-sales-prospects/ARCH-SF024-01.jpg",
+          "fileName": "ARCH-SF024-01.jpg",
+          "contentType": "image/jpeg",
+          "sourceLabel": "Public architectural-film website image; location unverified",
+          "sourceUrl": "https://tru-tints.com/residential-window-tinting-concord/"
+        },
+        {
+          "url": "/assets/field-sales-prospects/ARCH-SF024-02.jpg",
+          "fileName": "ARCH-SF024-02.jpg",
+          "contentType": "image/jpeg",
+          "sourceLabel": "Public architectural-film website image; location unverified",
+          "sourceUrl": "https://tru-tints.com/residential-window-tinting-concord/"
         }
-      ]
+      ],
+      "architecturalSourceIds": [
+        "ARCH-SF024"
+      ],
+      "architecturalSourceId": "ARCH-SF024",
+      "architecturalServices": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜; Safety and security film / 安全防爆膜",
+      "interestedProducts": [
+        "建筑玻璃膜"
+      ],
+      "currentProducts": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜; Safety and security film / 安全防爆膜"
     },
     {
       "publicRecordId": "SF100",
@@ -7810,8 +8446,8 @@
       "address": "23 Beta Ct G, San Ramon, CA 94583, United States",
       "distanceKm": 38.4,
       "distanceBand": "0–50 km / 公里",
-      "services": "Automotive window tint / 汽车隔热膜; Paint protection film (PPF) / 漆面保护膜; Ceramic coating / 陶瓷镀膜; Detailing & paint correction / 精洗及漆面修复",
-      "filmBrands": "Ceramic Pro、CARPRO",
+      "services": "Automotive window tint / 汽车隔热膜; Paint protection film (PPF) / 漆面保护膜; Ceramic coating / 陶瓷镀膜; Detailing & paint correction / 精洗及漆面修复\n建筑膜业务 / Architectural film: Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜; Safety and security film / 安全防爆膜; Privacy and frosted film / 隐私磨砂膜",
+      "filmBrands": "Ceramic Pro、CARPRO\nUnverified / 未核实",
       "serviceEvidence": "Official automotive-film service evidence / 官网汽车膜服务佐证",
       "phone": "+1 925-238-3898",
       "website": "https://www.925tint.com/",
@@ -7819,11 +8455,12 @@
       "directorySource": "https://findawrap.com/shops/san-ramon-ca/925tint-san-ramon-ca",
       "serviceSources": [
         "https://www.925tint.com/",
-        "https://www.925tint.com/contact"
+        "https://www.925tint.com/contact",
+        "https://www.925tint.com/commercial-window-tinting"
       ],
       "lat": 37.7806349,
       "lng": -121.9808843,
-      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认",
+      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认\nPublic address and branch require confirmation before visiting / 出访前确认当前地址及分店\nArchitecture services are separately identified; automotive-only services excluded / 建筑业务单独确认，不以汽车膜业务代替\nBrand mentions require building-product and branch confirmation / 页面品牌提及需另核实建筑产品系列及分店供应",
       "route": "F",
       "visitRegion": "东湾内陆及三谷区",
       "visitBatch": "F-03",
@@ -7849,7 +8486,16 @@
           "sourceLabel": "Public website or directory image; location unverified",
           "sourceUrl": "https://www.925tint.com/"
         }
-      ]
+      ],
+      "architecturalSourceIds": [
+        "ARCH-SF025"
+      ],
+      "architecturalSourceId": "ARCH-SF025",
+      "architecturalServices": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜; Safety and security film / 安全防爆膜; Privacy and frosted film / 隐私磨砂膜",
+      "interestedProducts": [
+        "建筑玻璃膜"
+      ],
+      "currentProducts": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜; Safety and security film / 安全防爆膜; Privacy and frosted film / 隐私磨砂膜"
     },
     {
       "publicRecordId": "SF145",
@@ -7859,8 +8505,8 @@
       "address": "151 Lindbergh Ave #C, Livermore, CA 94551, United States",
       "distanceKm": 54.3,
       "distanceBand": "50–100 km / 公里",
-      "services": "Automotive window tint / 汽车隔热膜; Paint protection film (PPF) / 漆面保护膜; Color change & vinyl wraps / 改色膜及车身包覆; Ceramic coating / 陶瓷镀膜; Detailing & paint correction / 精洗及漆面修复",
-      "filmBrands": "Not publicly verified\n未公开核实",
+      "services": "Automotive window tint / 汽车隔热膜; Paint protection film (PPF) / 漆面保护膜; Color change & vinyl wraps / 改色膜及车身包覆; Ceramic coating / 陶瓷镀膜; Detailing & paint correction / 精洗及漆面修复\n建筑膜业务 / Architectural film: Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜; Safety and security film / 安全防爆膜; Privacy and frosted film / 隐私磨砂膜",
+      "filmBrands": "Not publicly verified\n未公开核实\nXPEL",
       "serviceEvidence": "Official automotive-film service evidence / 官网汽车膜服务佐证",
       "phone": "+1 925-900-6333",
       "website": "https://panthertints.com/",
@@ -7868,11 +8514,12 @@
       "directorySource": "https://findawrap.com/shops/livermore-ca/panther-tint-glass-replacement-livermore-ca",
       "serviceSources": [
         "https://panthertints.com/",
-        "https://panthertints.com/contact-us/"
+        "https://panthertints.com/contact-us/",
+        "https://panthertints.com/residential-glass-tint/"
       ],
       "lat": 37.698388,
       "lng": -121.80887,
-      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认",
+      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认\nPublic address and branch require confirmation before visiting / 出访前确认当前地址及分店\nArchitecture services are separately identified; automotive-only services excluded / 建筑业务单独确认，不以汽车膜业务代替\nBrand mentions require building-product and branch confirmation / 页面品牌提及需另核实建筑产品系列及分店供应",
       "route": "F",
       "visitRegion": "东湾内陆及三谷区",
       "visitBatch": "F-03",
@@ -7890,7 +8537,16 @@
           "sourceLabel": "Public website or directory image; location unverified",
           "sourceUrl": "https://panthertints.com/"
         }
-      ]
+      ],
+      "architecturalSourceIds": [
+        "ARCH-SF034"
+      ],
+      "architecturalSourceId": "ARCH-SF034",
+      "architecturalServices": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜; Safety and security film / 安全防爆膜; Privacy and frosted film / 隐私磨砂膜",
+      "interestedProducts": [
+        "建筑玻璃膜"
+      ],
+      "currentProducts": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜; Safety and security film / 安全防爆膜; Privacy and frosted film / 隐私磨砂膜"
     },
     {
       "publicRecordId": "SF123",
@@ -7900,8 +8556,8 @@
       "address": "3657 Old Santa Rita Rd, Pleasanton, CA 94588, United States",
       "distanceKm": 48.3,
       "distanceBand": "0–50 km / 公里",
-      "services": "Automotive window tint / 汽车隔热膜; Paint protection film (PPF) / 漆面保护膜; Color change & vinyl wraps / 改色膜及车身包覆",
-      "filmBrands": "Not publicly verified\n未公开核实",
+      "services": "Automotive window tint / 汽车隔热膜; Paint protection film (PPF) / 漆面保护膜; Color change & vinyl wraps / 改色膜及车身包覆\n建筑膜业务 / Architectural film: Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜",
+      "filmBrands": "Not publicly verified\n未公开核实\nUnverified / 未核实",
       "serviceEvidence": "Official automotive-film service evidence / 官网汽车膜服务佐证",
       "phone": "+1 925-399-5420",
       "website": "https://supremeaf.com/",
@@ -7909,11 +8565,12 @@
       "directorySource": "https://findawrap.com/shops/pleasanton-ca/supreme-window-tint-vehicle-advertising-wraps-pleasanton-ca",
       "serviceSources": [
         "https://supremeaf.com/",
-        "https://supremeaf.com/contact"
+        "https://supremeaf.com/contact",
+        "https://supremeaf.com/car-commercial-window-tinting-pleasanton-ca"
       ],
       "lat": 37.697027,
       "lng": -121.8790319,
-      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认",
+      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认\nPublic address and branch require confirmation before visiting / 出访前确认当前地址及分店\nArchitecture services are separately identified; automotive-only services excluded / 建筑业务单独确认，不以汽车膜业务代替\nBrand mentions require building-product and branch confirmation / 页面品牌提及需另核实建筑产品系列及分店供应",
       "route": "F",
       "visitRegion": "东湾内陆及三谷区",
       "visitBatch": "F-03",
@@ -7940,7 +8597,16 @@
           "sourceLabel": "Public website or directory image; location unverified",
           "sourceUrl": "https://supremeaf.com/"
         }
-      ]
+      ],
+      "architecturalSourceIds": [
+        "ARCH-SF032"
+      ],
+      "architecturalSourceId": "ARCH-SF032",
+      "architecturalServices": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜",
+      "interestedProducts": [
+        "建筑玻璃膜"
+      ],
+      "currentProducts": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜"
     },
     {
       "publicRecordId": "SF120",
@@ -8053,27 +8719,39 @@
       "address": "3493 Clayton Rd, Concord, CA 94519, United States",
       "distanceKm": 41.5,
       "distanceBand": "0–50 km / 公里",
-      "services": "Automotive window tint / 汽车隔热膜",
-      "filmBrands": "LLumar",
+      "services": "Automotive window tint / 汽车隔热膜\n建筑膜业务 / Architectural film: Residential glass film / 住宅玻璃膜",
+      "filmBrands": "LLumar\nUnverified / 未核实",
       "serviceEvidence": "Official automotive-film service evidence / 官网汽车膜服务佐证",
       "phone": "+1 925-356-6909",
       "website": "http://www.thebestguys.com/",
       "googleMapsUrl": "https://www.google.com/maps/search/?api=1&query=The%20Best%20Guys%2C%203493%20Clayton%20Rd%2C%20Concord%2C%20CA%2094519%2C%20United%20States",
       "directorySource": "https://findawrap.com/shops/concord-ca/the-best-guys-concord-ca",
       "serviceSources": [
-        "http://www.thebestguys.com/"
+        "http://www.thebestguys.com/",
+        "https://thebestguys.com/contact/"
       ],
       "lat": 37.9714618,
       "lng": -122.0129225,
-      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认",
+      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认\nPublic address and branch require confirmation before visiting / 出访前确认当前地址及分店\nArchitecture services are separately identified; automotive-only services excluded / 建筑业务单独确认，不以汽车膜业务代替\nBrand mentions require building-product and branch confirmation / 页面品牌提及需另核实建筑产品系列及分店供应",
       "route": "F",
       "visitRegion": "东湾内陆及三谷区",
       "visitBatch": "F-04",
       "visitStop": 1,
       "navigationUrl": "https://www.google.com/maps/dir/?api=1&origin=1+Dr.+Carlton+B.+Goodlett+Place%2C+San+Francisco%2C+CA+94102&destination=3493+Clayton+Rd%2C+Concord%2C+CA+94519%2C+United+States&travelmode=driving",
-      "socialLinks": {},
+      "socialLinks": {
+        "facebook": "https://www.facebook.com/TheBestGuys/"
+      },
       "photoVerification": "No usable public photo found / 未找到可用公开照片",
-      "referencePhotos": []
+      "referencePhotos": [],
+      "architecturalSourceIds": [
+        "ARCH-SF029"
+      ],
+      "architecturalSourceId": "ARCH-SF029",
+      "architecturalServices": "Residential glass film / 住宅玻璃膜",
+      "interestedProducts": [
+        "建筑玻璃膜"
+      ],
+      "currentProducts": "Residential glass film / 住宅玻璃膜"
     },
     {
       "publicRecordId": "SF111",
@@ -8169,8 +8847,8 @@
       "address": "4039 First St, Livermore, CA 94551",
       "distanceKm": 59.7,
       "distanceBand": "50–100 km / 公里",
-      "services": "Automotive window tint / 汽车隔热膜; Paint protection film (PPF) / 漆面保护膜; Color change & vinyl wraps / 改色膜及车身包覆; Ceramic coating / 陶瓷镀膜; Detailing & paint correction / 精洗及漆面修复",
-      "filmBrands": "Not publicly verified\n未公开核实",
+      "services": "Automotive window tint / 汽车隔热膜; Paint protection film (PPF) / 漆面保护膜; Color change & vinyl wraps / 改色膜及车身包覆; Ceramic coating / 陶瓷镀膜; Detailing & paint correction / 精洗及漆面修复\n建筑膜业务 / Architectural film: Residential glass film / 住宅玻璃膜",
+      "filmBrands": "Not publicly verified\n未公开核实\n3M, XPEL",
       "serviceEvidence": "Official automotive-film service evidence / 官网汽车膜服务佐证",
       "phone": "+1 925-261-7111",
       "website": "https://www.tintix.com/locations/window-tint-livermore-ca/",
@@ -8178,11 +8856,12 @@
       "directorySource": "https://findawrap.com/shops/livermore-ca/tintix-window-tint-ppf-ceramic-coating-livermore-ca",
       "serviceSources": [
         "https://www.tintix.com/locations/window-tint-livermore-ca/",
-        "https://www.tintix.com/contact-us/"
+        "https://www.tintix.com/contact-us/",
+        "http://tintix.com/"
       ],
       "lat": 37.6908042,
       "lng": -121.748974,
-      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认",
+      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认\nPublic address and branch require confirmation before visiting / 出访前确认当前地址及分店\nArchitecture services are separately identified; automotive-only services excluded / 建筑业务单独确认，不以汽车膜业务代替\nBrand mentions require building-product and branch confirmation / 页面品牌提及需另核实建筑产品系列及分店供应",
       "route": "F",
       "visitRegion": "东湾内陆及三谷区",
       "visitBatch": "F-05",
@@ -8201,8 +8880,31 @@
           "contentType": "image/jpeg",
           "sourceLabel": "Public website or directory image; location unverified",
           "sourceUrl": "https://www.tintix.com/locations/window-tint-livermore-ca/"
+        },
+        {
+          "url": "/assets/field-sales-prospects/ARCH-SF036-01.jpg",
+          "fileName": "ARCH-SF036-01.jpg",
+          "contentType": "image/jpeg",
+          "sourceLabel": "Public architectural-film website image; location unverified",
+          "sourceUrl": "http://tintix.com/"
+        },
+        {
+          "url": "/assets/field-sales-prospects/ARCH-SF036-02.jpg",
+          "fileName": "ARCH-SF036-02.jpg",
+          "contentType": "image/jpeg",
+          "sourceLabel": "Public architectural-film website image; location unverified",
+          "sourceUrl": "http://tintix.com/"
         }
-      ]
+      ],
+      "architecturalSourceIds": [
+        "ARCH-SF036"
+      ],
+      "architecturalSourceId": "ARCH-SF036",
+      "architecturalServices": "Residential glass film / 住宅玻璃膜",
+      "interestedProducts": [
+        "建筑玻璃膜"
+      ],
+      "currentProducts": "Residential glass film / 住宅玻璃膜"
     },
     {
       "publicRecordId": "SF155",
@@ -8320,7 +9022,7 @@
       "address": "5715 Southfront Rd A2, Livermore, CA 94551, United States",
       "distanceKm": 61.3,
       "distanceBand": "50–100 km / 公里",
-      "services": "Automotive window tint / 汽车隔热膜; Paint protection film (PPF) / 漆面保护膜; Color change & vinyl wraps / 改色膜及车身包覆; Ceramic coating / 陶瓷镀膜; Detailing & paint correction / 精洗及漆面修复\nSeries mentioned / 提及系列: FUSION PLUS",
+      "services": "Automotive window tint / 汽车隔热膜; Paint protection film (PPF) / 漆面保护膜; Color change & vinyl wraps / 改色膜及车身包覆; Ceramic coating / 陶瓷镀膜; Detailing & paint correction / 精洗及漆面修复\nSeries mentioned / 提及系列: FUSION PLUS\n建筑膜业务 / Architectural film: Residential glass film / 住宅玻璃膜",
       "filmBrands": "XPEL",
       "serviceEvidence": "Official automotive-film service evidence / 官网汽车膜服务佐证",
       "phone": "+1 925-819-4045",
@@ -8333,7 +9035,7 @@
       ],
       "lat": 37.7064521,
       "lng": -121.7273435,
-      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认",
+      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认\nPublic address and branch require confirmation before visiting / 出访前确认当前地址及分店\nArchitecture services are separately identified; automotive-only services excluded / 建筑业务单独确认，不以汽车膜业务代替\nBrand mentions require building-product and branch confirmation / 页面品牌提及需另核实建筑产品系列及分店供应",
       "route": "F",
       "visitRegion": "东湾内陆及三谷区",
       "visitBatch": "F-06",
@@ -8353,7 +9055,16 @@
           "sourceLabel": "Public website or directory image; location unverified",
           "sourceUrl": "http://www.luxtint.net/"
         }
-      ]
+      ],
+      "architecturalSourceIds": [
+        "ARCH-SF040"
+      ],
+      "architecturalSourceId": "ARCH-SF040",
+      "architecturalServices": "Residential glass film / 住宅玻璃膜",
+      "interestedProducts": [
+        "建筑玻璃膜"
+      ],
+      "currentProducts": "Residential glass film / 住宅玻璃膜"
     },
     {
       "publicRecordId": "SF174",
@@ -8525,7 +9236,7 @@
       "address": "1209 Auto Center Dr, Antioch, CA 94509, United States",
       "distanceKm": 57.7,
       "distanceBand": "50–100 km / 公里",
-      "services": "Automotive window tint / 汽车隔热膜; Paint protection film (PPF) / 漆面保护膜\nSeries mentioned / 提及系列: FormulaOne",
+      "services": "Automotive window tint / 汽车隔热膜; Paint protection film (PPF) / 漆面保护膜\nSeries mentioned / 提及系列: FormulaOne\n建筑膜业务 / Architectural film: Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜; Solar and heat-control film / 隔热防晒膜; Safety and security film / 安全防爆膜; Privacy and frosted film / 隐私磨砂膜",
       "filmBrands": "LLumar",
       "serviceEvidence": "Official automotive-film service evidence / 官网汽车膜服务佐证",
       "phone": "+1 925-754-8468",
@@ -8533,11 +9244,12 @@
       "googleMapsUrl": "https://www.google.com/maps/search/?api=1&query=Classy%20Glass%20Tinting%2C%201209%20Auto%20Center%20Dr%2C%20Antioch%2C%20CA%2094509%2C%20United%20States",
       "directorySource": "https://findawrap.com/shops/antioch-ca/classy-glass-tinting-antioch-ca",
       "serviceSources": [
-        "https://classyglasstinting.com/"
+        "https://classyglasstinting.com/",
+        "https://classyglasstinting.com/commercial-tint"
       ],
       "lat": 38.010855,
       "lng": -121.82987,
-      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认",
+      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认\nPublic address and branch require confirmation before visiting / 出访前确认当前地址及分店\nArchitecture services are separately identified; automotive-only services excluded / 建筑业务单独确认，不以汽车膜业务代替\nBrand mentions require building-product and branch confirmation / 页面品牌提及需另核实建筑产品系列及分店供应",
       "route": "F",
       "visitRegion": "东湾内陆及三谷区",
       "visitBatch": "F-07",
@@ -8556,8 +9268,31 @@
           "contentType": "image/jpeg",
           "sourceLabel": "Public website or directory image; location unverified",
           "sourceUrl": "https://classyglasstinting.com/"
+        },
+        {
+          "url": "/assets/field-sales-prospects/ARCH-SF035-01.jpg",
+          "fileName": "ARCH-SF035-01.jpg",
+          "contentType": "image/jpeg",
+          "sourceLabel": "Public architectural-film website image; location unverified",
+          "sourceUrl": "https://classyglasstinting.com/commercial-tint"
+        },
+        {
+          "url": "/assets/field-sales-prospects/ARCH-SF035-02.jpg",
+          "fileName": "ARCH-SF035-02.jpg",
+          "contentType": "image/jpeg",
+          "sourceLabel": "Public architectural-film website image; location unverified",
+          "sourceUrl": "https://classyglasstinting.com/commercial-tint"
         }
-      ]
+      ],
+      "architecturalSourceIds": [
+        "ARCH-SF035"
+      ],
+      "architecturalSourceId": "ARCH-SF035",
+      "architecturalServices": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜; Solar and heat-control film / 隔热防晒膜; Safety and security film / 安全防爆膜; Privacy and frosted film / 隐私磨砂膜",
+      "interestedProducts": [
+        "建筑玻璃膜"
+      ],
+      "currentProducts": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜; Solar and heat-control film / 隔热防晒膜; Safety and security film / 安全防爆膜; Privacy and frosted film / 隐私磨砂膜"
     },
     {
       "publicRecordId": "SF151",
@@ -8625,8 +9360,8 @@
       "address": "2371 Whitetail Dr, Antioch, CA 94531, United States",
       "distanceKm": 59.8,
       "distanceBand": "50–100 km / 公里",
-      "services": "Automotive window tint / 汽车隔热膜; Paint protection film (PPF) / 漆面保护膜; Color change & vinyl wraps / 改色膜及车身包覆; Ceramic coating / 陶瓷镀膜; Detailing & paint correction / 精洗及漆面修复",
-      "filmBrands": "Not publicly verified\n未公开核实",
+      "services": "Automotive window tint / 汽车隔热膜; Paint protection film (PPF) / 漆面保护膜; Color change & vinyl wraps / 改色膜及车身包覆; Ceramic coating / 陶瓷镀膜; Detailing & paint correction / 精洗及漆面修复\n建筑膜业务 / Architectural film: Residential glass film / 住宅玻璃膜",
+      "filmBrands": "Not publicly verified\n未公开核实\nUnverified / 未核实",
       "serviceEvidence": "Official automotive-film service evidence / 官网汽车膜服务佐证",
       "phone": "+1 925-325-4361",
       "website": "https://medtintshop.com/",
@@ -8638,7 +9373,7 @@
       ],
       "lat": 37.9756767,
       "lng": -121.7838077,
-      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认",
+      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认\nPublic address and branch require confirmation before visiting / 出访前确认当前地址及分店\nArchitecture services are separately identified; automotive-only services excluded / 建筑业务单独确认，不以汽车膜业务代替\nBrand mentions require building-product and branch confirmation / 页面品牌提及需另核实建筑产品系列及分店供应",
       "route": "F",
       "visitRegion": "东湾内陆及三谷区",
       "visitBatch": "F-07",
@@ -8665,7 +9400,16 @@
           "sourceLabel": "Public website or directory image; location unverified",
           "sourceUrl": "https://medtintshop.com/"
         }
-      ]
+      ],
+      "architecturalSourceIds": [
+        "ARCH-SF037"
+      ],
+      "architecturalSourceId": "ARCH-SF037",
+      "architecturalServices": "Residential glass film / 住宅玻璃膜",
+      "interestedProducts": [
+        "建筑玻璃膜"
+      ],
+      "currentProducts": "Residential glass film / 住宅玻璃膜"
     },
     {
       "publicRecordId": "SF163",
@@ -8746,19 +9490,20 @@
       "address": "103 Technology Ct Ste C, Brentwood, CA 94513, United States",
       "distanceKm": 65.9,
       "distanceBand": "50–100 km / 公里",
-      "services": "Automotive window tint / 汽车隔热膜; Paint protection film (PPF) / 漆面保护膜; Color change & vinyl wraps / 改色膜及车身包覆; Ceramic coating / 陶瓷镀膜; Detailing & paint correction / 精洗及漆面修复\nSeries mentioned / 提及系列: PRIME XR PLUS; PRIME XR; ULTIMATE PLUS; STEALTH",
-      "filmBrands": "XPEL、3M",
+      "services": "Automotive window tint / 汽车隔热膜; Paint protection film (PPF) / 漆面保护膜; Color change & vinyl wraps / 改色膜及车身包覆; Ceramic coating / 陶瓷镀膜; Detailing & paint correction / 精洗及漆面修复\nSeries mentioned / 提及系列: PRIME XR PLUS; PRIME XR; ULTIMATE PLUS; STEALTH\n建筑膜业务 / Architectural film: Residential glass film / 住宅玻璃膜",
+      "filmBrands": "XPEL、3M\n3M, XPEL",
       "serviceEvidence": "Official automotive-film service evidence / 官网汽车膜服务佐证",
       "phone": "+1 925-261-7111",
       "website": "http://tintix.com/",
       "googleMapsUrl": "https://www.google.com/maps/search/?api=1&query=TINTIX%20Window%20Tinting%20-%20Brentwood%2C%20103%20Technology%20Ct%20Ste%20C%2C%20Brentwood%2C%20CA%2094513%2C%20United%20States",
       "directorySource": "https://findawrap.com/shops/brentwood-ca/tintix-window-tinting-brentwood-brentwood-ca",
       "serviceSources": [
-        "http://tintix.com/"
+        "http://tintix.com/",
+        "https://www.tintix.com/contact-us/"
       ],
       "lat": 37.9456973,
       "lng": -121.6979148,
-      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认",
+      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认\nPublic address and branch require confirmation before visiting / 出访前确认当前地址及分店\nArchitecture services are separately identified; automotive-only services excluded / 建筑业务单独确认，不以汽车膜业务代替\nBrand mentions require building-product and branch confirmation / 页面品牌提及需另核实建筑产品系列及分店供应",
       "route": "F",
       "visitRegion": "东湾内陆及三谷区",
       "visitBatch": "F-08",
@@ -8784,8 +9529,24 @@
           "contentType": "image/jpeg",
           "sourceLabel": "Public website or directory image; location unverified",
           "sourceUrl": "http://tintix.com/"
+        },
+        {
+          "url": "/assets/field-sales-prospects/ARCH-SF045-02.jpg",
+          "fileName": "ARCH-SF045-02.jpg",
+          "contentType": "image/jpeg",
+          "sourceLabel": "Public architectural-film website image; location unverified",
+          "sourceUrl": "http://tintix.com/"
         }
-      ]
+      ],
+      "architecturalSourceIds": [
+        "ARCH-SF045"
+      ],
+      "architecturalSourceId": "ARCH-SF045",
+      "architecturalServices": "Residential glass film / 住宅玻璃膜",
+      "interestedProducts": [
+        "建筑玻璃膜"
+      ],
+      "currentProducts": "Residential glass film / 住宅玻璃膜"
     },
     {
       "publicRecordId": "SF197",
@@ -8845,7 +9606,7 @@
       "address": "3602 Mars Way #105, Tracy, CA 95377, United States",
       "distanceKm": 87.6,
       "distanceBand": "50–100 km / 公里",
-      "services": "Automotive window tint / 汽车隔热膜; Paint protection film (PPF) / 漆面保护膜; Color change & vinyl wraps / 改色膜及车身包覆; Ceramic coating / 陶瓷镀膜\nSeries mentioned / 提及系列: PRIME XR PLUS; PRIME XR; STEALTH",
+      "services": "Automotive window tint / 汽车隔热膜; Paint protection film (PPF) / 漆面保护膜; Color change & vinyl wraps / 改色膜及车身包覆; Ceramic coating / 陶瓷镀膜\nSeries mentioned / 提及系列: PRIME XR PLUS; PRIME XR; STEALTH\n建筑膜业务 / Architectural film: Residential glass film / 住宅玻璃膜",
       "filmBrands": "XPEL",
       "serviceEvidence": "Official automotive-film service evidence / 官网汽车膜服务佐证",
       "phone": "+1 209-650-1725",
@@ -8853,18 +9614,20 @@
       "googleMapsUrl": "https://www.google.com/maps/search/?api=1&query=Superior%20Window%20Tint%2C%203602%20Mars%20Way%20%23105%2C%20Tracy%2C%20CA%2095377%2C%20United%20States",
       "directorySource": "https://findawrap.com/shops/tracy-ca/superior-window-tint-tracy-ca",
       "serviceSources": [
-        "http://www.superiorwindowtint209.net/"
+        "http://www.superiorwindowtint209.net/",
+        "https://superiorwindowtint209.net/contact"
       ],
       "lat": 37.7052615,
       "lng": -121.4260186,
-      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认",
+      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认\nPublic address and branch require confirmation before visiting / 出访前确认当前地址及分店\nArchitecture services are separately identified; automotive-only services excluded / 建筑业务单独确认，不以汽车膜业务代替\nBrand mentions require building-product and branch confirmation / 页面品牌提及需另核实建筑产品系列及分店供应",
       "route": "F",
       "visitRegion": "东湾内陆及三谷区",
       "visitBatch": "F-09",
       "visitStop": 1,
       "navigationUrl": "https://www.google.com/maps/dir/?api=1&origin=1+Dr.+Carlton+B.+Goodlett+Place%2C+San+Francisco%2C+CA+94102&destination=3602+Mars+Way+%23105%2C+Tracy%2C+CA+95377%2C+United+States&travelmode=driving",
       "socialLinks": {
-        "instagram": "https://www.instagram.com/superiorwindowtint209xpel"
+        "instagram": "https://www.instagram.com/superiorwindowtint209xpel",
+        "facebook": "https://www.facebook.com/Superiorwindowtint95377/"
       },
       "photoVerification": "Storefront; branch and date unverified / 门头图，分店及日期待核实",
       "referencePhotos": [
@@ -8875,7 +9638,16 @@
           "sourceLabel": "Public website or directory image; location unverified",
           "sourceUrl": "http://www.superiorwindowtint209.net/"
         }
-      ]
+      ],
+      "architecturalSourceIds": [
+        "ARCH-SF062"
+      ],
+      "architecturalSourceId": "ARCH-SF062",
+      "architecturalServices": "Residential glass film / 住宅玻璃膜",
+      "interestedProducts": [
+        "建筑玻璃膜"
+      ],
+      "currentProducts": "Residential glass film / 住宅玻璃膜"
     },
     {
       "publicRecordId": "SF270",
@@ -8974,6 +9746,65 @@
       "socialLinks": {},
       "photoVerification": "No usable public photo found / 未找到可用公开照片",
       "referencePhotos": []
+    },
+    {
+      "publicRecordId": "ARCH-SF048",
+      "businessName": "ClimatePro",
+      "marketId": "san-francisco",
+      "city": "Cotati / 科塔蒂",
+      "address": "374 Blodgett Suite 1, Cotati, CA 94931",
+      "distanceKm": 67.7,
+      "distanceBand": "50–100 km / 公里",
+      "services": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜; Furniture and interior surface wraps / 家具及室内表面装饰膜; Solar and heat-control film / 隔热防晒膜; Safety and security film / 安全防爆膜; Privacy and frosted film / 隐私磨砂膜; Anti-graffiti film / 防涂鸦膜",
+      "filmBrands": "3M, DI-NOC",
+      "serviceEvidence": "建筑膜公开资料 / Architectural-film public research",
+      "phone": "707-569-9098",
+      "website": "https://www.climatepro.com/",
+      "googleMapsUrl": "https://www.google.com/maps/search/?api=1&query=ClimatePro%2C%20374%20Blodgett%20Suite%201%2C%20Cotati%2C%20CA%2094931",
+      "directorySource": "https://www.santarosametrochamber.com/directory/climatepro/",
+      "serviceSources": [
+        "https://www.climatepro.com/",
+        "https://www.climatepro.com/transforming-spaces-with-3m-dinoc-film/",
+        "https://www.climatepro.com/residential/",
+        "https://www.climatepro.com/contact-us/"
+      ],
+      "lat": 38.33959639926,
+      "lng": -122.718571004691,
+      "researchNotes": "Public address and branch require confirmation before visiting / 出访前确认当前地址及分店\nArchitecture services are separately identified; automotive-only services excluded / 建筑业务单独确认，不以汽车膜业务代替\nBrand mentions require building-product and branch confirmation / 页面品牌提及需另核实建筑产品系列及分店供应",
+      "route": "G",
+      "visitRegion": "旧金山 · 建筑膜路线 G",
+      "visitBatch": "G-01",
+      "visitStop": 1,
+      "navigationUrl": "https://www.google.com/maps/dir/?api=1&origin=1+Dr.+Carlton+B.+Goodlett+Place%2C+San+Francisco%2C+CA+94102&destination=374+Blodgett+Suite+1%2C+Cotati%2C+CA+94931&travelmode=driving",
+      "socialLinks": {
+        "yelp": "https://www.yelp.com/biz/climatepro-san-francisco-2"
+      },
+      "photoVerification": "Website display image; project/location unverified / 官网展示图，案例及地点待核实\nWebsite display image; project/location unverified / 官网展示图，案例及地点待核实",
+      "referencePhotos": [
+        {
+          "url": "/assets/field-sales-prospects/ARCH-SF048-01.jpg",
+          "fileName": "ARCH-SF048-01.jpg",
+          "contentType": "image/jpeg",
+          "sourceLabel": "Public architectural-film website image; location unverified",
+          "sourceUrl": "https://www.climatepro.com/"
+        },
+        {
+          "url": "/assets/field-sales-prospects/ARCH-SF048-02.jpg",
+          "fileName": "ARCH-SF048-02.jpg",
+          "contentType": "image/jpeg",
+          "sourceLabel": "Public architectural-film website image; location unverified",
+          "sourceUrl": "https://www.climatepro.com/"
+        }
+      ],
+      "architecturalSourceIds": [
+        "ARCH-SF048"
+      ],
+      "architecturalSourceId": "ARCH-SF048",
+      "architecturalServices": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜; Furniture and interior surface wraps / 家具及室内表面装饰膜; Solar and heat-control film / 隔热防晒膜; Safety and security film / 安全防爆膜; Privacy and frosted film / 隐私磨砂膜; Anti-graffiti film / 防涂鸦膜",
+      "interestedProducts": [
+        "建筑玻璃膜"
+      ],
+      "currentProducts": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜; Furniture and interior surface wraps / 家具及室内表面装饰膜; Solar and heat-control film / 隔热防晒膜; Safety and security film / 安全防爆膜; Privacy and frosted film / 隐私磨砂膜; Anti-graffiti film / 防涂鸦膜"
     },
     {
       "publicRecordId": "SF224",
@@ -9102,8 +9933,8 @@
       "address": "3715 Santa Rosa Ave Ste A9, Santa Rosa, CA 95407",
       "distanceKm": 72.6,
       "distanceBand": "50–100 km / 公里",
-      "services": "Color change & vinyl wraps / 改色膜及车身包覆; Fleet graphics & commercial wraps / 商用车图文及包覆",
-      "filmBrands": "Not publicly verified\n未公开核实",
+      "services": "Color change & vinyl wraps / 改色膜及车身包覆; Fleet graphics & commercial wraps / 商用车图文及包覆\n建筑膜业务 / Architectural film: Commercial glass film / 商业建筑玻璃膜; Wall vinyl graphics and wraps / 墙面图文及装饰包覆; Privacy and frosted film / 隐私磨砂膜",
+      "filmBrands": "Not publicly verified\n未公开核实\nUnverified / 未核实",
       "serviceEvidence": "Official automotive-film service evidence / 官网汽车膜服务佐证",
       "phone": "+1 707-754-1548",
       "website": "https://www.santarosasigncompany.com/",
@@ -9111,11 +9942,12 @@
       "directorySource": "https://findawrap.com/shops/santa-rosa-ca/signal-signs-and-graphics-santa-rosa-ca",
       "serviceSources": [
         "https://www.santarosasigncompany.com/",
-        "https://www.santarosasigncompany.com/contact-us/"
+        "https://www.santarosasigncompany.com/contact-us/",
+        "https://www.santarosasigncompany.com/cabinet-signs/"
       ],
       "lat": 38.3887627,
       "lng": -122.7145198,
-      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认",
+      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认\nPublic address and branch require confirmation before visiting / 出访前确认当前地址及分店\nArchitecture services are separately identified; automotive-only services excluded / 建筑业务单独确认，不以汽车膜业务代替\nBrand mentions require building-product and branch confirmation / 页面品牌提及需另核实建筑产品系列及分店供应",
       "route": "G",
       "visitRegion": "北湾、纳帕及索拉诺",
       "visitBatch": "G-02",
@@ -9123,7 +9955,16 @@
       "navigationUrl": "https://www.google.com/maps/dir/?api=1&origin=1+Dr.+Carlton+B.+Goodlett+Place%2C+San+Francisco%2C+CA+94102&destination=3715+Santa+Rosa+Ave+Ste+A9%2C+Santa+Rosa%2C+CA+95407&travelmode=driving",
       "socialLinks": {},
       "photoVerification": "No usable public photo found / 未找到可用公开照片",
-      "referencePhotos": []
+      "referencePhotos": [],
+      "architecturalSourceIds": [
+        "ARCH-SF053"
+      ],
+      "architecturalSourceId": "ARCH-SF053",
+      "architecturalServices": "Commercial glass film / 商业建筑玻璃膜; Wall vinyl graphics and wraps / 墙面图文及装饰包覆; Privacy and frosted film / 隐私磨砂膜",
+      "interestedProducts": [
+        "建筑玻璃膜"
+      ],
+      "currentProducts": "Commercial glass film / 商业建筑玻璃膜; Wall vinyl graphics and wraps / 墙面图文及装饰包覆; Privacy and frosted film / 隐私磨砂膜"
     },
     {
       "publicRecordId": "SF232",
@@ -9133,19 +9974,21 @@
       "address": "3100 Dutton Ave #106, Santa Rosa, CA 95407",
       "distanceKm": 74.2,
       "distanceBand": "50–100 km / 公里",
-      "services": "Automotive window tint / 汽车隔热膜; Paint protection film (PPF) / 漆面保护膜; Color change & vinyl wraps / 改色膜及车身包覆",
-      "filmBrands": "Geoshield",
+      "services": "Automotive window tint / 汽车隔热膜; Paint protection film (PPF) / 漆面保护膜; Color change & vinyl wraps / 改色膜及车身包覆\n建筑膜业务 / Architectural film: Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜; Solar and heat-control film / 隔热防晒膜; Safety and security film / 安全防爆膜; Privacy and frosted film / 隐私磨砂膜; Anti-graffiti film / 防涂鸦膜",
+      "filmBrands": "Geoshield\nUnverified / 未核实",
       "serviceEvidence": "Official automotive-film service evidence / 官网汽车膜服务佐证",
       "phone": "+1 707-800-2705",
       "website": "https://northbaytinting.com/",
       "googleMapsUrl": "https://www.google.com/maps/search/?api=1&query=Northbay%20window%20tinting%2C%203100%20Dutton%20Ave%20%23106%2C%20Santa%20Rosa%2C%20CA%2095407",
       "directorySource": "https://findawrap.com/shops/santa-rosa-ca/northbay-window-tinting-santa-rosa-ca",
       "serviceSources": [
-        "https://northbaytinting.com/"
+        "https://northbaytinting.com/",
+        "https://www.northbaytinting.com/services/residential-and-commercial-tinting",
+        "https://www.northbaytinting.com/contact"
       ],
       "lat": 38.40135739999999,
       "lng": -122.7222754,
-      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认",
+      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认\nPublic address and branch require confirmation before visiting / 出访前确认当前地址及分店\nArchitecture services are separately identified; automotive-only services excluded / 建筑业务单独确认，不以汽车膜业务代替\nBrand mentions require building-product and branch confirmation / 页面品牌提及需另核实建筑产品系列及分店供应",
       "route": "G",
       "visitRegion": "北湾、纳帕及索拉诺",
       "visitBatch": "G-02",
@@ -9156,7 +9999,16 @@
         "facebook": "https://www.facebook.com/profile.php?id=61573839667937"
       },
       "photoVerification": "No usable public photo found / 未找到可用公开照片",
-      "referencePhotos": []
+      "referencePhotos": [],
+      "architecturalSourceIds": [
+        "ARCH-SF054"
+      ],
+      "architecturalSourceId": "ARCH-SF054",
+      "architecturalServices": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜; Solar and heat-control film / 隔热防晒膜; Safety and security film / 安全防爆膜; Privacy and frosted film / 隐私磨砂膜; Anti-graffiti film / 防涂鸦膜",
+      "interestedProducts": [
+        "建筑玻璃膜"
+      ],
+      "currentProducts": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜; Solar and heat-control film / 隔热防晒膜; Safety and security film / 安全防爆膜; Privacy and frosted film / 隐私磨砂膜; Anti-graffiti film / 防涂鸦膜"
     },
     {
       "publicRecordId": "SF234",
@@ -9166,7 +10018,7 @@
       "address": "3093 Wiljan Ct A, Santa Rosa, CA 95407",
       "distanceKm": 74.2,
       "distanceBand": "50–100 km / 公里",
-      "services": "Automotive window tint / 汽车隔热膜; Paint protection film (PPF) / 漆面保护膜",
+      "services": "Automotive window tint / 汽车隔热膜; Paint protection film (PPF) / 漆面保护膜\n建筑膜业务 / Architectural film: Residential glass film / 住宅玻璃膜",
       "filmBrands": "XPEL",
       "serviceEvidence": "Official automotive-film service evidence / 官网汽车膜服务佐证",
       "phone": "+1 707-546-2827",
@@ -9179,7 +10031,7 @@
       ],
       "lat": 38.4021123,
       "lng": -122.7203433,
-      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认",
+      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认\nPublic address and branch require confirmation before visiting / 出访前确认当前地址及分店\nArchitecture services are separately identified; automotive-only services excluded / 建筑业务单独确认，不以汽车膜业务代替\nBrand mentions require building-product and branch confirmation / 页面品牌提及需另核实建筑产品系列及分店供应",
       "route": "G",
       "visitRegion": "北湾、纳帕及索拉诺",
       "visitBatch": "G-02",
@@ -9198,7 +10050,16 @@
           "sourceLabel": "Public website or directory image; location unverified",
           "sourceUrl": "https://ashadedarker.com/"
         }
-      ]
+      ],
+      "architecturalSourceIds": [
+        "ARCH-SF056"
+      ],
+      "architecturalSourceId": "ARCH-SF056",
+      "architecturalServices": "Residential glass film / 住宅玻璃膜",
+      "interestedProducts": [
+        "建筑玻璃膜"
+      ],
+      "currentProducts": "Residential glass film / 住宅玻璃膜"
     },
     {
       "publicRecordId": "SF230",
@@ -9607,10 +10468,10 @@
       "address": "1005 Cleveland Ave e, Santa Rosa, CA 95401",
       "distanceKm": 78.9,
       "distanceBand": "50–100 km / 公里",
-      "services": "Automotive window tint / 汽车隔热膜; Paint protection film (PPF) / 漆面保护膜; Color change & vinyl wraps / 改色膜及车身包覆",
-      "filmBrands": "Geoshield",
+      "services": "Automotive window tint / 汽车隔热膜; Paint protection film (PPF) / 漆面保护膜; Color change & vinyl wraps / 改色膜及车身包覆\n建筑膜业务 / Architectural film: Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜",
+      "filmBrands": "Geoshield\nUnverified / 未核实",
       "serviceEvidence": "Official automotive-film service evidence / 官网汽车膜服务佐证",
-      "phone": "",
+      "phone": "+17078002705",
       "website": "http://www.wrapsnmotion.com/",
       "googleMapsUrl": "https://www.google.com/maps/search/?api=1&query=Wraps%20N%20Motion%2C%201005%20Cleveland%20Ave%20e%2C%20Santa%20Rosa%2C%20CA%2095401",
       "directorySource": "https://findawrap.com/shops/santa-rosa-ca/wraps-n-motion-santa-rosa-ca",
@@ -9619,7 +10480,7 @@
       ],
       "lat": 38.44536069999999,
       "lng": -122.7269821,
-      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认",
+      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认\nPublic address and branch require confirmation before visiting / 出访前确认当前地址及分店\nArchitecture services are separately identified; automotive-only services excluded / 建筑业务单独确认，不以汽车膜业务代替\nBrand mentions require building-product and branch confirmation / 页面品牌提及需另核实建筑产品系列及分店供应",
       "route": "G",
       "visitRegion": "北湾、纳帕及索拉诺",
       "visitBatch": "G-05",
@@ -9630,7 +10491,16 @@
         "facebook": "https://www.facebook.com/profile.php?id=61573839667937"
       },
       "photoVerification": "No usable public photo found / 未找到可用公开照片",
-      "referencePhotos": []
+      "referencePhotos": [],
+      "architecturalSourceIds": [
+        "ARCH-SF059"
+      ],
+      "architecturalSourceId": "ARCH-SF059",
+      "architecturalServices": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜",
+      "interestedProducts": [
+        "建筑玻璃膜"
+      ],
+      "currentProducts": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜"
     },
     {
       "publicRecordId": "SF251",
@@ -9799,8 +10669,8 @@
       "address": "1455 N Dutton Ave D, Santa Rosa, CA 95401",
       "distanceKm": 79.8,
       "distanceBand": "50–100 km / 公里",
-      "services": "Color change & vinyl wraps / 改色膜及车身包覆; Fleet graphics & commercial wraps / 商用车图文及包覆",
-      "filmBrands": "Not publicly verified\n未公开核实",
+      "services": "Color change & vinyl wraps / 改色膜及车身包覆; Fleet graphics & commercial wraps / 商用车图文及包覆\n建筑膜业务 / Architectural film: Wall vinyl graphics and wraps / 墙面图文及装饰包覆; Anti-graffiti film / 防涂鸦膜",
+      "filmBrands": "Not publicly verified\n未公开核实\nDI-NOC",
       "serviceEvidence": "Official automotive-film service evidence / 官网汽车膜服务佐证",
       "phone": "+1 707-883-3630",
       "website": "https://www.speedpro.com/santa-rosa",
@@ -9808,17 +10678,22 @@
       "directorySource": "https://findawrap.com/shops/santa-rosa-ca/speedpro-santa-rosa-santa-rosa-ca",
       "serviceSources": [
         "https://www.speedpro.com/santa-rosa",
-        "https://www.speedpro.com/santa-rosa/about-us/"
+        "https://www.speedpro.com/santa-rosa/about-us/",
+        "https://www.speedpro.com/east-bay",
+        "https://www.speedpro.com/east-bay/about-us-speedpro-east-bay/",
+        "https://www.speedpro.com/east-bay/architectural-finishes/",
+        "https://www.speedpro.com/east-bay/furniture-graphics/"
       ],
       "lat": 38.4517574,
       "lng": -122.7355599,
-      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认",
+      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认\nPublic address and branch require confirmation before visiting / 出访前确认当前地址及分店\nArchitecture services are separately identified; automotive-only services excluded / 建筑业务单独确认，不以汽车膜业务代替\nBrand mentions require building-product and branch confirmation / 页面品牌提及需另核实建筑产品系列及分店供应",
       "route": "G",
       "visitRegion": "北湾、纳帕及索拉诺",
       "visitBatch": "G-06",
       "visitStop": 4,
       "navigationUrl": "https://www.google.com/maps/dir/?api=1&origin=2700+Westberry+Dr%2C+Santa+Rosa%2C+CA+95403&destination=1455+N+Dutton+Ave+D%2C+Santa+Rosa%2C+CA+95401&travelmode=driving",
       "socialLinks": {
+        "instagram": "https://www.instagram.com/speedproeastbay/",
         "facebook": "https://www.facebook.com/speedprosantarosa",
         "yelp": "https://www.yelp.com/biz/speedpro-imaging-santa-rosa-santa-rosa-2"
       },
@@ -9830,8 +10705,31 @@
           "contentType": "image/jpeg",
           "sourceLabel": "Public website or directory image; location unverified",
           "sourceUrl": "https://www.speedpro.com/santa-rosa"
+        },
+        {
+          "url": "/assets/field-sales-prospects/ARCH-SF060-01.jpg",
+          "fileName": "ARCH-SF060-01.jpg",
+          "contentType": "image/jpeg",
+          "sourceLabel": "Public architectural-film website image; location unverified",
+          "sourceUrl": "https://www.speedpro.com/east-bay"
+        },
+        {
+          "url": "/assets/field-sales-prospects/ARCH-SF060-02.jpg",
+          "fileName": "ARCH-SF060-02.jpg",
+          "contentType": "image/jpeg",
+          "sourceLabel": "Public architectural-film website image; location unverified",
+          "sourceUrl": "https://www.speedpro.com/east-bay"
         }
-      ]
+      ],
+      "architecturalSourceIds": [
+        "ARCH-SF060"
+      ],
+      "architecturalSourceId": "ARCH-SF060",
+      "architecturalServices": "Wall vinyl graphics and wraps / 墙面图文及装饰包覆; Anti-graffiti film / 防涂鸦膜",
+      "interestedProducts": [
+        "建筑玻璃膜"
+      ],
+      "currentProducts": "Wall vinyl graphics and wraps / 墙面图文及装饰包覆; Anti-graffiti film / 防涂鸦膜"
     },
     {
       "publicRecordId": "SF259",
@@ -9889,8 +10787,8 @@
       "address": "3451 Airway Dr # I, Santa Rosa, CA 95403",
       "distanceKm": 82.4,
       "distanceBand": "50–100 km / 公里",
-      "services": "Automotive window tint / 汽车隔热膜; Paint protection film (PPF) / 漆面保护膜; Ceramic coating / 陶瓷镀膜; Detailing & paint correction / 精洗及漆面修复",
-      "filmBrands": "Not publicly verified\n未公开核实",
+      "services": "Automotive window tint / 汽车隔热膜; Paint protection film (PPF) / 漆面保护膜; Ceramic coating / 陶瓷镀膜; Detailing & paint correction / 精洗及漆面修复\n建筑膜业务 / Architectural film: Residential glass film / 住宅玻璃膜",
+      "filmBrands": "Not publicly verified\n未公开核实\nUnverified / 未核实",
       "serviceEvidence": "Official automotive-film service evidence / 官网汽车膜服务佐证",
       "phone": "+1 707-755-0855",
       "website": "https://superiortint.weebly.com/",
@@ -9902,7 +10800,7 @@
       ],
       "lat": 38.4754381,
       "lng": -122.7384754,
-      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认",
+      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认\nPublic address and branch require confirmation before visiting / 出访前确认当前地址及分店\nArchitecture services are separately identified; automotive-only services excluded / 建筑业务单独确认，不以汽车膜业务代替\nBrand mentions require building-product and branch confirmation / 页面品牌提及需另核实建筑产品系列及分店供应",
       "route": "G",
       "visitRegion": "北湾、纳帕及索拉诺",
       "visitBatch": "G-07",
@@ -9927,7 +10825,16 @@
           "sourceLabel": "Public website or directory image; location unverified",
           "sourceUrl": "https://superiortint.weebly.com/"
         }
-      ]
+      ],
+      "architecturalSourceIds": [
+        "ARCH-SF061"
+      ],
+      "architecturalSourceId": "ARCH-SF061",
+      "architecturalServices": "Residential glass film / 住宅玻璃膜",
+      "interestedProducts": [
+        "建筑玻璃膜"
+      ],
+      "currentProducts": "Residential glass film / 住宅玻璃膜"
     },
     {
       "publicRecordId": "SF263",

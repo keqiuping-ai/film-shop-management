@@ -1,11 +1,12 @@
 {
-  "version": "vancouver-field-sales-2026-10-14-v1",
+  "version": "vancouver-field-sales-2026-10-14-v2",
   "marketId": "vancouver",
   "marketLabel": "温哥华",
   "sourceWorkbook": "Vancouver_100km_Visit_Routes_EN_CN.xlsx",
+  "supplementalSourceWorkbook": "Architectural_Film_Four_Cities_EN_CN.xlsx",
   "sourceCenter": "453 W 12th Ave, Vancouver, BC V5Y 1V4",
-  "recordCount": 242,
-  "photoCount": 200,
+  "recordCount": 243,
+  "photoCount": 215,
   "routeCount": 7,
   "batchCount": 48,
   "records": [
@@ -460,7 +461,7 @@
       "address": "636 Clark Dr, Vancouver, BC V5L 3H8, Canada",
       "distanceKm": 3.3,
       "distanceBand": "0–50 km / 公里",
-      "services": "Automotive window tint / 汽车隔热膜",
+      "services": "Automotive window tint / 汽车隔热膜\n建筑膜业务 / Architectural film: Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜",
       "filmBrands": "XPEL",
       "serviceEvidence": "Official automotive-film service evidence / 官网汽车膜服务佐证",
       "phone": "+1 778-859-3515",
@@ -468,11 +469,12 @@
       "googleMapsUrl": "https://www.google.com/maps/search/?api=1&query=Infinite%20Window%20Film%20%26%20Tinting%20%7C%20Vancouver%2C%20636%20Clark%20Dr%2C%20Vancouver%2C%20BC%20V5L%203H8%2C%20Canada",
       "directorySource": "https://findawrap.com/shops/vancouver-bc/infinite-window-film-tinting-vancouver-vancouver",
       "serviceSources": [
-        "http://infinitetint.ca/"
+        "http://infinitetint.ca/",
+        "https://www.infinitetint.ca/contact"
       ],
       "lat": 49.27894879999999,
       "lng": -123.0768041,
-      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认",
+      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认\nPublic address and branch require confirmation before visiting / 出访前确认当前地址及分店\nArchitecture services are separately identified; automotive-only services excluded / 建筑业务单独确认，不以汽车膜业务代替\nBrand mentions require building-product and branch confirmation / 页面品牌提及需另核实建筑产品系列及分店供应",
       "route": "A",
       "visitRegion": "温哥华市",
       "visitBatch": "A-02",
@@ -491,8 +493,24 @@
           "contentType": "image/jpeg",
           "sourceLabel": "Public website or directory image; location unverified",
           "sourceUrl": "http://infinitetint.ca/"
+        },
+        {
+          "url": "/assets/field-sales-prospects/ARCH-VAN003-01.jpg",
+          "fileName": "ARCH-VAN003-01.jpg",
+          "contentType": "image/jpeg",
+          "sourceLabel": "Public architectural-film website image; location unverified",
+          "sourceUrl": "http://infinitetint.ca/"
         }
-      ]
+      ],
+      "architecturalSourceIds": [
+        "ARCH-VAN003"
+      ],
+      "architecturalSourceId": "ARCH-VAN003",
+      "architecturalServices": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜",
+      "interestedProducts": [
+        "建筑玻璃膜"
+      ],
+      "currentProducts": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜"
     },
     {
       "publicRecordId": "VAN008",
@@ -502,25 +520,47 @@
       "address": "1045 Kingsway, Vancouver, BC V5V 3C7, Canada",
       "distanceKm": 2.4,
       "distanceBand": "0–50 km / 公里",
-      "services": "Automotive window tint / 汽车隔热膜; Paint protection film (PPF) / 漆面保护膜",
-      "filmBrands": "Not publicly verified\n未公开核实",
+      "services": "Automotive window tint / 汽车隔热膜; Paint protection film (PPF) / 漆面保护膜\n建筑膜业务 / Architectural film: Residential glass film / 住宅玻璃膜",
+      "filmBrands": "Not publicly verified\n未公开核实\nUnverified / 未核实",
       "serviceEvidence": "Directory classification only; review required\n仅目录分类，待复核",
       "phone": "+1 604-649-5669",
       "website": "http://phsolartint.com/",
       "googleMapsUrl": "https://www.google.com/maps/search/?api=1&query=PH%20Solar%20Tint%2C%201045%20Kingsway%2C%20Vancouver%2C%20BC%20V5V%203C7%2C%20Canada",
       "directorySource": "https://findawrap.com/shops/vancouver-bc/ph-solar-tint-vancouver",
-      "serviceSources": [],
+      "serviceSources": [
+        "http://phsolartint.com/",
+        "http://phsolartint.com/contact-us"
+      ],
       "lat": 49.2536863,
       "lng": -123.082752,
-      "researchNotes": "Website link found but content unverified / 找到官网链接，但网页内容未核实。Directory category only; confirm services before visiting / 仅目录分类，出访前确认业务。Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认",
+      "researchNotes": "Website link found but content unverified / 找到官网链接，但网页内容未核实。Directory category only; confirm services before visiting / 仅目录分类，出访前确认业务。Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认\nPublic address and branch require confirmation before visiting / 出访前确认当前地址及分店\nArchitecture services are separately identified; automotive-only services excluded / 建筑业务单独确认，不以汽车膜业务代替\nBrand mentions require building-product and branch confirmation / 页面品牌提及需另核实建筑产品系列及分店供应",
       "route": "A",
       "visitRegion": "温哥华市",
       "visitBatch": "A-03",
       "visitStop": 1,
       "navigationUrl": "https://www.google.com/maps/dir/?api=1&origin=453+W+12th+Ave%2C+Vancouver%2C+BC+V5Y+1V4&destination=1045+Kingsway%2C+Vancouver%2C+BC+V5V+3C7%2C+Canada&travelmode=driving",
-      "socialLinks": {},
+      "socialLinks": {
+        "instagram": "https://www.instagram.com/ph_solar_tint"
+      },
       "photoVerification": "No usable public photo found / 未找到可用公开照片",
-      "referencePhotos": []
+      "referencePhotos": [
+        {
+          "url": "/assets/field-sales-prospects/ARCH-VAN002-01.jpg",
+          "fileName": "ARCH-VAN002-01.jpg",
+          "contentType": "image/jpeg",
+          "sourceLabel": "Public architectural-film website image; location unverified",
+          "sourceUrl": "http://phsolartint.com/"
+        }
+      ],
+      "architecturalSourceIds": [
+        "ARCH-VAN002"
+      ],
+      "architecturalSourceId": "ARCH-VAN002",
+      "architecturalServices": "Residential glass film / 住宅玻璃膜",
+      "interestedProducts": [
+        "建筑玻璃膜"
+      ],
+      "currentProducts": "Residential glass film / 住宅玻璃膜"
     },
     {
       "publicRecordId": "VAN023",
@@ -530,7 +570,7 @@
       "address": "5482 Rhodes St, Vancouver, BC V5R 3N9, Canada",
       "distanceKm": 5.5,
       "distanceBand": "0–50 km / 公里",
-      "services": "Automotive window tint / 汽车隔热膜; Paint protection film (PPF) / 漆面保护膜; Color change & vinyl wraps / 改色膜及车身包覆; Ceramic coating / 陶瓷镀膜; Detailing & paint correction / 精洗及漆面修复\nSeries mentioned / 提及系列: FUSION PLUS",
+      "services": "Automotive window tint / 汽车隔热膜; Paint protection film (PPF) / 漆面保护膜; Color change & vinyl wraps / 改色膜及车身包覆; Ceramic coating / 陶瓷镀膜; Detailing & paint correction / 精洗及漆面修复\nSeries mentioned / 提及系列: FUSION PLUS\n建筑膜业务 / Architectural film: Residential glass film / 住宅玻璃膜",
       "filmBrands": "XPEL",
       "serviceEvidence": "Official automotive-film service evidence / 官网汽车膜服务佐证",
       "phone": "+1 672-558-0191",
@@ -543,7 +583,7 @@
       ],
       "lat": 49.2350126,
       "lng": -123.0499295,
-      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认",
+      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认\nPublic address and branch require confirmation before visiting / 出访前确认当前地址及分店\nArchitecture services are separately identified; automotive-only services excluded / 建筑业务单独确认，不以汽车膜业务代替\nBrand mentions require building-product and branch confirmation / 页面品牌提及需另核实建筑产品系列及分店供应",
       "route": "A",
       "visitRegion": "温哥华市",
       "visitBatch": "A-03",
@@ -569,7 +609,16 @@
           "sourceLabel": "Public website or directory image; location unverified",
           "sourceUrl": "https://solidnovaauto.com/"
         }
-      ]
+      ],
+      "architecturalSourceIds": [
+        "ARCH-VAN005"
+      ],
+      "architecturalSourceId": "ARCH-VAN005",
+      "architecturalServices": "Residential glass film / 住宅玻璃膜",
+      "interestedProducts": [
+        "建筑玻璃膜"
+      ],
+      "currentProducts": "Residential glass film / 住宅玻璃膜"
     },
     {
       "publicRecordId": "VAN024",
@@ -956,8 +1005,8 @@
       "address": "460 Nanaimo St #303, Vancouver, BC V5L 4W3, Canada",
       "distanceKm": 4.7,
       "distanceBand": "0–50 km / 公里",
-      "services": "Automotive window tint / 汽车隔热膜",
-      "filmBrands": "3M",
+      "services": "Automotive window tint / 汽车隔热膜\n建筑膜业务 / Architectural film: Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜; Solar and heat-control film / 隔热防晒膜; Safety and security film / 安全防爆膜; Privacy and frosted film / 隐私磨砂膜; Anti-graffiti film / 防涂鸦膜",
+      "filmBrands": "3M\n3M, FASARA",
       "serviceEvidence": "Directory classification only; review required\n仅目录分类，待复核",
       "phone": "+1 604-493-2018",
       "website": "https://lrwindowfilms.ca/",
@@ -965,11 +1014,12 @@
       "directorySource": "https://findawrap.com/shops/vancouver-bc/lr-window-films-vancouver",
       "serviceSources": [
         "https://lrwindowfilms.ca/",
-        "https://lrwindowfilms.ca/contact-us/"
+        "https://lrwindowfilms.ca/contact-us/",
+        "https://lrwindowfilms.ca/commercial/"
       ],
       "lat": 49.2805384,
       "lng": -123.0559482,
-      "researchNotes": "Directory category only; confirm services before visiting / 仅目录分类，出访前确认业务。Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认",
+      "researchNotes": "Directory category only; confirm services before visiting / 仅目录分类，出访前确认业务。Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认\nPublic address and branch require confirmation before visiting / 出访前确认当前地址及分店\nArchitecture services are separately identified; automotive-only services excluded / 建筑业务单独确认，不以汽车膜业务代替\nBrand mentions require building-product and branch confirmation / 页面品牌提及需另核实建筑产品系列及分店供应",
       "route": "A",
       "visitRegion": "温哥华市",
       "visitBatch": "A-04",
@@ -993,8 +1043,24 @@
           "contentType": "image/jpeg",
           "sourceLabel": "Public website or directory image; location unverified",
           "sourceUrl": "https://lrwindowfilms.ca/"
+        },
+        {
+          "url": "/assets/field-sales-prospects/ARCH-VAN004-01.jpg",
+          "fileName": "ARCH-VAN004-01.jpg",
+          "contentType": "image/jpeg",
+          "sourceLabel": "Public architectural-film website image; location unverified",
+          "sourceUrl": "https://lrwindowfilms.ca/commercial/"
         }
-      ]
+      ],
+      "architecturalSourceIds": [
+        "ARCH-VAN004"
+      ],
+      "architecturalSourceId": "ARCH-VAN004",
+      "architecturalServices": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜; Solar and heat-control film / 隔热防晒膜; Safety and security film / 安全防爆膜; Privacy and frosted film / 隐私磨砂膜; Anti-graffiti film / 防涂鸦膜",
+      "interestedProducts": [
+        "建筑玻璃膜"
+      ],
+      "currentProducts": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜; Solar and heat-control film / 隔热防晒膜; Safety and security film / 安全防爆膜; Privacy and frosted film / 隐私磨砂膜; Anti-graffiti film / 防涂鸦膜"
     },
     {
       "publicRecordId": "VAN029",
@@ -1104,8 +1170,8 @@
       "address": "489 Interurban Wy, Vancouver, BC V5X 0C6, Canada",
       "distanceKm": 5.8,
       "distanceBand": "0–50 km / 公里",
-      "services": "Automotive window tint / 汽车隔热膜",
-      "filmBrands": "Not publicly verified\n未公开核实",
+      "services": "Automotive window tint / 汽车隔热膜\n建筑膜业务 / Architectural film: Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜",
+      "filmBrands": "Not publicly verified\n未公开核实\nUnverified / 未核实",
       "serviceEvidence": "Official automotive-film service evidence / 官网汽车膜服务佐证",
       "phone": "+1 604-317-1221",
       "website": "http://summitwindowtint.ca/",
@@ -1117,7 +1183,7 @@
       ],
       "lat": 49.2092902,
       "lng": -123.1166732,
-      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认",
+      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认\nPublic address and branch require confirmation before visiting / 出访前确认当前地址及分店\nArchitecture services are separately identified; automotive-only services excluded / 建筑业务单独确认，不以汽车膜业务代替\nBrand mentions require building-product and branch confirmation / 页面品牌提及需另核实建筑产品系列及分店供应",
       "route": "A",
       "visitRegion": "温哥华市",
       "visitBatch": "A-05",
@@ -1133,7 +1199,16 @@
           "sourceLabel": "Public website or directory image; location unverified",
           "sourceUrl": "http://summitwindowtint.ca/"
         }
-      ]
+      ],
+      "architecturalSourceIds": [
+        "ARCH-VAN006"
+      ],
+      "architecturalSourceId": "ARCH-VAN006",
+      "architecturalServices": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜",
+      "interestedProducts": [
+        "建筑玻璃膜"
+      ],
+      "currentProducts": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜"
     },
     {
       "publicRecordId": "VAN031",
@@ -1384,6 +1459,66 @@
       },
       "photoVerification": "No usable public photo found / 未找到可用公开照片",
       "referencePhotos": []
+    },
+    {
+      "publicRecordId": "ARCH-VAN010",
+      "businessName": "Reforma Design",
+      "marketId": "vancouver",
+      "city": "Richmond / 列治文",
+      "address": "401-5940 No. 6 Road 2/F, Richmond, BC V6V 1Z1",
+      "distanceKm": 10.5,
+      "distanceBand": "0–50 km / 公里",
+      "services": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜; Furniture and interior surface wraps / 家具及室内表面装饰膜; Safety and security film / 安全防爆膜; Privacy and frosted film / 隐私磨砂膜",
+      "filmBrands": "XPEL, BODAQ",
+      "serviceEvidence": "建筑膜公开资料 / Architectural-film public research",
+      "phone": "604-370-3218",
+      "website": "https://reformadesign.co/",
+      "googleMapsUrl": "https://www.google.com/maps/search/?api=1&query=Reforma%20Design%2C%20401-5940%20No.%206%20Road%202/F%2C%20Richmond%2C%20BC%20V6V%201Z1",
+      "directorySource": "https://reformadesign.co/",
+      "serviceSources": [
+        "https://reformadesign.co/",
+        "https://reformadesign.co/interior-film",
+        "https://reformadesign.co/contact",
+        "https://reformadesign.co/interior-film/"
+      ],
+      "lat": 49.17119839999999,
+      "lng": -123.0687486,
+      "researchNotes": "Public address and branch require confirmation before visiting / 出访前确认当前地址及分店\nArchitecture services are separately identified; automotive-only services excluded / 建筑业务单独确认，不以汽车膜业务代替\nReforma Design by Speed Projects Laboratory; shared premises, suite/floor to confirm / Reforma为SPL旗下品牌，共用地点，单元楼层待确认\nBrand mentions require building-product and branch confirmation / 页面品牌提及需另核实建筑产品系列及分店供应",
+      "route": "B",
+      "visitRegion": "温哥华 · 建筑膜路线 B",
+      "visitBatch": "B-01",
+      "visitStop": 3,
+      "navigationUrl": "https://www.google.com/maps/dir/?api=1&origin=7551+Vantage+Wy+%237%2C+Delta%2C+BC+V4G+1C9%2C+Canada&destination=401-5940+No.+6+Road+2%2FF%2C+Richmond%2C+BC+V6V+1Z1&travelmode=driving",
+      "socialLinks": {
+        "instagram": "https://instagram.com/reformadesign.co",
+        "facebook": "https://facebook.com/reformadesignco"
+      },
+      "photoVerification": "Website display image; project/location unverified / 官网展示图，案例及地点待核实\nWebsite display image; project/location unverified / 官网展示图，案例及地点待核实",
+      "referencePhotos": [
+        {
+          "url": "/assets/field-sales-prospects/ARCH-VAN010-01.jpg",
+          "fileName": "ARCH-VAN010-01.jpg",
+          "contentType": "image/jpeg",
+          "sourceLabel": "Public architectural-film website image; location unverified",
+          "sourceUrl": "https://reformadesign.co/"
+        },
+        {
+          "url": "/assets/field-sales-prospects/ARCH-VAN010-02.jpg",
+          "fileName": "ARCH-VAN010-02.jpg",
+          "contentType": "image/jpeg",
+          "sourceLabel": "Public architectural-film website image; location unverified",
+          "sourceUrl": "https://reformadesign.co/"
+        }
+      ],
+      "architecturalSourceIds": [
+        "ARCH-VAN010"
+      ],
+      "architecturalSourceId": "ARCH-VAN010",
+      "architecturalServices": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜; Furniture and interior surface wraps / 家具及室内表面装饰膜; Safety and security film / 安全防爆膜; Privacy and frosted film / 隐私磨砂膜",
+      "interestedProducts": [
+        "建筑玻璃膜"
+      ],
+      "currentProducts": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜; Furniture and interior surface wraps / 家具及室内表面装饰膜; Safety and security film / 安全防爆膜; Privacy and frosted film / 隐私磨砂膜"
     },
     {
       "publicRecordId": "VAN054",
@@ -1849,19 +1984,21 @@
       "address": "4251 Vanguard Rd, Richmond, BC V6X 3M7, Canada",
       "distanceKm": 8.8,
       "distanceBand": "0–50 km / 公里",
-      "services": "Automotive window tint / 汽车隔热膜; Paint protection film (PPF) / 漆面保护膜; Color change & vinyl wraps / 改色膜及车身包覆; Ceramic coating / 陶瓷镀膜; Fleet graphics & commercial wraps / 商用车图文及包覆; Detailing & paint correction / 精洗及漆面修复",
-      "filmBrands": "3M、SunTek、Avery Dennison、INOZETEK",
+      "services": "Automotive window tint / 汽车隔热膜; Paint protection film (PPF) / 漆面保护膜; Color change & vinyl wraps / 改色膜及车身包覆; Ceramic coating / 陶瓷镀膜; Fleet graphics & commercial wraps / 商用车图文及包覆; Detailing & paint correction / 精洗及漆面修复\n建筑膜业务 / Architectural film: Commercial glass film / 商业建筑玻璃膜",
+      "filmBrands": "3M、SunTek、Avery Dennison、INOZETEK\n3M, SunTek, Avery Dennison",
       "serviceEvidence": "Official automotive-film service evidence / 官网汽车膜服务佐证",
       "phone": "+1 604-828-2222",
       "website": "https://www.customdriven.com/",
       "googleMapsUrl": "https://www.google.com/maps/search/?api=1&query=Custom%20Driven%2C%204251%20Vanguard%20Rd%2C%20Richmond%2C%20BC%20V6X%203M7%2C%20Canada",
       "directorySource": "https://findawrap.com/shops/richmond-bc/custom-driven-richmond",
       "serviceSources": [
-        "https://www.customdriven.com/"
+        "https://www.customdriven.com/",
+        "https://customdriven.com/commercial-car-wrap/",
+        "https://customdriven.com/contact/"
       ],
       "lat": 49.1826865,
       "lng": -123.1012303,
-      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认",
+      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认\nPublic address and branch require confirmation before visiting / 出访前确认当前地址及分店\nArchitecture services are separately identified; automotive-only services excluded / 建筑业务单独确认，不以汽车膜业务代替\nBrand mentions require building-product and branch confirmation / 页面品牌提及需另核实建筑产品系列及分店供应",
       "route": "B",
       "visitRegion": "列治文及三角洲市",
       "visitBatch": "B-03",
@@ -1888,7 +2025,16 @@
           "sourceLabel": "Public website or directory image; location unverified",
           "sourceUrl": "https://www.customdriven.com/"
         }
-      ]
+      ],
+      "architecturalSourceIds": [
+        "ARCH-VAN009"
+      ],
+      "architecturalSourceId": "ARCH-VAN009",
+      "architecturalServices": "Commercial glass film / 商业建筑玻璃膜",
+      "interestedProducts": [
+        "建筑玻璃膜"
+      ],
+      "currentProducts": "Commercial glass film / 商业建筑玻璃膜"
     },
     {
       "publicRecordId": "VAN061",
@@ -2011,8 +2157,8 @@
       "address": "14273 Knox Way #148, Richmond, BC V6V 2Z4, Canada",
       "distanceKm": 7.5,
       "distanceBand": "0–50 km / 公里",
-      "services": "Color change & vinyl wraps / 改色膜及车身包覆; Fleet graphics & commercial wraps / 商用车图文及包覆",
-      "filmBrands": "3M",
+      "services": "Color change & vinyl wraps / 改色膜及车身包覆; Fleet graphics & commercial wraps / 商用车图文及包覆\n建筑膜业务 / Architectural film: Commercial glass film / 商业建筑玻璃膜",
+      "filmBrands": "3M\n3M, Avery Dennison, DI-NOC",
       "serviceEvidence": "Directory classification only; review required\n仅目录分类，待复核",
       "phone": "+1 604-696-2222",
       "website": "https://www.premiergr.com/",
@@ -2020,11 +2166,12 @@
       "directorySource": "https://findawrap.com/shops/richmond-bc/premier-graphics-inc-richmond",
       "serviceSources": [
         "https://www.premiergr.com/",
-        "https://www.premiergr.com/about/"
+        "https://www.premiergr.com/about/",
+        "https://www.premiergr.com/commercial-vehicle-decals-and-wraps/fleet/"
       ],
       "lat": 49.2016347,
       "lng": -123.0651025,
-      "researchNotes": "Directory category only; confirm services before visiting / 仅目录分类，出访前确认业务。Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认",
+      "researchNotes": "Directory category only; confirm services before visiting / 仅目录分类，出访前确认业务。Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认\nPublic address and branch require confirmation before visiting / 出访前确认当前地址及分店\nArchitecture services are separately identified; automotive-only services excluded / 建筑业务单独确认，不以汽车膜业务代替\nBrand mentions require building-product and branch confirmation / 页面品牌提及需另核实建筑产品系列及分店供应",
       "route": "B",
       "visitRegion": "列治文及三角洲市",
       "visitBatch": "B-04",
@@ -2043,7 +2190,16 @@
           "sourceLabel": "Public website or directory image; location unverified",
           "sourceUrl": "https://www.premiergr.com/"
         }
-      ]
+      ],
+      "architecturalSourceIds": [
+        "ARCH-VAN008"
+      ],
+      "architecturalSourceId": "ARCH-VAN008",
+      "architecturalServices": "Commercial glass film / 商业建筑玻璃膜",
+      "interestedProducts": [
+        "建筑玻璃膜"
+      ],
+      "currentProducts": "Commercial glass film / 商业建筑玻璃膜"
     },
     {
       "publicRecordId": "VAN051",
@@ -2586,8 +2742,8 @@
       "address": "7551 Vantage Wy #7, Delta, BC V4G 1C9, Canada",
       "distanceKm": 15.4,
       "distanceBand": "0–50 km / 公里",
-      "services": "Paint protection film (PPF) / 漆面保护膜; Color change & vinyl wraps / 改色膜及车身包覆; Fleet graphics & commercial wraps / 商用车图文及包覆",
-      "filmBrands": "3M、Avery Dennison",
+      "services": "Paint protection film (PPF) / 漆面保护膜; Color change & vinyl wraps / 改色膜及车身包覆; Fleet graphics & commercial wraps / 商用车图文及包覆\n建筑膜业务 / Architectural film: Furniture and interior surface wraps / 家具及室内表面装饰膜",
+      "filmBrands": "3M、Avery Dennison\n3M, Avery Dennison, DI-NOC, FASARA",
       "serviceEvidence": "Official automotive-film service evidence / 官网汽车膜服务佐证",
       "phone": "+1 604-259-7002",
       "website": "https://primagraphics.ca/",
@@ -2595,11 +2751,12 @@
       "directorySource": "https://findawrap.com/shops/delta-bc/prima-graphics-delta",
       "serviceSources": [
         "https://primagraphics.ca/",
-        "https://primagraphics.ca/contact/"
+        "https://primagraphics.ca/contact/",
+        "https://primagraphics.ca/architectural-millwork-wraps/"
       ],
       "lat": 49.138897,
       "lng": -123.014245,
-      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认",
+      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认\nPublic address and branch require confirmation before visiting / 出访前确认当前地址及分店\nArchitecture services are separately identified; automotive-only services excluded / 建筑业务单独确认，不以汽车膜业务代替\nBrand mentions require building-product and branch confirmation / 页面品牌提及需另核实建筑产品系列及分店供应",
       "route": "B",
       "visitRegion": "列治文及三角洲市",
       "visitBatch": "B-06",
@@ -2624,8 +2781,31 @@
           "contentType": "image/jpeg",
           "sourceLabel": "Public website or directory image; location unverified",
           "sourceUrl": "https://primagraphics.ca/"
+        },
+        {
+          "url": "/assets/field-sales-prospects/ARCH-VAN013-01.jpg",
+          "fileName": "ARCH-VAN013-01.jpg",
+          "contentType": "image/jpeg",
+          "sourceLabel": "Public architectural-film website image; location unverified",
+          "sourceUrl": "https://primagraphics.ca/architectural-millwork-wraps/"
+        },
+        {
+          "url": "/assets/field-sales-prospects/ARCH-VAN013-02.jpg",
+          "fileName": "ARCH-VAN013-02.jpg",
+          "contentType": "image/jpeg",
+          "sourceLabel": "Public architectural-film website image; location unverified",
+          "sourceUrl": "https://primagraphics.ca/architectural-millwork-wraps/"
         }
-      ]
+      ],
+      "architecturalSourceIds": [
+        "ARCH-VAN013"
+      ],
+      "architecturalSourceId": "ARCH-VAN013",
+      "architecturalServices": "Furniture and interior surface wraps / 家具及室内表面装饰膜",
+      "interestedProducts": [
+        "建筑玻璃膜"
+      ],
+      "currentProducts": "Furniture and interior surface wraps / 家具及室内表面装饰膜"
     },
     {
       "publicRecordId": "VAN035",
@@ -3238,8 +3418,8 @@
       "address": "7167 Gilley Ave Unit A, Burnaby, BC V5J 4W9, Canada",
       "distanceKm": 11.3,
       "distanceBand": "0–50 km / 公里",
-      "services": "Automotive window tint / 汽车隔热膜",
-      "filmBrands": "Not publicly verified\n未公开核实",
+      "services": "Automotive window tint / 汽车隔热膜\n建筑膜业务 / Architectural film: Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜",
+      "filmBrands": "Not publicly verified\n未公开核实\nUnverified / 未核实",
       "serviceEvidence": "Official automotive-film service evidence / 官网汽车膜服务佐证",
       "phone": "+1 778-834-3347",
       "website": "https://www.crownglass.ca/",
@@ -3251,7 +3431,7 @@
       ],
       "lat": 49.21873,
       "lng": -122.9724148,
-      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认",
+      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认\nPublic address and branch require confirmation before visiting / 出访前确认当前地址及分店\nArchitecture services are separately identified; automotive-only services excluded / 建筑业务单独确认，不以汽车膜业务代替\nBrand mentions require building-product and branch confirmation / 页面品牌提及需另核实建筑产品系列及分店供应",
       "route": "C",
       "visitRegion": "本拿比及新西敏",
       "visitBatch": "C-03",
@@ -3276,7 +3456,16 @@
           "sourceLabel": "Public website or directory image; location unverified",
           "sourceUrl": "https://www.crownglass.ca/"
         }
-      ]
+      ],
+      "architecturalSourceIds": [
+        "ARCH-VAN011"
+      ],
+      "architecturalSourceId": "ARCH-VAN011",
+      "architecturalServices": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜",
+      "interestedProducts": [
+        "建筑玻璃膜"
+      ],
+      "currentProducts": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜"
     },
     {
       "publicRecordId": "VAN076",
@@ -4184,8 +4373,8 @@
       "address": "12540 Harris Rd #105, Pitt Meadows, BC V3Y 2J5, Canada",
       "distanceKm": 31,
       "distanceBand": "0–50 km / 公里",
-      "services": "Automotive window tint / 汽车隔热膜; Color change & vinyl wraps / 改色膜及车身包覆",
-      "filmBrands": "Not publicly verified\n未公开核实",
+      "services": "Automotive window tint / 汽车隔热膜; Color change & vinyl wraps / 改色膜及车身包覆\n建筑膜业务 / Architectural film: Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜; Solar and heat-control film / 隔热防晒膜; Safety and security film / 安全防爆膜; Privacy and frosted film / 隐私磨砂膜",
+      "filmBrands": "Not publicly verified\n未公开核实\nUnverified / 未核实",
       "serviceEvidence": "Official automotive-film service evidence / 官网汽车膜服务佐证",
       "phone": "+1 604-782-8468",
       "website": "http://diplomatwindowtinting.ca/",
@@ -4196,7 +4385,7 @@
       ],
       "lat": 49.2303982,
       "lng": -122.6890477,
-      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认",
+      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认\nPublic address and branch require confirmation before visiting / 出访前确认当前地址及分店\nArchitecture services are separately identified; automotive-only services excluded / 建筑业务单独确认，不以汽车膜业务代替\nBrand mentions require building-product and branch confirmation / 页面品牌提及需另核实建筑产品系列及分店供应",
       "route": "E",
       "visitRegion": "三联市及枫树岭",
       "visitBatch": "E-02",
@@ -4211,8 +4400,24 @@
           "contentType": "image/jpeg",
           "sourceLabel": "Public website or directory image; location unverified",
           "sourceUrl": "http://diplomatwindowtinting.ca/"
+        },
+        {
+          "url": "/assets/field-sales-prospects/ARCH-VAN017-01.jpg",
+          "fileName": "ARCH-VAN017-01.jpg",
+          "contentType": "image/jpeg",
+          "sourceLabel": "Public architectural-film website image; location unverified",
+          "sourceUrl": "http://diplomatwindowtinting.ca/"
         }
-      ]
+      ],
+      "architecturalSourceIds": [
+        "ARCH-VAN017"
+      ],
+      "architecturalSourceId": "ARCH-VAN017",
+      "architecturalServices": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜; Solar and heat-control film / 隔热防晒膜; Safety and security film / 安全防爆膜; Privacy and frosted film / 隐私磨砂膜",
+      "interestedProducts": [
+        "建筑玻璃膜"
+      ],
+      "currentProducts": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜; Solar and heat-control film / 隔热防晒膜; Safety and security film / 安全防爆膜; Privacy and frosted film / 隐私磨砂膜"
     },
     {
       "publicRecordId": "VAN157",
@@ -4502,8 +4707,8 @@
       "address": "12840 115b Ave, Surrey, BC V3R 2R9, Canada",
       "distanceKm": 18.8,
       "distanceBand": "0–50 km / 公里",
-      "services": "Automotive window tint / 汽车隔热膜; Paint protection film (PPF) / 漆面保护膜; Ceramic coating / 陶瓷镀膜; Detailing & paint correction / 精洗及漆面修复",
-      "filmBrands": "Not publicly verified\n未公开核实",
+      "services": "Automotive window tint / 汽车隔热膜; Paint protection film (PPF) / 漆面保护膜; Ceramic coating / 陶瓷镀膜; Detailing & paint correction / 精洗及漆面修复\n建筑膜业务 / Architectural film: Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜; Solar and heat-control film / 隔热防晒膜; Safety and security film / 安全防爆膜; Privacy and frosted film / 隐私磨砂膜; Anti-graffiti film / 防涂鸦膜",
+      "filmBrands": "Not publicly verified\n未公开核实\nUnverified / 未核实",
       "serviceEvidence": "Official automotive-film service evidence / 官网汽车膜服务佐证",
       "phone": "+1 778-536-6607",
       "website": "http://www.goldendreambc.com/",
@@ -4511,11 +4716,13 @@
       "directorySource": "https://findawrap.com/shops/surrey-bc/golden-dream-auto-studio-surrey",
       "serviceSources": [
         "http://www.goldendreambc.com/",
-        "http://www.goldendreambc.com/contact/"
+        "http://www.goldendreambc.com/contact/",
+        "https://goldendreambc.com/tinting-commercial-ressidential-in-surrey-bc/",
+        "https://goldendreambc.com/about-us/"
       ],
       "lat": 49.2124191,
       "lng": -122.866235,
-      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认",
+      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认\nPublic address and branch require confirmation before visiting / 出访前确认当前地址及分店\nArchitecture services are separately identified; automotive-only services excluded / 建筑业务单独确认，不以汽车膜业务代替\nBrand mentions require building-product and branch confirmation / 页面品牌提及需另核实建筑产品系列及分店供应",
       "route": "F",
       "visitRegion": "素里、兰里及菲沙河谷",
       "visitBatch": "F-02",
@@ -4540,7 +4747,16 @@
           "sourceLabel": "Public website or directory image; location unverified",
           "sourceUrl": "http://www.goldendreambc.com/"
         }
-      ]
+      ],
+      "architecturalSourceIds": [
+        "ARCH-VAN014"
+      ],
+      "architecturalSourceId": "ARCH-VAN014",
+      "architecturalServices": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜; Solar and heat-control film / 隔热防晒膜; Safety and security film / 安全防爆膜; Privacy and frosted film / 隐私磨砂膜; Anti-graffiti film / 防涂鸦膜",
+      "interestedProducts": [
+        "建筑玻璃膜"
+      ],
+      "currentProducts": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜; Solar and heat-control film / 隔热防晒膜; Safety and security film / 安全防爆膜; Privacy and frosted film / 隐私磨砂膜; Anti-graffiti film / 防涂鸦膜"
     },
     {
       "publicRecordId": "VAN103",
@@ -4578,30 +4794,50 @@
       "address": "13431 King George Blvd, Surrey, BC V3T 2T8, Canada",
       "distanceKm": 20.3,
       "distanceBand": "0–50 km / 公里",
-      "services": "Automotive window tint / 汽车隔热膜",
-      "filmBrands": "Not publicly verified\n未公开核实",
+      "services": "Automotive window tint / 汽车隔热膜\n建筑膜业务 / Architectural film: Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜",
+      "filmBrands": "Not publicly verified\n未公开核实\n3M",
       "serviceEvidence": "Directory classification only; review required\n仅目录分类，待复核",
       "phone": "+1 604-584-6483",
       "website": "http://www.streetlegaltint.com/",
       "googleMapsUrl": "https://www.google.com/maps/search/?api=1&query=Street%20Legal%20Tint%2C%2013431%20King%20George%20Blvd%2C%20Surrey%2C%20BC%20V3T%202T8%2C%20Canada",
       "directorySource": "https://findawrap.com/shops/surrey-bc/street-legal-tint-surrey",
       "serviceSources": [
-        "http://www.streetlegaltint.com/"
+        "http://www.streetlegaltint.com/",
+        "https://streetlegaltint.ca/",
+        "https://streetlegaltint.ca/about-us/"
       ],
       "lat": 49.20208969999999,
       "lng": -122.8496284,
-      "researchNotes": "Directory category only; confirm services before visiting / 仅目录分类，出访前确认业务。Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认",
+      "researchNotes": "Directory category only; confirm services before visiting / 仅目录分类，出访前确认业务。Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认\nPublic address and branch require confirmation before visiting / 出访前确认当前地址及分店\nArchitecture services are separately identified; automotive-only services excluded / 建筑业务单独确认，不以汽车膜业务代替\nBrand mentions require building-product and branch confirmation / 页面品牌提及需另核实建筑产品系列及分店供应",
       "route": "F",
       "visitRegion": "素里、兰里及菲沙河谷",
       "visitBatch": "F-02",
       "visitStop": 3,
       "navigationUrl": "https://www.google.com/maps/dir/?api=1&origin=13365+115+Ave+Unit+69%2C+Surrey%2C+BC+V3R+0R8%2C+Canada&destination=13431+King+George+Blvd%2C+Surrey%2C+BC+V3T+2T8%2C+Canada&travelmode=driving",
       "socialLinks": {
+        "instagram": "https://www.instagram.com/streetlegaltintvancouver",
         "facebook": "https://www.facebook.com/sitedudes",
         "yelp": "https://www.yelp.com/biz/street-legal-tint-and-detail-north-vancouver"
       },
       "photoVerification": "No usable public photo found / 未找到可用公开照片",
-      "referencePhotos": []
+      "referencePhotos": [
+        {
+          "url": "/assets/field-sales-prospects/ARCH-VAN007-01.jpg",
+          "fileName": "ARCH-VAN007-01.jpg",
+          "contentType": "image/jpeg",
+          "sourceLabel": "Public architectural-film website image; location unverified",
+          "sourceUrl": "https://streetlegaltint.ca/"
+        }
+      ],
+      "architecturalSourceIds": [
+        "ARCH-VAN007"
+      ],
+      "architecturalSourceId": "ARCH-VAN007",
+      "architecturalServices": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜",
+      "interestedProducts": [
+        "建筑玻璃膜"
+      ],
+      "currentProducts": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜"
     },
     {
       "publicRecordId": "VAN111",
@@ -4777,19 +5013,21 @@
       "address": "9182 120 St, Surrey, BC V3V 4B5, Canada",
       "distanceKm": 19.2,
       "distanceBand": "0–50 km / 公里",
-      "services": "Automotive window tint / 汽车隔热膜; Paint protection film (PPF) / 漆面保护膜; Fleet graphics & commercial wraps / 商用车图文及包覆",
-      "filmBrands": "Not publicly verified\n未公开核实",
+      "services": "Automotive window tint / 汽车隔热膜; Paint protection film (PPF) / 漆面保护膜; Fleet graphics & commercial wraps / 商用车图文及包覆\n建筑膜业务 / Architectural film: Commercial glass film / 商业建筑玻璃膜",
+      "filmBrands": "Not publicly verified\n未公开核实\nUnverified / 未核实",
       "serviceEvidence": "Official automotive-film service evidence / 官网汽车膜服务佐证",
       "phone": "+1 778-700-0193",
       "website": "http://www.apnacustoms.com/",
       "googleMapsUrl": "https://www.google.com/maps/search/?api=1&query=Apna%20Customs%20Accessories%20%26%20Window%20Tinting%E2%80%A6%2C%209182%20120%20St%2C%20Surrey%2C%20BC%20V3V%204B5%2C%20Canada",
       "directorySource": "https://findawrap.com/shops/surrey-bc/apna-customs-accessories-window-tinting-surrey",
       "serviceSources": [
-        "http://www.apnacustoms.com/"
+        "http://www.apnacustoms.com/",
+        "https://apnacustoms.com/commercial/",
+        "https://apnacustoms.com/about/"
       ],
       "lat": 49.1701325,
       "lng": -122.8898272,
-      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认",
+      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认\nPublic address and branch require confirmation before visiting / 出访前确认当前地址及分店\nArchitecture services are separately identified; automotive-only services excluded / 建筑业务单独确认，不以汽车膜业务代替\nBrand mentions require building-product and branch confirmation / 页面品牌提及需另核实建筑产品系列及分店供应",
       "route": "F",
       "visitRegion": "素里、兰里及菲沙河谷",
       "visitBatch": "F-03",
@@ -4808,7 +5046,16 @@
           "sourceLabel": "Public website or directory image; location unverified",
           "sourceUrl": "http://www.apnacustoms.com/"
         }
-      ]
+      ],
+      "architecturalSourceIds": [
+        "ARCH-VAN015"
+      ],
+      "architecturalSourceId": "ARCH-VAN015",
+      "architecturalServices": "Commercial glass film / 商业建筑玻璃膜",
+      "interestedProducts": [
+        "建筑玻璃膜"
+      ],
+      "currentProducts": "Commercial glass film / 商业建筑玻璃膜"
     },
     {
       "publicRecordId": "VAN107",
@@ -6188,7 +6435,7 @@
       "address": "9643 186 St, Surrey, BC V4N 3N8, Canada",
       "distanceKm": 30.9,
       "distanceBand": "0–50 km / 公里",
-      "services": "Color change & vinyl wraps / 改色膜及车身包覆",
+      "services": "Color change & vinyl wraps / 改色膜及车身包覆\n建筑膜业务 / Architectural film: Wall vinyl graphics and wraps / 墙面图文及装饰包覆",
       "filmBrands": "3M",
       "serviceEvidence": "Official automotive-film service evidence / 官网汽车膜服务佐证",
       "phone": "+1 604-996-6389",
@@ -6201,7 +6448,7 @@
       ],
       "lat": 49.1778422,
       "lng": -122.708496,
-      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认",
+      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认\nPublic address and branch require confirmation before visiting / 出访前确认当前地址及分店\nArchitecture services are separately identified; automotive-only services excluded / 建筑业务单独确认，不以汽车膜业务代替\nBrand mentions require building-product and branch confirmation / 页面品牌提及需另核实建筑产品系列及分店供应",
       "route": "F",
       "visitRegion": "素里、兰里及菲沙河谷",
       "visitBatch": "F-10",
@@ -6212,7 +6459,16 @@
         "facebook": "https://www.facebook.com/wrapguyslangley"
       },
       "photoVerification": "No usable public photo found / 未找到可用公开照片",
-      "referencePhotos": []
+      "referencePhotos": [],
+      "architecturalSourceIds": [
+        "ARCH-VAN016"
+      ],
+      "architecturalSourceId": "ARCH-VAN016",
+      "architecturalServices": "Wall vinyl graphics and wraps / 墙面图文及装饰包覆",
+      "interestedProducts": [
+        "建筑玻璃膜"
+      ],
+      "currentProducts": "Wall vinyl graphics and wraps / 墙面图文及装饰包覆"
     },
     {
       "publicRecordId": "VAN161",
@@ -6522,8 +6778,8 @@
       "address": "19415 56 Ave #104, Surrey, BC V3S 6K2, Canada",
       "distanceKm": 35.7,
       "distanceBand": "0–50 km / 公里",
-      "services": "Automotive window tint / 汽车隔热膜; Paint protection film (PPF) / 漆面保护膜; Color change & vinyl wraps / 改色膜及车身包覆; Ceramic coating / 陶瓷镀膜",
-      "filmBrands": "3M、Avery Dennison",
+      "services": "Automotive window tint / 汽车隔热膜; Paint protection film (PPF) / 漆面保护膜; Color change & vinyl wraps / 改色膜及车身包覆; Ceramic coating / 陶瓷镀膜\n建筑膜业务 / Architectural film: Residential glass film / 住宅玻璃膜",
+      "filmBrands": "3M、Avery Dennison\n3M, Avery Dennison",
       "serviceEvidence": "Official automotive-film service evidence / 官网汽车膜服务佐证",
       "phone": "+1 604-773-3558",
       "website": "http://www.blackstarcarlab.com/",
@@ -6535,7 +6791,7 @@
       ],
       "lat": 49.105206,
       "lng": -122.685222,
-      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认",
+      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认\nPublic address and branch require confirmation before visiting / 出访前确认当前地址及分店\nArchitecture services are separately identified; automotive-only services excluded / 建筑业务单独确认，不以汽车膜业务代替\nBrand mentions require building-product and branch confirmation / 页面品牌提及需另核实建筑产品系列及分店供应",
       "route": "F",
       "visitRegion": "素里、兰里及菲沙河谷",
       "visitBatch": "F-11",
@@ -6560,7 +6816,16 @@
           "sourceLabel": "Public website or directory image; location unverified",
           "sourceUrl": "http://www.blackstarcarlab.com/"
         }
-      ]
+      ],
+      "architecturalSourceIds": [
+        "ARCH-VAN020"
+      ],
+      "architecturalSourceId": "ARCH-VAN020",
+      "architecturalServices": "Residential glass film / 住宅玻璃膜",
+      "interestedProducts": [
+        "建筑玻璃膜"
+      ],
+      "currentProducts": "Residential glass film / 住宅玻璃膜"
     },
     {
       "publicRecordId": "VAN178",
@@ -6646,8 +6911,8 @@
       "address": "15515 24 Ave #13, Surrey, BC V4A 2J4, Canada",
       "distanceKm": 33.4,
       "distanceBand": "0–50 km / 公里",
-      "services": "Automotive window tint / 汽车隔热膜; Paint protection film (PPF) / 漆面保护膜; Color change & vinyl wraps / 改色膜及车身包覆; Ceramic coating / 陶瓷镀膜; Detailing & paint correction / 精洗及漆面修复",
-      "filmBrands": "Not publicly verified\n未公开核实",
+      "services": "Automotive window tint / 汽车隔热膜; Paint protection film (PPF) / 漆面保护膜; Color change & vinyl wraps / 改色膜及车身包覆; Ceramic coating / 陶瓷镀膜; Detailing & paint correction / 精洗及漆面修复\n建筑膜业务 / Architectural film: Commercial glass film / 商业建筑玻璃膜",
+      "filmBrands": "Not publicly verified\n未公开核实\nUnverified / 未核实",
       "serviceEvidence": "Official automotive-film service evidence / 官网汽车膜服务佐证",
       "phone": "+1 604-338-4336",
       "website": "https://www.onestopcarcare.ca/",
@@ -6659,7 +6924,7 @@
       ],
       "lat": 49.04638,
       "lng": -122.7927522,
-      "researchNotes": "Merged discovery aliases / 合并目录别名: One Stop Car Care。Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认",
+      "researchNotes": "Merged discovery aliases / 合并目录别名: One Stop Car Care。Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认\nPublic address and branch require confirmation before visiting / 出访前确认当前地址及分店\nArchitecture services are separately identified; automotive-only services excluded / 建筑业务单独确认，不以汽车膜业务代替\nBrand mentions require building-product and branch confirmation / 页面品牌提及需另核实建筑产品系列及分店供应",
       "route": "F",
       "visitRegion": "素里、兰里及菲沙河谷",
       "visitBatch": "F-12",
@@ -6684,8 +6949,24 @@
           "contentType": "image/jpeg",
           "sourceLabel": "Public website or directory image; location unverified",
           "sourceUrl": "https://www.onestopcarcare.ca/about-us/"
+        },
+        {
+          "url": "/assets/field-sales-prospects/ARCH-VAN018-01.jpg",
+          "fileName": "ARCH-VAN018-01.jpg",
+          "contentType": "image/jpeg",
+          "sourceLabel": "Public architectural-film website image; location unverified",
+          "sourceUrl": "https://www.onestopcarcare.ca/about-us/"
         }
-      ]
+      ],
+      "architecturalSourceIds": [
+        "ARCH-VAN018"
+      ],
+      "architecturalSourceId": "ARCH-VAN018",
+      "architecturalServices": "Commercial glass film / 商业建筑玻璃膜",
+      "interestedProducts": [
+        "建筑玻璃膜"
+      ],
+      "currentProducts": "Commercial glass film / 商业建筑玻璃膜"
     },
     {
       "publicRecordId": "VAN170",
@@ -6827,19 +7108,21 @@
       "address": "6086 196 St, Langley, BC V3A 5X3, Canada",
       "distanceKm": 35.6,
       "distanceBand": "0–50 km / 公里",
-      "services": "Automotive window tint / 汽车隔热膜; Color change & vinyl wraps / 改色膜及车身包覆",
-      "filmBrands": "Not publicly verified\n未公开核实",
+      "services": "Automotive window tint / 汽车隔热膜; Color change & vinyl wraps / 改色膜及车身包覆\n建筑膜业务 / Architectural film: Commercial glass film / 商业建筑玻璃膜",
+      "filmBrands": "Not publicly verified\n未公开核实\nUnverified / 未核实",
       "serviceEvidence": "Official automotive-film service evidence / 官网汽车膜服务佐证",
       "phone": "+1 604-773-3325",
       "website": "https://www.rqtinting.com/",
       "googleMapsUrl": "https://www.google.com/maps/search/?api=1&query=RQ%20tinting%2C%206086%20196%20St%2C%20Langley%2C%20BC%20V3A%205X3%2C%20Canada",
       "directorySource": "https://findawrap.com/shops/langley-bc/rq-tinting-langley",
       "serviceSources": [
-        "https://www.rqtinting.com/"
+        "https://www.rqtinting.com/",
+        "https://rqtinting.com/commercial-window-tinting/",
+        "https://rqtinting.com/contact-us/"
       ],
       "lat": 49.11281409999999,
       "lng": -122.679623,
-      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认",
+      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认\nPublic address and branch require confirmation before visiting / 出访前确认当前地址及分店\nArchitecture services are separately identified; automotive-only services excluded / 建筑业务单独确认，不以汽车膜业务代替\nBrand mentions require building-product and branch confirmation / 页面品牌提及需另核实建筑产品系列及分店供应",
       "route": "F",
       "visitRegion": "素里、兰里及菲沙河谷",
       "visitBatch": "F-12",
@@ -6863,8 +7146,24 @@
           "contentType": "image/jpeg",
           "sourceLabel": "Public website or directory image; location unverified",
           "sourceUrl": "https://www.rqtinting.com/"
+        },
+        {
+          "url": "/assets/field-sales-prospects/ARCH-VAN019-02.jpg",
+          "fileName": "ARCH-VAN019-02.jpg",
+          "contentType": "image/jpeg",
+          "sourceLabel": "Public architectural-film website image; location unverified",
+          "sourceUrl": "https://rqtinting.com/commercial-window-tinting/"
         }
-      ]
+      ],
+      "architecturalSourceIds": [
+        "ARCH-VAN019"
+      ],
+      "architecturalSourceId": "ARCH-VAN019",
+      "architecturalServices": "Commercial glass film / 商业建筑玻璃膜",
+      "interestedProducts": [
+        "建筑玻璃膜"
+      ],
+      "currentProducts": "Commercial glass film / 商业建筑玻璃膜"
     },
     {
       "publicRecordId": "VAN180",
@@ -7519,7 +7818,7 @@
       "address": "31018 Peardonville Rd Unit #302, Abbotsford, BC V2T 6K2, Canada",
       "distanceKm": 59.6,
       "distanceBand": "50–100 km / 公里",
-      "services": "Automotive window tint / 汽车隔热膜; Paint protection film (PPF) / 漆面保护膜; Color change & vinyl wraps / 改色膜及车身包覆; Ceramic coating / 陶瓷镀膜",
+      "services": "Automotive window tint / 汽车隔热膜; Paint protection film (PPF) / 漆面保护膜; Color change & vinyl wraps / 改色膜及车身包覆; Ceramic coating / 陶瓷镀膜\n建筑膜业务 / Architectural film: Residential glass film / 住宅玻璃膜",
       "filmBrands": "XPEL",
       "serviceEvidence": "Official automotive-film service evidence / 官网汽车膜服务佐证",
       "phone": "+1 604-300-8393",
@@ -7527,11 +7826,12 @@
       "googleMapsUrl": "https://www.google.com/maps/search/?api=1&query=Bluprint%20Graphics%20Window%20Tinting%2C%2031018%20Peardonville%20Rd%20Unit%20%23302%2C%20Abbotsford%2C%20BC%20V2T%206K2%2C%20Canada",
       "directorySource": "https://findawrap.com/shops/abbotsford-bc/bluprint-graphics-window-tinting-abbotsford",
       "serviceSources": [
-        "https://www.bluprinttinting.com/"
+        "https://www.bluprinttinting.com/",
+        "https://bluprinttinting.com/about/"
       ],
       "lat": 49.04555879999999,
       "lng": -122.364222,
-      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认",
+      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认\nPublic address and branch require confirmation before visiting / 出访前确认当前地址及分店\nArchitecture services are separately identified; automotive-only services excluded / 建筑业务单独确认，不以汽车膜业务代替\nBrand mentions require building-product and branch confirmation / 页面品牌提及需另核实建筑产品系列及分店供应",
       "route": "F",
       "visitRegion": "素里、兰里及菲沙河谷",
       "visitBatch": "F-16",
@@ -7550,7 +7850,16 @@
           "sourceLabel": "Public website or directory image; location unverified",
           "sourceUrl": "https://www.bluprinttinting.com/"
         }
-      ]
+      ],
+      "architecturalSourceIds": [
+        "ARCH-VAN021"
+      ],
+      "architecturalSourceId": "ARCH-VAN021",
+      "architecturalServices": "Residential glass film / 住宅玻璃膜",
+      "interestedProducts": [
+        "建筑玻璃膜"
+      ],
+      "currentProducts": "Residential glass film / 住宅玻璃膜"
     },
     {
       "publicRecordId": "VAN202",
@@ -7913,7 +8222,7 @@
       "address": "34159 Summerhill Pl, Abbotsford, BC V2S 8N2, Canada",
       "distanceKm": 64.8,
       "distanceBand": "50–100 km / 公里",
-      "services": "Automotive window tint / 汽车隔热膜",
+      "services": "Automotive window tint / 汽车隔热膜\n建筑膜业务 / Architectural film: Residential glass film / 住宅玻璃膜",
       "filmBrands": "LLumar",
       "serviceEvidence": "Directory classification only; review required\n仅目录分类，待复核",
       "phone": "+1 604-859-1234",
@@ -7926,7 +8235,7 @@
       ],
       "lat": 49.0570657,
       "lng": -122.2786988,
-      "researchNotes": "Directory category only; confirm services before visiting / 仅目录分类，出访前确认业务。Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认",
+      "researchNotes": "Directory category only; confirm services before visiting / 仅目录分类，出访前确认业务。Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认\nPublic address and branch require confirmation before visiting / 出访前确认当前地址及分店\nArchitecture services are separately identified; automotive-only services excluded / 建筑业务单独确认，不以汽车膜业务代替\nBrand mentions require building-product and branch confirmation / 页面品牌提及需另核实建筑产品系列及分店供应",
       "route": "F",
       "visitRegion": "素里、兰里及菲沙河谷",
       "visitBatch": "F-19",
@@ -7934,7 +8243,16 @@
       "navigationUrl": "https://www.google.com/maps/dir/?api=1&origin=3190+Babich+St%2C+Abbotsford%2C+BC+V2S+6C5%2C+Canada&destination=34159+Summerhill+Pl%2C+Abbotsford%2C+BC+V2S+8N2%2C+Canada&travelmode=driving",
       "socialLinks": {},
       "photoVerification": "No usable public photo found / 未找到可用公开照片",
-      "referencePhotos": []
+      "referencePhotos": [],
+      "architecturalSourceIds": [
+        "ARCH-VAN022"
+      ],
+      "architecturalSourceId": "ARCH-VAN022",
+      "architecturalServices": "Residential glass film / 住宅玻璃膜",
+      "interestedProducts": [
+        "建筑玻璃膜"
+      ],
+      "currentProducts": "Residential glass film / 住宅玻璃膜"
     },
     {
       "publicRecordId": "VAN207",
@@ -8148,19 +8466,21 @@
       "address": "1541 Pear St, Victoria, BC V8P 2A2, Canada",
       "distanceKm": 90.8,
       "distanceBand": "50–100 km / 公里",
-      "services": "Automotive window tint / 汽车隔热膜",
-      "filmBrands": "Not publicly verified\n未公开核实",
+      "services": "Automotive window tint / 汽车隔热膜\n建筑膜业务 / Architectural film: Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜; Solar and heat-control film / 隔热防晒膜; Safety and security film / 安全防爆膜; Privacy and frosted film / 隐私磨砂膜; Anti-graffiti film / 防涂鸦膜",
+      "filmBrands": "Not publicly verified\n未公开核实\nUnverified / 未核实",
       "serviceEvidence": "Directory classification only; review required\n仅目录分类，待复核",
       "phone": "+1 250-880-2696",
       "website": "http://www.smartwindowsolutions.ca/",
       "googleMapsUrl": "https://www.google.com/maps/search/?api=1&query=Smart%20Window%20Solutions%2C%201541%20Pear%20St%2C%20Victoria%2C%20BC%20V8P%202A2%2C%20Canada",
       "directorySource": "https://findawrap.com/shops/victoria-bc/smart-window-solutions-victoria",
       "serviceSources": [
-        "http://www.smartwindowsolutions.ca/"
+        "http://www.smartwindowsolutions.ca/",
+        "http://smartwindowsolutions.ca/commercial-window-treatments/",
+        "http://smartwindowsolutions.ca/contact/"
       ],
       "lat": 48.458261,
       "lng": -123.3378196,
-      "researchNotes": "Directory category only; confirm services before visiting / 仅目录分类，出访前确认业务。Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认",
+      "researchNotes": "Directory category only; confirm services before visiting / 仅目录分类，出访前确认业务。Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认\nPublic address and branch require confirmation before visiting / 出访前确认当前地址及分店\nArchitecture services are separately identified; automotive-only services excluded / 建筑业务单独确认，不以汽车膜业务代替\nBrand mentions require building-product and branch confirmation / 页面品牌提及需另核实建筑产品系列及分店供应",
       "route": "G",
       "visitRegion": "温哥华岛及阳光海岸",
       "visitBatch": "G-03",
@@ -8171,7 +8491,16 @@
         "facebook": "https://www.facebook.com/smartwindowsolutionsltd"
       },
       "photoVerification": "No usable public photo found / 未找到可用公开照片",
-      "referencePhotos": []
+      "referencePhotos": [],
+      "architecturalSourceIds": [
+        "ARCH-VAN023"
+      ],
+      "architecturalSourceId": "ARCH-VAN023",
+      "architecturalServices": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜; Solar and heat-control film / 隔热防晒膜; Safety and security film / 安全防爆膜; Privacy and frosted film / 隐私磨砂膜; Anti-graffiti film / 防涂鸦膜",
+      "interestedProducts": [
+        "建筑玻璃膜"
+      ],
+      "currentProducts": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜; Solar and heat-control film / 隔热防晒膜; Safety and security film / 安全防爆膜; Privacy and frosted film / 隐私磨砂膜; Anti-graffiti film / 防涂鸦膜"
     },
     {
       "publicRecordId": "VAN217",
@@ -8181,8 +8510,8 @@
       "address": "3357 Linwood Ave, Victoria, BC V8X 1E5, Canada",
       "distanceKm": 91.6,
       "distanceBand": "50–100 km / 公里",
-      "services": "Automotive window tint / 汽车隔热膜",
-      "filmBrands": "Not publicly verified\n未公开核实",
+      "services": "Automotive window tint / 汽车隔热膜\n建筑膜业务 / Architectural film: Residential glass film / 住宅玻璃膜; Solar and heat-control film / 隔热防晒膜; Safety and security film / 安全防爆膜; Privacy and frosted film / 隐私磨砂膜; Anti-graffiti film / 防涂鸦膜",
+      "filmBrands": "Not publicly verified\n未公开核实\nUnverified / 未核实",
       "serviceEvidence": "Directory classification only; review required\n仅目录分类，待复核",
       "phone": "+1 250-477-3126",
       "website": "http://www.prodigywindowsolutions.ca/",
@@ -8190,11 +8519,12 @@
       "directorySource": "https://findawrap.com/shops/victoria-bc/prodigy-window-solutions-victoria",
       "serviceSources": [
         "http://www.prodigywindowsolutions.ca/",
-        "http://www.prodigywindowsolutions.ca/contact/"
+        "http://www.prodigywindowsolutions.ca/contact/",
+        "https://prodigywindowsolutions.ca/about-us/"
       ],
       "lat": 48.4532993,
       "lng": -123.3578667,
-      "researchNotes": "Directory category only; confirm services before visiting / 仅目录分类，出访前确认业务。Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认",
+      "researchNotes": "Directory category only; confirm services before visiting / 仅目录分类，出访前确认业务。Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认\nPublic address and branch require confirmation before visiting / 出访前确认当前地址及分店\nArchitecture services are separately identified; automotive-only services excluded / 建筑业务单独确认，不以汽车膜业务代替\nBrand mentions require building-product and branch confirmation / 页面品牌提及需另核实建筑产品系列及分店供应",
       "route": "G",
       "visitRegion": "温哥华岛及阳光海岸",
       "visitBatch": "G-03",
@@ -8217,7 +8547,16 @@
           "sourceLabel": "Public website or directory image; location unverified",
           "sourceUrl": "http://www.prodigywindowsolutions.ca/"
         }
-      ]
+      ],
+      "architecturalSourceIds": [
+        "ARCH-VAN024"
+      ],
+      "architecturalSourceId": "ARCH-VAN024",
+      "architecturalServices": "Residential glass film / 住宅玻璃膜; Solar and heat-control film / 隔热防晒膜; Safety and security film / 安全防爆膜; Privacy and frosted film / 隐私磨砂膜; Anti-graffiti film / 防涂鸦膜",
+      "interestedProducts": [
+        "建筑玻璃膜"
+      ],
+      "currentProducts": "Residential glass film / 住宅玻璃膜; Solar and heat-control film / 隔热防晒膜; Safety and security film / 安全防爆膜; Privacy and frosted film / 隐私磨砂膜; Anti-graffiti film / 防涂鸦膜"
     },
     {
       "publicRecordId": "VAN220",
@@ -8498,8 +8837,8 @@
       "address": "703 Esquimalt Rd, Esquimalt, BC V9A 3L6, Canada",
       "distanceKm": 94.6,
       "distanceBand": "50–100 km / 公里",
-      "services": "Automotive window tint / 汽车隔热膜",
-      "filmBrands": "Not publicly verified\n未公开核实",
+      "services": "Automotive window tint / 汽车隔热膜\n建筑膜业务 / Architectural film: Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜",
+      "filmBrands": "Not publicly verified\n未公开核实\nUnverified / 未核实",
       "serviceEvidence": "Directory classification only; review required\n仅目录分类，待复核",
       "phone": "+1 778-535-7262",
       "website": "https://rrwindows.ca/",
@@ -8507,11 +8846,12 @@
       "directorySource": "https://findawrap.com/shops/esquimalt-bc/rr-window-cleaning-and-tinting-esquimalt",
       "serviceSources": [
         "https://rrwindows.ca/",
-        "https://rrwindows.ca/about-us/"
+        "https://rrwindows.ca/about-us/",
+        "https://rrwindows.ca/services/commercial-cleaning/"
       ],
       "lat": 48.4303322,
       "lng": -123.3909356,
-      "researchNotes": "Directory category only; confirm services before visiting / 仅目录分类，出访前确认业务。Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认",
+      "researchNotes": "Directory category only; confirm services before visiting / 仅目录分类，出访前确认业务。Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认\nPublic address and branch require confirmation before visiting / 出访前确认当前地址及分店\nArchitecture services are separately identified; automotive-only services excluded / 建筑业务单独确认，不以汽车膜业务代替\nBrand mentions require building-product and branch confirmation / 页面品牌提及需另核实建筑产品系列及分店供应",
       "route": "G",
       "visitRegion": "温哥华岛及阳光海岸",
       "visitBatch": "G-05",
@@ -8529,8 +8869,24 @@
           "contentType": "image/jpeg",
           "sourceLabel": "Public website or directory image; location unverified",
           "sourceUrl": "https://rrwindows.ca/"
+        },
+        {
+          "url": "/assets/field-sales-prospects/ARCH-VAN026-02.jpg",
+          "fileName": "ARCH-VAN026-02.jpg",
+          "contentType": "image/jpeg",
+          "sourceLabel": "Public architectural-film website image; location unverified",
+          "sourceUrl": "https://rrwindows.ca/services/commercial-cleaning/"
         }
-      ]
+      ],
+      "architecturalSourceIds": [
+        "ARCH-VAN026"
+      ],
+      "architecturalSourceId": "ARCH-VAN026",
+      "architecturalServices": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜",
+      "interestedProducts": [
+        "建筑玻璃膜"
+      ],
+      "currentProducts": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜"
     },
     {
       "publicRecordId": "VAN234",
@@ -8601,19 +8957,21 @@
       "address": "2740 Bridge St #112, Victoria, BC V8T 5C5, Canada",
       "distanceKm": 93.5,
       "distanceBand": "50–100 km / 公里",
-      "services": "Automotive window tint / 汽车隔热膜",
-      "filmBrands": "Madico",
+      "services": "Automotive window tint / 汽车隔热膜\n建筑膜业务 / Architectural film: Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜; Solar and heat-control film / 隔热防晒膜; Safety and security film / 安全防爆膜; Privacy and frosted film / 隐私磨砂膜; Anti-graffiti film / 防涂鸦膜",
+      "filmBrands": "Madico\nUnverified / 未核实",
       "serviceEvidence": "Directory classification only; review required\n仅目录分类，待复核",
       "phone": "+1 250-383-0404",
       "website": "http://www.sunshadewindowfilms.com/",
       "googleMapsUrl": "https://www.google.com/maps/search/?api=1&query=Sun%20Shade%20Film%20Systems%20Ltd%2C%202740%20Bridge%20St%20%23112%2C%20Victoria%2C%20BC%20V8T%205C5%2C%20Canada",
       "directorySource": "https://findawrap.com/shops/victoria-bc/sun-shade-film-systems-ltd-victoria",
       "serviceSources": [
-        "http://www.sunshadewindowfilms.com/"
+        "http://www.sunshadewindowfilms.com/",
+        "https://sunshadewindowfilms.com/commercial-services/",
+        "https://sunshadewindowfilms.com/contact/"
       ],
       "lat": 48.4376966,
       "lng": -123.373785,
-      "researchNotes": "Directory category only; confirm services before visiting / 仅目录分类，出访前确认业务。Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认",
+      "researchNotes": "Directory category only; confirm services before visiting / 仅目录分类，出访前确认业务。Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认\nPublic address and branch require confirmation before visiting / 出访前确认当前地址及分店\nArchitecture services are separately identified; automotive-only services excluded / 建筑业务单独确认，不以汽车膜业务代替\nBrand mentions require building-product and branch confirmation / 页面品牌提及需另核实建筑产品系列及分店供应",
       "route": "G",
       "visitRegion": "温哥华岛及阳光海岸",
       "visitBatch": "G-06",
@@ -8639,7 +8997,16 @@
           "sourceLabel": "Public website or directory image; location unverified",
           "sourceUrl": "http://www.sunshadewindowfilms.com/"
         }
-      ]
+      ],
+      "architecturalSourceIds": [
+        "ARCH-VAN025"
+      ],
+      "architecturalSourceId": "ARCH-VAN025",
+      "architecturalServices": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜; Solar and heat-control film / 隔热防晒膜; Safety and security film / 安全防爆膜; Privacy and frosted film / 隐私磨砂膜; Anti-graffiti film / 防涂鸦膜",
+      "interestedProducts": [
+        "建筑玻璃膜"
+      ],
+      "currentProducts": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜; Solar and heat-control film / 隔热防晒膜; Safety and security film / 安全防爆膜; Privacy and frosted film / 隐私磨砂膜; Anti-graffiti film / 防涂鸦膜"
     },
     {
       "publicRecordId": "VAN224",
@@ -8786,19 +9153,21 @@
       "address": "1047 Langford Pkwy #128, Victoria, BC V9B 0A5, Canada",
       "distanceKm": 95.7,
       "distanceBand": "50–100 km / 公里",
-      "services": "Automotive window tint / 汽车隔热膜; Paint protection film (PPF) / 漆面保护膜; Color change & vinyl wraps / 改色膜及车身包覆; Ceramic coating / 陶瓷镀膜; Fleet graphics & commercial wraps / 商用车图文及包覆; Detailing & paint correction / 精洗及漆面修复\nSeries mentioned / 提及系列: ULTIMATE PLUS",
-      "filmBrands": "XPEL、3M、KPMF、HEXIS、Orafol",
+      "services": "Automotive window tint / 汽车隔热膜; Paint protection film (PPF) / 漆面保护膜; Color change & vinyl wraps / 改色膜及车身包覆; Ceramic coating / 陶瓷镀膜; Fleet graphics & commercial wraps / 商用车图文及包覆; Detailing & paint correction / 精洗及漆面修复\nSeries mentioned / 提及系列: ULTIMATE PLUS\n建筑膜业务 / Architectural film: Furniture and interior surface wraps / 家具及室内表面装饰膜; Privacy and frosted film / 隐私磨砂膜",
+      "filmBrands": "XPEL、3M、KPMF、HEXIS、Orafol\n3M, XPEL, BODAQ, DI-NOC",
       "serviceEvidence": "Official automotive-film service evidence / 官网汽车膜服务佐证",
       "phone": "+1 250-590-7494",
       "website": "http://www.m2graphix.ca/",
       "googleMapsUrl": "https://www.google.com/maps/search/?api=1&query=M2%20Graphix%2C%201047%20Langford%20Pkwy%20%23128%2C%20Victoria%2C%20BC%20V9B%200A5%2C%20Canada",
       "directorySource": "https://findawrap.com/shops/victoria-bc/m2-graphix-victoria",
       "serviceSources": [
-        "http://www.m2graphix.ca/"
+        "http://www.m2graphix.ca/",
+        "https://m2graphix.ca/walls-windows-architectural/",
+        "https://m2graphix.ca/about-us/"
       ],
       "lat": 48.4426803,
       "lng": -123.5191136,
-      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认",
+      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认\nPublic address and branch require confirmation before visiting / 出访前确认当前地址及分店\nArchitecture services are separately identified; automotive-only services excluded / 建筑业务单独确认，不以汽车膜业务代替\nBrand mentions require building-product and branch confirmation / 页面品牌提及需另核实建筑产品系列及分店供应",
       "route": "G",
       "visitRegion": "温哥华岛及阳光海岸",
       "visitBatch": "G-07",
@@ -8809,7 +9178,31 @@
         "facebook": "https://www.facebook.com/m2graphix"
       },
       "photoVerification": "No usable public photo found / 未找到可用公开照片",
-      "referencePhotos": []
+      "referencePhotos": [
+        {
+          "url": "/assets/field-sales-prospects/ARCH-VAN028-01.jpg",
+          "fileName": "ARCH-VAN028-01.jpg",
+          "contentType": "image/jpeg",
+          "sourceLabel": "Public architectural-film website image; location unverified",
+          "sourceUrl": "https://m2graphix.ca/walls-windows-architectural/"
+        },
+        {
+          "url": "/assets/field-sales-prospects/ARCH-VAN028-02.jpg",
+          "fileName": "ARCH-VAN028-02.jpg",
+          "contentType": "image/jpeg",
+          "sourceLabel": "Public architectural-film website image; location unverified",
+          "sourceUrl": "https://m2graphix.ca/walls-windows-architectural/"
+        }
+      ],
+      "architecturalSourceIds": [
+        "ARCH-VAN028"
+      ],
+      "architecturalSourceId": "ARCH-VAN028",
+      "architecturalServices": "Furniture and interior surface wraps / 家具及室内表面装饰膜; Privacy and frosted film / 隐私磨砂膜",
+      "interestedProducts": [
+        "建筑玻璃膜"
+      ],
+      "currentProducts": "Furniture and interior surface wraps / 家具及室内表面装饰膜; Privacy and frosted film / 隐私磨砂膜"
     },
     {
       "publicRecordId": "VAN241",
@@ -8868,19 +9261,21 @@
       "address": "721 Station Ave #108, Victoria, BC V9B 2S1, Canada",
       "distanceKm": 94.9,
       "distanceBand": "50–100 km / 公里",
-      "services": "Automotive window tint / 汽车隔热膜",
-      "filmBrands": "Not publicly verified\n未公开核实",
+      "services": "Automotive window tint / 汽车隔热膜\n建筑膜业务 / Architectural film: Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜",
+      "filmBrands": "Not publicly verified\n未公开核实\nUnverified / 未核实",
       "serviceEvidence": "Official automotive-film service evidence / 官网汽车膜服务佐证",
       "phone": "+1 250-474-5551",
       "website": "https://vanisleglass.com/",
       "googleMapsUrl": "https://www.google.com/maps/search/?api=1&query=Van%20Isle%20Glass%2C%20721%20Station%20Ave%20%23108%2C%20Victoria%2C%20BC%20V9B%202S1%2C%20Canada",
       "directorySource": "https://findawrap.com/shops/victoria-bc/van-isle-glass-victoria",
       "serviceSources": [
-        "https://vanisleglass.com/"
+        "https://vanisleglass.com/",
+        "https://www.vanisleglass.com/residential-glass/",
+        "https://www.vanisleglass.com/about/"
       ],
       "lat": 48.4461407,
       "lng": -123.4970204,
-      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认",
+      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认\nPublic address and branch require confirmation before visiting / 出访前确认当前地址及分店\nArchitecture services are separately identified; automotive-only services excluded / 建筑业务单独确认，不以汽车膜业务代替\nBrand mentions require building-product and branch confirmation / 页面品牌提及需另核实建筑产品系列及分店供应",
       "route": "G",
       "visitRegion": "温哥华岛及阳光海岸",
       "visitBatch": "G-07",
@@ -8890,7 +9285,24 @@
         "facebook": "https://www.facebook.com/VanIsleGlass"
       },
       "photoVerification": "No usable public photo found / 未找到可用公开照片",
-      "referencePhotos": []
+      "referencePhotos": [
+        {
+          "url": "/assets/field-sales-prospects/ARCH-VAN027-01.jpg",
+          "fileName": "ARCH-VAN027-01.jpg",
+          "contentType": "image/jpeg",
+          "sourceLabel": "Public architectural-film website image; location unverified",
+          "sourceUrl": "https://vanisleglass.com/"
+        }
+      ],
+      "architecturalSourceIds": [
+        "ARCH-VAN027"
+      ],
+      "architecturalSourceId": "ARCH-VAN027",
+      "architecturalServices": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜",
+      "interestedProducts": [
+        "建筑玻璃膜"
+      ],
+      "currentProducts": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜"
     },
     {
       "publicRecordId": "VAN230",

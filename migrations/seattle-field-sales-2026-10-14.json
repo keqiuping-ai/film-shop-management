@@ -1,11 +1,12 @@
 {
-  "version": "seattle-field-sales-2026-10-14-v1",
+  "version": "seattle-field-sales-2026-10-14-v2",
   "marketId": "seattle",
   "marketLabel": "西雅图",
   "sourceWorkbook": "Seattle_100km_Visit_Routes_EN_CN.xlsx",
+  "supplementalSourceWorkbook": "Architectural_Film_Four_Cities_EN_CN.xlsx",
   "sourceCenter": "600 4th Ave, Seattle, WA 98104",
-  "recordCount": 215,
-  "photoCount": 211,
+  "recordCount": 219,
+  "photoCount": 240,
   "routeCount": 7,
   "batchCount": 41,
   "records": [
@@ -47,8 +48,8 @@
       "address": "805 Warren Ave N #203, Seattle, WA 98109",
       "distanceKm": 3.2,
       "distanceBand": "0–50 km / 公里",
-      "services": "Automotive window tint / 汽车隔热膜; Paint protection film (PPF) / 漆面保护膜",
-      "filmBrands": "XPEL、3M、LLumar",
+      "services": "Automotive window tint / 汽车隔热膜; Paint protection film (PPF) / 漆面保护膜\n建筑膜业务 / Architectural film: Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜; Safety and security film / 安全防爆膜; Privacy and frosted film / 隐私磨砂膜",
+      "filmBrands": "XPEL、3M、LLumar\n3M, XPEL, LLumar",
       "serviceEvidence": "Official automotive-film service evidence / 官网汽车膜服务佐证",
       "phone": "+1 206-334-6084",
       "website": "http://emeraldcitywindowtinting.com/",
@@ -56,11 +57,12 @@
       "directorySource": "https://findawrap.com/shops/seattle-wa/emerald-city-window-tinting-ppf-corporate-seattle-wa",
       "serviceSources": [
         "http://emeraldcitywindowtinting.com/",
-        "https://emeraldcitywindowtinting.com/contact/"
+        "https://emeraldcitywindowtinting.com/contact/",
+        "https://emeraldcitywindowtinting.com/residential-window-tinting/"
       ],
       "lat": 47.62657979999999,
       "lng": -122.3544015,
-      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认",
+      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认\nPublic address and branch require confirmation before visiting / 出访前确认当前地址及分店\nArchitecture services are separately identified; automotive-only services excluded / 建筑业务单独确认，不以汽车膜业务代替\nBrand mentions require building-product and branch confirmation / 页面品牌提及需另核实建筑产品系列及分店供应",
       "route": "A",
       "visitRegion": "西雅图及中心走廊",
       "visitBatch": "A-01",
@@ -86,7 +88,16 @@
           "sourceLabel": "Public website or directory image; location unverified",
           "sourceUrl": "http://emeraldcitywindowtinting.com/"
         }
-      ]
+      ],
+      "architecturalSourceIds": [
+        "ARCH-SEA003"
+      ],
+      "architecturalSourceId": "ARCH-SEA003",
+      "architecturalServices": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜; Safety and security film / 安全防爆膜; Privacy and frosted film / 隐私磨砂膜",
+      "interestedProducts": [
+        "建筑玻璃膜"
+      ],
+      "currentProducts": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜; Safety and security film / 安全防爆膜; Privacy and frosted film / 隐私磨砂膜"
     },
     {
       "publicRecordId": "SEA019",
@@ -172,19 +183,21 @@
       "address": "1200 Westlake Ave N #1006, Seattle, WA 98109",
       "distanceKm": 3.1,
       "distanceBand": "0–50 km / 公里",
-      "services": "Automotive window tint / 汽车隔热膜",
-      "filmBrands": "Not publicly verified\n未公开核实",
+      "services": "Automotive window tint / 汽车隔热膜\n建筑膜业务 / Architectural film: Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜; Solar and heat-control film / 隔热防晒膜; Safety and security film / 安全防爆膜; Privacy and frosted film / 隐私磨砂膜; Anti-graffiti film / 防涂鸦膜; Switchable smart film / 调光智能膜",
+      "filmBrands": "Not publicly verified\n未公开核实\nUnverified / 未核实",
       "serviceEvidence": "Directory classification only; review required\n仅目录分类，待复核",
       "phone": "+1 206-886-9999",
       "website": "http://www.enhanced-glass.com/",
       "googleMapsUrl": "https://www.google.com/maps/search/?api=1&query=Enhanced%20Glass%20Window%20Film%2C%201200%20Westlake%20Ave%20N%20%231006%2C%20Seattle%2C%20WA%2098109",
       "directorySource": "https://findawrap.com/shops/seattle-wa/enhanced-glass-window-film-seattle-wa",
       "serviceSources": [
-        "http://www.enhanced-glass.com/"
+        "http://www.enhanced-glass.com/",
+        "https://enhanced-glass.com/commercial-overview/",
+        "https://enhanced-glass.com/about/"
       ],
       "lat": 47.6300108,
       "lng": -122.3396855,
-      "researchNotes": "Directory category only; confirm services before visiting / 仅目录分类，出访前确认业务。Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认",
+      "researchNotes": "Directory category only; confirm services before visiting / 仅目录分类，出访前确认业务。Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认\nPublic address and branch require confirmation before visiting / 出访前确认当前地址及分店\nArchitecture services are separately identified; automotive-only services excluded / 建筑业务单独确认，不以汽车膜业务代替\nBrand mentions require building-product and branch confirmation / 页面品牌提及需另核实建筑产品系列及分店供应",
       "route": "A",
       "visitRegion": "西雅图及中心走廊",
       "visitBatch": "A-01",
@@ -203,8 +216,31 @@
           "contentType": "image/jpeg",
           "sourceLabel": "Public website or directory image; location unverified",
           "sourceUrl": "http://www.enhanced-glass.com/"
+        },
+        {
+          "url": "/assets/field-sales-prospects/ARCH-SEA002-01.jpg",
+          "fileName": "ARCH-SEA002-01.jpg",
+          "contentType": "image/jpeg",
+          "sourceLabel": "Public architectural-film website image; location unverified",
+          "sourceUrl": "https://enhanced-glass.com/commercial-overview/"
+        },
+        {
+          "url": "/assets/field-sales-prospects/ARCH-SEA002-02.jpg",
+          "fileName": "ARCH-SEA002-02.jpg",
+          "contentType": "image/jpeg",
+          "sourceLabel": "Public architectural-film website image; location unverified",
+          "sourceUrl": "https://enhanced-glass.com/commercial-overview/"
         }
-      ]
+      ],
+      "architecturalSourceIds": [
+        "ARCH-SEA002"
+      ],
+      "architecturalSourceId": "ARCH-SEA002",
+      "architecturalServices": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜; Solar and heat-control film / 隔热防晒膜; Safety and security film / 安全防爆膜; Privacy and frosted film / 隐私磨砂膜; Anti-graffiti film / 防涂鸦膜; Switchable smart film / 调光智能膜",
+      "interestedProducts": [
+        "建筑玻璃膜"
+      ],
+      "currentProducts": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜; Solar and heat-control film / 隔热防晒膜; Safety and security film / 安全防爆膜; Privacy and frosted film / 隐私磨砂膜; Anti-graffiti film / 防涂鸦膜; Switchable smart film / 调光智能膜"
     },
     {
       "publicRecordId": "SEA002",
@@ -244,7 +280,7 @@
       "address": "920 S Holgate St Unit 102, Seattle, WA 98134",
       "distanceKm": 2,
       "distanceBand": "0–50 km / 公里",
-      "services": "Automotive window tint / 汽车隔热膜; Paint protection film (PPF) / 漆面保护膜; Color change & vinyl wraps / 改色膜及车身包覆; Ceramic coating / 陶瓷镀膜\nSeries mentioned / 提及系列: ULTIMATE PLUS",
+      "services": "Automotive window tint / 汽车隔热膜; Paint protection film (PPF) / 漆面保护膜; Color change & vinyl wraps / 改色膜及车身包覆; Ceramic coating / 陶瓷镀膜\nSeries mentioned / 提及系列: ULTIMATE PLUS\n建筑膜业务 / Architectural film: Residential glass film / 住宅玻璃膜",
       "filmBrands": "XPEL",
       "serviceEvidence": "Official automotive-film service evidence / 官网汽车膜服务佐证",
       "phone": "+1 206-973-9835",
@@ -257,7 +293,7 @@
       ],
       "lat": 47.5867824,
       "lng": -122.3210618,
-      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认",
+      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认\nPublic address and branch require confirmation before visiting / 出访前确认当前地址及分店\nArchitecture services are separately identified; automotive-only services excluded / 建筑业务单独确认，不以汽车膜业务代替\nBrand mentions require building-product and branch confirmation / 页面品牌提及需另核实建筑产品系列及分店供应",
       "route": "A",
       "visitRegion": "西雅图及中心走廊",
       "visitBatch": "A-02",
@@ -268,7 +304,16 @@
         "facebook": "https://www.facebook.com/nwautoshield"
       },
       "photoVerification": "No usable public photo found / 未找到可用公开照片",
-      "referencePhotos": []
+      "referencePhotos": [],
+      "architecturalSourceIds": [
+        "ARCH-SEA001"
+      ],
+      "architecturalSourceId": "ARCH-SEA001",
+      "architecturalServices": "Residential glass film / 住宅玻璃膜",
+      "interestedProducts": [
+        "建筑玻璃膜"
+      ],
+      "currentProducts": "Residential glass film / 住宅玻璃膜"
     },
     {
       "publicRecordId": "SEA004",
@@ -517,6 +562,65 @@
       ]
     },
     {
+      "publicRecordId": "ARCH-SEA015",
+      "businessName": "Commercial Window Tinting",
+      "marketId": "seattle",
+      "city": "Seattle / 西雅图",
+      "address": "370 Upland Dr, Seattle, WA 98188",
+      "distanceKm": 18.1,
+      "distanceBand": "0–50 km / 公里",
+      "services": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜; Solar and heat-control film / 隔热防晒膜; Safety and security film / 安全防爆膜; Privacy and frosted film / 隐私磨砂膜; Anti-graffiti film / 防涂鸦膜",
+      "filmBrands": "3M, FASARA",
+      "serviceEvidence": "建筑膜公开资料 / Architectural-film public research",
+      "phone": "+1 206-484-0489",
+      "website": "https://commercial-windowtinting.com/",
+      "googleMapsUrl": "https://www.google.com/maps/search/?api=1&query=Commercial%20Window%20Tinting%2C%20370%20Upland%20Dr%2C%20Seattle%2C%20WA%2098188",
+      "directorySource": "https://findawrap.com/shops/seattle-wa/commercial-window-tinting-seattle-wa",
+      "serviceSources": [
+        "https://commercial-windowtinting.com/",
+        "https://commercial-windowtinting.com",
+        "https://commercial-windowtinting.com/contact-us/"
+      ],
+      "lat": 47.4481401,
+      "lng": -122.2577552,
+      "researchNotes": "Public address and branch require confirmation before visiting / 出访前确认当前地址及分店\nArchitecture services are separately identified; automotive-only services excluded / 建筑业务单独确认，不以汽车膜业务代替\nBrand mentions require building-product and branch confirmation / 页面品牌提及需另核实建筑产品系列及分店供应",
+      "route": "A",
+      "visitRegion": "西雅图 · 建筑膜路线 A",
+      "visitBatch": "A-03",
+      "visitStop": 1,
+      "navigationUrl": "https://www.google.com/maps/dir/?api=1&origin=600+4th+Ave%2C+Seattle%2C+WA+98104&destination=370+Upland+Dr%2C+Seattle%2C+WA+98188&travelmode=driving",
+      "socialLinks": {
+        "instagram": "https://www.instagram.com/commercialwindowtinting\nhttps://www.instagram.com/commercialwindowtinting/\nhttps://www.instagram.com/p/DB5RUwaRtiQ/\nhttps://www.instagram.com/p/DBxfdOMxUjv/\nhttps://www.instagram.com/p/DCBB_arRzmA/\nhttps://www.instagram.com/p/DCDGh9cyRhk/",
+        "facebook": "https://www.facebook.com/commercialwindowtintingllc"
+      },
+      "photoVerification": "Website display image; project/location unverified / 官网展示图，案例及地点待核实\nWebsite display image; project/location unverified / 官网展示图，案例及地点待核实",
+      "referencePhotos": [
+        {
+          "url": "/assets/field-sales-prospects/ARCH-SEA015-01.jpg",
+          "fileName": "ARCH-SEA015-01.jpg",
+          "contentType": "image/jpeg",
+          "sourceLabel": "Public architectural-film website image; location unverified",
+          "sourceUrl": "https://commercial-windowtinting.com/"
+        },
+        {
+          "url": "/assets/field-sales-prospects/ARCH-SEA015-02.jpg",
+          "fileName": "ARCH-SEA015-02.jpg",
+          "contentType": "image/jpeg",
+          "sourceLabel": "Public architectural-film website image; location unverified",
+          "sourceUrl": "https://commercial-windowtinting.com/"
+        }
+      ],
+      "architecturalSourceIds": [
+        "ARCH-SEA015"
+      ],
+      "architecturalSourceId": "ARCH-SEA015",
+      "architecturalServices": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜; Solar and heat-control film / 隔热防晒膜; Safety and security film / 安全防爆膜; Privacy and frosted film / 隐私磨砂膜; Anti-graffiti film / 防涂鸦膜",
+      "interestedProducts": [
+        "建筑玻璃膜"
+      ],
+      "currentProducts": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜; Solar and heat-control film / 隔热防晒膜; Safety and security film / 安全防爆膜; Privacy and frosted film / 隐私磨砂膜; Anti-graffiti film / 防涂鸦膜"
+    },
+    {
       "publicRecordId": "SEA016",
       "businessName": "Dreamy's Ceramic Coating, Tint & PPF",
       "marketId": "seattle",
@@ -689,8 +793,8 @@
       "address": "1011 SW Klickitat Way Ste 101-B, Seattle, WA 98134",
       "distanceKm": 4,
       "distanceBand": "0–50 km / 公里",
-      "services": "Automotive window tint / 汽车隔热膜; Paint protection film (PPF) / 漆面保护膜; Color change & vinyl wraps / 改色膜及车身包覆",
-      "filmBrands": "XPEL、3M、LLumar",
+      "services": "Automotive window tint / 汽车隔热膜; Paint protection film (PPF) / 漆面保护膜; Color change & vinyl wraps / 改色膜及车身包覆\n建筑膜业务 / Architectural film: Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜; Safety and security film / 安全防爆膜; Privacy and frosted film / 隐私磨砂膜",
+      "filmBrands": "XPEL、3M、LLumar\n3M, XPEL, LLumar",
       "serviceEvidence": "Official automotive-film service evidence / 官网汽车膜服务佐证",
       "phone": "+1 206-334-6084",
       "website": "http://ecwtint.com/",
@@ -701,7 +805,7 @@
       ],
       "lat": 47.569885,
       "lng": -122.348995,
-      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认",
+      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认\nPublic address and branch require confirmation before visiting / 出访前确认当前地址及分店\nArchitecture services are separately identified; automotive-only services excluded / 建筑业务单独确认，不以汽车膜业务代替\nBrand mentions require building-product and branch confirmation / 页面品牌提及需另核实建筑产品系列及分店供应",
       "route": "A",
       "visitRegion": "西雅图及中心走廊",
       "visitBatch": "A-03",
@@ -727,7 +831,16 @@
           "sourceLabel": "Public website or directory image; location unverified",
           "sourceUrl": "http://ecwtint.com/"
         }
-      ]
+      ],
+      "architecturalSourceIds": [
+        "ARCH-SEA004"
+      ],
+      "architecturalSourceId": "ARCH-SEA004",
+      "architecturalServices": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜; Safety and security film / 安全防爆膜; Privacy and frosted film / 隐私磨砂膜",
+      "interestedProducts": [
+        "建筑玻璃膜"
+      ],
+      "currentProducts": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜; Safety and security film / 安全防爆膜; Privacy and frosted film / 隐私磨砂膜"
     },
     {
       "publicRecordId": "SEA013",
@@ -806,8 +919,8 @@
       "address": "13722 Aurora Ave N, Seattle, WA 98133",
       "distanceKm": 14.1,
       "distanceBand": "0–50 km / 公里",
-      "services": "Automotive window tint / 汽车隔热膜; Paint protection film (PPF) / 漆面保护膜; Color change & vinyl wraps / 改色膜及车身包覆; Ceramic coating / 陶瓷镀膜; Detailing & paint correction / 精洗及漆面修复\nSeries mentioned / 提及系列: CTX; IRX; ATC",
-      "filmBrands": "3M、LLumar",
+      "services": "Automotive window tint / 汽车隔热膜; Paint protection film (PPF) / 漆面保护膜; Color change & vinyl wraps / 改色膜及车身包覆; Ceramic coating / 陶瓷镀膜; Detailing & paint correction / 精洗及漆面修复\nSeries mentioned / 提及系列: CTX; IRX; ATC\n建筑膜业务 / Architectural film: Residential glass film / 住宅玻璃膜",
+      "filmBrands": "3M、LLumar\n3M, LLumar",
       "serviceEvidence": "Official automotive-film service evidence / 官网汽车膜服务佐证",
       "phone": "+1 206-402-4550",
       "website": "http://www.allseasonwindowtintseattle.com/",
@@ -819,7 +932,7 @@
       ],
       "lat": 47.7294135,
       "lng": -122.3445454,
-      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认",
+      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认\nPublic address and branch require confirmation before visiting / 出访前确认当前地址及分店\nArchitecture services are separately identified; automotive-only services excluded / 建筑业务单独确认，不以汽车膜业务代替\nBrand mentions require building-product and branch confirmation / 页面品牌提及需另核实建筑产品系列及分店供应",
       "route": "A",
       "visitRegion": "西雅图及中心走廊",
       "visitBatch": "A-04",
@@ -846,7 +959,16 @@
           "sourceLabel": "Public website or directory image; location unverified",
           "sourceUrl": "http://www.allseasonwindowtintseattle.com/"
         }
-      ]
+      ],
+      "architecturalSourceIds": [
+        "ARCH-SEA010"
+      ],
+      "architecturalSourceId": "ARCH-SEA010",
+      "architecturalServices": "Residential glass film / 住宅玻璃膜",
+      "interestedProducts": [
+        "建筑玻璃膜"
+      ],
+      "currentProducts": "Residential glass film / 住宅玻璃膜"
     },
     {
       "publicRecordId": "SEA055",
@@ -856,19 +978,21 @@
       "address": "15205 Aurora Ave N, Seattle, WA 98133",
       "distanceKm": 15.2,
       "distanceBand": "0–50 km / 公里",
-      "services": "Automotive window tint / 汽车隔热膜; Paint protection film (PPF) / 漆面保护膜; Color change & vinyl wraps / 改色膜及车身包覆; Ceramic coating / 陶瓷镀膜; Detailing & paint correction / 精洗及漆面修复",
-      "filmBrands": "Not publicly verified\n未公开核实",
+      "services": "Automotive window tint / 汽车隔热膜; Paint protection film (PPF) / 漆面保护膜; Color change & vinyl wraps / 改色膜及车身包覆; Ceramic coating / 陶瓷镀膜; Detailing & paint correction / 精洗及漆面修复\n建筑膜业务 / Architectural film: Residential glass film / 住宅玻璃膜",
+      "filmBrands": "Not publicly verified\n未公开核实\nUnverified / 未核实",
       "serviceEvidence": "Official automotive-film service evidence / 官网汽车膜服务佐证",
       "phone": "+1 206-306-9896",
       "website": "http://www.midnighttint.com/",
       "googleMapsUrl": "https://www.google.com/maps/search/?api=1&query=Midnight%20Tint%20of%20Seattle%20%26%20PPF%2C%2015205%20Aurora%20Ave%20N%2C%20Seattle%2C%20WA%2098133",
       "directorySource": "https://findawrap.com/shops/seattle-wa/midnight-tint-of-seattle-ppf-seattle-wa",
       "serviceSources": [
-        "http://www.midnighttint.com/"
+        "http://www.midnighttint.com/",
+        "https://midnighttint.com/",
+        "https://midnighttint.com/contact-us"
       ],
       "lat": 47.7391723,
       "lng": -122.3457858,
-      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认",
+      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认\nPublic address and branch require confirmation before visiting / 出访前确认当前地址及分店\nArchitecture services are separately identified; automotive-only services excluded / 建筑业务单独确认，不以汽车膜业务代替\nBrand mentions require building-product and branch confirmation / 页面品牌提及需另核实建筑产品系列及分店供应",
       "route": "A",
       "visitRegion": "西雅图及中心走廊",
       "visitBatch": "A-04",
@@ -876,7 +1000,8 @@
       "navigationUrl": "https://www.google.com/maps/dir/?api=1&origin=13722+Aurora+Ave+N%2C+Seattle%2C+WA+98133&destination=15205+Aurora+Ave+N%2C+Seattle%2C+WA+98133&travelmode=driving",
       "socialLinks": {
         "instagram": "https://instagram.com",
-        "facebook": "https://facebook.com"
+        "facebook": "https://facebook.com",
+        "tiktok": "https://tiktok.com"
       },
       "photoVerification": "Public source image; project or location unverified / 公开来源图，案例及地点待核实\nPublic source image; project or location unverified / 公开来源图，案例及地点待核实",
       "referencePhotos": [
@@ -894,7 +1019,16 @@
           "sourceLabel": "Public website or directory image; location unverified",
           "sourceUrl": "http://www.midnighttint.com/"
         }
-      ]
+      ],
+      "architecturalSourceIds": [
+        "ARCH-SEA012"
+      ],
+      "architecturalSourceId": "ARCH-SEA012",
+      "architecturalServices": "Residential glass film / 住宅玻璃膜",
+      "interestedProducts": [
+        "建筑玻璃膜"
+      ],
+      "currentProducts": "Residential glass film / 住宅玻璃膜"
     },
     {
       "publicRecordId": "SEA065",
@@ -987,19 +1121,20 @@
       "address": "5337 SW Admiral Wy, Seattle, WA 98116",
       "distanceKm": 6,
       "distanceBand": "0–50 km / 公里",
-      "services": "Automotive window tint / 汽车隔热膜",
-      "filmBrands": "Not publicly verified\n未公开核实",
+      "services": "Automotive window tint / 汽车隔热膜\n建筑膜业务 / Architectural film: Commercial glass film / 商业建筑玻璃膜",
+      "filmBrands": "Not publicly verified\n未公开核实\nUnverified / 未核实",
       "serviceEvidence": "Official automotive-film service evidence / 官网汽车膜服务佐证",
       "phone": "+1 206-786-0098",
       "website": "http://seattlewindowtinting.net/",
       "googleMapsUrl": "https://www.google.com/maps/search/?api=1&query=Seattle%20Window%20Tinting%2C%205337%20SW%20Admiral%20Wy%2C%20Seattle%2C%20WA%2098116",
       "directorySource": "https://findawrap.com/shops/seattle-wa/seattle-window-tinting-seattle-wa",
       "serviceSources": [
-        "http://seattlewindowtinting.net/"
+        "http://seattlewindowtinting.net/",
+        "http://seattlewindowtinting.net/commercial/"
       ],
       "lat": 47.5782118,
       "lng": -122.40117,
-      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认",
+      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认\nPublic address and branch require confirmation before visiting / 出访前确认当前地址及分店\nArchitecture services are separately identified; automotive-only services excluded / 建筑业务单独确认，不以汽车膜业务代替\nBrand mentions require building-product and branch confirmation / 页面品牌提及需另核实建筑产品系列及分店供应",
       "route": "A",
       "visitRegion": "西雅图及中心走廊",
       "visitBatch": "A-05",
@@ -1009,7 +1144,16 @@
         "facebook": "https://www.facebook.com"
       },
       "photoVerification": "No usable public photo found / 未找到可用公开照片",
-      "referencePhotos": []
+      "referencePhotos": [],
+      "architecturalSourceIds": [
+        "ARCH-SEA005"
+      ],
+      "architecturalSourceId": "ARCH-SEA005",
+      "architecturalServices": "Commercial glass film / 商业建筑玻璃膜",
+      "interestedProducts": [
+        "建筑玻璃膜"
+      ],
+      "currentProducts": "Commercial glass film / 商业建筑玻璃膜"
     },
     {
       "publicRecordId": "SEA022",
@@ -1453,8 +1597,8 @@
       "address": "12345 Lake City Way NE #2083, Seattle, WA 98125",
       "distanceKm": 13.1,
       "distanceBand": "0–50 km / 公里",
-      "services": "Automotive window tint / 汽车隔热膜",
-      "filmBrands": "Not publicly verified\n未公开核实",
+      "services": "Automotive window tint / 汽车隔热膜\n建筑膜业务 / Architectural film: Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜",
+      "filmBrands": "Not publicly verified\n未公开核实\nUnverified / 未核实",
       "serviceEvidence": "Directory classification only; review required\n仅目录分类，待复核",
       "phone": "+1 206-539-1123",
       "website": "http://windowtintingseattlewa.com/",
@@ -1462,11 +1606,12 @@
       "directorySource": "https://findawrap.com/shops/seattle-wa/window-tinting-seattle-seattle-wa",
       "serviceSources": [
         "http://windowtintingseattlewa.com/",
-        "https://windowtintingseattlewa.com/about/"
+        "https://windowtintingseattlewa.com/about/",
+        "https://windowtintingseattlewa.com/residential-window-tinting-seattle/"
       ],
       "lat": 47.7188116,
       "lng": -122.2958639,
-      "researchNotes": "Directory category only; confirm services before visiting / 仅目录分类，出访前确认业务。Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认",
+      "researchNotes": "Directory category only; confirm services before visiting / 仅目录分类，出访前确认业务。Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认\nPublic address and branch require confirmation before visiting / 出访前确认当前地址及分店\nArchitecture services are separately identified; automotive-only services excluded / 建筑业务单独确认，不以汽车膜业务代替\nBrand mentions require building-product and branch confirmation / 页面品牌提及需另核实建筑产品系列及分店供应",
       "route": "A",
       "visitRegion": "西雅图及中心走廊",
       "visitBatch": "A-07",
@@ -1483,8 +1628,24 @@
           "contentType": "image/jpeg",
           "sourceLabel": "Public website or directory image; location unverified",
           "sourceUrl": "http://windowtintingseattlewa.com/"
+        },
+        {
+          "url": "/assets/field-sales-prospects/ARCH-SEA009-01.jpg",
+          "fileName": "ARCH-SEA009-01.jpg",
+          "contentType": "image/jpeg",
+          "sourceLabel": "Public architectural-film website image; location unverified",
+          "sourceUrl": "http://windowtintingseattlewa.com/"
         }
-      ]
+      ],
+      "architecturalSourceIds": [
+        "ARCH-SEA009"
+      ],
+      "architecturalSourceId": "ARCH-SEA009",
+      "architecturalServices": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜",
+      "interestedProducts": [
+        "建筑玻璃膜"
+      ],
+      "currentProducts": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜"
     },
     {
       "publicRecordId": "SEA049",
@@ -1613,19 +1774,23 @@
       "address": "370 Upland Dr, Tukwila, WA 98188",
       "distanceKm": 18.1,
       "distanceBand": "0–50 km / 公里",
-      "services": "Automotive window tint / 汽车隔热膜; Color change & vinyl wraps / 改色膜及车身包覆; Fleet graphics & commercial wraps / 商用车图文及包覆",
-      "filmBrands": "3M、Avery Dennison",
+      "services": "Automotive window tint / 汽车隔热膜; Color change & vinyl wraps / 改色膜及车身包覆; Fleet graphics & commercial wraps / 商用车图文及包覆\n建筑膜业务 / Architectural film: Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜; Solar and heat-control film / 隔热防晒膜; Safety and security film / 安全防爆膜; Privacy and frosted film / 隐私磨砂膜; Architectural surface finishes (walls, doors, elevators) / 建筑表面装饰膜（墙面、门、电梯）; Wall vinyl graphics / 墙面装饰图文",
+      "filmBrands": "3M、Avery Dennison\n3M, Avery Dennison, DI-NOC, FASARA",
       "serviceEvidence": "Official automotive-film service evidence / 官网汽车膜服务佐证",
       "phone": "+1 425-633-6288",
       "website": "http://www.da-customs.com/",
       "googleMapsUrl": "https://www.google.com/maps/search/?api=1&query=D%26A%20Customs%2C%20370%20Upland%20Dr%2C%20Tukwila%2C%20WA%2098188",
       "directorySource": "https://findawrap.com/shops/tukwila-wa/da-customs-tukwila-wa",
       "serviceSources": [
-        "http://www.da-customs.com/"
+        "http://www.da-customs.com/",
+        "https://da-customs.com/photo/griffis-residential-window-graphics/",
+        "https://da-customs.com/contacts/",
+        "https://da-customs.com/",
+        "https://da-customs.com/service/dinoc/"
       ],
       "lat": 47.4481401,
       "lng": -122.2577552,
-      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认",
+      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认\nPublic address and branch require confirmation before visiting / 出访前确认当前地址及分店\nArchitecture services are separately identified; automotive-only services excluded / 建筑业务单独确认，不以汽车膜业务代替\nBrand mentions require building-product and branch confirmation / 页面品牌提及需另核实建筑产品系列及分店供应",
       "route": "A",
       "visitRegion": "西雅图及中心走廊",
       "visitBatch": "A-08",
@@ -1651,8 +1816,31 @@
           "contentType": "image/jpeg",
           "sourceLabel": "Public website or directory image; location unverified",
           "sourceUrl": "http://www.da-customs.com/"
+        },
+        {
+          "url": "/assets/field-sales-prospects/ARCH-SEA016-01.jpg",
+          "fileName": "ARCH-SEA016-01.jpg",
+          "contentType": "image/jpeg",
+          "sourceLabel": "Public architectural-film website image; location unverified",
+          "sourceUrl": "http://www.da-customs.com/"
+        },
+        {
+          "url": "/assets/field-sales-prospects/ARCH-SEA016-02.jpg",
+          "fileName": "ARCH-SEA016-02.jpg",
+          "contentType": "image/jpeg",
+          "sourceLabel": "Public architectural-film website image; location unverified",
+          "sourceUrl": "http://www.da-customs.com/"
         }
-      ]
+      ],
+      "architecturalSourceIds": [
+        "ARCH-SEA016"
+      ],
+      "architecturalSourceId": "ARCH-SEA016",
+      "architecturalServices": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜; Solar and heat-control film / 隔热防晒膜; Safety and security film / 安全防爆膜; Privacy and frosted film / 隐私磨砂膜; Architectural surface finishes (walls, doors, elevators) / 建筑表面装饰膜（墙面、门、电梯）; Wall vinyl graphics / 墙面装饰图文",
+      "interestedProducts": [
+        "建筑玻璃膜"
+      ],
+      "currentProducts": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜; Solar and heat-control film / 隔热防晒膜; Safety and security film / 安全防爆膜; Privacy and frosted film / 隐私磨砂膜; Architectural surface finishes (walls, doors, elevators) / 建筑表面装饰膜（墙面、门、电梯）; Wall vinyl graphics / 墙面装饰图文"
     },
     {
       "publicRecordId": "SEA075",
@@ -1766,8 +1954,8 @@
       "address": "977 Industry Dr, Tukwila, WA 98188",
       "distanceKm": 18.2,
       "distanceBand": "0–50 km / 公里",
-      "services": "Automotive window tint / 汽车隔热膜; Paint protection film (PPF) / 漆面保护膜",
-      "filmBrands": "XPEL、3M",
+      "services": "Automotive window tint / 汽车隔热膜; Paint protection film (PPF) / 漆面保护膜\n建筑膜业务 / Architectural film: Residential glass film / 住宅玻璃膜",
+      "filmBrands": "XPEL、3M\n3M, XPEL",
       "serviceEvidence": "Official automotive-film service evidence / 官网汽车膜服务佐证",
       "phone": "+1 206-403-1366",
       "website": "https://diamondwindowtinting.com/",
@@ -1779,7 +1967,7 @@
       ],
       "lat": 47.44894,
       "lng": -122.248831,
-      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认",
+      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认\nPublic address and branch require confirmation before visiting / 出访前确认当前地址及分店\nArchitecture services are separately identified; automotive-only services excluded / 建筑业务单独确认，不以汽车膜业务代替\nBrand mentions require building-product and branch confirmation / 页面品牌提及需另核实建筑产品系列及分店供应",
       "route": "A",
       "visitRegion": "西雅图及中心走廊",
       "visitBatch": "A-09",
@@ -1799,7 +1987,16 @@
           "sourceLabel": "Public website or directory image; location unverified",
           "sourceUrl": "https://diamondwindowtinting.com/"
         }
-      ]
+      ],
+      "architecturalSourceIds": [
+        "ARCH-SEA018"
+      ],
+      "architecturalSourceId": "ARCH-SEA018",
+      "architecturalServices": "Residential glass film / 住宅玻璃膜",
+      "interestedProducts": [
+        "建筑玻璃膜"
+      ],
+      "currentProducts": "Residential glass film / 住宅玻璃膜"
     },
     {
       "publicRecordId": "SEA026",
@@ -1978,7 +2175,7 @@
       "address": "12005 NE 12th St #1, Bellevue, WA 98005",
       "distanceKm": 11.5,
       "distanceBand": "0–50 km / 公里",
-      "services": "Automotive window tint / 汽车隔热膜; Paint protection film (PPF) / 漆面保护膜; Color change & vinyl wraps / 改色膜及车身包覆; Ceramic coating / 陶瓷镀膜; Detailing & paint correction / 精洗及漆面修复",
+      "services": "Automotive window tint / 汽车隔热膜; Paint protection film (PPF) / 漆面保护膜; Color change & vinyl wraps / 改色膜及车身包覆; Ceramic coating / 陶瓷镀膜; Detailing & paint correction / 精洗及漆面修复\n建筑膜业务 / Architectural film: Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜; Solar and heat-control film / 隔热防晒膜; Safety and security film / 安全防爆膜; Privacy and frosted film / 隐私磨砂膜",
       "filmBrands": "LLumar",
       "serviceEvidence": "Official automotive-film service evidence / 官网汽车膜服务佐证",
       "phone": "+1 425-213-1060",
@@ -1987,11 +2184,12 @@
       "directorySource": "https://findawrap.com/shops/bellevue-wa/accutint-bellevue-bellevue-wa",
       "serviceSources": [
         "https://www.accutintbellevue.com/",
-        "https://www.accutintbellevue.com/about-us/"
+        "https://www.accutintbellevue.com/about-us/",
+        "https://www.accutintbellevue.com/services/residential-window-film/"
       ],
       "lat": 47.6189963,
       "lng": -122.1781844,
-      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认",
+      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认\nPublic address and branch require confirmation before visiting / 出访前确认当前地址及分店\nArchitecture services are separately identified; automotive-only services excluded / 建筑业务单独确认，不以汽车膜业务代替\nBrand mentions require building-product and branch confirmation / 页面品牌提及需另核实建筑产品系列及分店供应",
       "route": "B",
       "visitRegion": "东区、贝尔维尤及雷德蒙德",
       "visitBatch": "B-01",
@@ -2017,7 +2215,16 @@
           "sourceLabel": "Public website or directory image; location unverified",
           "sourceUrl": "https://www.accutintbellevue.com/"
         }
-      ]
+      ],
+      "architecturalSourceIds": [
+        "ARCH-SEA007"
+      ],
+      "architecturalSourceId": "ARCH-SEA007",
+      "architecturalServices": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜; Solar and heat-control film / 隔热防晒膜; Safety and security film / 安全防爆膜; Privacy and frosted film / 隐私磨砂膜",
+      "interestedProducts": [
+        "建筑玻璃膜"
+      ],
+      "currentProducts": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜; Solar and heat-control film / 隔热防晒膜; Safety and security film / 安全防爆膜; Privacy and frosted film / 隐私磨砂膜"
     },
     {
       "publicRecordId": "SEA029",
@@ -2027,19 +2234,20 @@
       "address": "11635 NE 8th St, Bellevue, WA 98005",
       "distanceKm": 11,
       "distanceBand": "0–50 km / 公里",
-      "services": "Automotive window tint / 汽车隔热膜; Paint protection film (PPF) / 漆面保护膜; Color change & vinyl wraps / 改色膜及车身包覆; Ceramic coating / 陶瓷镀膜; Detailing & paint correction / 精洗及漆面修复",
-      "filmBrands": "Not publicly verified\n未公开核实",
+      "services": "Automotive window tint / 汽车隔热膜; Paint protection film (PPF) / 漆面保护膜; Color change & vinyl wraps / 改色膜及车身包覆; Ceramic coating / 陶瓷镀膜; Detailing & paint correction / 精洗及漆面修复\n建筑膜业务 / Architectural film: Residential glass film / 住宅玻璃膜",
+      "filmBrands": "Not publicly verified\n未公开核实\nUnverified / 未核实",
       "serviceEvidence": "Official automotive-film service evidence / 官网汽车膜服务佐证",
       "phone": "+1 206-713-2718",
       "website": "https://privatautowerks.com/",
       "googleMapsUrl": "https://www.google.com/maps/search/?api=1&query=Privat%20Autowerks%20-%20Window%20Tint%20%26%20PPF%2C%2011635%20NE%208th%20St%2C%20Bellevue%2C%20WA%2098005",
       "directorySource": "https://findawrap.com/shops/bellevue-wa/privat-autowerks-window-tint-ppf-bellevue-wa",
       "serviceSources": [
-        "https://privatautowerks.com/"
+        "https://privatautowerks.com/",
+        "https://www.privatautowerks.com/about"
       ],
       "lat": 47.617054,
       "lng": -122.1844569,
-      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认",
+      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认\nPublic address and branch require confirmation before visiting / 出访前确认当前地址及分店\nArchitecture services are separately identified; automotive-only services excluded / 建筑业务单独确认，不以汽车膜业务代替\nBrand mentions require building-product and branch confirmation / 页面品牌提及需另核实建筑产品系列及分店供应",
       "route": "B",
       "visitRegion": "东区、贝尔维尤及雷德蒙德",
       "visitBatch": "B-01",
@@ -2065,7 +2273,16 @@
           "sourceLabel": "Public website or directory image; location unverified",
           "sourceUrl": "https://privatautowerks.com/"
         }
-      ]
+      ],
+      "architecturalSourceIds": [
+        "ARCH-SEA006"
+      ],
+      "architecturalSourceId": "ARCH-SEA006",
+      "architecturalServices": "Residential glass film / 住宅玻璃膜",
+      "interestedProducts": [
+        "建筑玻璃膜"
+      ],
+      "currentProducts": "Residential glass film / 住宅玻璃膜"
     },
     {
       "publicRecordId": "SEA030",
@@ -2457,8 +2674,8 @@
       "address": "6855 176th Ave NE Suite B225, Redmond, WA 98052",
       "distanceKm": 18.2,
       "distanceBand": "0–50 km / 公里",
-      "services": "Automotive window tint / 汽车隔热膜; Paint protection film (PPF) / 漆面保护膜; Color change & vinyl wraps / 改色膜及车身包覆; Ceramic coating / 陶瓷镀膜; Detailing & paint correction / 精洗及漆面修复\nSeries mentioned / 提及系列: DYNOshield",
-      "filmBrands": "STEK",
+      "services": "Automotive window tint / 汽车隔热膜; Paint protection film (PPF) / 漆面保护膜; Color change & vinyl wraps / 改色膜及车身包覆; Ceramic coating / 陶瓷镀膜; Detailing & paint correction / 精洗及漆面修复\nSeries mentioned / 提及系列: DYNOshield\n建筑膜业务 / Architectural film: Residential glass film / 住宅玻璃膜",
+      "filmBrands": "STEK\nUnverified / 未核实",
       "serviceEvidence": "Official automotive-film service evidence / 官网汽车膜服务佐证",
       "phone": "+1 425-230-2690",
       "website": "http://eastsideautodetail.com/",
@@ -2470,7 +2687,7 @@
       ],
       "lat": 47.6667277,
       "lng": -122.1064934,
-      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认",
+      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认\nPublic address and branch require confirmation before visiting / 出访前确认当前地址及分店\nArchitecture services are separately identified; automotive-only services excluded / 建筑业务单独确认，不以汽车膜业务代替\nBrand mentions require building-product and branch confirmation / 页面品牌提及需另核实建筑产品系列及分店供应",
       "route": "B",
       "visitRegion": "东区、贝尔维尤及雷德蒙德",
       "visitBatch": "B-03",
@@ -2494,8 +2711,24 @@
           "contentType": "image/jpeg",
           "sourceLabel": "Public website or directory image; location unverified",
           "sourceUrl": "http://eastsideautodetail.com/"
+        },
+        {
+          "url": "/assets/field-sales-prospects/ARCH-SEA017-01.jpg",
+          "fileName": "ARCH-SEA017-01.jpg",
+          "contentType": "image/jpeg",
+          "sourceLabel": "Public architectural-film website image; location unverified",
+          "sourceUrl": "http://eastsideautodetail.com/"
         }
-      ]
+      ],
+      "architecturalSourceIds": [
+        "ARCH-SEA017"
+      ],
+      "architecturalSourceId": "ARCH-SEA017",
+      "architecturalServices": "Residential glass film / 住宅玻璃膜",
+      "interestedProducts": [
+        "建筑玻璃膜"
+      ],
+      "currentProducts": "Residential glass film / 住宅玻璃膜"
     },
     {
       "publicRecordId": "SEA044",
@@ -2505,7 +2738,7 @@
       "address": "711 Kirkland Ave, Kirkland, WA 98033",
       "distanceKm": 12.9,
       "distanceBand": "0–50 km / 公里",
-      "services": "Automotive window tint / 汽车隔热膜; Ceramic coating / 陶瓷镀膜; Detailing & paint correction / 精洗及漆面修复\nSeries mentioned / 提及系列: ExoShield",
+      "services": "Automotive window tint / 汽车隔热膜; Ceramic coating / 陶瓷镀膜; Detailing & paint correction / 精洗及漆面修复\nSeries mentioned / 提及系列: ExoShield\n建筑膜业务 / Architectural film: Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜",
       "filmBrands": "LLumar",
       "serviceEvidence": "Official automotive-film service evidence / 官网汽车膜服务佐证",
       "phone": "+1 206-637-0007",
@@ -2518,7 +2751,7 @@
       ],
       "lat": 47.675168,
       "lng": -122.1948171,
-      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认",
+      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认\nPublic address and branch require confirmation before visiting / 出访前确认当前地址及分店\nArchitecture services are separately identified; automotive-only services excluded / 建筑业务单独确认，不以汽车膜业务代替\nBrand mentions require building-product and branch confirmation / 页面品牌提及需另核实建筑产品系列及分店供应",
       "route": "B",
       "visitRegion": "东区、贝尔维尤及雷德蒙德",
       "visitBatch": "B-04",
@@ -2537,8 +2770,24 @@
           "contentType": "image/jpeg",
           "sourceLabel": "Public website or directory image; location unverified",
           "sourceUrl": "https://www.7star-tint.com/"
+        },
+        {
+          "url": "/assets/field-sales-prospects/ARCH-SEA008-01.jpg",
+          "fileName": "ARCH-SEA008-01.jpg",
+          "contentType": "image/jpeg",
+          "sourceLabel": "Public architectural-film website image; location unverified",
+          "sourceUrl": "https://www.7star-tint.com/"
         }
-      ]
+      ],
+      "architecturalSourceIds": [
+        "ARCH-SEA008"
+      ],
+      "architecturalSourceId": "ARCH-SEA008",
+      "architecturalServices": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜",
+      "interestedProducts": [
+        "建筑玻璃膜"
+      ],
+      "currentProducts": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜"
     },
     {
       "publicRecordId": "SEA052",
@@ -2778,8 +3027,8 @@
       "address": "8539 152nd Ave NE, Redmond, WA 98052",
       "distanceKm": 16.7,
       "distanceBand": "0–50 km / 公里",
-      "services": "Automotive window tint / 汽车隔热膜; Paint protection film (PPF) / 漆面保护膜; Color change & vinyl wraps / 改色膜及车身包覆; Ceramic coating / 陶瓷镀膜; Detailing & paint correction / 精洗及漆面修复\nSeries mentioned / 提及系列: DYNOshield; DYNOmatte; CQUARTZ",
-      "filmBrands": "STEK",
+      "services": "Automotive window tint / 汽车隔热膜; Paint protection film (PPF) / 漆面保护膜; Color change & vinyl wraps / 改色膜及车身包覆; Ceramic coating / 陶瓷镀膜; Detailing & paint correction / 精洗及漆面修复\nSeries mentioned / 提及系列: DYNOshield; DYNOmatte; CQUARTZ\n建筑膜业务 / Architectural film: Residential glass film / 住宅玻璃膜",
+      "filmBrands": "STEK\nUnverified / 未核实",
       "serviceEvidence": "Official automotive-film service evidence / 官网汽车膜服务佐证",
       "phone": "+1 425-233-6068",
       "website": "https://www.metropolitandetail.com/",
@@ -2791,7 +3040,7 @@
       ],
       "lat": 47.680096,
       "lng": -122.1383028,
-      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认",
+      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认\nPublic address and branch require confirmation before visiting / 出访前确认当前地址及分店\nArchitecture services are separately identified; automotive-only services excluded / 建筑业务单独确认，不以汽车膜业务代替\nBrand mentions require building-product and branch confirmation / 页面品牌提及需另核实建筑产品系列及分店供应",
       "route": "B",
       "visitRegion": "东区、贝尔维尤及雷德蒙德",
       "visitBatch": "B-05",
@@ -2818,7 +3067,16 @@
           "sourceLabel": "Public website or directory image; location unverified",
           "sourceUrl": "https://www.metropolitandetail.com/"
         }
-      ]
+      ],
+      "architecturalSourceIds": [
+        "ARCH-SEA013"
+      ],
+      "architecturalSourceId": "ARCH-SEA013",
+      "architecturalServices": "Residential glass film / 住宅玻璃膜",
+      "interestedProducts": [
+        "建筑玻璃膜"
+      ],
+      "currentProducts": "Residential glass film / 住宅玻璃膜"
     },
     {
       "publicRecordId": "SEA063",
@@ -2828,8 +3086,8 @@
       "address": "15211 NE 90th St, Redmond, WA 98052",
       "distanceKm": 16.9,
       "distanceBand": "0–50 km / 公里",
-      "services": "Automotive window tint / 汽车隔热膜; Paint protection film (PPF) / 漆面保护膜; Ceramic coating / 陶瓷镀膜; Detailing & paint correction / 精洗及漆面修复",
-      "filmBrands": "STEK",
+      "services": "Automotive window tint / 汽车隔热膜; Paint protection film (PPF) / 漆面保护膜; Ceramic coating / 陶瓷镀膜; Detailing & paint correction / 精洗及漆面修复\n建筑膜业务 / Architectural film: Residential glass film / 住宅玻璃膜",
+      "filmBrands": "STEK\nUnverified / 未核实",
       "serviceEvidence": "Official automotive-film service evidence / 官网汽车膜服务佐证",
       "phone": "+1 425-219-6922",
       "website": "http://www.carboncoatingsus.com/",
@@ -2841,7 +3099,7 @@
       ],
       "lat": 47.6819632,
       "lng": -122.1370419,
-      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认",
+      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认\nPublic address and branch require confirmation before visiting / 出访前确认当前地址及分店\nArchitecture services are separately identified; automotive-only services excluded / 建筑业务单独确认，不以汽车膜业务代替\nBrand mentions require building-product and branch confirmation / 页面品牌提及需另核实建筑产品系列及分店供应",
       "route": "B",
       "visitRegion": "东区、贝尔维尤及雷德蒙德",
       "visitBatch": "B-05",
@@ -2867,7 +3125,16 @@
           "sourceLabel": "Public website or directory image; location unverified",
           "sourceUrl": "http://www.carboncoatingsus.com/"
         }
-      ]
+      ],
+      "architecturalSourceIds": [
+        "ARCH-SEA014"
+      ],
+      "architecturalSourceId": "ARCH-SEA014",
+      "architecturalServices": "Residential glass film / 住宅玻璃膜",
+      "interestedProducts": [
+        "建筑玻璃膜"
+      ],
+      "currentProducts": "Residential glass film / 住宅玻璃膜"
     },
     {
       "publicRecordId": "SEA061",
@@ -2927,8 +3194,8 @@
       "address": "6029 238th St SE, Woodinville, WA 98072",
       "distanceKm": 24,
       "distanceBand": "0–50 km / 公里",
-      "services": "Automotive window tint / 汽车隔热膜; Paint protection film (PPF) / 漆面保护膜; Color change & vinyl wraps / 改色膜及车身包覆; Ceramic coating / 陶瓷镀膜\nSeries mentioned / 提及系列: DYNOshield; DYNOmatte",
-      "filmBrands": "STEK",
+      "services": "Automotive window tint / 汽车隔热膜; Paint protection film (PPF) / 漆面保护膜; Color change & vinyl wraps / 改色膜及车身包覆; Ceramic coating / 陶瓷镀膜\nSeries mentioned / 提及系列: DYNOshield; DYNOmatte\n建筑膜业务 / Architectural film: Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜; Safety and security film / 安全防爆膜; Anti-graffiti film / 防涂鸦膜",
+      "filmBrands": "STEK\nUnverified / 未核实",
       "serviceEvidence": "Official automotive-film service evidence / 官网汽车膜服务佐证",
       "phone": "+1 425-869-4006",
       "website": "https://www.stek-usa.com/",
@@ -2936,11 +3203,12 @@
       "directorySource": "https://findawrap.com/shops/woodinville-wa/stek-usa-woodinville-wa",
       "serviceSources": [
         "https://www.stek-usa.com/",
-        "https://www.stek-usa.com/company/about/"
+        "https://www.stek-usa.com/company/about/",
+        "https://www.stek-usa.com/stek-window-tint/commercial-window-tint/"
       ],
       "lat": 47.7826689,
       "lng": -122.1514537,
-      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认",
+      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认\nPublic address and branch require confirmation before visiting / 出访前确认当前地址及分店\nArchitecture services are separately identified; automotive-only services excluded / 建筑业务单独确认，不以汽车膜业务代替\nBrand mentions require building-product and branch confirmation / 页面品牌提及需另核实建筑产品系列及分店供应",
       "route": "B",
       "visitRegion": "东区、贝尔维尤及雷德蒙德",
       "visitBatch": "B-05",
@@ -2967,7 +3235,16 @@
           "sourceLabel": "Public website or directory image; location unverified",
           "sourceUrl": "https://www.stek-usa.com/"
         }
-      ]
+      ],
+      "architecturalSourceIds": [
+        "ARCH-SEA021"
+      ],
+      "architecturalSourceId": "ARCH-SEA021",
+      "architecturalServices": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜; Safety and security film / 安全防爆膜; Anti-graffiti film / 防涂鸦膜",
+      "interestedProducts": [
+        "建筑玻璃膜"
+      ],
+      "currentProducts": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜; Safety and security film / 安全防爆膜; Anti-graffiti film / 防涂鸦膜"
     },
     {
       "publicRecordId": "SEA085",
@@ -3019,19 +3296,20 @@
       "address": "1655 NW Mall St, Issaquah, WA 98027",
       "distanceKm": 21.2,
       "distanceBand": "0–50 km / 公里",
-      "services": "Automotive window tint / 汽车隔热膜; Paint protection film (PPF) / 漆面保护膜; Color change & vinyl wraps / 改色膜及车身包覆; Ceramic coating / 陶瓷镀膜; Detailing & paint correction / 精洗及漆面修复",
-      "filmBrands": "Not publicly verified\n未公开核实",
+      "services": "Automotive window tint / 汽车隔热膜; Paint protection film (PPF) / 漆面保护膜; Color change & vinyl wraps / 改色膜及车身包覆; Ceramic coating / 陶瓷镀膜; Detailing & paint correction / 精洗及漆面修复\n建筑膜业务 / Architectural film: Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜",
+      "filmBrands": "Not publicly verified\n未公开核实\nUnverified / 未核实",
       "serviceEvidence": "Official automotive-film service evidence / 官网汽车膜服务佐证",
       "phone": "+1 425-677-7438",
       "website": "http://davidsautodetailing.com/",
       "googleMapsUrl": "https://www.google.com/maps/search/?api=1&query=David%27s%20Auto%20Detailing%20%E2%80%94%20Issaquah%2C%20WA%2C%201655%20NW%20Mall%20St%2C%20Issaquah%2C%20WA%2098027",
       "directorySource": "https://findawrap.com/shops/issaquah-wa/davids-auto-detailing-issaquah-wa-issaquah-wa",
       "serviceSources": [
-        "http://davidsautodetailing.com/"
+        "http://davidsautodetailing.com/",
+        "http://davidsautodetailing.com/our-services/residential-and-commercial-window-tinting.php"
       ],
       "lat": 47.5440268,
       "lng": -122.0618013,
-      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认",
+      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认\nPublic address and branch require confirmation before visiting / 出访前确认当前地址及分店\nArchitecture services are separately identified; automotive-only services excluded / 建筑业务单独确认，不以汽车膜业务代替\nBrand mentions require building-product and branch confirmation / 页面品牌提及需另核实建筑产品系列及分店供应",
       "route": "B",
       "visitRegion": "东区、贝尔维尤及雷德蒙德",
       "visitBatch": "B-06",
@@ -3057,8 +3335,31 @@
           "contentType": "image/jpeg",
           "sourceLabel": "Public website or directory image; location unverified",
           "sourceUrl": "http://davidsautodetailing.com/"
+        },
+        {
+          "url": "/assets/field-sales-prospects/ARCH-SEA020-01.jpg",
+          "fileName": "ARCH-SEA020-01.jpg",
+          "contentType": "image/jpeg",
+          "sourceLabel": "Public architectural-film website image; location unverified",
+          "sourceUrl": "http://davidsautodetailing.com/our-services/residential-and-commercial-window-tinting.php"
+        },
+        {
+          "url": "/assets/field-sales-prospects/ARCH-SEA020-02.jpg",
+          "fileName": "ARCH-SEA020-02.jpg",
+          "contentType": "image/jpeg",
+          "sourceLabel": "Public architectural-film website image; location unverified",
+          "sourceUrl": "http://davidsautodetailing.com/our-services/residential-and-commercial-window-tinting.php"
         }
-      ]
+      ],
+      "architecturalSourceIds": [
+        "ARCH-SEA020"
+      ],
+      "architecturalSourceId": "ARCH-SEA020",
+      "architecturalServices": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜",
+      "interestedProducts": [
+        "建筑玻璃膜"
+      ],
+      "currentProducts": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜"
     },
     {
       "publicRecordId": "SEA080",
@@ -3241,7 +3542,7 @@
       "address": "10420 E Riverside Dr Suite 104, Bothell, WA 98011",
       "distanceKm": 19.6,
       "distanceBand": "0–50 km / 公里",
-      "services": "Automotive window tint / 汽车隔热膜; Paint protection film (PPF) / 漆面保护膜",
+      "services": "Automotive window tint / 汽车隔热膜; Paint protection film (PPF) / 漆面保护膜\n建筑膜业务 / Architectural film: Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜; Solar and heat-control film / 隔热防晒膜",
       "filmBrands": "SunTek",
       "serviceEvidence": "Official automotive-film service evidence / 官网汽车膜服务佐证",
       "phone": "+1 206-367-7157",
@@ -3250,11 +3551,12 @@
       "directorySource": "https://findawrap.com/shops/bothell-wa/darkside-window-tinting-bothell-wa",
       "serviceSources": [
         "https://darksidetinting.com/",
-        "https://darksidetinting.com/contact.html"
+        "https://darksidetinting.com/contact.html",
+        "https://darksidetinting.com/commercial-window-tinting.html"
       ],
       "lat": 47.75664,
       "lng": -122.2005202,
-      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认",
+      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认\nPublic address and branch require confirmation before visiting / 出访前确认当前地址及分店\nArchitecture services are separately identified; automotive-only services excluded / 建筑业务单独确认，不以汽车膜业务代替\nBrand mentions require building-product and branch confirmation / 页面品牌提及需另核实建筑产品系列及分店供应",
       "route": "C",
       "visitRegion": "北部及斯诺霍米什县",
       "visitBatch": "C-01",
@@ -3271,8 +3573,31 @@
           "contentType": "image/jpeg",
           "sourceLabel": "Public website or directory image; location unverified",
           "sourceUrl": "https://darksidetinting.com/"
+        },
+        {
+          "url": "/assets/field-sales-prospects/ARCH-SEA019-01.jpg",
+          "fileName": "ARCH-SEA019-01.jpg",
+          "contentType": "image/jpeg",
+          "sourceLabel": "Public architectural-film website image; location unverified",
+          "sourceUrl": "https://darksidetinting.com/commercial-window-tinting.html"
+        },
+        {
+          "url": "/assets/field-sales-prospects/ARCH-SEA019-02.jpg",
+          "fileName": "ARCH-SEA019-02.jpg",
+          "contentType": "image/jpeg",
+          "sourceLabel": "Public architectural-film website image; location unverified",
+          "sourceUrl": "https://darksidetinting.com/commercial-window-tinting.html"
         }
-      ]
+      ],
+      "architecturalSourceIds": [
+        "ARCH-SEA019"
+      ],
+      "architecturalSourceId": "ARCH-SEA019",
+      "architecturalServices": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜; Solar and heat-control film / 隔热防晒膜",
+      "interestedProducts": [
+        "建筑玻璃膜"
+      ],
+      "currentProducts": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜; Solar and heat-control film / 隔热防晒膜"
     },
     {
       "publicRecordId": "SEA089",
@@ -3412,8 +3737,8 @@
       "address": "15115 Hwy 99, Lynnwood, WA 98087",
       "distanceKm": 28.8,
       "distanceBand": "0–50 km / 公里",
-      "services": "Automotive window tint / 汽车隔热膜; Paint protection film (PPF) / 漆面保护膜",
-      "filmBrands": "Not publicly verified\n未公开核实",
+      "services": "Automotive window tint / 汽车隔热膜; Paint protection film (PPF) / 漆面保护膜\n建筑膜业务 / Architectural film: Residential glass film / 住宅玻璃膜",
+      "filmBrands": "Not publicly verified\n未公开核实\nUnverified / 未核实",
       "serviceEvidence": "Directory classification only; review required\n仅目录分类，待复核",
       "phone": "+1 206-992-5370",
       "website": "http://www.skylinetintshop.com/",
@@ -3425,7 +3750,7 @@
       ],
       "lat": 47.8605302,
       "lng": -122.2846847,
-      "researchNotes": "Directory category only; confirm services before visiting / 仅目录分类，出访前确认业务。Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认",
+      "researchNotes": "Directory category only; confirm services before visiting / 仅目录分类，出访前确认业务。Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认\nPublic address and branch require confirmation before visiting / 出访前确认当前地址及分店\nArchitecture services are separately identified; automotive-only services excluded / 建筑业务单独确认，不以汽车膜业务代替\nBrand mentions require building-product and branch confirmation / 页面品牌提及需另核实建筑产品系列及分店供应",
       "route": "C",
       "visitRegion": "北部及斯诺霍米什县",
       "visitBatch": "C-01",
@@ -3435,7 +3760,16 @@
         "facebook": "https://www.facebook.com/skylinetintshop"
       },
       "photoVerification": "No usable public photo found / 未找到可用公开照片",
-      "referencePhotos": []
+      "referencePhotos": [],
+      "architecturalSourceIds": [
+        "ARCH-SEA024"
+      ],
+      "architecturalSourceId": "ARCH-SEA024",
+      "architecturalServices": "Residential glass film / 住宅玻璃膜",
+      "interestedProducts": [
+        "建筑玻璃膜"
+      ],
+      "currentProducts": "Residential glass film / 住宅玻璃膜"
     },
     {
       "publicRecordId": "SEA097",
@@ -3612,8 +3946,8 @@
       "address": "14531 51st Ave SE, Everett, WA 98208",
       "distanceKm": 31.7,
       "distanceBand": "0–50 km / 公里",
-      "services": "Automotive window tint / 汽车隔热膜; Paint protection film (PPF) / 漆面保护膜; Color change & vinyl wraps / 改色膜及车身包覆; Ceramic coating / 陶瓷镀膜\nSeries mentioned / 提及系列: Ceramic IR",
-      "filmBrands": "Not publicly verified\n未公开核实",
+      "services": "Automotive window tint / 汽车隔热膜; Paint protection film (PPF) / 漆面保护膜; Color change & vinyl wraps / 改色膜及车身包覆; Ceramic coating / 陶瓷镀膜\nSeries mentioned / 提及系列: Ceramic IR\n建筑膜业务 / Architectural film: Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜; Solar and heat-control film / 隔热防晒膜; Safety and security film / 安全防爆膜; Privacy and frosted film / 隐私磨砂膜; Anti-graffiti film / 防涂鸦膜",
+      "filmBrands": "Not publicly verified\n未公开核实\nUnverified / 未核实",
       "serviceEvidence": "Official automotive-film service evidence / 官网汽车膜服务佐证",
       "phone": "+1 425-988-9877",
       "website": "https://compasswindowtinting.com/",
@@ -3621,11 +3955,12 @@
       "directorySource": "https://findawrap.com/shops/everett-wa/compass-window-tinting-everett-wa",
       "serviceSources": [
         "https://compasswindowtinting.com/",
-        "https://compasswindowtinting.com/contact-us/"
+        "https://compasswindowtinting.com/contact-us/",
+        "https://compasswindowtinting.com/residential-window-film/"
       ],
       "lat": 47.8651377,
       "lng": -122.1634937,
-      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认",
+      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认\nPublic address and branch require confirmation before visiting / 出访前确认当前地址及分店\nArchitecture services are separately identified; automotive-only services excluded / 建筑业务单独确认，不以汽车膜业务代替\nBrand mentions require building-product and branch confirmation / 页面品牌提及需另核实建筑产品系列及分店供应",
       "route": "C",
       "visitRegion": "北部及斯诺霍米什县",
       "visitBatch": "C-02",
@@ -3645,7 +3980,16 @@
           "sourceLabel": "Public website or directory image; location unverified",
           "sourceUrl": "https://compasswindowtinting.com/"
         }
-      ]
+      ],
+      "architecturalSourceIds": [
+        "ARCH-SEA027"
+      ],
+      "architecturalSourceId": "ARCH-SEA027",
+      "architecturalServices": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜; Solar and heat-control film / 隔热防晒膜; Safety and security film / 安全防爆膜; Privacy and frosted film / 隐私磨砂膜; Anti-graffiti film / 防涂鸦膜",
+      "interestedProducts": [
+        "建筑玻璃膜"
+      ],
+      "currentProducts": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜; Solar and heat-control film / 隔热防晒膜; Safety and security film / 安全防爆膜; Privacy and frosted film / 隐私磨砂膜; Anti-graffiti film / 防涂鸦膜"
     },
     {
       "publicRecordId": "SEA096",
@@ -3655,8 +3999,8 @@
       "address": "17624 15th Ave SE, Bothell, WA 98012",
       "distanceKm": 27.5,
       "distanceBand": "0–50 km / 公里",
-      "services": "Automotive window tint / 汽车隔热膜",
-      "filmBrands": "Not publicly verified\n未公开核实",
+      "services": "Automotive window tint / 汽车隔热膜\n建筑膜业务 / Architectural film: Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜",
+      "filmBrands": "Not publicly verified\n未公开核实\nUnverified / 未核实",
       "serviceEvidence": "Official automotive-film service evidence / 官网汽车膜服务佐证",
       "phone": "+1 206-909-6704",
       "website": "http://icetechwindowtint.com/",
@@ -3664,11 +4008,12 @@
       "directorySource": "https://findawrap.com/shops/bothell-wa/ice-tech-window-tint-bothell-wa",
       "serviceSources": [
         "http://icetechwindowtint.com/",
-        "http://icetechwindowtint.com/contact/3161063"
+        "http://icetechwindowtint.com/contact/3161063",
+        "http://icetechwindowtint.com/residential-commercial-tints/3163991"
       ],
       "lat": 47.8377721,
       "lng": -122.2130258,
-      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认",
+      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认\nPublic address and branch require confirmation before visiting / 出访前确认当前地址及分店\nArchitecture services are separately identified; automotive-only services excluded / 建筑业务单独确认，不以汽车膜业务代替\nBrand mentions require building-product and branch confirmation / 页面品牌提及需另核实建筑产品系列及分店供应",
       "route": "C",
       "visitRegion": "北部及斯诺霍米什县",
       "visitBatch": "C-02",
@@ -3691,7 +4036,16 @@
           "sourceLabel": "Public website or directory image; location unverified",
           "sourceUrl": "http://icetechwindowtint.com/"
         }
-      ]
+      ],
+      "architecturalSourceIds": [
+        "ARCH-SEA023"
+      ],
+      "architecturalSourceId": "ARCH-SEA023",
+      "architecturalServices": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜",
+      "interestedProducts": [
+        "建筑玻璃膜"
+      ],
+      "currentProducts": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜"
     },
     {
       "publicRecordId": "SEA094",
@@ -3997,8 +4351,8 @@
       "address": "8120 Hardeson Rd Unit 4404, Everett, WA 98204",
       "distanceKm": 36.3,
       "distanceBand": "0–50 km / 公里",
-      "services": "Automotive window tint / 汽车隔热膜; Paint protection film (PPF) / 漆面保护膜; Color change & vinyl wraps / 改色膜及车身包覆; Ceramic coating / 陶瓷镀膜\nSeries mentioned / 提及系列: Ceramic IR",
-      "filmBrands": "Rayno",
+      "services": "Automotive window tint / 汽车隔热膜; Paint protection film (PPF) / 漆面保护膜; Color change & vinyl wraps / 改色膜及车身包覆; Ceramic coating / 陶瓷镀膜\nSeries mentioned / 提及系列: Ceramic IR\n建筑膜业务 / Architectural film: Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜; Safety and security film / 安全防爆膜; Anti-graffiti film / 防涂鸦膜",
+      "filmBrands": "Rayno\nUnverified / 未核实",
       "serviceEvidence": "Official automotive-film service evidence / 官网汽车膜服务佐证",
       "phone": "+1 206-487-3540",
       "website": "https://cascadeshield.com/",
@@ -4006,11 +4360,12 @@
       "directorySource": "https://findawrap.com/shops/everett-wa/cascade-shield-everett-wa",
       "serviceSources": [
         "https://cascadeshield.com/",
-        "https://cascadeshield.com/contact-us"
+        "https://cascadeshield.com/contact-us",
+        "https://cascadeshield.com/residential%2Fcommercial"
       ],
       "lat": 47.9243828,
       "lng": -122.2422258,
-      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认",
+      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认\nPublic address and branch require confirmation before visiting / 出访前确认当前地址及分店\nArchitecture services are separately identified; automotive-only services excluded / 建筑业务单独确认，不以汽车膜业务代替\nBrand mentions require building-product and branch confirmation / 页面品牌提及需另核实建筑产品系列及分店供应",
       "route": "C",
       "visitRegion": "北部及斯诺霍米什县",
       "visitBatch": "C-04",
@@ -4027,8 +4382,24 @@
           "contentType": "image/jpeg",
           "sourceLabel": "Public website or directory image; location unverified",
           "sourceUrl": "https://cascadeshield.com/"
+        },
+        {
+          "url": "/assets/field-sales-prospects/ARCH-SEA032-01.jpg",
+          "fileName": "ARCH-SEA032-01.jpg",
+          "contentType": "image/jpeg",
+          "sourceLabel": "Public architectural-film website image; location unverified",
+          "sourceUrl": "https://cascadeshield.com/residential%2Fcommercial"
         }
-      ]
+      ],
+      "architecturalSourceIds": [
+        "ARCH-SEA032"
+      ],
+      "architecturalSourceId": "ARCH-SEA032",
+      "architecturalServices": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜; Safety and security film / 安全防爆膜; Anti-graffiti film / 防涂鸦膜",
+      "interestedProducts": [
+        "建筑玻璃膜"
+      ],
+      "currentProducts": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜; Safety and security film / 安全防爆膜; Anti-graffiti film / 防涂鸦膜"
     },
     {
       "publicRecordId": "SEA125",
@@ -4073,7 +4444,7 @@
       "address": "406 SE Everett Mall Way Ste 4-101A, Everett, WA 98208",
       "distanceKm": 34.8,
       "distanceBand": "0–50 km / 公里",
-      "services": "Automotive window tint / 汽车隔热膜; Paint protection film (PPF) / 漆面保护膜; Color change & vinyl wraps / 改色膜及车身包覆; Ceramic coating / 陶瓷镀膜; Detailing & paint correction / 精洗及漆面修复\nSeries mentioned / 提及系列: FUSION PLUS",
+      "services": "Automotive window tint / 汽车隔热膜; Paint protection film (PPF) / 漆面保护膜; Color change & vinyl wraps / 改色膜及车身包覆; Ceramic coating / 陶瓷镀膜; Detailing & paint correction / 精洗及漆面修复\nSeries mentioned / 提及系列: FUSION PLUS\n建筑膜业务 / Architectural film: Residential glass film / 住宅玻璃膜",
       "filmBrands": "XPEL",
       "serviceEvidence": "Official automotive-film service evidence / 官网汽车膜服务佐证",
       "phone": "+1 425-374-3681",
@@ -4086,7 +4457,7 @@
       ],
       "lat": 47.908172,
       "lng": -122.226513,
-      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认",
+      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认\nPublic address and branch require confirmation before visiting / 出访前确认当前地址及分店\nArchitecture services are separately identified; automotive-only services excluded / 建筑业务单独确认，不以汽车膜业务代替\nBrand mentions require building-product and branch confirmation / 页面品牌提及需另核实建筑产品系列及分店供应",
       "route": "C",
       "visitRegion": "北部及斯诺霍米什县",
       "visitBatch": "C-04",
@@ -4113,7 +4484,16 @@
           "sourceLabel": "Public website or directory image; location unverified",
           "sourceUrl": "https://mycaliforniatint.com/everett-location/"
         }
-      ]
+      ],
+      "architecturalSourceIds": [
+        "ARCH-SEA031"
+      ],
+      "architecturalSourceId": "ARCH-SEA031",
+      "architecturalServices": "Residential glass film / 住宅玻璃膜",
+      "interestedProducts": [
+        "建筑玻璃膜"
+      ],
+      "currentProducts": "Residential glass film / 住宅玻璃膜"
     },
     {
       "publicRecordId": "SEA122",
@@ -4305,8 +4685,8 @@
       "address": "6323 Evergreen Wy, Everett, WA 98203",
       "distanceKm": 38.4,
       "distanceBand": "0–50 km / 公里",
-      "services": "Automotive window tint / 汽车隔热膜; Paint protection film (PPF) / 漆面保护膜; Ceramic coating / 陶瓷镀膜; Detailing & paint correction / 精洗及漆面修复",
-      "filmBrands": "3M、LLumar",
+      "services": "Automotive window tint / 汽车隔热膜; Paint protection film (PPF) / 漆面保护膜; Ceramic coating / 陶瓷镀膜; Detailing & paint correction / 精洗及漆面修复\n建筑膜业务 / Architectural film: Commercial glass film / 商业建筑玻璃膜; Solar and heat-control film / 隔热防晒膜; Safety and security film / 安全防爆膜",
+      "filmBrands": "3M、LLumar\n3M, LLumar",
       "serviceEvidence": "Official automotive-film service evidence / 官网汽车膜服务佐证",
       "phone": "+1 425-353-4227",
       "website": "http://www.hoglunds.com/",
@@ -4314,17 +4694,19 @@
       "directorySource": "https://findawrap.com/shops/everett-wa/hoglunds-everett-wa",
       "serviceSources": [
         "http://www.hoglunds.com/",
-        "http://www.hoglunds.com/about"
+        "http://www.hoglunds.com/about",
+        "http://www.hoglunds.com/window-tinting#CommercialWindowTinting"
       ],
       "lat": 47.9400457,
       "lng": -122.2173265,
-      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认",
+      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认\nPublic address and branch require confirmation before visiting / 出访前确认当前地址及分店\nArchitecture services are separately identified; automotive-only services excluded / 建筑业务单独确认，不以汽车膜业务代替\nBrand mentions require building-product and branch confirmation / 页面品牌提及需另核实建筑产品系列及分店供应",
       "route": "C",
       "visitRegion": "北部及斯诺霍米什县",
       "visitBatch": "C-05",
       "visitStop": 4,
       "navigationUrl": "https://www.google.com/maps/dir/?api=1&origin=5614+Evergreen+Wy%2C+Everett%2C+WA+98203&destination=6323+Evergreen+Wy%2C+Everett%2C+WA+98203&travelmode=driving",
       "socialLinks": {
+        "instagram": "https://www.instagram.com/p/C33FoUTvQKq/\nhttps://www.instagram.com/p/C48gquqxNtS/\nhttps://www.instagram.com/p/C4_y6zJPSIx/\nhttps://www.instagram.com/p/C4gsCDOPBji/\nhttps://www.instagram.com/p/C4jFAqgPrJU/\nhttps://www.instagram.com/p/C4niO8BLeA8/\nhttps://www.instagram.com/p/C4vz9iXvNWQ/\nhttps://www.instagram.com/p/C5EYauEvEN-/\nhttps://www.instagram.com/p/C5H94kkLUkU/\nhttps://www.instagram.com/p/C5OzbeWS2Hx/\nhttps://www.instagram.com/p/C5q2a4HRM_D/\nhttps://www.instagram.com/p/C6kaEkix7lO/\nhttps://www.instagram.com/p/C8K9fzjyJFC/\nhttps://www.instagram.com/p/C8nDQXHSMNT/\nhttps://www.instagram.com/p/C8xbzcDysTQ/\nhttps://www.instagram.com/p/CtVV1Yir2c9/\nhttps://www.instagram.com/p/CuBSDaHLjF-/\nhttps://www.instagram.com/p/CuGSv-9rqkN/\nhttps://www.instagram.com/p/CusS5gDyuNO/\nhttps://www.instagram.com/p/CvDA8OlxnyU/\nhttps://www.instagram.com/reel/C-GOlv9yY8V/\nhttps://www.instagram.com/reel/C0U-HOqvhlE/\nhttps://www.instagram.com/reel/C0U41IePOVN/\nhttps://www.instagram.com/reel/C2dP8nSywKh/\nhttps://www.instagram.com/reel/C3I2OgZvgPR/\nhttps://www.instagram.com/reel/C3_CuvSyAMQ/\nhttps://www.instagram.com/reel/C428SB6Lb7n/\nhttps://www.instagram.com/reel/C45qss5r6Pt/\nhttps://www.instagram.com/reel/C4WC8R_PUWj/\nhttps://www.instagram.com/reel/C4Y1zeOy_C2/\nhttps://www.instagram.com/reel/C4YpnE1vs23/\nhttps://www.instagram.com/reel/C4bVcKkP3rS/\nhttps://www.instagram.com/reel/C4d8okkv5nd/\nhttps://www.instagram.com/reel/C4lxk1rPRL0/\nhttps://www.instagram.com/reel/C4s-eLnx0V9/\nhttps://www.instagram.com/reel/C4yVFvVvVYx/\nhttps://www.instagram.com/reel/C505IGbLxiQ/\nhttps://www.instagram.com/reel/C54MPfDSQ9L/\nhttps://www.instagram.com/reel/C57NO-3Rbbr/\nhttps://www.instagram.com/reel/C58tu8wRFG0/\nhttps://www.instagram.com/reel/C5Lu9hsxGGo/\nhttps://www.instagram.com/reel/C5Rpt67vPTd/\nhttps://www.instagram.com/reel/C5Yn2E_R2-0/\nhttps://www.instagram.com/reel/C5_G-B1rmCe/\nhttps://www.instagram.com/reel/C5d7_LSxP0Y/\nhttps://www.instagram.com/reel/C5j1hlvPGCU/\nhttps://www.instagram.com/reel/C5oitpaytIL/\nhttps://www.instagram.com/reel/C5wQHPNSUi3/\nhttps://www.instagram.com/reel/C67pgGWLCdr/\nhttps://www.instagram.com/reel/C6B5LPJxGT3/\nhttps://www.instagram.com/reel/C6FrB8tr9c2/\nhttps://www.instagram.com/reel/C6HbpX2Sj8s/\nhttps://www.instagram.com/reel/C6M7u4zPDc8/\nhttps://www.instagram.com/reel/C6MtUw9yuZG/\nhttps://www.instagram.com/reel/C6RCDN6Ltoi/\nhttps://www.instagram.com/reel/C6eNvqDxTBo/\nhttps://www.instagram.com/reel/C6zEZS0v0s8/\nhttps://www.instagram.com/reel/C8VVeXRyhjd/\nhttps://www.instagram.com/reel/C8mwoTzP8aa/\nhttps://www.instagram.com/reel/C8nDfPVygeA/\nhttps://www.instagram.com/reel/C9NlOf2SJY5/\nhttps://www.instagram.com/reel/C9Vwk_CSjw_/\nhttps://www.instagram.com/reel/Cs-Jf6aOcCv/\nhttps://www.instagram.com/reel/Ct-llmkvUMP/\nhttps://www.instagram.com/reel/Ct1yBc6rbHn/\nhttps://www.instagram.com/reel/Ct4WIBPLFFh/\nhttps://www.instagram.com/reel/Ct69SkeLemN/\nhttps://www.instagram.com/reel/CtAgPIHsYO7/\nhttps://www.instagram.com/reel/CtH6VuvPxaJ/\nhttps://www.instagram.com/reel/CtM77JxPLJj/\nhttps://www.instagram.com/reel/CtPMPNlp27W/\nhttps://www.instagram.com/reel/CtZn5jjvyZB/\nhttps://www.instagram.com/reel/CthPwOBvov_/\nhttps://www.instagram.com/reel/Ctwt15hp2zO/\nhttps://www.instagram.com/reel/Cu5PLowNoLH/\nhttps://www.instagram.com/reel/Cu7pysNvLBj/\nhttps://www.instagram.com/reel/Cu8fb8zPzsH/\nhttps://www.instagram.com/reel/CuDUsbyRDPs/\nhttps://www.instagram.com/reel/CuH0So5Lu2Y/\nhttps://www.instagram.com/reel/CuQGOgULLGS/\nhttps://www.instagram.com/reel/Cuk1JxKuDA2/\nhttps://www.instagram.com/reel/Cum7NLgLTuE/\nhttps://www.instagram.com/reel/CunJFZvsHi8/\nhttps://www.instagram.com/reel/CvAhFbsthLi/\nhttps://www.instagram.com/reel/CvI6TYdgTJk/\nhttps://www.instagram.com/reel/CvN4zTqJtIA/\nhttps://www.instagram.com/reel/CvayCxlMNbf/\nhttps://www.instagram.com/reel/CvqNWe8Rb9W/\nhttps://www.instagram.com/reel/CwA3LQvJoDX/\nhttps://www.instagram.com/reel/CwGJcnAogM6/\nhttps://www.instagram.com/reel/CwQjJogo3Q1/\nhttps://www.instagram.com/reel/CwVhzfSo17-/\nhttps://www.instagram.com/reel/CwYCw2AIza8/\nhttps://www.instagram.com/reel/CwicG3Do7OY/\nhttps://www.instagram.com/reel/CxEGsw7yHp8/\nhttps://www.instagram.com/reel/CxYiHKIP1pU/\nhttps://www.instagram.com/reel/Cxd_-jSyko0/\nhttps://www.instagram.com/reel/Cxv-8OeSUJ9/\nhttps://www.instagram.com/reel/CyMbKd1vRR2/\nhttps://www.instagram.com/reel/CzZ0DGQPnuS/",
         "facebook": "https://facebook.com/profile.php?id=100063715026248\nhttps://www.facebook.com/people/Hoglunds/100063715026248/?sk=reviews\nhttps://www.facebook.com/profile.php?id=100063715026248",
         "tiktok": "https://www.tiktok.com/@hoglundscustoms\nhttps://www.tiktok.com/@hoglundscustoms?refer=creator_embed",
         "yelp": "http://www.yelp.com/biz/hoglunds-top-shop-everett\nhttps://www.yelp.com/biz/hoglunds-top-shop-everett#reviews\nhttps://yelp.com/biz/hoglunds-top-shop-everett"
@@ -4338,7 +4720,16 @@
           "sourceLabel": "Public website or directory image; location unverified",
           "sourceUrl": "http://www.hoglunds.com/"
         }
-      ]
+      ],
+      "architecturalSourceIds": [
+        "ARCH-SEA034"
+      ],
+      "architecturalSourceId": "ARCH-SEA034",
+      "architecturalServices": "Commercial glass film / 商业建筑玻璃膜; Solar and heat-control film / 隔热防晒膜; Safety and security film / 安全防爆膜",
+      "interestedProducts": [
+        "建筑玻璃膜"
+      ],
+      "currentProducts": "Commercial glass film / 商业建筑玻璃膜; Solar and heat-control film / 隔热防晒膜; Safety and security film / 安全防爆膜"
     },
     {
       "publicRecordId": "SEA139",
@@ -4608,8 +4999,8 @@
       "address": "12531 Old Snohomish Monroe Rd, Snohomish, WA 98290",
       "distanceKm": 37.3,
       "distanceBand": "0–50 km / 公里",
-      "services": "Color change & vinyl wraps / 改色膜及车身包覆; Fleet graphics & commercial wraps / 商用车图文及包覆",
-      "filmBrands": "3M",
+      "services": "Color change & vinyl wraps / 改色膜及车身包覆; Fleet graphics & commercial wraps / 商用车图文及包覆\n建筑膜业务 / Architectural film: Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜; Solar and heat-control film / 隔热防晒膜; Privacy and frosted film / 隐私磨砂膜",
+      "filmBrands": "3M\n3M, Avery Dennison",
       "serviceEvidence": "Official automotive-film service evidence / 官网汽车膜服务佐证",
       "phone": "+1 425-629-0796",
       "website": "https://ardorprinting.com/",
@@ -4617,11 +5008,15 @@
       "directorySource": "https://findawrap.com/shops/snohomish-wa/ardor-printing-snohomish-wa",
       "serviceSources": [
         "https://ardorprinting.com/",
-        "https://ardorprinting.com/pages/contact"
+        "https://ardorprinting.com/pages/contact",
+        "https://ardorprinting.com/pages/window-graphics-frosted-window-film-seattle",
+        "https://seattlewallwraps.com/",
+        "https://seattlewallwraps.com/pages/architectural-films",
+        "https://seattlewallwraps.com/pages/about"
       ],
       "lat": 47.8827834,
       "lng": -122.0544079,
-      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认",
+      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认\nPublic address and branch require confirmation before visiting / 出访前确认当前地址及分店\nArchitecture services are separately identified; automotive-only services excluded / 建筑业务单独确认，不以汽车膜业务代替\nBrand mentions require building-product and branch confirmation / 页面品牌提及需另核实建筑产品系列及分店供应",
       "route": "C",
       "visitRegion": "北部及斯诺霍米什县",
       "visitBatch": "C-06",
@@ -4648,7 +5043,16 @@
           "sourceLabel": "Public website or directory image; location unverified",
           "sourceUrl": "https://ardorprinting.com/"
         }
-      ]
+      ],
+      "architecturalSourceIds": [
+        "ARCH-SEA033"
+      ],
+      "architecturalSourceId": "ARCH-SEA033",
+      "architecturalServices": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜; Solar and heat-control film / 隔热防晒膜; Privacy and frosted film / 隐私磨砂膜",
+      "interestedProducts": [
+        "建筑玻璃膜"
+      ],
+      "currentProducts": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜; Solar and heat-control film / 隔热防晒膜; Privacy and frosted film / 隐私磨砂膜"
     },
     {
       "publicRecordId": "SEA148",
@@ -4658,8 +5062,8 @@
       "address": "4317 Rucker Ave, Everett, WA 98203",
       "distanceKm": 40.7,
       "distanceBand": "0–50 km / 公里",
-      "services": "Automotive window tint / 汽车隔热膜; Paint protection film (PPF) / 漆面保护膜",
-      "filmBrands": "Not publicly verified\n未公开核实",
+      "services": "Automotive window tint / 汽车隔热膜; Paint protection film (PPF) / 漆面保护膜\n建筑膜业务 / Architectural film: Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜; Safety and security film / 安全防爆膜",
+      "filmBrands": "Not publicly verified\n未公开核实\nUnverified / 未核实",
       "serviceEvidence": "Official automotive-film service evidence / 官网汽车膜服务佐证",
       "phone": "+1 425-772-1426",
       "website": "http://asolarsolutionsglasstintingcompany.com/",
@@ -4670,7 +5074,7 @@
       ],
       "lat": 47.9600024,
       "lng": -122.2101636,
-      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认",
+      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认\nPublic address and branch require confirmation before visiting / 出访前确认当前地址及分店\nArchitecture services are separately identified; automotive-only services excluded / 建筑业务单独确认，不以汽车膜业务代替\nBrand mentions require building-product and branch confirmation / 页面品牌提及需另核实建筑产品系列及分店供应",
       "route": "C",
       "visitRegion": "北部及斯诺霍米什县",
       "visitBatch": "C-07",
@@ -4680,7 +5084,16 @@
         "facebook": "https://www.facebook.com/A-SOLAR-SOLUTIONSglass-tinting-Co-1355504014563639\nhttps://www.facebook.com/wix"
       },
       "photoVerification": "No usable public photo found / 未找到可用公开照片",
-      "referencePhotos": []
+      "referencePhotos": [],
+      "architecturalSourceIds": [
+        "ARCH-SEA037"
+      ],
+      "architecturalSourceId": "ARCH-SEA037",
+      "architecturalServices": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜; Safety and security film / 安全防爆膜",
+      "interestedProducts": [
+        "建筑玻璃膜"
+      ],
+      "currentProducts": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜; Safety and security film / 安全防爆膜"
     },
     {
       "publicRecordId": "SEA149",
@@ -4690,8 +5103,8 @@
       "address": "3301 Rucker Ave, Everett, WA 98201",
       "distanceKm": 42.1,
       "distanceBand": "0–50 km / 公里",
-      "services": "Automotive window tint / 汽车隔热膜; Paint protection film (PPF) / 漆面保护膜; Color change & vinyl wraps / 改色膜及车身包覆; Ceramic coating / 陶瓷镀膜",
-      "filmBrands": "Not publicly verified\n未公开核实",
+      "services": "Automotive window tint / 汽车隔热膜; Paint protection film (PPF) / 漆面保护膜; Color change & vinyl wraps / 改色膜及车身包覆; Ceramic coating / 陶瓷镀膜\n建筑膜业务 / Architectural film: Residential glass film / 住宅玻璃膜",
+      "filmBrands": "Not publicly verified\n未公开核实\nUnverified / 未核实",
       "serviceEvidence": "Official automotive-film service evidence / 官网汽车膜服务佐证",
       "phone": "+1 425-269-0748",
       "website": "http://utc425.com/",
@@ -4703,7 +5116,7 @@
       ],
       "lat": 47.9736187,
       "lng": -122.2109029,
-      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认",
+      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认\nPublic address and branch require confirmation before visiting / 出访前确认当前地址及分店\nArchitecture services are separately identified; automotive-only services excluded / 建筑业务单独确认，不以汽车膜业务代替\nBrand mentions require building-product and branch confirmation / 页面品牌提及需另核实建筑产品系列及分店供应",
       "route": "C",
       "visitRegion": "北部及斯诺霍米什县",
       "visitBatch": "C-07",
@@ -4729,7 +5142,16 @@
           "sourceLabel": "Public website or directory image; location unverified",
           "sourceUrl": "http://utc425.com/"
         }
-      ]
+      ],
+      "architecturalSourceIds": [
+        "ARCH-SEA038"
+      ],
+      "architecturalSourceId": "ARCH-SEA038",
+      "architecturalServices": "Residential glass film / 住宅玻璃膜",
+      "interestedProducts": [
+        "建筑玻璃膜"
+      ],
+      "currentProducts": "Residential glass film / 住宅玻璃膜"
     },
     {
       "publicRecordId": "SEA150",
@@ -4811,8 +5233,8 @@
       "address": "1826 Broadway, Everett, WA 98201",
       "distanceKm": 44.4,
       "distanceBand": "0–50 km / 公里",
-      "services": "Automotive window tint / 汽车隔热膜; Paint protection film (PPF) / 漆面保护膜; Color change & vinyl wraps / 改色膜及车身包覆; Ceramic coating / 陶瓷镀膜; Detailing & paint correction / 精洗及漆面修复",
-      "filmBrands": "Not publicly verified\n未公开核实",
+      "services": "Automotive window tint / 汽车隔热膜; Paint protection film (PPF) / 漆面保护膜; Color change & vinyl wraps / 改色膜及车身包覆; Ceramic coating / 陶瓷镀膜; Detailing & paint correction / 精洗及漆面修复\n建筑膜业务 / Architectural film: Residential glass film / 住宅玻璃膜",
+      "filmBrands": "Not publicly verified\n未公开核实\nUnverified / 未核实",
       "serviceEvidence": "Official automotive-film service evidence / 官网汽车膜服务佐证",
       "phone": "+1 425-259-9190",
       "website": "https://midnighttint.com/",
@@ -4824,7 +5246,7 @@
       ],
       "lat": 47.9927444,
       "lng": -122.2016264,
-      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认",
+      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认\nPublic address and branch require confirmation before visiting / 出访前确认当前地址及分店\nArchitecture services are separately identified; automotive-only services excluded / 建筑业务单独确认，不以汽车膜业务代替\nBrand mentions require building-product and branch confirmation / 页面品牌提及需另核实建筑产品系列及分店供应",
       "route": "C",
       "visitRegion": "北部及斯诺霍米什县",
       "visitBatch": "C-07",
@@ -4832,7 +5254,8 @@
       "navigationUrl": "https://www.google.com/maps/dir/?api=1&origin=2902+Rucker+Ave%2C+Everett%2C+WA+98201&destination=1826+Broadway%2C+Everett%2C+WA+98201&travelmode=driving",
       "socialLinks": {
         "instagram": "https://instagram.com",
-        "facebook": "https://facebook.com"
+        "facebook": "https://facebook.com",
+        "tiktok": "https://tiktok.com"
       },
       "photoVerification": "Public source image; project or location unverified / 公开来源图，案例及地点待核实",
       "referencePhotos": [
@@ -4843,7 +5266,16 @@
           "sourceLabel": "Public website or directory image; location unverified",
           "sourceUrl": "https://midnighttint.com/"
         }
-      ]
+      ],
+      "architecturalSourceIds": [
+        "ARCH-SEA040"
+      ],
+      "architecturalSourceId": "ARCH-SEA040",
+      "architecturalServices": "Residential glass film / 住宅玻璃膜",
+      "interestedProducts": [
+        "建筑玻璃膜"
+      ],
+      "currentProducts": "Residential glass film / 住宅玻璃膜"
     },
     {
       "publicRecordId": "SEA152",
@@ -5002,8 +5434,8 @@
       "address": "12901 28th Pl NE Unit 4, Lake Stevens, WA 98258",
       "distanceKm": 50.9,
       "distanceBand": "50–100 km / 公里",
-      "services": "Automotive window tint / 汽车隔热膜; Paint protection film (PPF) / 漆面保护膜; Color change & vinyl wraps / 改色膜及车身包覆",
-      "filmBrands": "XPEL、STEK、KPMF",
+      "services": "Automotive window tint / 汽车隔热膜; Paint protection film (PPF) / 漆面保护膜; Color change & vinyl wraps / 改色膜及车身包覆\n建筑膜业务 / Architectural film: Wall vinyl graphics and wraps / 墙面图文及装饰包覆",
+      "filmBrands": "XPEL、STEK、KPMF\nXPEL",
       "serviceEvidence": "Official automotive-film service evidence / 官网汽车膜服务佐证",
       "phone": "+1 425-474-5501",
       "website": "http://www.skylinesw.com/",
@@ -5015,7 +5447,7 @@
       ],
       "lat": 48.0223636,
       "lng": -122.056953,
-      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认",
+      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认\nPublic address and branch require confirmation before visiting / 出访前确认当前地址及分店\nArchitecture services are separately identified; automotive-only services excluded / 建筑业务单独确认，不以汽车膜业务代替\nBrand mentions require building-product and branch confirmation / 页面品牌提及需另核实建筑产品系列及分店供应",
       "route": "C",
       "visitRegion": "北部及斯诺霍米什县",
       "visitBatch": "C-09",
@@ -5041,7 +5473,16 @@
           "sourceLabel": "Public website or directory image; location unverified",
           "sourceUrl": "http://www.skylinesw.com/"
         }
-      ]
+      ],
+      "architecturalSourceIds": [
+        "ARCH-SEA048"
+      ],
+      "architecturalSourceId": "ARCH-SEA048",
+      "architecturalServices": "Wall vinyl graphics and wraps / 墙面图文及装饰包覆",
+      "interestedProducts": [
+        "建筑玻璃膜"
+      ],
+      "currentProducts": "Wall vinyl graphics and wraps / 墙面图文及装饰包覆"
     },
     {
       "publicRecordId": "SEA207",
@@ -5083,7 +5524,7 @@
       "address": "15008 Smokey Point Blvd Ste a, Marysville, WA 98271",
       "distanceKm": 59.8,
       "distanceBand": "50–100 km / 公里",
-      "services": "Automotive window tint / 汽车隔热膜; Paint protection film (PPF) / 漆面保护膜; Color change & vinyl wraps / 改色膜及车身包覆; Ceramic coating / 陶瓷镀膜",
+      "services": "Automotive window tint / 汽车隔热膜; Paint protection film (PPF) / 漆面保护膜; Color change & vinyl wraps / 改色膜及车身包覆; Ceramic coating / 陶瓷镀膜\n建筑膜业务 / Architectural film: Residential glass film / 住宅玻璃膜",
       "filmBrands": "XPEL",
       "serviceEvidence": "Official automotive-film service evidence / 官网汽车膜服务佐证",
       "phone": "+1 360-454-0296",
@@ -5091,11 +5532,12 @@
       "googleMapsUrl": "https://www.google.com/maps/search/?api=1&query=Auto%20Visual%20Salon%2C%2015008%20Smokey%20Point%20Blvd%20Ste%20a%2C%20Marysville%2C%20WA%2098271",
       "directorySource": "https://findawrap.com/shops/marysville-wa/auto-visual-salon-marysville-wa",
       "serviceSources": [
-        "http://www.autovisualsalon.com/"
+        "http://www.autovisualsalon.com/",
+        "https://autovisualsalon.com/about-us/"
       ],
       "lat": 48.1324699,
       "lng": -122.1838081,
-      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认",
+      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认\nPublic address and branch require confirmation before visiting / 出访前确认当前地址及分店\nArchitecture services are separately identified; automotive-only services excluded / 建筑业务单独确认，不以汽车膜业务代替\nBrand mentions require building-product and branch confirmation / 页面品牌提及需另核实建筑产品系列及分店供应",
       "route": "C",
       "visitRegion": "北部及斯诺霍米什县",
       "visitBatch": "C-09",
@@ -5121,7 +5563,16 @@
           "sourceLabel": "Public website or directory image; location unverified",
           "sourceUrl": "http://www.autovisualsalon.com/"
         }
-      ]
+      ],
+      "architecturalSourceIds": [
+        "ARCH-SEA052"
+      ],
+      "architecturalSourceId": "ARCH-SEA052",
+      "architecturalServices": "Residential glass film / 住宅玻璃膜",
+      "interestedProducts": [
+        "建筑玻璃膜"
+      ],
+      "currentProducts": "Residential glass film / 住宅玻璃膜"
     },
     {
       "publicRecordId": "SEA205",
@@ -5131,8 +5582,8 @@
       "address": "9113 State Ave Unit c, Marysville, WA 98270",
       "distanceKm": 54.1,
       "distanceBand": "50–100 km / 公里",
-      "services": "Automotive window tint / 汽车隔热膜; Paint protection film (PPF) / 漆面保护膜; Ceramic coating / 陶瓷镀膜",
-      "filmBrands": "Not publicly verified\n未公开核实",
+      "services": "Automotive window tint / 汽车隔热膜; Paint protection film (PPF) / 漆面保护膜; Ceramic coating / 陶瓷镀膜\n建筑膜业务 / Architectural film: Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜; Solar and heat-control film / 隔热防晒膜; Safety and security film / 安全防爆膜; Privacy and frosted film / 隐私磨砂膜",
+      "filmBrands": "Not publicly verified\n未公开核实\nUnverified / 未核实",
       "serviceEvidence": "Official automotive-film service evidence / 官网汽车膜服务佐证",
       "phone": "+1 425-923-0260",
       "website": "http://dcwindowtints.com/",
@@ -5140,11 +5591,12 @@
       "directorySource": "https://findawrap.com/shops/marysville-wa/dc-window-tinting-llc-marysville-wa",
       "serviceSources": [
         "http://dcwindowtints.com/",
-        "http://dcwindowtints.com/contact-us"
+        "http://dcwindowtints.com/contact-us",
+        "http://dcwindowtints.com/commercial-property-window-tinting"
       ],
       "lat": 48.0788965,
       "lng": -122.1746679,
-      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认",
+      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认\nPublic address and branch require confirmation before visiting / 出访前确认当前地址及分店\nArchitecture services are separately identified; automotive-only services excluded / 建筑业务单独确认，不以汽车膜业务代替\nBrand mentions require building-product and branch confirmation / 页面品牌提及需另核实建筑产品系列及分店供应",
       "route": "C",
       "visitRegion": "北部及斯诺霍米什县",
       "visitBatch": "C-09",
@@ -5170,8 +5622,24 @@
           "contentType": "image/jpeg",
           "sourceLabel": "Public website or directory image; location unverified",
           "sourceUrl": "http://dcwindowtints.com/"
+        },
+        {
+          "url": "/assets/field-sales-prospects/ARCH-SEA051-02.jpg",
+          "fileName": "ARCH-SEA051-02.jpg",
+          "contentType": "image/jpeg",
+          "sourceLabel": "Public architectural-film website image; location unverified",
+          "sourceUrl": "http://dcwindowtints.com/"
         }
-      ]
+      ],
+      "architecturalSourceIds": [
+        "ARCH-SEA051"
+      ],
+      "architecturalSourceId": "ARCH-SEA051",
+      "architecturalServices": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜; Solar and heat-control film / 隔热防晒膜; Safety and security film / 安全防爆膜; Privacy and frosted film / 隐私磨砂膜",
+      "interestedProducts": [
+        "建筑玻璃膜"
+      ],
+      "currentProducts": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜; Solar and heat-control film / 隔热防晒膜; Safety and security film / 安全防爆膜; Privacy and frosted film / 隐私磨砂膜"
     },
     {
       "publicRecordId": "SEA209",
@@ -5342,7 +5810,7 @@
       "address": "879 Rainier Ave N Ste A100, Renton, WA 98057",
       "distanceKm": 14.4,
       "distanceBand": "0–50 km / 公里",
-      "services": "Automotive window tint / 汽车隔热膜; Paint protection film (PPF) / 漆面保护膜",
+      "services": "Automotive window tint / 汽车隔热膜; Paint protection film (PPF) / 漆面保护膜\n建筑膜业务 / Architectural film: Commercial glass film / 商业建筑玻璃膜; Safety and security film / 安全防爆膜",
       "filmBrands": "XPEL",
       "serviceEvidence": "Official automotive-film service evidence / 官网汽车膜服务佐证",
       "phone": "+1 425-463-6531",
@@ -5350,11 +5818,12 @@
       "googleMapsUrl": "https://www.google.com/maps/search/?api=1&query=Samtint%20Window%20Tint%2C%20Xpel%20paint%20protection%2C%20879%20Rainier%20Ave%20N%20Ste%20A100%2C%20Renton%2C%20WA%2098057",
       "directorySource": "https://findawrap.com/shops/renton-wa/samtint-window-tint-xpel-paint-protection-renton-wa",
       "serviceSources": [
-        "http://www.samtint.com/"
+        "http://www.samtint.com/",
+        "https://samtint.com/commercial-window-tinting/"
       ],
       "lat": 47.4970947,
       "lng": -122.2206836,
-      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认",
+      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认\nPublic address and branch require confirmation before visiting / 出访前确认当前地址及分店\nArchitecture services are separately identified; automotive-only services excluded / 建筑业务单独确认，不以汽车膜业务代替\nBrand mentions require building-product and branch confirmation / 页面品牌提及需另核实建筑产品系列及分店供应",
       "route": "D",
       "visitRegion": "金县南部",
       "visitBatch": "D-01",
@@ -5369,8 +5838,24 @@
           "contentType": "image/jpeg",
           "sourceLabel": "Public website or directory image; location unverified",
           "sourceUrl": "http://www.samtint.com/"
+        },
+        {
+          "url": "/assets/field-sales-prospects/ARCH-SEA011-01.jpg",
+          "fileName": "ARCH-SEA011-01.jpg",
+          "contentType": "image/jpeg",
+          "sourceLabel": "Public architectural-film website image; location unverified",
+          "sourceUrl": "http://www.samtint.com/"
         }
-      ]
+      ],
+      "architecturalSourceIds": [
+        "ARCH-SEA011"
+      ],
+      "architecturalSourceId": "ARCH-SEA011",
+      "architecturalServices": "Commercial glass film / 商业建筑玻璃膜; Safety and security film / 安全防爆膜",
+      "interestedProducts": [
+        "建筑玻璃膜"
+      ],
+      "currentProducts": "Commercial glass film / 商业建筑玻璃膜; Safety and security film / 安全防爆膜"
     },
     {
       "publicRecordId": "SEA056",
@@ -5549,6 +6034,67 @@
       ]
     },
     {
+      "publicRecordId": "ARCH-SEA030",
+      "businessName": "American Window Film - Commercial & Home Window…",
+      "marketId": "seattle",
+      "city": "Federal Way / 联邦路市",
+      "address": "34012 9th Ave S Ste C5, Federal Way, WA 98003",
+      "distanceKm": 34.1,
+      "distanceBand": "0–50 km / 公里",
+      "services": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜; Wall vinyl graphics and wraps / 墙面图文及装饰包覆; Solar and heat-control film / 隔热防晒膜; Safety and security film / 安全防爆膜; Privacy and frosted film / 隐私磨砂膜; Anti-graffiti film / 防涂鸦膜",
+      "filmBrands": "3M, FASARA",
+      "serviceEvidence": "建筑膜公开资料 / Architectural-film public research",
+      "phone": "+1 253-536-4440",
+      "website": "https://americanwindowfilm.com/locations/seattle-window-film",
+      "googleMapsUrl": "https://www.google.com/maps/search/?api=1&query=American%20Window%20Film%20-%20Commercial%20%26%20Home%20Window%E2%80%A6%2C%2034012%209th%20Ave%20S%20Ste%20C5%2C%20Federal%20Way%2C%20WA%2098003",
+      "directorySource": "https://findawrap.com/shops/federal-way-wa/american-window-film-commercial-home-window-federal-way-wa",
+      "serviceSources": [
+        "https://americanwindowfilm.com/locations/seattle-window-film",
+        "https://americanwindowfilm.com/commercial-window-tinting",
+        "https://americanwindowfilm.com/about-us"
+      ],
+      "lat": 47.2965089,
+      "lng": -122.3206321,
+      "researchNotes": "Public address and branch require confirmation before visiting / 出访前确认当前地址及分店\nArchitecture services are separately identified; automotive-only services excluded / 建筑业务单独确认，不以汽车膜业务代替\nBrand mentions require building-product and branch confirmation / 页面品牌提及需另核实建筑产品系列及分店供应",
+      "route": "D",
+      "visitRegion": "西雅图 · 建筑膜路线 D",
+      "visitBatch": "D-01",
+      "visitStop": 5,
+      "navigationUrl": "https://www.google.com/maps/dir/?api=1&origin=3902+W+Valley+Hwy+N+Ste+404%2C+Auburn%2C+WA+98001&destination=34012+9th+Ave+S+Ste+C5%2C+Federal+Way%2C+WA+98003&travelmode=driving",
+      "socialLinks": {
+        "instagram": "https://www.instagram.com/americanwindowfilmhq\nhttps://www.instagram.com/americanwindowfilmhq/",
+        "facebook": "https://www.facebook.com/americanwindowfilmhq",
+        "tiktok": "https://www.tiktok.com/@americanwindowfilm",
+        "yelp": "https://www.yelp.com/biz/abc-sun-control-fife"
+      },
+      "photoVerification": "Website display image; project/location unverified / 官网展示图，案例及地点待核实\nWebsite display image; project/location unverified / 官网展示图，案例及地点待核实",
+      "referencePhotos": [
+        {
+          "url": "/assets/field-sales-prospects/ARCH-SEA030-01.jpg",
+          "fileName": "ARCH-SEA030-01.jpg",
+          "contentType": "image/jpeg",
+          "sourceLabel": "Public architectural-film website image; location unverified",
+          "sourceUrl": "https://americanwindowfilm.com/locations/seattle-window-film"
+        },
+        {
+          "url": "/assets/field-sales-prospects/ARCH-SEA030-02.jpg",
+          "fileName": "ARCH-SEA030-02.jpg",
+          "contentType": "image/jpeg",
+          "sourceLabel": "Public architectural-film website image; location unverified",
+          "sourceUrl": "https://americanwindowfilm.com/commercial-window-tinting"
+        }
+      ],
+      "architecturalSourceIds": [
+        "ARCH-SEA030"
+      ],
+      "architecturalSourceId": "ARCH-SEA030",
+      "architecturalServices": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜; Wall vinyl graphics and wraps / 墙面图文及装饰包覆; Solar and heat-control film / 隔热防晒膜; Safety and security film / 安全防爆膜; Privacy and frosted film / 隐私磨砂膜; Anti-graffiti film / 防涂鸦膜",
+      "interestedProducts": [
+        "建筑玻璃膜"
+      ],
+      "currentProducts": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜; Wall vinyl graphics and wraps / 墙面图文及装饰包覆; Solar and heat-control film / 隔热防晒膜; Safety and security film / 安全防爆膜; Privacy and frosted film / 隐私磨砂膜; Anti-graffiti film / 防涂鸦膜"
+    },
+    {
       "publicRecordId": "SEA062",
       "businessName": "Advanced Window Tinting, Xpel Protection Film &…",
       "marketId": "seattle",
@@ -5577,6 +6123,47 @@
       "socialLinks": {},
       "photoVerification": "No usable public photo found / 未找到可用公开照片",
       "referencePhotos": []
+    },
+    {
+      "publicRecordId": "ARCH-SEA029",
+      "businessName": "ABC Sun Control",
+      "marketId": "seattle",
+      "city": "Federal Way / 联邦路市",
+      "address": "34012 9th Ave S Suite C5, Federal Way, WA 98003",
+      "distanceKm": 34,
+      "distanceBand": "0–50 km / 公里",
+      "services": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜; Solar and heat-control film / 隔热防晒膜; Safety and security film / 安全防爆膜; Privacy and frosted film / 隐私磨砂膜; Anti-graffiti film / 防涂鸦膜",
+      "filmBrands": "3M, LLumar, Huper Optik, FASARA",
+      "serviceEvidence": "建筑膜公开资料 / Architectural-film public research",
+      "phone": "800-488-5099",
+      "website": "https://www.abcsuncontrol.net/",
+      "googleMapsUrl": "https://www.google.com/maps/search/?api=1&query=ABC%20Sun%20Control%2C%2034012%209th%20Ave%20S%20Suite%20C5%2C%20Federal%20Way%2C%20WA%2098003",
+      "directorySource": "https://www.abcsuncontrol.net/commercial-window-film-seattle-wa",
+      "serviceSources": [
+        "https://www.abcsuncontrol.net/",
+        "https://www.abcsuncontrol.net/architectural-window-films-seattle-wa",
+        "https://www.abcsuncontrol.net/commercial-window-film-seattle-wa"
+      ],
+      "lat": 47.297228783852,
+      "lng": -122.321944429762,
+      "researchNotes": "Public address and branch require confirmation before visiting / 出访前确认当前地址及分店\nArchitecture services are separately identified; automotive-only services excluded / 建筑业务单独确认，不以汽车膜业务代替\nBrand mentions require building-product and branch confirmation / 页面品牌提及需另核实建筑产品系列及分店供应",
+      "route": "D",
+      "visitRegion": "西雅图 · 建筑膜路线 D",
+      "visitBatch": "D-01",
+      "visitStop": 6,
+      "navigationUrl": "https://www.google.com/maps/dir/?api=1&origin=34012+9th+Ave+S+Ste+C5%2C+Federal+Way%2C+WA+98003&destination=34012+9th+Ave+S+Suite+C5%2C+Federal+Way%2C+WA+98003&travelmode=driving",
+      "socialLinks": {},
+      "photoVerification": "",
+      "referencePhotos": [],
+      "architecturalSourceIds": [
+        "ARCH-SEA029"
+      ],
+      "architecturalSourceId": "ARCH-SEA029",
+      "architecturalServices": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜; Solar and heat-control film / 隔热防晒膜; Safety and security film / 安全防爆膜; Privacy and frosted film / 隐私磨砂膜; Anti-graffiti film / 防涂鸦膜",
+      "interestedProducts": [
+        "建筑玻璃膜"
+      ],
+      "currentProducts": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜; Solar and heat-control film / 隔热防晒膜; Safety and security film / 安全防爆膜; Privacy and frosted film / 隐私磨砂膜; Anti-graffiti film / 防涂鸦膜"
     },
     {
       "publicRecordId": "SEA091",
@@ -5642,7 +6229,7 @@
       "address": "3802 Auburn Wy N #305, Auburn, WA 98002",
       "distanceKm": 30.2,
       "distanceBand": "0–50 km / 公里",
-      "services": "Automotive window tint / 汽车隔热膜; Paint protection film (PPF) / 漆面保护膜\nSeries mentioned / 提及系列: FormulaOne; Pinnacle; Stratos",
+      "services": "Automotive window tint / 汽车隔热膜; Paint protection film (PPF) / 漆面保护膜\nSeries mentioned / 提及系列: FormulaOne; Pinnacle; Stratos\n建筑膜业务 / Architectural film: Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜",
       "filmBrands": "LLumar",
       "serviceEvidence": "Official automotive-film service evidence / 官网汽车膜服务佐证",
       "phone": "+1 253-288-1195",
@@ -5651,11 +6238,12 @@
       "directorySource": "https://findawrap.com/shops/auburn-wa/dealer-xpress-window-tinting-ppf-auburn-wa",
       "serviceSources": [
         "https://www.dealerxpresswindowtinting.com/",
-        "https://www.dealerxpresswindowtinting.com/about-dealer-xpress-window-tinting-in-auburn-washington"
+        "https://www.dealerxpresswindowtinting.com/about-dealer-xpress-window-tinting-in-auburn-washington",
+        "https://www.dealerxpresswindowtinting.com/commercial-window-tinting-services"
       ],
       "lat": 47.3416052,
       "lng": -122.2218207,
-      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认",
+      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认\nPublic address and branch require confirmation before visiting / 出访前确认当前地址及分店\nArchitecture services are separately identified; automotive-only services excluded / 建筑业务单独确认，不以汽车膜业务代替\nBrand mentions require building-product and branch confirmation / 页面品牌提及需另核实建筑产品系列及分店供应",
       "route": "D",
       "visitRegion": "金县南部",
       "visitBatch": "D-02",
@@ -5681,8 +6269,31 @@
           "contentType": "image/jpeg",
           "sourceLabel": "Public website or directory image; location unverified",
           "sourceUrl": "https://www.dealerxpresswindowtinting.com/"
+        },
+        {
+          "url": "/assets/field-sales-prospects/ARCH-SEA026-01.jpg",
+          "fileName": "ARCH-SEA026-01.jpg",
+          "contentType": "image/jpeg",
+          "sourceLabel": "Public architectural-film website image; location unverified",
+          "sourceUrl": "https://www.dealerxpresswindowtinting.com/"
+        },
+        {
+          "url": "/assets/field-sales-prospects/ARCH-SEA026-02.jpg",
+          "fileName": "ARCH-SEA026-02.jpg",
+          "contentType": "image/jpeg",
+          "sourceLabel": "Public architectural-film website image; location unverified",
+          "sourceUrl": "https://www.dealerxpresswindowtinting.com/"
         }
-      ]
+      ],
+      "architecturalSourceIds": [
+        "ARCH-SEA026"
+      ],
+      "architecturalSourceId": "ARCH-SEA026",
+      "architecturalServices": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜",
+      "interestedProducts": [
+        "建筑玻璃膜"
+      ],
+      "currentProducts": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜"
     },
     {
       "publicRecordId": "SEA104",
@@ -5775,7 +6386,7 @@
       "address": "3902 W Valley Hwy N Ste 404, Auburn, WA 98001",
       "distanceKm": 29.6,
       "distanceBand": "0–50 km / 公里",
-      "services": "Automotive window tint / 汽车隔热膜; Paint protection film (PPF) / 漆面保护膜; Color change & vinyl wraps / 改色膜及车身包覆; Ceramic coating / 陶瓷镀膜",
+      "services": "Automotive window tint / 汽车隔热膜; Paint protection film (PPF) / 漆面保护膜; Color change & vinyl wraps / 改色膜及车身包覆; Ceramic coating / 陶瓷镀膜\n建筑膜业务 / Architectural film: Residential glass film / 住宅玻璃膜",
       "filmBrands": "3M",
       "serviceEvidence": "Official automotive-film service evidence / 官网汽车膜服务佐证",
       "phone": "+1 253-294-8743",
@@ -5788,7 +6399,7 @@
       ],
       "lat": 47.3426544,
       "lng": -122.2493703,
-      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认",
+      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认\nPublic address and branch require confirmation before visiting / 出访前确认当前地址及分店\nArchitecture services are separately identified; automotive-only services excluded / 建筑业务单独确认，不以汽车膜业务代替\nBrand mentions require building-product and branch confirmation / 页面品牌提及需另核实建筑产品系列及分店供应",
       "route": "D",
       "visitRegion": "金县南部",
       "visitBatch": "D-02",
@@ -5814,8 +6425,24 @@
           "contentType": "image/jpeg",
           "sourceLabel": "Public website or directory image; location unverified",
           "sourceUrl": "https://www.autocitywindowtint.com/"
+        },
+        {
+          "url": "/assets/field-sales-prospects/ARCH-SEA025-01.jpg",
+          "fileName": "ARCH-SEA025-01.jpg",
+          "contentType": "image/jpeg",
+          "sourceLabel": "Public architectural-film website image; location unverified",
+          "sourceUrl": "https://www.autocitywindowtint.com/"
         }
-      ]
+      ],
+      "architecturalSourceIds": [
+        "ARCH-SEA025"
+      ],
+      "architecturalSourceId": "ARCH-SEA025",
+      "architecturalServices": "Residential glass film / 住宅玻璃膜",
+      "interestedProducts": [
+        "建筑玻璃膜"
+      ],
+      "currentProducts": "Residential glass film / 住宅玻璃膜"
     },
     {
       "publicRecordId": "SEA115",
@@ -6011,8 +6638,8 @@
       "address": "30006 159th Ln SE, Kent, WA 98042",
       "distanceKm": 33.7,
       "distanceBand": "0–50 km / 公里",
-      "services": "Automotive window tint / 汽车隔热膜; Paint protection film (PPF) / 漆面保护膜",
-      "filmBrands": "3M",
+      "services": "Automotive window tint / 汽车隔热膜; Paint protection film (PPF) / 漆面保护膜\n建筑膜业务 / Architectural film: Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜; Furniture and interior surface wraps / 家具及室内表面装饰膜; Solar and heat-control film / 隔热防晒膜; Privacy and frosted film / 隐私磨砂膜; Anti-graffiti film / 防涂鸦膜",
+      "filmBrands": "3M\n3M, DI-NOC, FASARA",
       "serviceEvidence": "Directory classification only; review required\n仅目录分类，待复核",
       "phone": "+1 425-827-5051",
       "website": "http://www.protectionseattle.com/",
@@ -6020,11 +6647,13 @@
       "directorySource": "https://findawrap.com/shops/kent-wa/pro-tection-seattle-kent-wa",
       "serviceSources": [
         "http://www.protectionseattle.com/",
-        "http://www.protectionseattle.com/about-us"
+        "http://www.protectionseattle.com/about-us",
+        "http://www.protectionseattle.com/products#DI-NOC",
+        "http://www.protectionseattle.com/residential"
       ],
       "lat": 47.332231,
       "lng": -122.1289248,
-      "researchNotes": "Directory category only; confirm services before visiting / 仅目录分类，出访前确认业务。Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认",
+      "researchNotes": "Directory category only; confirm services before visiting / 仅目录分类，出访前确认业务。Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认\nPublic address and branch require confirmation before visiting / 出访前确认当前地址及分店\nArchitecture services are separately identified; automotive-only services excluded / 建筑业务单独确认，不以汽车膜业务代替\nBrand mentions require building-product and branch confirmation / 页面品牌提及需另核实建筑产品系列及分店供应",
       "route": "D",
       "visitRegion": "金县南部",
       "visitBatch": "D-03",
@@ -6048,8 +6677,31 @@
           "contentType": "image/jpeg",
           "sourceLabel": "Public website or directory image; location unverified",
           "sourceUrl": "http://www.protectionseattle.com/about-us"
+        },
+        {
+          "url": "/assets/field-sales-prospects/ARCH-SEA028-01.jpg",
+          "fileName": "ARCH-SEA028-01.jpg",
+          "contentType": "image/jpeg",
+          "sourceLabel": "Public architectural-film website image; location unverified",
+          "sourceUrl": "http://www.protectionseattle.com/"
+        },
+        {
+          "url": "/assets/field-sales-prospects/ARCH-SEA028-02.jpg",
+          "fileName": "ARCH-SEA028-02.jpg",
+          "contentType": "image/jpeg",
+          "sourceLabel": "Public architectural-film website image; location unverified",
+          "sourceUrl": "http://www.protectionseattle.com/products#DI-NOC"
         }
-      ]
+      ],
+      "architecturalSourceIds": [
+        "ARCH-SEA028"
+      ],
+      "architecturalSourceId": "ARCH-SEA028",
+      "architecturalServices": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜; Furniture and interior surface wraps / 家具及室内表面装饰膜; Solar and heat-control film / 隔热防晒膜; Privacy and frosted film / 隐私磨砂膜; Anti-graffiti film / 防涂鸦膜",
+      "interestedProducts": [
+        "建筑玻璃膜"
+      ],
+      "currentProducts": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜; Furniture and interior surface wraps / 家具及室内表面装饰膜; Solar and heat-control film / 隔热防晒膜; Privacy and frosted film / 隐私磨砂膜; Anti-graffiti film / 防涂鸦膜"
     },
     {
       "publicRecordId": "SEA147",
@@ -6285,8 +6937,8 @@
       "address": "2205 70th Ave W Unit 31, University Place, WA 98466",
       "distanceKm": 43.1,
       "distanceBand": "0–50 km / 公里",
-      "services": "Automotive window tint / 汽车隔热膜",
-      "filmBrands": "Not publicly verified\n未公开核实",
+      "services": "Automotive window tint / 汽车隔热膜\n建筑膜业务 / Architectural film: Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜",
+      "filmBrands": "Not publicly verified\n未公开核实\nUnverified / 未核实",
       "serviceEvidence": "Official automotive-film service evidence / 官网汽车膜服务佐证",
       "phone": "+1 253-517-0528",
       "website": "http://www.fasowindowtinting.com/",
@@ -6297,7 +6949,7 @@
       ],
       "lat": 47.2396768,
       "lng": -122.5294238,
-      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认",
+      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认\nPublic address and branch require confirmation before visiting / 出访前确认当前地址及分店\nArchitecture services are separately identified; automotive-only services excluded / 建筑业务单独确认，不以汽车膜业务代替\nBrand mentions require building-product and branch confirmation / 页面品牌提及需另核实建筑产品系列及分店供应",
       "route": "E",
       "visitRegion": "塔科马及皮尔斯县",
       "visitBatch": "E-02",
@@ -6313,7 +6965,16 @@
           "sourceLabel": "Public website or directory image; location unverified",
           "sourceUrl": "http://www.fasowindowtinting.com/"
         }
-      ]
+      ],
+      "architecturalSourceIds": [
+        "ARCH-SEA039"
+      ],
+      "architecturalSourceId": "ARCH-SEA039",
+      "architecturalServices": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜",
+      "interestedProducts": [
+        "建筑玻璃膜"
+      ],
+      "currentProducts": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜"
     },
     {
       "publicRecordId": "SEA154",
@@ -6375,6 +7036,66 @@
       "socialLinks": {},
       "photoVerification": "No usable public photo found / 未找到可用公开照片",
       "referencePhotos": []
+    },
+    {
+      "publicRecordId": "ARCH-SEA050",
+      "businessName": "CoolVu of Tacoma - Commercial & Home Window Tint",
+      "marketId": "seattle",
+      "city": "Puyallup / 普亚勒普",
+      "address": "6708 153rd St Ct E, Puyallup, WA 98375",
+      "distanceKm": 54.1,
+      "distanceBand": "50–100 km / 公里",
+      "services": "Furniture and interior surface wraps / 家具及室内表面装饰膜; Solar and heat-control film / 隔热防晒膜; Safety and security film / 安全防爆膜; Privacy and frosted film / 隐私磨砂膜; Anti-graffiti film / 防涂鸦膜; Switchable smart film / 调光智能膜",
+      "filmBrands": "3M, DI-NOC, FASARA",
+      "serviceEvidence": "建筑膜公开资料 / Architectural-film public research",
+      "phone": "+1 253-260-6854",
+      "website": "https://www.coolvu.com/tacoma/",
+      "googleMapsUrl": "https://www.google.com/maps/search/?api=1&query=CoolVu%20of%20Tacoma%20-%20Commercial%20%26%20Home%20Window%20Tint%2C%206708%20153rd%20St%20Ct%20E%2C%20Puyallup%2C%20WA%2098375",
+      "directorySource": "https://findawrap.com/shops/puyallup-wa/coolvu-of-tacoma-commercial-home-window-tint-puyallup-wa",
+      "serviceSources": [
+        "https://www.coolvu.com/tacoma/",
+        "https://www.coolvu.com/surface-finishes/architectural-vinyl/",
+        "https://www.coolvu.com/wall-window-coverings/commercial-graphics-branding-solutions/",
+        "https://www.coolvu.com/contact/"
+      ],
+      "lat": 47.116664,
+      "lng": -122.3395155,
+      "researchNotes": "Public address and branch require confirmation before visiting / 出访前确认当前地址及分店\nArchitecture services are separately identified; automotive-only services excluded / 建筑业务单独确认，不以汽车膜业务代替\nBrand mentions require building-product and branch confirmation / 页面品牌提及需另核实建筑产品系列及分店供应",
+      "route": "E",
+      "visitRegion": "西雅图 · 建筑膜路线 E",
+      "visitBatch": "E-02",
+      "visitStop": 3,
+      "navigationUrl": "https://www.google.com/maps/dir/?api=1&origin=14706+Meridian+E+Unit+A%2C+Puyallup%2C+WA+98375&destination=6708+153rd+St+Ct+E%2C+Puyallup%2C+WA+98375&travelmode=driving",
+      "socialLinks": {
+        "instagram": "https://instagram.com/coolvusolutions",
+        "facebook": "https://www.facebook.com/coolvusolutions\nhttps://www.facebook.com/coolvusolutions/"
+      },
+      "photoVerification": "Website display image; project/location unverified / 官网展示图，案例及地点待核实\nWebsite display image; project/location unverified / 官网展示图，案例及地点待核实",
+      "referencePhotos": [
+        {
+          "url": "/assets/field-sales-prospects/ARCH-SEA050-01.jpg",
+          "fileName": "ARCH-SEA050-01.jpg",
+          "contentType": "image/jpeg",
+          "sourceLabel": "Public architectural-film website image; location unverified",
+          "sourceUrl": "https://www.coolvu.com/tacoma/"
+        },
+        {
+          "url": "/assets/field-sales-prospects/ARCH-SEA050-02.jpg",
+          "fileName": "ARCH-SEA050-02.jpg",
+          "contentType": "image/jpeg",
+          "sourceLabel": "Public architectural-film website image; location unverified",
+          "sourceUrl": "https://www.coolvu.com/tacoma/"
+        }
+      ],
+      "architecturalSourceIds": [
+        "ARCH-SEA050"
+      ],
+      "architecturalSourceId": "ARCH-SEA050",
+      "architecturalServices": "Furniture and interior surface wraps / 家具及室内表面装饰膜; Solar and heat-control film / 隔热防晒膜; Safety and security film / 安全防爆膜; Privacy and frosted film / 隐私磨砂膜; Anti-graffiti film / 防涂鸦膜; Switchable smart film / 调光智能膜",
+      "interestedProducts": [
+        "建筑玻璃膜"
+      ],
+      "currentProducts": "Furniture and interior surface wraps / 家具及室内表面装饰膜; Solar and heat-control film / 隔热防晒膜; Safety and security film / 安全防爆膜; Privacy and frosted film / 隐私磨砂膜; Anti-graffiti film / 防涂鸦膜; Switchable smart film / 调光智能膜"
     },
     {
       "publicRecordId": "SEA168",
@@ -6463,8 +7184,8 @@
       "address": "5636 S Tacoma Way, Tacoma, WA 98409",
       "distanceKm": 45.8,
       "distanceBand": "0–50 km / 公里",
-      "services": "Automotive window tint / 汽车隔热膜; Paint protection film (PPF) / 漆面保护膜; Color change & vinyl wraps / 改色膜及车身包覆; Ceramic coating / 陶瓷镀膜; Detailing & paint correction / 精洗及漆面修复",
-      "filmBrands": "Not publicly verified\n未公开核实",
+      "services": "Automotive window tint / 汽车隔热膜; Paint protection film (PPF) / 漆面保护膜; Color change & vinyl wraps / 改色膜及车身包覆; Ceramic coating / 陶瓷镀膜; Detailing & paint correction / 精洗及漆面修复\n建筑膜业务 / Architectural film: Residential glass film / 住宅玻璃膜",
+      "filmBrands": "Not publicly verified\n未公开核实\nUnverified / 未核实",
       "serviceEvidence": "Official automotive-film service evidence / 官网汽车膜服务佐证",
       "phone": "253-677-4412",
       "website": "https://showroomautotinting.net",
@@ -6476,7 +7197,7 @@
       ],
       "lat": 47.2048724,
       "lng": -122.4841958,
-      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认",
+      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认\nPublic address and branch require confirmation before visiting / 出访前确认当前地址及分店\nArchitecture services are separately identified; automotive-only services excluded / 建筑业务单独确认，不以汽车膜业务代替\nBrand mentions require building-product and branch confirmation / 页面品牌提及需另核实建筑产品系列及分店供应",
       "route": "E",
       "visitRegion": "塔科马及皮尔斯县",
       "visitBatch": "E-02",
@@ -6495,7 +7216,16 @@
           "sourceLabel": "Public website or directory image; location unverified",
           "sourceUrl": "https://showroomautotinting.net"
         }
-      ]
+      ],
+      "architecturalSourceIds": [
+        "ARCH-SEA042"
+      ],
+      "architecturalSourceId": "ARCH-SEA042",
+      "architecturalServices": "Residential glass film / 住宅玻璃膜",
+      "interestedProducts": [
+        "建筑玻璃膜"
+      ],
+      "currentProducts": "Residential glass film / 住宅玻璃膜"
     },
     {
       "publicRecordId": "SEA157",
@@ -6672,7 +7402,7 @@
       "address": "10721 A St S Ste B, Tacoma, WA 98444",
       "distanceKm": 49.9,
       "distanceBand": "0–50 km / 公里",
-      "services": "Automotive window tint / 汽车隔热膜; Paint protection film (PPF) / 漆面保护膜; Color change & vinyl wraps / 改色膜及车身包覆; Ceramic coating / 陶瓷镀膜",
+      "services": "Automotive window tint / 汽车隔热膜; Paint protection film (PPF) / 漆面保护膜; Color change & vinyl wraps / 改色膜及车身包覆; Ceramic coating / 陶瓷镀膜\n建筑膜业务 / Architectural film: Residential glass film / 住宅玻璃膜",
       "filmBrands": "3M",
       "serviceEvidence": "Official automotive-film service evidence / 官网汽车膜服务佐证",
       "phone": "+1 253-375-5975",
@@ -6685,7 +7415,7 @@
       ],
       "lat": 47.1594928,
       "lng": -122.430599,
-      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认",
+      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认\nPublic address and branch require confirmation before visiting / 出访前确认当前地址及分店\nArchitecture services are separately identified; automotive-only services excluded / 建筑业务单独确认，不以汽车膜业务代替\nBrand mentions require building-product and branch confirmation / 页面品牌提及需另核实建筑产品系列及分店供应",
       "route": "E",
       "visitRegion": "塔科马及皮尔斯县",
       "visitBatch": "E-03",
@@ -6701,7 +7431,16 @@
           "sourceLabel": "Public website or directory image; location unverified",
           "sourceUrl": "https://precisionwindowtintz.com/about-us"
         }
-      ]
+      ],
+      "architecturalSourceIds": [
+        "ARCH-SEA045"
+      ],
+      "architecturalSourceId": "ARCH-SEA045",
+      "architecturalServices": "Residential glass film / 住宅玻璃膜",
+      "interestedProducts": [
+        "建筑玻璃膜"
+      ],
+      "currentProducts": "Residential glass film / 住宅玻璃膜"
     },
     {
       "publicRecordId": "SEA192",
@@ -6785,8 +7524,8 @@
       "address": "6430 Tacoma Mall Blvd Suite 100a, Tacoma, WA 98409",
       "distanceKm": 46.1,
       "distanceBand": "0–50 km / 公里",
-      "services": "Automotive window tint / 汽车隔热膜; Paint protection film (PPF) / 漆面保护膜; Color change & vinyl wraps / 改色膜及车身包覆; Ceramic coating / 陶瓷镀膜; Detailing & paint correction / 精洗及漆面修复\nSeries mentioned / 提及系列: DYNOshield; DYNOmatte",
-      "filmBrands": "SunTek、STEK、Ceramic Pro",
+      "services": "Automotive window tint / 汽车隔热膜; Paint protection film (PPF) / 漆面保护膜; Color change & vinyl wraps / 改色膜及车身包覆; Ceramic coating / 陶瓷镀膜; Detailing & paint correction / 精洗及漆面修复\nSeries mentioned / 提及系列: DYNOshield; DYNOmatte\n建筑膜业务 / Architectural film: Residential glass film / 住宅玻璃膜",
+      "filmBrands": "SunTek、STEK、Ceramic Pro\nSunTek",
       "serviceEvidence": "Official automotive-film service evidence / 官网汽车膜服务佐证",
       "phone": "+1 360-874-4123",
       "website": "https://tnpwash.com/",
@@ -6798,7 +7537,7 @@
       ],
       "lat": 47.1984198,
       "lng": -122.4633348,
-      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认",
+      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认\nPublic address and branch require confirmation before visiting / 出访前确认当前地址及分店\nArchitecture services are separately identified; automotive-only services excluded / 建筑业务单独确认，不以汽车膜业务代替\nBrand mentions require building-product and branch confirmation / 页面品牌提及需另核实建筑产品系列及分店供应",
       "route": "E",
       "visitRegion": "塔科马及皮尔斯县",
       "visitBatch": "E-04",
@@ -6822,8 +7561,24 @@
           "contentType": "image/jpeg",
           "sourceLabel": "Public website or directory image; location unverified",
           "sourceUrl": "https://tnpwash.com/"
+        },
+        {
+          "url": "/assets/field-sales-prospects/ARCH-SEA043-01.jpg",
+          "fileName": "ARCH-SEA043-01.jpg",
+          "contentType": "image/jpeg",
+          "sourceLabel": "Public architectural-film website image; location unverified",
+          "sourceUrl": "https://tnpwash.com/"
         }
-      ]
+      ],
+      "architecturalSourceIds": [
+        "ARCH-SEA043"
+      ],
+      "architecturalSourceId": "ARCH-SEA043",
+      "architecturalServices": "Residential glass film / 住宅玻璃膜",
+      "interestedProducts": [
+        "建筑玻璃膜"
+      ],
+      "currentProducts": "Residential glass film / 住宅玻璃膜"
     },
     {
       "publicRecordId": "SEA173",
@@ -6977,7 +7732,7 @@
       "address": "514 River Rd, Puyallup, WA 98371",
       "distanceKm": 45,
       "distanceBand": "0–50 km / 公里",
-      "services": "Automotive window tint / 汽车隔热膜; Paint protection film (PPF) / 漆面保护膜; Ceramic coating / 陶瓷镀膜",
+      "services": "Automotive window tint / 汽车隔热膜; Paint protection film (PPF) / 漆面保护膜; Ceramic coating / 陶瓷镀膜\n建筑膜业务 / Architectural film: Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜; Safety and security film / 安全防爆膜",
       "filmBrands": "XPEL",
       "serviceEvidence": "Official automotive-film service evidence / 官网汽车膜服务佐证",
       "phone": "+1 253-376-4826",
@@ -6986,11 +7741,13 @@
       "directorySource": "https://findawrap.com/shops/puyallup-wa/sc-window-tinting-puyallup-wa",
       "serviceSources": [
         "http://scwindowtinting.net/",
-        "http://scwindowtinting.net/about-us/"
+        "http://scwindowtinting.net/about-us/",
+        "https://www.scwindowtinting.net/commercial-window-tinting-puyallup/",
+        "https://www.scwindowtinting.net/about-us/"
       ],
       "lat": 47.19931039999999,
       "lng": -122.3001658,
-      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认",
+      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认\nPublic address and branch require confirmation before visiting / 出访前确认当前地址及分店\nArchitecture services are separately identified; automotive-only services excluded / 建筑业务单独确认，不以汽车膜业务代替\nBrand mentions require building-product and branch confirmation / 页面品牌提及需另核实建筑产品系列及分店供应",
       "route": "E",
       "visitRegion": "塔科马及皮尔斯县",
       "visitBatch": "E-05",
@@ -7015,8 +7772,24 @@
           "contentType": "image/jpeg",
           "sourceLabel": "Public website or directory image; location unverified",
           "sourceUrl": "http://scwindowtinting.net/"
+        },
+        {
+          "url": "/assets/field-sales-prospects/ARCH-SEA041-02.jpg",
+          "fileName": "ARCH-SEA041-02.jpg",
+          "contentType": "image/jpeg",
+          "sourceLabel": "Public architectural-film website image; location unverified",
+          "sourceUrl": "https://www.scwindowtinting.net/commercial-window-tinting-puyallup/"
         }
-      ]
+      ],
+      "architecturalSourceIds": [
+        "ARCH-SEA041"
+      ],
+      "architecturalSourceId": "ARCH-SEA041",
+      "architecturalServices": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜; Safety and security film / 安全防爆膜",
+      "interestedProducts": [
+        "建筑玻璃膜"
+      ],
+      "currentProducts": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜; Safety and security film / 安全防爆膜"
     },
     {
       "publicRecordId": "SEA169",
@@ -7145,8 +7918,8 @@
       "address": "14706 Meridian E Unit A, Puyallup, WA 98375",
       "distanceKm": 53.5,
       "distanceBand": "50–100 km / 公里",
-      "services": "Automotive window tint / 汽车隔热膜; Paint protection film (PPF) / 漆面保护膜; Color change & vinyl wraps / 改色膜及车身包覆; Ceramic coating / 陶瓷镀膜; Detailing & paint correction / 精洗及漆面修复\nSeries mentioned / 提及系列: Ceramic IR; KAVACA",
-      "filmBrands": "Ceramic Pro、KAVACA",
+      "services": "Automotive window tint / 汽车隔热膜; Paint protection film (PPF) / 漆面保护膜; Color change & vinyl wraps / 改色膜及车身包覆; Ceramic coating / 陶瓷镀膜; Detailing & paint correction / 精洗及漆面修复\nSeries mentioned / 提及系列: Ceramic IR; KAVACA\n建筑膜业务 / Architectural film: Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜; Solar and heat-control film / 隔热防晒膜; Safety and security film / 安全防爆膜; Privacy and frosted film / 隐私磨砂膜; Anti-graffiti film / 防涂鸦膜",
+      "filmBrands": "Ceramic Pro、KAVACA\nSolar Gard",
       "serviceEvidence": "Official automotive-film service evidence / 官网汽车膜服务佐证",
       "phone": "+1 253-229-9000",
       "website": "https://www.thetintguysstudio.com/",
@@ -7154,11 +7927,12 @@
       "directorySource": "https://findawrap.com/shops/puyallup-wa/the-tint-guys-puyallup-wa",
       "serviceSources": [
         "https://www.thetintguysstudio.com/",
-        "https://www.thetintguysstudio.com/contact"
+        "https://www.thetintguysstudio.com/contact",
+        "https://www.thetintguysstudio.com/commercial-tinting"
       ],
       "lat": 47.1225751,
       "lng": -122.2937894,
-      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认",
+      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认\nPublic address and branch require confirmation before visiting / 出访前确认当前地址及分店\nArchitecture services are separately identified; automotive-only services excluded / 建筑业务单独确认，不以汽车膜业务代替\nBrand mentions require building-product and branch confirmation / 页面品牌提及需另核实建筑产品系列及分店供应",
       "route": "E",
       "visitRegion": "塔科马及皮尔斯县",
       "visitBatch": "E-05",
@@ -7185,7 +7959,16 @@
           "sourceLabel": "Public website or directory image; location unverified",
           "sourceUrl": "https://www.thetintguysstudio.com/"
         }
-      ]
+      ],
+      "architecturalSourceIds": [
+        "ARCH-SEA049"
+      ],
+      "architecturalSourceId": "ARCH-SEA049",
+      "architecturalServices": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜; Solar and heat-control film / 隔热防晒膜; Safety and security film / 安全防爆膜; Privacy and frosted film / 隐私磨砂膜; Anti-graffiti film / 防涂鸦膜",
+      "interestedProducts": [
+        "建筑玻璃膜"
+      ],
+      "currentProducts": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜; Solar and heat-control film / 隔热防晒膜; Safety and security film / 安全防爆膜; Privacy and frosted film / 隐私磨砂膜; Anti-graffiti film / 防涂鸦膜"
     },
     {
       "publicRecordId": "SEA170",
@@ -7422,8 +8205,8 @@
       "address": "8016 Durango St SW #3, Lakewood, WA 98499",
       "distanceKm": 48.2,
       "distanceBand": "0–50 km / 公里",
-      "services": "Automotive window tint / 汽车隔热膜; Detailing & paint correction / 精洗及漆面修复",
-      "filmBrands": "Not publicly verified\n未公开核实",
+      "services": "Automotive window tint / 汽车隔热膜; Detailing & paint correction / 精洗及漆面修复\n建筑膜业务 / Architectural film: Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜",
+      "filmBrands": "Not publicly verified\n未公开核实\nUnverified / 未核实",
       "serviceEvidence": "Official automotive-film service evidence / 官网汽车膜服务佐证",
       "phone": "+1 253-785-9674",
       "website": "https://tintinglakewood.com/",
@@ -7431,11 +8214,12 @@
       "directorySource": "https://findawrap.com/shops/lakewood-wa/m-h-window-tinting-lakewood-wa",
       "serviceSources": [
         "https://tintinglakewood.com/",
-        "https://tintinglakewood.com/about"
+        "https://tintinglakewood.com/about",
+        "https://tintinglakewood.com/residential-and-commercial"
       ],
       "lat": 47.1833786,
       "lng": -122.4873656,
-      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认",
+      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认\nPublic address and branch require confirmation before visiting / 出访前确认当前地址及分店\nArchitecture services are separately identified; automotive-only services excluded / 建筑业务单独确认，不以汽车膜业务代替\nBrand mentions require building-product and branch confirmation / 页面品牌提及需另核实建筑产品系列及分店供应",
       "route": "E",
       "visitRegion": "塔科马及皮尔斯县",
       "visitBatch": "E-06",
@@ -7455,7 +8239,16 @@
           "sourceLabel": "Public website or directory image; location unverified",
           "sourceUrl": "https://tintinglakewood.com/"
         }
-      ]
+      ],
+      "architecturalSourceIds": [
+        "ARCH-SEA044"
+      ],
+      "architecturalSourceId": "ARCH-SEA044",
+      "architecturalServices": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜",
+      "interestedProducts": [
+        "建筑玻璃膜"
+      ],
+      "currentProducts": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜"
     },
     {
       "publicRecordId": "SEA183",
@@ -7549,7 +8342,7 @@
       "address": "1824 112th St E Ste F, Tacoma, WA 98445",
       "distanceKm": 50.2,
       "distanceBand": "50–100 km / 公里",
-      "services": "Automotive window tint / 汽车隔热膜; Paint protection film (PPF) / 漆面保护膜",
+      "services": "Automotive window tint / 汽车隔热膜; Paint protection film (PPF) / 漆面保护膜\n建筑膜业务 / Architectural film: Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜; Solar and heat-control film / 隔热防晒膜; Safety and security film / 安全防爆膜; Privacy and frosted film / 隐私磨砂膜; Anti-graffiti film / 防涂鸦膜",
       "filmBrands": "XPEL",
       "serviceEvidence": "Official automotive-film service evidence / 官网汽车膜服务佐证",
       "phone": "+1 253-240-5770",
@@ -7558,11 +8351,12 @@
       "directorySource": "https://findawrap.com/shops/tacoma-wa/summit-window-tinting-tacoma-tacoma-wa",
       "serviceSources": [
         "https://www.summitwindowtinting.com/",
-        "https://www.summitwindowtinting.com/about-us/"
+        "https://www.summitwindowtinting.com/about-us/",
+        "https://www.summitwindowtinting.com/commercial-tinting/"
       ],
       "lat": 47.1545498,
       "lng": -122.4038548,
-      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认",
+      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认\nPublic address and branch require confirmation before visiting / 出访前确认当前地址及分店\nArchitecture services are separately identified; automotive-only services excluded / 建筑业务单独确认，不以汽车膜业务代替\nBrand mentions require building-product and branch confirmation / 页面品牌提及需另核实建筑产品系列及分店供应",
       "route": "E",
       "visitRegion": "塔科马及皮尔斯县",
       "visitBatch": "E-07",
@@ -7588,7 +8382,16 @@
           "sourceLabel": "Public website or directory image; location unverified",
           "sourceUrl": "https://www.summitwindowtinting.com/"
         }
-      ]
+      ],
+      "architecturalSourceIds": [
+        "ARCH-SEA046"
+      ],
+      "architecturalSourceId": "ARCH-SEA046",
+      "architecturalServices": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜; Solar and heat-control film / 隔热防晒膜; Safety and security film / 安全防爆膜; Privacy and frosted film / 隐私磨砂膜; Anti-graffiti film / 防涂鸦膜",
+      "interestedProducts": [
+        "建筑玻璃膜"
+      ],
+      "currentProducts": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜; Solar and heat-control film / 隔热防晒膜; Safety and security film / 安全防爆膜; Privacy and frosted film / 隐私磨砂膜; Anti-graffiti film / 防涂鸦膜"
     },
     {
       "publicRecordId": "SEA193",
@@ -7821,8 +8624,8 @@
       "address": "2200 109th St S #210, Tacoma, WA 98444",
       "distanceKm": 50.6,
       "distanceBand": "50–100 km / 公里",
-      "services": "Automotive window tint / 汽车隔热膜; Paint protection film (PPF) / 漆面保护膜",
-      "filmBrands": "Not publicly verified\n未公开核实",
+      "services": "Automotive window tint / 汽车隔热膜; Paint protection film (PPF) / 漆面保护膜\n建筑膜业务 / Architectural film: Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜; Safety and security film / 安全防爆膜",
+      "filmBrands": "Not publicly verified\n未公开核实\nUnverified / 未核实",
       "serviceEvidence": "Official automotive-film service evidence / 官网汽车膜服务佐证",
       "phone": "+1 253-988-2165",
       "website": "https://www.jswindowtinting.net/",
@@ -7830,11 +8633,12 @@
       "directorySource": "https://findawrap.com/shops/tacoma-wa/js-window-tinting-tacoma-wa",
       "serviceSources": [
         "https://www.jswindowtinting.net/",
-        "https://www.jswindowtinting.net/about-us"
+        "https://www.jswindowtinting.net/about-us",
+        "https://www.jswindowtinting.net/commercial-window-tinting"
       ],
       "lat": 47.1581076,
       "lng": -122.4665117,
-      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认",
+      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认\nPublic address and branch require confirmation before visiting / 出访前确认当前地址及分店\nArchitecture services are separately identified; automotive-only services excluded / 建筑业务单独确认，不以汽车膜业务代替\nBrand mentions require building-product and branch confirmation / 页面品牌提及需另核实建筑产品系列及分店供应",
       "route": "E",
       "visitRegion": "塔科马及皮尔斯县",
       "visitBatch": "E-08",
@@ -7859,8 +8663,24 @@
           "contentType": "image/jpeg",
           "sourceLabel": "Public website or directory image; location unverified",
           "sourceUrl": "https://www.jswindowtinting.net/"
+        },
+        {
+          "url": "/assets/field-sales-prospects/ARCH-SEA047-02.jpg",
+          "fileName": "ARCH-SEA047-02.jpg",
+          "contentType": "image/jpeg",
+          "sourceLabel": "Public architectural-film website image; location unverified",
+          "sourceUrl": "https://www.jswindowtinting.net/about-us"
         }
-      ]
+      ],
+      "architecturalSourceIds": [
+        "ARCH-SEA047"
+      ],
+      "architecturalSourceId": "ARCH-SEA047",
+      "architecturalServices": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜; Safety and security film / 安全防爆膜",
+      "interestedProducts": [
+        "建筑玻璃膜"
+      ],
+      "currentProducts": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜; Safety and security film / 安全防爆膜"
     },
     {
       "publicRecordId": "SEA202",
@@ -8260,8 +9080,8 @@
       "address": "3118 14th Ave NW, Gig Harbor, WA 98335",
       "distanceKm": 39.1,
       "distanceBand": "0–50 km / 公里",
-      "services": "Color change & vinyl wraps / 改色膜及车身包覆; Fleet graphics & commercial wraps / 商用车图文及包覆",
-      "filmBrands": "Not publicly verified\n未公开核实",
+      "services": "Color change & vinyl wraps / 改色膜及车身包覆; Fleet graphics & commercial wraps / 商用车图文及包覆\n建筑膜业务 / Architectural film: Wall vinyl graphics and wraps / 墙面图文及装饰包覆",
+      "filmBrands": "Not publicly verified\n未公开核实\nUnverified / 未核实",
       "serviceEvidence": "Official automotive-film service evidence / 官网汽车膜服务佐证",
       "phone": "+1 253-265-4421",
       "website": "https://www.tacomasigncompany.com/",
@@ -8269,11 +9089,12 @@
       "directorySource": "https://findawrap.com/shops/gig-harbor-wa/tacoma-sign-company-gig-harbor-wa",
       "serviceSources": [
         "https://www.tacomasigncompany.com/",
-        "https://www.tacomasigncompany.com/contact-us/"
+        "https://www.tacomasigncompany.com/contact-us/",
+        "https://www.tacomasigncompany.com/cabinet-signs/"
       ],
       "lat": 47.2870342,
       "lng": -122.5583141,
-      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认",
+      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认\nPublic address and branch require confirmation before visiting / 出访前确认当前地址及分店\nArchitecture services are separately identified; automotive-only services excluded / 建筑业务单独确认，不以汽车膜业务代替\nBrand mentions require building-product and branch confirmation / 页面品牌提及需另核实建筑产品系列及分店供应",
       "route": "E",
       "visitRegion": "塔科马及皮尔斯县",
       "visitBatch": "E-11",
@@ -8295,8 +9116,24 @@
           "contentType": "image/jpeg",
           "sourceLabel": "Public website or directory image; location unverified",
           "sourceUrl": "https://www.tacomasigncompany.com/"
+        },
+        {
+          "url": "/assets/field-sales-prospects/ARCH-SEA036-02.jpg",
+          "fileName": "ARCH-SEA036-02.jpg",
+          "contentType": "image/jpeg",
+          "sourceLabel": "Public architectural-film website image; location unverified",
+          "sourceUrl": "https://www.tacomasigncompany.com/"
         }
-      ]
+      ],
+      "architecturalSourceIds": [
+        "ARCH-SEA036"
+      ],
+      "architecturalSourceId": "ARCH-SEA036",
+      "architecturalServices": "Wall vinyl graphics and wraps / 墙面图文及装饰包覆",
+      "interestedProducts": [
+        "建筑玻璃膜"
+      ],
+      "currentProducts": "Wall vinyl graphics and wraps / 墙面图文及装饰包覆"
     },
     {
       "publicRecordId": "SEA214",
@@ -8530,7 +9367,7 @@
       "address": "2600 NW Randall Way #101, Silverdale, WA 98383",
       "distanceKm": 27.5,
       "distanceBand": "0–50 km / 公里",
-      "services": "Automotive window tint / 汽车隔热膜; Paint protection film (PPF) / 漆面保护膜; Color change & vinyl wraps / 改色膜及车身包覆; Ceramic coating / 陶瓷镀膜; Detailing & paint correction / 精洗及漆面修复\nSeries mentioned / 提及系列: FUSION PLUS",
+      "services": "Automotive window tint / 汽车隔热膜; Paint protection film (PPF) / 漆面保护膜; Color change & vinyl wraps / 改色膜及车身包覆; Ceramic coating / 陶瓷镀膜; Detailing & paint correction / 精洗及漆面修复\nSeries mentioned / 提及系列: FUSION PLUS\n建筑膜业务 / Architectural film: Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜",
       "filmBrands": "XPEL",
       "serviceEvidence": "Official automotive-film service evidence / 官网汽车膜服务佐证",
       "phone": "+1 360-692-1561",
@@ -8543,7 +9380,7 @@
       ],
       "lat": 47.66161,
       "lng": -122.686241,
-      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认",
+      "researchNotes": "Public address; current walk-in storefront not confirmed / 公开地址，当前可到访实体门店未逐店确认\nPublic address and branch require confirmation before visiting / 出访前确认当前地址及分店\nArchitecture services are separately identified; automotive-only services excluded / 建筑业务单独确认，不以汽车膜业务代替\nBrand mentions require building-product and branch confirmation / 页面品牌提及需另核实建筑产品系列及分店供应",
       "route": "G",
       "visitRegion": "基萨普及岛屿渡轮路线",
       "visitBatch": "G-01",
@@ -8570,7 +9407,16 @@
           "sourceLabel": "Public website or directory image; location unverified",
           "sourceUrl": "https://californiatint.com/locations/silverdale-washington/"
         }
-      ]
+      ],
+      "architecturalSourceIds": [
+        "ARCH-SEA022"
+      ],
+      "architecturalSourceId": "ARCH-SEA022",
+      "architecturalServices": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜",
+      "interestedProducts": [
+        "建筑玻璃膜"
+      ],
+      "currentProducts": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜"
     },
     {
       "publicRecordId": "SEA098",

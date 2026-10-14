@@ -948,7 +948,7 @@ function applyRegionalFieldSalesProspectImports() {
           branchId:'los-angeles',
           contactName:'', phone:String(source.phone || '').slice(0, 80), email:'',
           city:String(source.city || '').slice(0, 120),
-          customerType:'汽车贴膜门店', source:`${config.marketLabel}周边公开客户资料`, language:'auto',
+          customerType:source.architecturalServices ? '建筑膜客户' : '汽车贴膜门店', source:`${config.marketLabel}周边公开客户资料`, language:'auto',
           assignedUserId:'', assignedUserName:'', leadPool:true,
           cadenceDays:30, stage:'待拜访', lastVisitAt:'', nextVisitAt:'',
           createdByUserId:'system-import', createdByName:'公开客户资料导入',
@@ -969,6 +969,7 @@ function applyRegionalFieldSalesProspectImports() {
       account.directorySource = String(source.directorySource || '').slice(0, 1000);
       account.socialLinks = source.socialLinks && typeof source.socialLinks === 'object' ? source.socialLinks : {};
       account.services = String(source.services || '').slice(0, 3000);
+      account.architecturalServices = String(source.architecturalServices || '').slice(0, 3000);
       account.filmBrands = String(source.filmBrands || '').slice(0, 1000);
       account.serviceEvidence = String(source.serviceEvidence || '').slice(0, 1000);
       account.visitRegion = String(source.visitRegion || '').slice(0, 120);
@@ -978,6 +979,11 @@ function applyRegionalFieldSalesProspectImports() {
       account.distanceFromStoreKm = Math.max(0, Number(source.distanceKm || 0));
       account.navigationUrl = String(source.navigationUrl || '').slice(0, 1500);
       account.referencePhotoUrls = (source.referencePhotos || []).map(row => String(row.url || '')).filter(Boolean).slice(0, 4);
+      account.interestedProducts = [...new Set([
+        ...(Array.isArray(account.interestedProducts) ? account.interestedProducts : []),
+        ...(Array.isArray(source.interestedProducts) ? source.interestedProducts : [])
+      ].map(value => String(value || '').trim()).filter(Boolean))].slice(0, 20);
+      if (!account.currentProducts && source.currentProducts) account.currentProducts = String(source.currentProducts).slice(0, 3000);
       if (!account.phone && source.phone) account.phone = String(source.phone).slice(0, 80);
       if (!account.city && source.city) account.city = String(source.city).slice(0, 120);
       if (!account.note) {
