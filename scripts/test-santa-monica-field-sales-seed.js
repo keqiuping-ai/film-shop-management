@@ -3,9 +3,10 @@ const fs = require('fs');
 const path = require('path');
 
 const root = path.resolve(__dirname, '..');
-const seedPath = path.join(root, 'data/seeds/santa-monica-field-sales-2026-10-13.json');
+const seedPath = path.join(root, 'migrations/santa-monica-field-sales-2026-10-13.json');
 const seed = JSON.parse(fs.readFileSync(seedPath, 'utf8'));
 const serverSource = fs.readFileSync(path.join(root, 'server.js'), 'utf8');
+const dockerfile = fs.readFileSync(path.join(root, 'Dockerfile'), 'utf8');
 
 assert.equal(seed.version, 'santa-monica-field-sales-2026-10-13-v1');
 assert.equal(seed.recordCount, 398);
@@ -30,5 +31,6 @@ assert.equal(first.website, 'https://www.samssteam.com/');
 assert.equal(first.visitRegion, '西区／圣莫尼卡');
 assert.equal(first.referencePhotos.length, 2);
 assert(serverSource.includes("DATA_DIR === '/app/data'"), 'production data directory must activate the one-time import');
+assert(dockerfile.includes('COPY migrations ./migrations'), 'Railway image must include the customer seed migration');
 
 console.log('Santa Monica field-sales seed integrity test passed');
