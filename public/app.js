@@ -5613,7 +5613,10 @@ const views = {
     return panel(t('pricing'), hasPerm('pricingEdit') ? `<button class="btn primary" onclick="openPriceRule()">${t('addNew')}</button>` : '', priceRuleTable());
   },
   inventory() {
-    return `${panel(lang === 'zh' ? '分店库存范围' : 'Inventory Scope', '', `${inventoryBranchControls()}<p class="note">${lang === 'zh' ? '公司总库存是控制总账；各分店是明细账；无法可靠判断的历史库存只进入“待确认分店”。' : 'Company inventory is the control total. Unknown historical allocations remain pending.'}</p>`)}
+    const adjustmentAction = user?.role === 'owner' && hasPerm('inventoryEdit')
+      ? `<button class="btn" onclick="openInventoryAdjustmentImport()">${lang === 'zh' ? '导入盘点调整' : 'Import count adjustment'}</button>`
+      : '';
+    return `${panel(lang === 'zh' ? '分店库存范围' : 'Inventory Scope', adjustmentAction, `${inventoryBranchControls()}<p class="note">${lang === 'zh' ? '公司总库存是控制总账；各分店是明细账；无法可靠判断的历史库存只进入“待确认分店”。' : 'Company inventory is the control total. Unknown historical allocations remain pending.'}</p>`)}
     <div class="panel inventory-document-panel"><div class="panel-head"><div><h3>${lang === 'zh' ? '库存单' : 'Inventory List'}</h3><p class="note">${lang === 'zh' ? '当前库存总表；默认显示约 5 条，更多商品请搜索或在表内滚动。' : 'Current stock. About five rows are visible; search or scroll inside the table for more.'}</p></div>${hasPerm('inventoryEdit') ? `<button class="btn primary" onclick="openProduct()">${t('addNew')}</button>` : ''}</div>${inventorySearchBox()}<div id="inventorySearchResults">${productTable(searchedProducts(), true, 'inventory-stock-table-scroll')}</div></div>
     <div class="panel inventory-workbench-panel"><div class="panel-head"><div><h3>${lang === 'zh' ? '待出库单' : 'Pending Stock-out'}</h3><p class="note">${lang === 'zh' ? '库管工作台：搜索并点开整张销售单，核对客户、付款与库存后确认出库。' : 'Warehouse workbench: open an order to reconcile customer, payment, and inventory before shipment.'}</p></div></div>${inventoryDocumentSearchBox('pending')}${pendingStockOutTable()}</div>
     <div class="panel inventory-workbench-panel"><div class="panel-head"><div><h3>${lang === 'zh' ? '出库单' : 'Stock-out Records'}</h3><p class="note">${lang === 'zh' ? '同一销售单的多个商品合并为一张出库单；点整行查看订单与出库对照。' : 'Multiple items from one sales order are grouped into one stock-out document.'}</p></div></div>${inventoryDocumentSearchBox('out')}${movementTable('out')}</div>
@@ -6525,6 +6528,53 @@ function setInventoryBranch(value) {
   inventoryBranchFilter = String(value ?? 'all');
   localStorage.setItem('filmShopCloud.inventoryBranch', inventoryBranchFilter);
   render();
+}
+
+function inventoryAdjustmentPreviewHtml(preview) {
+  const rows = Array.isArray(preview.rows) ? preview.rows : [];
+  const blocked = rows.filter(row => row.error);
+  const executable = rows.filter(row => !row.error && Math.abs(Number(row.delta || 0)) > 0.0001);
+  const branchName = branchId => branchId === 'las-vegas' ? 'LV' : branchId === 'los-angeles' ? 'LA' : branchId;
+  const totals = Object.entries(preview.totals || {}).map(([branchId, value]) => `<div><span>${escapeHtml(branchName(branchId))}</span><strong>${Number(value.rows || 0)} ${lang === 'zh' ? '条' : 'rows'} · ${Number(value.netDelta || 0) >= 0 ? '+' : ''}${Number(value.netDelta || 0).toLocaleString()}</strong></div>`).join('');
+  const problems = blocked.slice(0, 30).map(row => `<tr><td>${escapeHtml(row.sku || `#${row.rowNumber}`)}</td><td>${escapeHtml(branchName(row.branchId))}</td><td class="bad-text">${escapeHtml(row.error)}</td></tr>`).join('');
+  return `<div class="inventory-document-detail">
+    <section class="inventory-document-summary"><div><span>${lang === 'zh' ? '批次' : 'Batch'}</span><strong>${escapeHtml(preview.requestId || '—')}</strong></div><div><span>${lang === 'zh' ? '可执行' : 'Executable'}</span><strong>${executable.length}</strong></div><div><span>${lang === 'zh' ? '阻止项' : 'Blocked'}</span><strong class="${blocked.length ? 'bad-text' : 'good-text'}">${blocked.length}</strong></div><div><span>${lang === 'zh' ? '来源' : 'Source'}</span><strong>${escapeHtml(preview.source || '—')}</strong></div></section>
+    <section class="inventory-document-section"><h3>${lang === 'zh' ? '分店调整汇总' : 'Branch adjustment totals'}</h3><div class="inventory-detail-grid">${totals}</div></section>
+    ${blocked.length ? `<section class="inventory-document-section"><h3>${lang === 'zh' ? '预检未通过，系统不会修改库存' : 'Preview failed; inventory will not change'}</h3><div class="table-wrap"><table><thead><tr><th>SKU</th><th>${lang === 'zh' ? '分店' : 'Branch'}</th><th>${lang === 'zh' ? '原因' : 'Reason'}</th></tr></thead><tbody>${problems}</tbody></table></div></section>` : `<p class="good-text">${lang === 'zh' ? '预检通过。正式执行前系统会自动建立数据库备份；每条差异都会生成可追溯的盘点调整流水。' : 'Preview passed. A database backup and auditable adjustment movements will be created before applying.'}</p>`}
+  </div>`;
+}
+
+function openInventoryAdjustmentImport() {
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = 'application/json,.json';
+  input.onchange = async () => {
+    const file = input.files?.[0];
+    if (!file) return;
+    try {
+      const payload = JSON.parse(await file.text());
+      const preview = await api('/api/inventory-adjustments/preview', { method: 'POST', timeoutMs: 120000, body: JSON.stringify(payload) });
+      openModal(lang === 'zh' ? '盘点调整预览' : 'Inventory count adjustment preview', inventoryAdjustmentPreviewHtml(preview), async () => {
+        if (!preview.ok) return alert(lang === 'zh' ? '预检未通过，不能执行。请先处理红色问题。' : 'Preview failed. Resolve the blocked rows first.');
+        const result = await api('/api/inventory-adjustments/apply', { method: 'POST', timeoutMs: 120000, body: JSON.stringify(payload) });
+        state = result.data;
+        broadcastDataChange();
+        closeModal();
+        render();
+        showActionFeedback(result.alreadyApplied
+          ? (lang === 'zh' ? '这个盘点批次已经执行过，系统没有重复调整。' : 'This count batch was already applied; no duplicate changes were made.')
+          : (lang === 'zh' ? `盘点调整完成：${result.batch?.rowCount || 0} 条，已建立备份 ${result.batch?.backupFileName || ''}` : `Inventory adjusted: ${result.batch?.rowCount || 0} rows. Backup: ${result.batch?.backupFileName || ''}`));
+      });
+      const save = document.getElementById('modalSave');
+      if (save) {
+        save.textContent = lang === 'zh' ? '确认执行盘点调整' : 'Apply adjustments';
+        save.disabled = !preview.ok;
+      }
+    } catch (error) {
+      alert(`${lang === 'zh' ? '盘点调整文件读取失败' : 'Could not read adjustment file'}：${error.message}`);
+    }
+  };
+  input.click();
 }
 
 function branchTransferTable() {

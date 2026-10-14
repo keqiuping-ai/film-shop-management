@@ -3161,6 +3161,76 @@ function branchStockQty(db, sku, branchId) {
   return Number(branchInventorySnapshot(db, { role: 'owner' }).find(row => row.sku === sku && row.branchId === branchId)?.qty || 0);
 }
 
+function inventoryAdjustmentPlan(db, payload = {}) {
+  const rawRows = Array.isArray(payload.adjustments) ? payload.adjustments : [];
+  const allowedBranches = new Set(customerBranches(db).map(branch => String(branch.id || '')));
+  const seen = new Set();
+  const rows = [];
+  const errors = [];
+  if (!rawRows.length) errors.push('盘点调整文件没有可执行的明细');
+  if (rawRows.length > 1000) errors.push('单次盘点调整不能超过 1000 条');
+  rawRows.slice(0, 1000).forEach((raw, index) => {
+    const rowNumber = index + 1;
+    const sku = String(raw?.sku || '').trim();
+    const branchId = String(raw?.branchId || '').trim();
+    const snapshotQty = Number(raw?.snapshotQty);
+    const countedQty = Number(raw?.countedQty);
+    const suppliedDelta = Number(raw?.delta);
+    const delta = Math.round((countedQty - snapshotQty) * 1000) / 1000;
+    const key = `${sku}\u0000${branchId}`;
+    const product = (db.products || []).find(item => String(item.sku || '') === sku);
+    let error = '';
+    if (!sku) error = 'SKU 不能为空';
+    else if (!product) error = `系统里找不到 SKU ${sku}`;
+    else if (!allowedBranches.has(branchId)) error = `分店 ${branchId || '空'} 不存在`;
+    else if (!Number.isFinite(snapshotQty) || !Number.isFinite(countedQty)) error = '系统快照数和盘点数必须是数字';
+    else if (countedQty < 0) error = '盘点数不能小于 0';
+    else if (!Number.isFinite(suppliedDelta) || Math.abs(suppliedDelta - delta) > 0.0001) error = '文件里的差异与盘点数减系统数不一致';
+    else if (seen.has(key)) error = `SKU ${sku} 在 ${branchId} 重复出现`;
+    seen.add(key);
+    const currentQty = product && allowedBranches.has(branchId) ? branchStockQty(db, sku, branchId) : 0;
+    const afterQty = Math.round((currentQty + delta) * 1000) / 1000;
+    if (!error && afterQty < -0.0001) error = `当前库存 ${currentQty} 加调整 ${delta} 后会变成负数`;
+    const normalized = {
+      rowNumber,
+      sku,
+      productName: String(product?.name || raw?.productName || ''),
+      unit: String(product?.unit || raw?.unit || ''),
+      branchId,
+      snapshotQty,
+      countedQty,
+      delta,
+      currentQty: Math.round(currentQty * 1000) / 1000,
+      afterQty,
+      countDate: String(raw?.countDate || '').trim().slice(0, 10),
+      note: String(raw?.note || '').trim().slice(0, 500),
+      error
+    };
+    rows.push(normalized);
+    if (error) errors.push(`第 ${rowNumber} 条：${error}`);
+  });
+  const executableRows = rows.filter(row => !row.error && Math.abs(row.delta) > 0.0001);
+  const totals = executableRows.reduce((result, row) => {
+    const branch = result[row.branchId] || { rows: 0, increases: 0, decreases: 0, netDelta: 0 };
+    branch.rows += 1;
+    if (row.delta > 0) branch.increases += 1;
+    else branch.decreases += 1;
+    branch.netDelta = Math.round((branch.netDelta + row.delta) * 1000) / 1000;
+    result[row.branchId] = branch;
+    return result;
+  }, {});
+  return {
+    requestId: String(payload.requestId || '').trim().slice(0, 160),
+    source: String(payload.source || '').trim().slice(0, 500),
+    sourceSha256: String(payload.sourceSha256 || '').trim().slice(0, 128),
+    rows,
+    executableRows,
+    errors,
+    totals,
+    ok: errors.length === 0 && executableRows.length > 0
+  };
+}
+
 function productsForUser(db, user, canSeeCosts) {
   const products = sanitizeProducts(db.products || [], canSeeCosts);
   const scope = userBranchIds(db, user);
@@ -11459,6 +11529,112 @@ async function api(req, res) {
       deliveryMode: mmsFallback ? 'link-fallback' : twilioMedia.mediaUrl ? 'mms' : 'sms',
       fallbackMessage: mmsFallback ? 'Twilio 未接受这张图片的 MMS，系统已自动改为可点击图片链接发送。' : '',
       to,
+      data: sanitizeDbForUser(db, user)
+    });
+  }
+
+  if (req.method === 'POST' && ['/api/inventory-adjustments/preview', '/api/inventory-adjustments/apply'].includes(url.pathname)) {
+    if (user.role !== 'owner' || !canAccess(user, 'inventoryEdit')) return send(res, 403, { error: '只有老板账号可以导入盘点调整' });
+    const body = await readBody(req);
+    const plan = inventoryAdjustmentPlan(db, body);
+    if (url.pathname.endsWith('/preview')) {
+      return send(res, 200, {
+        ok: plan.ok,
+        requestId: plan.requestId,
+        source: plan.source,
+        totals: plan.totals,
+        rows: plan.rows,
+        errors: plan.errors
+      });
+    }
+    if (!plan.requestId) return send(res, 400, { error: '盘点调整缺少批次编号，不能防止重复导入' });
+    db.inventoryAdjustmentBatches = Array.isArray(db.inventoryAdjustmentBatches) ? db.inventoryAdjustmentBatches : [];
+    const existingBatch = db.inventoryAdjustmentBatches.find(batch => batch.requestId === plan.requestId);
+    if (existingBatch) {
+      return send(res, 200, {
+        ok: true,
+        alreadyApplied: true,
+        batch: existingBatch,
+        data: sanitizeDbForUser(db, user)
+      });
+    }
+    if (!plan.ok) return send(res, 400, {
+      error: '盘点调整预检未通过，系统未修改库存',
+      errors: plan.errors,
+      rows: plan.rows,
+      totals: plan.totals
+    });
+    const backup = createDatabaseBackup(db, 'manual', user);
+    const now = new Date().toISOString();
+    const movementDate = dateInTimezone(db.settings?.timezone || 'America/Los_Angeles', 0);
+    const batchId = id();
+    const movementIds = [];
+    plan.executableRows.forEach(row => {
+      const movement = {
+        id: id(),
+        date: movementDate,
+        branchId: row.branchId,
+        sku: row.sku,
+        type: row.delta > 0 ? 'in' : 'out',
+        qty: Math.abs(row.delta),
+        salesOrderId: '',
+        note: `盘点调整：${plan.source || plan.requestId}；盘点 ${row.countedQty}，原系统快照 ${row.snapshotQty}，差异 ${row.delta > 0 ? '+' : ''}${row.delta}`,
+        inventoryAdjustment: true,
+        inventoryAdjustmentBatchId: batchId,
+        inventoryAdjustmentRequestId: plan.requestId,
+        inventoryCountDate: row.countDate,
+        inventorySnapshotQty: row.snapshotQty,
+        inventoryCountedQty: row.countedQty,
+        createdAt: now,
+        createdBy: user.name || user.email,
+        createdByUserId: user.id
+      };
+      db.movements.push(movement);
+      applyMovement(db, movement);
+      movementIds.push(movement.id);
+    });
+    const verificationRows = plan.executableRows.map(row => ({
+      sku: row.sku,
+      branchId: row.branchId,
+      beforeQty: row.currentQty,
+      delta: row.delta,
+      expectedQty: row.afterQty,
+      actualQty: Math.round(branchStockQty(db, row.sku, row.branchId) * 1000) / 1000
+    }));
+    const verificationErrors = verificationRows.filter(row => Math.abs(row.expectedQty - row.actualQty) > 0.0001);
+    if (verificationErrors.length) {
+      return send(res, 500, { error: '盘点调整后的库存复核失败，系统未保存本批次', verificationErrors });
+    }
+    const batch = {
+      id: batchId,
+      requestId: plan.requestId,
+      source: plan.source,
+      sourceSha256: plan.sourceSha256,
+      backupFileName: backup.fileName,
+      totals: plan.totals,
+      rowCount: plan.executableRows.length,
+      movementIds,
+      appliedAt: now,
+      appliedBy: user.name || user.email,
+      appliedByUserId: user.id
+    };
+    db.inventoryAdjustmentBatches.push(batch);
+    audit(db, user, 'apply-inventory-count-adjustment', {
+      collection: 'movements',
+      recordId: batchId,
+      recordLabel: plan.requestId,
+      detail: `按盘点差异调整库存 ${plan.executableRows.length} 条；备份 ${backup.fileName}`,
+      totals: plan.totals,
+      source: plan.source,
+      sourceSha256: plan.sourceSha256
+    });
+    writeDb(db);
+    notifyDataChanged('apply-inventory-count-adjustment', batchId);
+    return send(res, 200, {
+      ok: true,
+      alreadyApplied: false,
+      batch,
+      verificationRows,
       data: sanitizeDbForUser(db, user)
     });
   }
