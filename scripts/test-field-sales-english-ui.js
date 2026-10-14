@@ -20,10 +20,11 @@ assert(mobile.includes("lang === 'en' ? 'customers' : '位客户'"), 'customer c
 assert(mobile.includes("SALES_PRODUCT_INTEREST_ENGLISH"), 'product interest labels must have English display values');
 assert(mobile.includes("salesStatusLabel(value)"), 'customer stages must use English display labels');
 assert(mobile.includes("SALES_CUSTOMER_TYPE_ENGLISH"), 'system customer types must have English display values');
+assert(mobile.includes("salesCategoryLabel(category)"), 'customer category selector must have localized labels');
 assert(mobile.includes("Public Prospect Import"), 'system importer name must have an English display value');
 assert(mobile.includes("Reference Photo $1"), 'generated reference-photo names must be localized');
 assert(mobile.includes("value=\"${value}\""), 'localized stage options must preserve API values');
-assert(html.includes('/mobile.js?v=78'), 'mobile bundle cache key was not bumped');
-assert(sw.includes('film-shop-v181-field-sales-english-ui'), 'service-worker cache key was not bumped');
+assert(html.includes('/mobile.js?v=79'), 'mobile bundle cache key was not bumped');
+assert(sw.includes('film-shop-v182-field-sales-customer-category'), 'service-worker cache key was not bumped');
 
 console.log('field sales English UI regression passed');

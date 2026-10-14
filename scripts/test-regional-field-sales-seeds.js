@@ -4,10 +4,10 @@ const path = require('path');
 
 const root = path.resolve(__dirname, '..');
 const expected = {
-  'san-francisco': { file:'san-francisco-field-sales-2026-10-14.json', records:271, photos:253, routes:7, batches:60, prefix:'SF', architectural:62, architecturalOnly:2 },
-  seattle: { file:'seattle-field-sales-2026-10-14.json', records:219, photos:240, routes:7, batches:41, prefix:'SEA', architectural:51, architecturalOnly:4 },
-  phoenix: { file:'phoenix-field-sales-2026-10-14.json', records:333, photos:386, routes:6, batches:57, prefix:'PHX', architectural:108, architecturalOnly:2 },
-  vancouver: { file:'vancouver-field-sales-2026-10-14.json', records:243, photos:215, routes:7, batches:48, prefix:'VAN', architectural:26, architecturalOnly:1 }
+  'san-francisco': { file:'san-francisco-field-sales-2026-10-14.json', records:271, photos:253, routes:7, batches:60, prefix:'SF', architectural:62, architecturalAccounts:62, architecturalOnly:2 },
+  seattle: { file:'seattle-field-sales-2026-10-14.json', records:219, photos:240, routes:7, batches:41, prefix:'SEA', architectural:51, architecturalAccounts:51, architecturalOnly:4 },
+  phoenix: { file:'phoenix-field-sales-2026-10-14.json', records:333, photos:386, routes:6, batches:57, prefix:'PHX', architectural:108, architecturalAccounts:102, architecturalOnly:2 },
+  vancouver: { file:'vancouver-field-sales-2026-10-14.json', records:243, photos:215, routes:7, batches:48, prefix:'VAN', architectural:26, architecturalAccounts:26, architecturalOnly:1 }
 };
 
 for (const [marketId, config] of Object.entries(expected)) {
@@ -23,6 +23,7 @@ for (const [marketId, config] of Object.entries(expected)) {
   assert(seed.records.every(item => item.marketId === marketId), `${marketId} market marker missing`);
   assert(seed.records.every(item => item.businessName && item.address && item.visitRegion && item.visitBatch && item.navigationUrl), `${marketId} required visit fields missing`);
   assert.equal(seed.records.reduce((sum, item) => sum + (item.architecturalSourceIds || []).length, 0), config.architectural, `${marketId} architectural source coverage mismatch`);
+  assert.equal(seed.records.filter(item => String(item.architecturalServices || '').trim() || item.interestedProducts?.includes('建筑玻璃膜')).length, config.architecturalAccounts, `${marketId} architectural customer category mismatch`);
   assert.equal(seed.records.filter(item => item.publicRecordId.startsWith('ARCH-')).length, config.architecturalOnly, `${marketId} architectural-only customer mismatch`);
   assert(seed.records.filter(item => item.architecturalSourceId).every(item => item.interestedProducts?.includes('建筑玻璃膜')), `${marketId} architectural interest missing`);
   assert(seed.supplementalSourceWorkbook === 'Architectural_Film_Four_Cities_EN_CN.xlsx', `${marketId} supplemental source missing`);
@@ -42,5 +43,9 @@ assert(server.includes('regionalFieldSalesImports'), 'health endpoint must repor
 assert(mobile.includes("'san-francisco', 'seattle', 'phoenix', 'vancouver'"), 'mobile selector must expose every imported market');
 assert(mobile.includes("const marketId = String(account.marketId || '').toLowerCase()"), 'mobile grouping must use the explicit market marker');
 assert(mobile.includes('routeForRegion'), 'regional directions must follow route order');
+assert(mobile.includes("function salesAccountCategory(account)"), 'city customers must be classified before region selection');
+assert(mobile.includes("salesSelectedCustomerCategory = 'automotive'"), 'automotive customers must be the explicit default category');
+assert(mobile.includes("selectSalesCustomerCategory('${category}')"), 'home screen must expose the customer category selector');
+assert(mobile.includes("const categoryAccounts = categoryGroups[salesSelectedCustomerCategory] || []"), 'regions must be derived from the selected customer category');
 
 console.log('regional field-sales seed integrity test passed');
