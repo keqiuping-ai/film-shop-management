@@ -11,6 +11,10 @@ const server = fs.readFileSync(path.join(root, 'server.js'), 'utf8');
 assert(mobile.includes('选择拜访区域'), 'home must start with region selection');
 assert(mobile.includes('visibleAccounts.map(salesSimpleCustomerCard)'), 'home must list only customers in the selected region');
 assert(mobile.includes('拍照拜访'), 'customer card must open direct photo check-in');
+assert(mobile.includes('openSalesReviewDialog'), 'customer card must expose the imported customer profile');
+assert(mobile.includes('公开资料照片；拍摄地点未核实'), 'reference photos must be clearly distinguished from on-site photos');
+assert(mobile.includes('account.website'), 'customer profile must display the imported website');
+assert(mobile.includes('account.visitRegion'), 'customer profile must display the imported visit region');
 assert(!mobile.match(/function salesHomeHtml\(\)[\s\S]*?标准业务流程[\s\S]*?function salesAccountRegion/), 'home must not render the old six-step workflow');
 assert(mobile.includes('当时谈了什么 *'), 'simple visit must capture the conversation');
 assert(mobile.includes('下一步要做什么'), 'simple visit must capture the next action');
@@ -21,7 +25,11 @@ assert(mobile.includes('拜访资料已保存并同步到主系统'), 'save must
 assert(server.includes('simplifiedDirectCheckIn:true'), 'server must permit direct check-in without a separate trip step');
 assert(server.includes('soldItems: (Array.isArray(body.soldItems)'), 'server must persist product and price records');
 assert(server.includes('contactMet: String(body.contactMet ?? visit.contactMet'), 'server must persist the visit contact');
+assert(server.includes('applySantaMonicaFieldSalesProspectImport();'), 'production startup must run the idempotent prospect import');
+assert(server.includes('referenceMaterial === true'), 'public reference photos must remain visible in the customer profile');
+assert(server.includes('account.leadPool === true'), 'unassigned imported leads must be claimable by a salesperson');
 assert(css.includes('.sales-region-grid'), 'region selector must have mobile styling');
-assert(html.includes('/mobile.js?v=70') && html.includes('/mobile.css?v=62'), 'mobile asset cache keys must be updated');
+assert(css.includes('.sales-simple-customer-photo'), 'imported storefront photos must have mobile styling');
+assert(html.includes('/mobile.js?v=71') && html.includes('/mobile.css?v=63'), 'mobile asset cache keys must be updated');
 
 console.log('simple field visits regression test passed');

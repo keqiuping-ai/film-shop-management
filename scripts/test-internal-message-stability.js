@@ -64,14 +64,14 @@ async function run() {
   assert.match(appSource, /const deletedInternalMessageIds = new Set\(\)/, 'Deleted messages must retain a local tombstone against stale refresh responses');
   assert.match(appSource, /applyInternalMessageTombstones/, 'Every message snapshot must remove locally deleted ids');
   assert.match(serverSource, /DELETE is intentionally idempotent/, 'Repeated deletes must return current state without a false not-found error');
-  assert(indexSource.includes('/app.js?v=162'), 'Desktop app asset marker must be bumped');
+  assert(indexSource.includes('/app.js?v=163'), 'Desktop app asset marker must be bumped');
   assert(indexSource.includes('/styles.css?v=110'), 'Desktop stylesheet marker must match the current release');
   assert.match(mobileSource, /const mobileMessageSendQueue = new Map\(\)/, 'Mobile text sends must survive bootstrap replacement');
   assert.match(mobileSource, /mobileMessageSendQueue\.set\(pendingId/, 'Mobile text must render optimistically');
   assert.match(mobileSource, /正在发送…/, 'Mobile pending text must show sending status');
   assert.match(mobileSource, /preserveMobileMessageSnapshot/, 'Mobile refreshes must preserve a visible non-empty thread');
-  assert(mobileHtml.includes('/mobile.js?v=69'), 'Mobile app asset marker must be bumped');
-  assert(serviceWorker.includes('film-shop-v164-customer-tint-experience'), 'Service worker cache must be bumped');
+  assert(mobileHtml.includes('/mobile.js?v=71'), 'Mobile app asset marker must be bumped');
+  assert(serviceWorker.includes('film-shop-v174-santa-monica-prospects'), 'Service worker cache must be bumped');
   assert.match(appSource, /function capturePageContinuityState\(\)/, 'Desktop refreshes must capture page and nested-scroll positions');
   assert.match(appSource, /function restorePageContinuityState\(snapshot\)/, 'Desktop refreshes must restore page and nested-scroll positions');
   assert.match(appSource, /const unchangedBackgroundRefresh = Boolean\(/, 'Unchanged background refreshes must not rebuild the current page');

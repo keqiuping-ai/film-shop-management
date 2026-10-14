@@ -27,6 +27,7 @@ const EMPLOYEE_DOCUMENTS_DIR = path.join(DATA_DIR, 'employee-verification-docume
 const SESSION_SECRET_FILE = path.join(DATA_DIR, 'session-secret');
 const CONFIG_FILE = path.join(ROOT, 'server-config.json');
 const VERSION_FILE = path.join(ROOT, 'version.json');
+const SANTA_MONICA_FIELD_SALES_SEED_FILE = path.join(ROOT, 'data', 'seeds', 'santa-monica-field-sales-2026-10-13.json');
 const MAX_MESSAGE_ATTACHMENT_BYTES = 20 * 1024 * 1024;
 const MAX_AVATAR_DATA_URL_BYTES = 2 * 1024 * 1024;
 const MAX_EMPLOYEE_DOCUMENT_BYTES = 8 * 1024 * 1024;
@@ -685,6 +686,110 @@ function applyDefaultReplyTemplatesMigration() {
     db.replyTemplates = DEFAULT_REPLY_TEMPLATES.map(template => ({ ...template, attachment:null, createdAt:now, updatedAt:now, createdBy:'系统基础模板' }));
   }
   db.defaultReplyTemplatesMigrationVersion = version;
+  writeDb(db);
+}
+
+function applySantaMonicaFieldSalesProspectImport() {
+  const enabled = process.env.ENABLE_SANTA_MONICA_FIELD_SALES_IMPORT === 'true'
+    || Boolean(process.env.RAILWAY_PROJECT_ID || process.env.RAILWAY_ENVIRONMENT_NAME || process.env.RAILWAY_SERVICE_ID);
+  if (!enabled || !fs.existsSync(SANTA_MONICA_FIELD_SALES_SEED_FILE)) return;
+  const seed = JSON.parse(fs.readFileSync(SANTA_MONICA_FIELD_SALES_SEED_FILE, 'utf8'));
+  const versionKey = String(seed.version || 'santa-monica-field-sales-2026-10-13-v1');
+  const db = readDb();
+  if (db.santaMonicaFieldSalesImportVersion === versionKey) return;
+  const now = new Date().toISOString();
+  const importedAt = '2026-10-14T02:00:00.000Z';
+  const normalizeKey = value => String(value || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+  const existingByRecord = new Map((db.salesAccounts || []).filter(row => row.publicRecordId).map(row => [String(row.publicRecordId), row]));
+  const existingByNameAddress = new Map((db.salesAccounts || []).map(row => [`${normalizeKey(row.businessName)}|${normalizeKey(row.address)}`, row]));
+  let createdAccounts = 0;
+  let updatedAccounts = 0;
+  let createdPhotos = 0;
+  const importedAccountIds = [];
+  for (const source of (seed.records || [])) {
+    const recordId = String(source.publicRecordId || '').trim();
+    if (!recordId || !source.businessName || !source.address) continue;
+    const dedupeKey = `${normalizeKey(source.businessName)}|${normalizeKey(source.address)}`;
+    let account = existingByRecord.get(recordId) || existingByNameAddress.get(dedupeKey);
+    if (!account) {
+      account = {
+        id:`sm-prospect-${recordId.toLowerCase()}`,
+        businessName:String(source.businessName).slice(0, 180),
+        address:String(source.address).slice(0, 300),
+        branchId:'los-angeles',
+        contactName:'', phone:String(source.phone || '').slice(0, 80), email:'',
+        city:String(source.city || '').slice(0, 120),
+        customerType:'汽车贴膜门店', source:'3212 周边公开客户资料', language:'auto',
+        assignedUserId:'', assignedUserName:'', leadPool:true,
+        cadenceDays:30, stage:'待拜访', lastVisitAt:'', nextVisitAt:'',
+        createdByUserId:'system-import', createdByName:'公开客户资料导入',
+        createdAt:importedAt, updatedAt:now
+      };
+      db.salesAccounts.unshift(account);
+      existingByNameAddress.set(dedupeKey, account);
+      createdAccounts += 1;
+    } else {
+      updatedAccounts += 1;
+    }
+    account.publicRecordId = recordId;
+    account.importBatchId = versionKey;
+    account.website = String(source.website || '').slice(0, 500);
+    account.googleMapsUrl = String(source.googleMapsUrl || '').slice(0, 1000);
+    account.directorySource = String(source.directorySource || '').slice(0, 1000);
+    account.socialLinks = source.socialLinks && typeof source.socialLinks === 'object' ? source.socialLinks : {};
+    account.services = String(source.services || '').slice(0, 3000);
+    account.filmBrands = String(source.filmBrands || '').slice(0, 1000);
+    account.serviceEvidence = String(source.serviceEvidence || '').slice(0, 1000);
+    account.visitRegion = String(source.visitRegion || '').slice(0, 120);
+    account.visitRoute = String(source.route || '').slice(0, 20);
+    account.visitBatch = String(source.visitBatch || '').slice(0, 40);
+    account.visitStop = Math.max(0, Number(source.visitStop || 0));
+    account.distanceFromStoreKm = Math.max(0, Number(source.distanceKm || 0));
+    account.navigationUrl = String(source.navigationUrl || '').slice(0, 1500);
+    account.referencePhotoUrls = (source.referencePhotos || []).map(row => String(row.url || '')).filter(Boolean).slice(0, 4);
+    if (!account.phone && source.phone) account.phone = String(source.phone).slice(0, 80);
+    if (!account.city && source.city) account.city = String(source.city).slice(0, 120);
+    if (!account.note) {
+      account.note = [source.services, source.filmBrands ? `公开资料提及品牌：${source.filmBrands}` : '', source.serviceEvidence]
+        .filter(Boolean).join('\n').slice(0, 3000);
+    }
+    if (!account.assignedUserId) account.leadPool = true;
+    if (Number.isFinite(Number(source.lat)) && Number.isFinite(Number(source.lng))) {
+      account.lat = Number(source.lat);
+      account.lng = Number(source.lng);
+      account.geocodedAddress = account.address;
+      account.locationSource = 'public-research-coordinate-unverified';
+      account.locationVerifiedAt = '';
+    }
+    account.updatedAt = now;
+    existingByRecord.set(recordId, account);
+    importedAccountIds.push(account.id);
+    (source.referencePhotos || []).forEach((photo, index) => {
+      const attachmentId = `sm-reference-photo-${recordId.toLowerCase()}-${index + 1}`;
+      if ((db.salesAttachments || []).some(item => item.id === attachmentId)) return;
+      db.salesAttachments.unshift({
+        id:attachmentId, objectId:account.id, accountId:account.id, visitId:'',
+        userId:'system-import', userName:'公开客户资料导入', branchId:'los-angeles',
+        fileName:`${account.businessName} 资料照片 ${index + 1}`.slice(0, 160),
+        contentType:String(photo.contentType || 'image/jpeg'), sizeBytes:0,
+        url:String(photo.url || ''), referenceMaterial:true, locationVerified:false,
+        sourceLabel:'公开网站或目录资料照片，拍摄地点未核实',
+        sourceUrl:String(source.website || source.directorySource || '').slice(0, 1000),
+        createdAt:importedAt
+      });
+      createdPhotos += 1;
+    });
+  }
+  if (importedAccountIds.length !== Number(seed.recordCount || 398)) {
+    throw new Error(`Santa Monica field-sales import expected ${seed.recordCount || 398} accounts, found ${importedAccountIds.length}`);
+  }
+  fs.mkdirSync(BACKUP_DIR, { recursive:true });
+  fs.copyFileSync(DB_FILE, path.join(BACKUP_DIR, `db-before-santa-monica-field-sales-${now.replace(/[:.]/g, '-')}.json`));
+  db.santaMonicaFieldSalesImportVersion = versionKey;
+  db.santaMonicaFieldSalesImportSummary = { accounts:importedAccountIds.length, photos:(seed.records || []).reduce((sum, row) => sum + (row.referencePhotos || []).length, 0), createdAccounts, updatedAccounts, createdPhotos, importedAt:now };
+  audit(db, { id:'system-import', name:'公开客户资料导入' }, 'import-santa-monica-field-sales-prospects', {
+    collection:'salesAccounts', detail:`导入 ${importedAccountIds.length} 家门店与 ${db.santaMonicaFieldSalesImportSummary.photos} 张公开资料照片`
+  });
   writeDb(db);
 }
 
@@ -2358,6 +2463,7 @@ async function createFieldSalesMeetingSummaryChinese(db, { transcript, customerN
 function fieldSalesVisible(item, user) {
   if (item?.active === false) return false;
   if (canManageFieldSales(user)) return true;
+  if (item?.leadPool === true && !fieldSalesAssignedUserId(item)) return true;
   // Customer and work ownership is exclusive. A creator must not retain access
   // after a manager assigns the record to another salesperson.
   return fieldSalesAssignedUserId(item) === String(user?.id || '');
@@ -2399,7 +2505,7 @@ function fieldSalesSnapshot(db, user) {
   const visitAccountById = new Map(visits.map(item => [item.id, item.accountId]));
   const planAccountById = new Map((db.salesVisitPlans || []).map(item => [item.id, item.accountId]));
   const attachments = (db.salesAttachments || [])
-    .filter(item => canManage || item.userId === user.id)
+    .filter(item => canManage || item.userId === user.id || (item.referenceMaterial === true && accountIds.has(item.accountId)))
     .filter(item => !item.branchId || canAccessBranch(db, user, item.branchId))
     .map(item => {
       const accountId = item.accountId || visitAccountById.get(item.objectId) || planAccountById.get(item.objectId) || (accountIds.has(item.objectId) ? item.objectId : '');
@@ -8714,6 +8820,8 @@ async function api(req, res) {
   }
 
   if (req.method === 'GET' && url.pathname === '/api/health') {
+    const importedAccounts = (db.salesAccounts || []).filter(item => item.active !== false && item.importBatchId === db.santaMonicaFieldSalesImportVersion).length;
+    const importedPhotos = (db.salesAttachments || []).filter(item => item.referenceMaterial === true && item.id.startsWith('sm-reference-photo-')).length;
     return send(res, 200, {
       ok: true,
       service: 'film-shop-cloud-app',
@@ -8722,6 +8830,7 @@ async function api(req, res) {
       build: version.build,
       port: PORT,
       publicUrl: config.publicUrl || null,
+      santaMonicaFieldSalesImport: { version:db.santaMonicaFieldSalesImportVersion || '', accounts:importedAccounts, photos:importedPhotos },
       time: new Date().toISOString()
     });
   }
@@ -9648,6 +9757,7 @@ async function api(req, res) {
       contactName: String(body.contactName || '').trim().slice(0, 120),
       phone: String(body.phone || '').trim().slice(0, 80),
       email: String(body.email || '').trim().slice(0, 180),
+      website: String(body.website || '').trim().slice(0, 500),
       city: String(body.city || '').trim().slice(0, 120),
       customerType: String(body.customerType || '').trim().slice(0, 80),
       source: String(body.source || '').trim().slice(0, 80),
@@ -9848,6 +9958,7 @@ async function api(req, res) {
       contactName: String(body.contactName ?? before.contactName).trim().slice(0, 120),
       phone: String(body.phone ?? before.phone).trim().slice(0, 80),
       email: String(body.email ?? before.email).trim().slice(0, 180),
+      website: String(body.website ?? before.website ?? '').trim().slice(0, 500),
       assignedUserId,
       assignedUserName: (db.users || []).find(item => item.id === assignedUserId)?.name || before.assignedUserName || '',
       cadenceDays: Math.min(365, Math.max(1, Number(body.cadenceDays ?? before.cadenceDays ?? 7))),
@@ -9878,6 +9989,13 @@ async function api(req, res) {
     const body = await readBody(req);
     const account = (db.salesAccounts || []).find(item => item.id === body.accountId && fieldSalesVisible(item, user) && canAccessBranch(db, user, item.branchId));
     if (!account) return send(res, 404, { error: '找不到这个业务客户' });
+    if (account.leadPool === true && !fieldSalesAssignedUserId(account)) {
+      account.assignedUserId = user.id;
+      account.assignedUserName = user.name || user.email;
+      account.leadPool = false;
+      account.claimedAt = new Date().toISOString();
+      account.updatedAt = account.claimedAt;
+    }
     if (body.locationConsent !== true) return send(res, 400, { error: '请先同意本次拜访使用手机定位' });
     const lat = Number(body.lat); const lng = Number(body.lng); const accuracy = Number(body.accuracy || 0);
     if (!Number.isFinite(lat) || !Number.isFinite(lng)) return send(res, 400, { error: '没有获取到实时定位，不能开始拜访' });
@@ -13262,6 +13380,7 @@ applyYelpLeadFormMessageMigration();
 applyCustomerNumberRemoval();
 applyLasVegasLegacyBranchMigration();
 applyGmProCanonicalSkuMigration();
+applySantaMonicaFieldSalesProspectImport();
 expireInternalMessageVideos();
 cleanupStaleMediaUploadParts();
 let privateChatModule;

@@ -1774,7 +1774,8 @@ function salesHomeHtml() {
     (groups[region] ||= []).push(account);
     return groups;
   }, {});
-  const regions = ['洛杉矶地区', '橙县地区', '拉斯维加斯地区', '其他地区'].filter(region => regionGroups[region]?.length);
+  const preferredRegions = ['西区／圣莫尼卡', '南湾／长滩', '洛杉矶中心／东南区', '圣费尔南多谷／文图拉走廊', '圣克拉丽塔／羚羊谷', '圣盖博谷／内陆东区', '橙县', '洛杉矶地区', '橙县地区', '拉斯维加斯地区', '其他地区'];
+  const regions = [...preferredRegions.filter(region => regionGroups[region]?.length), ...Object.keys(regionGroups).filter(region => !preferredRegions.includes(region))];
   if (!salesSelectedRegion || !regionGroups[salesSelectedRegion]) salesSelectedRegion = regions[0] || '';
   const visibleAccounts = regionGroups[salesSelectedRegion] || [];
   const secondary = [
@@ -1791,6 +1792,7 @@ function salesHomeHtml() {
 }
 
 function salesAccountRegion(account) {
+  if (String(account.visitRegion || '').trim()) return String(account.visitRegion).trim();
   const value = `${account.city || ''} ${account.address || ''}`.toLowerCase();
   if (/las vegas|henderson|north las vegas|nevada|\bnv\b/.test(value)) return '拉斯维加斯地区';
   if (/santa ana|anaheim|orange,|orange county|irvine|costa mesa|fullerton|yorba linda|buena park|garden grove/.test(value)) return '橙县地区';
@@ -1805,7 +1807,9 @@ function selectSalesRegion(region) {
 
 function salesSimpleCustomerCard(account) {
   const contact = [account.contactName, account.phone].filter(Boolean).map(escapeHtml).join(' · ');
-  return `<article class="sales-simple-customer"><div><b>${escapeHtml(account.businessName)}</b><p>${escapeHtml(account.address || '')}</p>${contact ? `<small>${contact}</small>` : ''}</div><button onclick="openSalesStartDialog('${account.id}')">拍照拜访</button></article>`;
+  const photo = (account.referencePhotoUrls || [])[0];
+  const route = [account.visitBatch, account.visitStop ? `第 ${Number(account.visitStop)} 站` : ''].filter(Boolean).join(' · ');
+  return `<article class="sales-simple-customer">${photo ? `<button class="sales-simple-customer-photo" onclick="openSalesReviewDialog('${account.id}')"><img src="${escapeHtml(photo)}" alt="${escapeHtml(account.businessName)}"></button>` : '<div class="sales-simple-customer-photo empty">暂无资料照片</div>'}<div class="sales-simple-customer-main"><b>${escapeHtml(account.businessName)}</b><p>${escapeHtml(account.address || '')}</p>${contact ? `<small>${contact}</small>` : ''}${route ? `<small>${escapeHtml(route)}</small>` : ''}${account.leadPool ? '<em>公共待认领客户</em>' : ''}</div><div class="sales-simple-customer-actions"><button onclick="openSalesReviewDialog('${account.id}')">查看资料</button><button class="primary-inline" onclick="openSalesStartDialog('${account.id}')">拍照拜访</button></div></article>`;
 }
 
 function salesCustomerMiniCard(account, selectMode = false) {
@@ -1836,7 +1840,7 @@ function toggleSalesPlanAccount(id) {
 function quickPlanSalesAccount(id) { salesSelectedAccountIds = [id]; salesPlanDate = salesLocalDate(1); openSalesScreen('schedule'); }
 
 function salesAddCustomerHtml() {
-  return salesPage('新增客户', `<section class="sales-form-card"><div class="sales-section-title"><b>客户基本资料</b><span>填写后即可拜访</span></div><label>客户或门店名称 *<input id="salesBusinessName"></label><label>客户地址 *<textarea id="salesAddress"></textarea></label><div class="sales-two"><label>城市 / 区域<input id="salesCity" placeholder="Los Angeles"></label><label>联系电话<input id="salesPhone" type="tel"></label></div><div class="sales-two"><label>联系人<input id="salesContact"></label><label>电子邮箱<input id="salesEmail" type="email"></label></div><label>客户备注<textarea id="salesNote" placeholder="客户需求、主营业务或其他重要信息"></textarea></label></section><button class="sales-page-primary" onclick="createSalesAccountFromPage(this)">保存客户</button><p class="sales-page-note">保存后回到区域客户列表，可直接拍照拜访。</p>`);
+  return salesPage('新增客户', `<section class="sales-form-card"><div class="sales-section-title"><b>客户基本资料</b><span>填写后即可拜访</span></div><label>客户或门店名称 *<input id="salesBusinessName"></label><label>客户地址 *<textarea id="salesAddress"></textarea></label><div class="sales-two"><label>城市 / 区域<input id="salesCity" placeholder="Los Angeles"></label><label>联系电话<input id="salesPhone" type="tel"></label></div><div class="sales-two"><label>联系人<input id="salesContact"></label><label>电子邮箱<input id="salesEmail" type="email"></label></div><label>公司网站<input id="salesWebsite" type="url" placeholder="https://"></label><label>客户备注<textarea id="salesNote" placeholder="客户需求、主营业务或其他重要信息"></textarea></label></section><button class="sales-page-primary" onclick="createSalesAccountFromPage(this)">保存客户</button><p class="sales-page-note">保存后回到区域客户列表，可直接拍照拜访。</p>`);
 }
 
 async function fillSalesCurrentLocation() {
@@ -1844,7 +1848,7 @@ async function fillSalesCurrentLocation() {
 }
 
 async function createSalesAccountFromPage(button) {
-  try { button.disabled=true; state=await api('/api/field-sales/accounts',{method:'POST',body:JSON.stringify({businessName:document.getElementById('salesBusinessName').value,address:document.getElementById('salesAddress').value,city:document.getElementById('salesCity').value,phone:document.getElementById('salesPhone').value,email:document.getElementById('salesEmail').value,contactName:document.getElementById('salesContact').value,note:document.getElementById('salesNote').value,lat:salesNearbyOrigin?.lat,lng:salesNearbyOrigin?.lng})}); user=state.user; salesScreen='home'; render(); alert(lang === 'en' ? 'Customer saved.' : '客户已保存，可以直接开始拜访。'); } catch(e){ alert(e.message); button.disabled=false; }
+  try { button.disabled=true; state=await api('/api/field-sales/accounts',{method:'POST',body:JSON.stringify({businessName:document.getElementById('salesBusinessName').value,address:document.getElementById('salesAddress').value,city:document.getElementById('salesCity').value,phone:document.getElementById('salesPhone').value,email:document.getElementById('salesEmail').value,website:document.getElementById('salesWebsite').value,contactName:document.getElementById('salesContact').value,note:document.getElementById('salesNote').value,lat:salesNearbyOrigin?.lat,lng:salesNearbyOrigin?.lng})}); user=state.user; salesScreen='home'; render(); alert(lang === 'en' ? 'Customer saved.' : '客户已保存，可以直接开始拜访。'); } catch(e){ alert(e.message); button.disabled=false; }
 }
 
 function salesScheduleHtml() {
@@ -2026,7 +2030,7 @@ function salesReviewAttachmentHtml(item) {
   const values = Object.entries(item.artifactValues || {}).filter(([, value]) => String(value ?? '').trim());
   return `<article class="sales-review-attachment ${isImage ? 'has-image' : 'file-only'}">
     ${isImage && item.url ? `<a class="sales-review-attachment-image" href="${escapeHtml(item.url)}" target="_blank"><img src="${escapeHtml(item.url)}" alt="${escapeHtml(name)}"></a>` : ''}
-    <div><b>${escapeHtml(name)}</b><small>${escapeHtml(formatMobileDateTime(item.createdAt) || '')}${type ? ` · ${escapeHtml(type)}` : ''}</small>
+    <div><b>${escapeHtml(name)}</b><small>${escapeHtml(formatMobileDateTime(item.createdAt) || '')}${type ? ` · ${escapeHtml(type)}` : ''}</small>${item.referenceMaterial ? `<em>${lang === 'en' ? 'Public reference photo; location unverified' : '公开资料照片；拍摄地点未核实'}</em>` : ''}
       ${!isImage && item.url ? `<a class="sales-review-file-link" href="${escapeHtml(item.url)}" target="_blank">${lang === 'en' ? 'Open attachment' : '打开附件'}</a>` : ''}
       ${item.transcript ? `<p><strong>${lang === 'en' ? 'Conversation transcript' : '沟通文字记录'}：</strong>${escapeHtml(item.transcript)}</p>` : ''}
       ${item.analysis ? `<p><strong>${lang === 'en' ? 'Analysis' : '分析'}：</strong>${escapeHtml(item.analysis)}</p>` : ''}
@@ -2151,8 +2155,13 @@ function openSalesReviewDialog(accountId) {
           ${salesReviewField(lang === 'en' ? 'Contact name' : '联系人姓名', account.contactName)}
           ${salesReviewField(lang === 'en' ? 'Phone' : '联系电话', account.phone, { href:account.phone ? `tel:${account.phone}` : '' })}
           ${salesReviewField(lang === 'en' ? 'Email' : '电子邮箱', account.email, { href:account.email ? `mailto:${account.email}` : '' })}
+          ${salesReviewField(lang === 'en' ? 'Website' : '公司网站', account.website, { href:account.website || '' })}
           ${salesReviewField(lang === 'en' ? 'Street address' : '详细地址', account.address, { wide:true })}
           ${salesReviewField(lang === 'en' ? 'City' : '城市／地区', account.city)}
+          ${salesReviewField(lang === 'en' ? 'Visit region' : '拜访区域', account.visitRegion)}
+          ${salesReviewField(lang === 'en' ? 'Route order' : '路线顺序', [account.visitBatch, account.visitStop ? `第 ${Number(account.visitStop)} 站` : ''].filter(Boolean).join(' · '))}
+          ${salesReviewField(lang === 'en' ? 'Public record ID' : '资料编号', account.publicRecordId)}
+          ${salesReviewField(lang === 'en' ? 'Directory source' : '公开资料来源', account.directorySource, { href:account.directorySource || '', wide:true })}
           ${salesReviewField(lang === 'en' ? 'Customer type' : '客户类型', account.customerType)}
           ${salesReviewField(lang === 'en' ? 'Lead source' : '客户来源', account.source)}
           ${salesReviewField(lang === 'en' ? 'Stage' : '当前阶段', account.stage)}

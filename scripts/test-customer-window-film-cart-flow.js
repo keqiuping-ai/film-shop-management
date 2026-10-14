@@ -29,6 +29,6 @@ assert(html.includes('/customer.css?v=39'));
 assert(html.includes('/customer.js?v=23'));
 assert(html.includes('/customer-ordering.js?v=62'));
 assert(html.includes('/customer-i18n.js?v=40'));
-assert(sw.includes('film-shop-v173-window-film-cart-flow'));
+assert(sw.includes('film-shop-v174-santa-monica-prospects'));
 
 console.log('Customer window-film cart flow tests passed: click lock, row reuse, cart scroll, compact feedback, and Stripe return routing.');

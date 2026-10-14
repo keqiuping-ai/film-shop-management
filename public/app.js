@@ -4992,7 +4992,9 @@ function fieldSalesCustomerPhotos(visits, attachments) {
     (visit.evidencePhotoUrls || []).forEach(url => add(url, lang === 'zh' ? '现场照片' : 'Visit photo', visit.completedAt || visit.updatedAt));
     add(visit.ownerPhotoUrl, lang === 'zh' ? '客户现场合影' : 'Customer visit photo', visit.completedAt || visit.updatedAt);
   });
-  attachments.filter(item => String(item.contentType || '').startsWith('image/')).forEach(item => add(item.url, item.fileName || (lang === 'zh' ? '现场照片' : 'Visit photo'), item.createdAt));
+  attachments.filter(item => String(item.contentType || '').startsWith('image/')).forEach(item => add(item.url, item.referenceMaterial
+    ? (lang === 'zh' ? '公开资料照片（地点未核实）' : 'Public reference photo (location unverified)')
+    : (item.fileName || (lang === 'zh' ? '现场照片' : 'Visit photo')), item.createdAt));
   return photos;
 }
 
@@ -5026,7 +5028,7 @@ function fieldSalesCustomerProfileHtml(account, personId, selectedDate, data) {
   const recordingHtml = recordings.length ? recordings.map(item => `<div class="field-sales-customer-recording"><span><b>${escapeHtml(item.fileName || (lang === 'zh' ? '拜访录音' : 'Visit recording'))}</b><small>${fieldSalesDateTime(item.createdAt)}</small></span>${item.url ? `<audio controls preload="none" src="${escapeHtml(item.url)}"></audio>` : ''}</div>`).join('') : `<p class="field-sales-lane-empty">${lang === 'zh' ? '该客户还没有录音。' : 'No recordings for this customer yet.'}</p>`;
   return `<div class="field-sales-customer-profile">
     <section class="field-sales-customer-hero"><div><small>${lang === 'zh' ? '客户完整档案' : 'Complete customer profile'}</small><h2>${escapeHtml(account.businessName || '')}</h2><p>${escapeHtml(account.address || '—')}</p></div><div>${fieldSalesStatusPill(account.stage || '待拜访', 'info')}<button class="btn" onclick="openFieldSalesAccount('${accountId}')">${lang === 'zh' ? '编辑客户资料' : 'Edit customer'}</button></div></section>
-    <div class="field-sales-customer-facts"><span><small>${lang === 'zh' ? '联系人' : 'Contact'}</small><b>${escapeHtml(account.contactName || '—')}</b></span><span><small>${lang === 'zh' ? '电话' : 'Phone'}</small><b>${escapeHtml(account.phone || '—')}</b></span><span><small>${lang === 'zh' ? '负责业务员' : 'Salesperson'}</small><b>${escapeHtml(account.assignedUserName || '—')}</b></span><span><small>${lang === 'zh' ? '查看日期' : 'Selected date'}</small><b>${escapeHtml(selectedDate)}</b></span></div>
+    <div class="field-sales-customer-facts"><span><small>${lang === 'zh' ? '联系人' : 'Contact'}</small><b>${escapeHtml(account.contactName || '—')}</b></span><span><small>${lang === 'zh' ? '电话' : 'Phone'}</small><b>${escapeHtml(account.phone || '—')}</b></span><span><small>${lang === 'zh' ? '负责业务员' : 'Salesperson'}</small><b>${escapeHtml(account.assignedUserName || (account.leadPool ? (lang === 'zh' ? '公共待认领' : 'Shared lead pool') : '—'))}</b></span><span><small>${lang === 'zh' ? '拜访区域' : 'Visit region'}</small><b>${escapeHtml(account.visitRegion || '—')}</b></span><span><small>${lang === 'zh' ? '网站' : 'Website'}</small><b>${account.website ? `<a href="${escapeHtml(account.website)}" target="_blank" rel="noopener">${escapeHtml(account.website)}</a>` : '—'}</b></span><span><small>${lang === 'zh' ? '路线' : 'Route'}</small><b>${escapeHtml([account.visitBatch, account.visitStop ? `第 ${Number(account.visitStop)} 站` : ''].filter(Boolean).join(' · ') || '—')}</b></span><span><small>${lang === 'zh' ? '资料编号' : 'Record ID'}</small><b>${escapeHtml(account.publicRecordId || '—')}</b></span><span><small>${lang === 'zh' ? '查看日期' : 'Selected date'}</small><b>${escapeHtml(selectedDate)}</b></span></div>
     <section><h3>${lang === 'zh' ? `${selectedDate} 当天拜访` : `Visit on ${selectedDate}`}</h3>${dayPlans.length || dayVisits.length ? `${fieldSalesEmployeeMiniRows(dayPlans, '', plan => `<div class="field-sales-lane-row"><span><b>${lang === 'zh' ? '拜访计划' : 'Visit plan'}</b><small>${fieldSalesDateTime(plan.plannedAt)}</small></span>${fieldSalesStatusPill(plan.status || '待出发', 'warn')}</div>`)}${dayVisits.map(visit => `<article class="field-sales-customer-visit"><header><b>${fieldSalesDateTime(visit.startedAt || visit.createdAt)}</b>${fieldSalesStatusPill(visit.status || '—', visit.status === '已完成' ? 'good' : 'warn')}</header>${fieldSalesVisitSummaryBlock(visit)}</article>`).join('')}` : `<p class="field-sales-lane-empty">${lang === 'zh' ? '当天只有客户关联记录，尚无实际拜访内容。' : 'The customer is linked to the day, but no visit activity was recorded.'}</p>`}</section>
     <section><h3>${lang === 'zh' ? `门店与现场照片（${photos.length}）` : `Storefront and visit photos (${photos.length})`}</h3>${photoHtml}</section>
     <section><h3>${lang === 'zh' ? `订货、样品与放货（${orders.length + trials.length + consignments.length}）` : `Orders, samples, and consignments (${orders.length + trials.length + consignments.length})`}</h3>${orderHtml}${consignmentHtml}${trials.length ? `<p class="field-sales-customer-note">${lang === 'zh' ? `试用产品明细 ${trials.length} 条` : `${trials.length} trial-product records`}</p>` : ''}</section>
@@ -5194,6 +5196,7 @@ function openFieldSalesAccount(accountId = '') {
     <label><span>${lang === 'zh' ? '联系人' : 'Contact name'}</span><input id="fieldSalesContact" value="${escapeHtml(account.contactName || '')}"></label>
     <label><span>${lang === 'zh' ? '电话' : 'Phone'}</span><input id="fieldSalesPhone" value="${escapeHtml(account.phone || '')}"></label>
     <label><span>Email</span><input id="fieldSalesEmail" value="${escapeHtml(account.email || '')}"></label>
+    <label><span>${lang === 'zh' ? '公司网站' : 'Website'}</span><input id="fieldSalesWebsite" value="${escapeHtml(account.website || '')}"></label>
     <label><span>${lang === 'zh' ? '客户阶段' : 'Stage'}</span><select id="fieldSalesStage">${['待拜访','拜访中','持续跟进','试用中','报价中','成交','暂停','无效'].map(value => `<option ${value === (account.stage || '待拜访') ? 'selected' : ''}>${value}</option>`).join('')}</select></label>
     <label><span>${lang === 'zh' ? '回访周期（天）' : 'Cadence (days)'}</span><input id="fieldSalesCadence" type="number" min="1" max="365" value="${Number(account.cadenceDays || 7)}"></label>
     <label><span>${lang === 'zh' ? '下次回访时间' : 'Next visit'}</span><input id="fieldSalesNextVisit" type="datetime-local" value="${fieldSalesDateTimeInput(account.nextVisitAt)}"></label>
@@ -5240,7 +5243,7 @@ async function saveFieldSalesAccount(accountId = '') {
   const body = {
     businessName: value('fieldSalesBusinessName'), address: value('fieldSalesAddress'),
     branchId: value('fieldSalesBranchId'),
-    contactName: value('fieldSalesContact'), phone: value('fieldSalesPhone'), email: value('fieldSalesEmail'),
+    contactName: value('fieldSalesContact'), phone: value('fieldSalesPhone'), email: value('fieldSalesEmail'), website: value('fieldSalesWebsite'),
     assignedUserId: value('fieldSalesAssigned'), stage: value('fieldSalesStage'),
     cadenceDays: Number(value('fieldSalesCadence') || 7), note: value('fieldSalesNote'),
     nextVisitAt: nextVisitValue ? new Date(nextVisitValue).toISOString() : ''
