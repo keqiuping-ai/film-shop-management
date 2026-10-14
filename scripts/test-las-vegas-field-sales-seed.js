@@ -51,7 +51,7 @@ const photographed = seed.records.find(item => item.publicRecordId === 'LV002');
 assert.equal(photographed.referencePhotos.length, 2);
 assert(serverSource.includes('applyLasVegasFieldSalesProspectImport();'), 'production startup must run the idempotent Las Vegas import');
 assert(serverSource.includes('lasVegasFieldSalesImport'), 'health endpoint must report the Las Vegas import');
-assert(mobileSource.includes("'los-angeles', 'las-vegas', 'san-francisco'"), 'mobile home must separate Los Angeles, Las Vegas, and San Francisco');
+assert(mobileSource.includes("'los-angeles', 'las-vegas', 'san-francisco', 'seattle', 'phoenix', 'vancouver'"), 'mobile home must separate all imported markets');
 assert(dockerfile.includes('COPY migrations ./migrations'), 'Railway image must include the customer seed migration');
 
 console.log('Las Vegas field-sales seed integrity test passed');

@@ -29,6 +29,12 @@ const CONFIG_FILE = path.join(ROOT, 'server-config.json');
 const VERSION_FILE = path.join(ROOT, 'version.json');
 const SANTA_MONICA_FIELD_SALES_SEED_FILE = path.join(ROOT, 'migrations', 'santa-monica-field-sales-2026-10-13.json');
 const LAS_VEGAS_FIELD_SALES_SEED_FILE = path.join(ROOT, 'migrations', 'las-vegas-field-sales-2026-10-13.json');
+const REGIONAL_FIELD_SALES_IMPORTS = [
+  { marketId:'san-francisco', marketLabel:'旧金山', accountPrefix:'sf', photoPrefix:'sf', file:path.join(ROOT, 'migrations', 'san-francisco-field-sales-2026-10-14.json') },
+  { marketId:'seattle', marketLabel:'西雅图', accountPrefix:'sea', photoPrefix:'sea', file:path.join(ROOT, 'migrations', 'seattle-field-sales-2026-10-14.json') },
+  { marketId:'phoenix', marketLabel:'凤凰城', accountPrefix:'phx', photoPrefix:'phx', file:path.join(ROOT, 'migrations', 'phoenix-field-sales-2026-10-14.json') },
+  { marketId:'vancouver', marketLabel:'温哥华', accountPrefix:'van', photoPrefix:'van', file:path.join(ROOT, 'migrations', 'vancouver-field-sales-2026-10-14.json') }
+];
 const MAX_MESSAGE_ATTACHMENT_BYTES = 20 * 1024 * 1024;
 const MAX_AVATAR_DATA_URL_BYTES = 2 * 1024 * 1024;
 const MAX_EMPLOYEE_DOCUMENT_BYTES = 8 * 1024 * 1024;
@@ -898,6 +904,133 @@ function applyLasVegasFieldSalesProspectImport() {
   audit(db, { id:'system-import', name:'公开客户资料导入' }, 'import-las-vegas-field-sales-prospects', {
     collection:'salesAccounts', detail:`导入 ${importedAccountIds.length} 家拉斯维加斯门店与 ${db.lasVegasFieldSalesImportSummary.photos} 张公开资料照片`
   });
+  writeDb(db);
+}
+
+function applyRegionalFieldSalesProspectImports() {
+  const enabled = process.env.ENABLE_REGIONAL_FIELD_SALES_IMPORT === 'true'
+    || DATA_DIR === '/app/data'
+    || Boolean(process.env.RAILWAY_PROJECT_ID || process.env.RAILWAY_ENVIRONMENT_NAME || process.env.RAILWAY_SERVICE_ID);
+  if (!enabled) return;
+  const db = readDb();
+  db.regionalFieldSalesImportVersions = db.regionalFieldSalesImportVersions || {};
+  db.regionalFieldSalesImportSummaries = db.regionalFieldSalesImportSummaries || {};
+  db.salesAccounts = Array.isArray(db.salesAccounts) ? db.salesAccounts : [];
+  db.salesAttachments = Array.isArray(db.salesAttachments) ? db.salesAttachments : [];
+  const now = new Date().toISOString();
+  const importedAt = '2026-10-14T20:00:00.000Z';
+  const normalizeKey = value => String(value || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+  const existingByRecord = new Map(db.salesAccounts.filter(row => row.publicRecordId).map(row => [String(row.publicRecordId), row]));
+  const existingByNameAddress = new Map(db.salesAccounts.map(row => [`${normalizeKey(row.businessName)}|${normalizeKey(row.address)}`, row]));
+  const existingAttachmentIds = new Set(db.salesAttachments.map(item => item.id));
+  let changed = false;
+  const audits = [];
+
+  for (const config of REGIONAL_FIELD_SALES_IMPORTS) {
+    if (!fs.existsSync(config.file)) continue;
+    const seed = JSON.parse(fs.readFileSync(config.file, 'utf8'));
+    const versionKey = String(seed.version || `${config.marketId}-field-sales-2026-10-14-v1`);
+    if (db.regionalFieldSalesImportVersions[config.marketId] === versionKey) continue;
+    let createdAccounts = 0;
+    let updatedAccounts = 0;
+    let createdPhotos = 0;
+    const importedAccountIds = [];
+    for (const source of (seed.records || [])) {
+      const recordId = String(source.publicRecordId || '').trim();
+      if (!recordId || !source.businessName || !source.address) continue;
+      const dedupeKey = `${normalizeKey(source.businessName)}|${normalizeKey(source.address)}`;
+      let account = existingByRecord.get(recordId) || existingByNameAddress.get(dedupeKey);
+      if (!account) {
+        account = {
+          id:`${config.accountPrefix}-prospect-${recordId.toLowerCase()}`,
+          businessName:String(source.businessName).slice(0, 180),
+          address:String(source.address).slice(0, 300),
+          branchId:'los-angeles',
+          contactName:'', phone:String(source.phone || '').slice(0, 80), email:'',
+          city:String(source.city || '').slice(0, 120),
+          customerType:'汽车贴膜门店', source:`${config.marketLabel}周边公开客户资料`, language:'auto',
+          assignedUserId:'', assignedUserName:'', leadPool:true,
+          cadenceDays:30, stage:'待拜访', lastVisitAt:'', nextVisitAt:'',
+          createdByUserId:'system-import', createdByName:'公开客户资料导入',
+          createdAt:importedAt, updatedAt:now
+        };
+        db.salesAccounts.unshift(account);
+        existingByNameAddress.set(dedupeKey, account);
+        createdAccounts += 1;
+      } else {
+        updatedAccounts += 1;
+      }
+      account.branchId = account.branchId || 'los-angeles';
+      account.marketId = config.marketId;
+      account.publicRecordId = recordId;
+      account.importBatchId = versionKey;
+      account.website = String(source.website || '').slice(0, 500);
+      account.googleMapsUrl = String(source.googleMapsUrl || '').slice(0, 1000);
+      account.directorySource = String(source.directorySource || '').slice(0, 1000);
+      account.socialLinks = source.socialLinks && typeof source.socialLinks === 'object' ? source.socialLinks : {};
+      account.services = String(source.services || '').slice(0, 3000);
+      account.filmBrands = String(source.filmBrands || '').slice(0, 1000);
+      account.serviceEvidence = String(source.serviceEvidence || '').slice(0, 1000);
+      account.visitRegion = String(source.visitRegion || '').slice(0, 120);
+      account.visitRoute = String(source.route || '').slice(0, 20);
+      account.visitBatch = String(source.visitBatch || '').slice(0, 40);
+      account.visitStop = Math.max(0, Number(source.visitStop || 0));
+      account.distanceFromStoreKm = Math.max(0, Number(source.distanceKm || 0));
+      account.navigationUrl = String(source.navigationUrl || '').slice(0, 1500);
+      account.referencePhotoUrls = (source.referencePhotos || []).map(row => String(row.url || '')).filter(Boolean).slice(0, 4);
+      if (!account.phone && source.phone) account.phone = String(source.phone).slice(0, 80);
+      if (!account.city && source.city) account.city = String(source.city).slice(0, 120);
+      if (!account.note) {
+        account.note = [source.services, source.filmBrands ? `公开资料提及品牌：${source.filmBrands}` : '', source.serviceEvidence, source.researchNotes]
+          .filter(Boolean).join('\n').slice(0, 3000);
+      }
+      if (!account.assignedUserId) account.leadPool = true;
+      if (Number.isFinite(Number(source.lat)) && Number.isFinite(Number(source.lng))) {
+        account.lat = Number(source.lat);
+        account.lng = Number(source.lng);
+        account.geocodedAddress = account.address;
+        account.locationSource = 'public-research-coordinate-unverified';
+        account.locationVerifiedAt = '';
+      }
+      account.updatedAt = now;
+      existingByRecord.set(recordId, account);
+      importedAccountIds.push(account.id);
+      (source.referencePhotos || []).forEach((photo, index) => {
+        const attachmentId = `${config.photoPrefix}-reference-photo-${recordId.toLowerCase()}-${index + 1}`;
+        if (existingAttachmentIds.has(attachmentId)) return;
+        db.salesAttachments.unshift({
+          id:attachmentId, objectId:account.id, accountId:account.id, visitId:'',
+          userId:'system-import', userName:'公开客户资料导入', branchId:account.branchId,
+          fileName:`${account.businessName} 资料照片 ${index + 1}`.slice(0, 160),
+          contentType:String(photo.contentType || 'image/jpeg'), sizeBytes:0,
+          url:String(photo.url || ''), referenceMaterial:true, locationVerified:false,
+          sourceLabel:'公开网站或目录资料照片，拍摄地点未核实',
+          sourceUrl:String(photo.sourceUrl || source.website || source.directorySource || '').slice(0, 1000),
+          createdAt:importedAt
+        });
+        existingAttachmentIds.add(attachmentId);
+        createdPhotos += 1;
+      });
+    }
+    if (importedAccountIds.length !== Number(seed.recordCount || 0)) {
+      throw new Error(`${config.marketLabel} field-sales import expected ${seed.recordCount || 0} accounts, found ${importedAccountIds.length}`);
+    }
+    db.regionalFieldSalesImportVersions[config.marketId] = versionKey;
+    db.regionalFieldSalesImportSummaries[config.marketId] = {
+      accounts:importedAccountIds.length,
+      photos:(seed.records || []).reduce((sum, row) => sum + (row.referencePhotos || []).length, 0),
+      routes:Number(seed.routeCount || 0), batches:Number(seed.batchCount || 0),
+      createdAccounts, updatedAccounts, createdPhotos, importedAt:now
+    };
+    audits.push({ config, summary:db.regionalFieldSalesImportSummaries[config.marketId] });
+    changed = true;
+  }
+  if (!changed) return;
+  fs.mkdirSync(BACKUP_DIR, { recursive:true });
+  fs.copyFileSync(DB_FILE, path.join(BACKUP_DIR, `db-before-regional-field-sales-${now.replace(/[:.]/g, '-')}.json`));
+  audits.forEach(({ config, summary }) => audit(db, { id:'system-import', name:'公开客户资料导入' }, `import-${config.marketId}-field-sales-prospects`, {
+    collection:'salesAccounts', detail:`导入 ${summary.accounts} 家${config.marketLabel}门店与 ${summary.photos} 张公开资料照片`
+  }));
   writeDb(db);
 }
 
@@ -2641,7 +2774,7 @@ function fieldSalesSnapshot(db, user) {
     })
     .filter(item => !item.accountId || accountIds.has(item.accountId))
     .sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')))
-    .slice(0, 1000);
+    .slice(0, 3000);
   return {
     enabled: canUseFieldSales(user),
     canManage,
@@ -9065,6 +9198,17 @@ async function api(req, res) {
     const importedPhotos = (db.salesAttachments || []).filter(item => item.referenceMaterial === true && item.id.startsWith('sm-reference-photo-')).length;
     const importedLasVegasAccounts = (db.salesAccounts || []).filter(item => item.active !== false && item.importBatchId === db.lasVegasFieldSalesImportVersion).length;
     const importedLasVegasPhotos = (db.salesAttachments || []).filter(item => item.referenceMaterial === true && item.id.startsWith('lv-reference-photo-')).length;
+    const regionalFieldSalesImports = Object.fromEntries(REGIONAL_FIELD_SALES_IMPORTS.map(config => {
+      const versionKey = String(db.regionalFieldSalesImportVersions?.[config.marketId] || '');
+      const summary = db.regionalFieldSalesImportSummaries?.[config.marketId] || {};
+      return [config.marketId, {
+        version:versionKey,
+        accounts:(db.salesAccounts || []).filter(item => item.active !== false && item.marketId === config.marketId && item.importBatchId === versionKey).length,
+        photos:(db.salesAttachments || []).filter(item => item.referenceMaterial === true && item.id.startsWith(`${config.photoPrefix}-reference-photo-`)).length,
+        routes:Number(summary.routes || 0),
+        batches:Number(summary.batches || 0)
+      }];
+    }));
     return send(res, 200, {
       ok: true,
       service: 'film-shop-cloud-app',
@@ -9075,6 +9219,7 @@ async function api(req, res) {
       publicUrl: config.publicUrl || null,
       santaMonicaFieldSalesImport: { version:db.santaMonicaFieldSalesImportVersion || '', accounts:importedAccounts, photos:importedPhotos },
       lasVegasFieldSalesImport: { version:db.lasVegasFieldSalesImportVersion || '', accounts:importedLasVegasAccounts, photos:importedLasVegasPhotos, routes:Number(db.lasVegasFieldSalesImportSummary?.routes || 0), batches:Number(db.lasVegasFieldSalesImportSummary?.batches || 0) },
+      regionalFieldSalesImports,
       time: new Date().toISOString()
     });
   }
@@ -13879,6 +14024,7 @@ applyLasVegasLegacyBranchMigration();
 applyGmProCanonicalSkuMigration();
 applySantaMonicaFieldSalesProspectImport();
 applyLasVegasFieldSalesProspectImport();
+applyRegionalFieldSalesProspectImports();
 expireInternalMessageVideos();
 cleanupStaleMediaUploadParts();
 let privateChatModule;

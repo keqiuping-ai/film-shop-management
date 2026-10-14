@@ -1,4 +1,4 @@
-const CACHE_NAME = 'film-shop-v179-city-routes-las-vegas';
+const CACHE_NAME = 'film-shop-v180-regional-field-sales-markets';
 const ASSETS = [
     '/mobile.html',
     '/warranty.html',
