@@ -57,6 +57,9 @@ let salesSelectedRegion = '';
 let salesInventoryPricingQuery = '';
 let salesInventoryPricingResults = [];
 let salesInventoryPricingLoading = false;
+let salesLiveCameraStream = null;
+let salesLiveCameraFile = null;
+let salesLiveCameraCapturedAt = '';
 
 const I18N = {
   zh: {
@@ -1882,7 +1885,7 @@ function salesOrderPageHtml(account,visit,head){const products=state.fieldSales?
 function salesExecutionHtml(){
   const {account,visit}=salesActiveContext();
   if(!account||!visit)return salesHomeHtml();
-  return salesPage('记录拜访', `<section class="sales-tool-customer"><h2>${escapeHtml(account.businessName)}</h2><span>${escapeHtml(account.address || '')}</span></section><section class="sales-check-ok">✓ 门头照片、时间和现场定位已保存</section><section class="sales-form-card sales-simple-visit-form"><div class="sales-section-title"><b>本次拜访记录</b><span>一次填写并保存</span></div><div class="sales-two"><label>联系人<input id="salesSimpleContact" value="${escapeHtml(visit.contactMet || account.contactName || '')}"></label><label>联系电话<input value="${escapeHtml(account.phone || '')}" readonly></label></div><label>当时谈了什么 *<textarea id="salesSimpleReport" placeholder="客户需求、沟通情况和本次结果"></textarea></label><label>下一步要做什么<textarea id="salesSimpleNextAction" placeholder="回访、报价、送样或收款安排"></textarea></label><div class="sales-section-title"><b>成交 / 报价记录</b><span>没有成交可以留空</span></div>${salesProductDatalist()}<label>产品型号或名称<input id="salesSimpleProduct" list="salesProductModels" placeholder="搜索或直接填写产品"></label><div class="sales-two"><label>数量<input id="salesSimpleQuantity" type="number" min="0" step="1" value="0"></label><label>成交单价<input id="salesSimplePrice" type="number" min="0" step="0.01" value="0"></label></div><label>补充现场照片<input id="salesSimplePhotos" type="file" accept="image/*" capture="environment" multiple></label></section><button class="sales-page-primary" onclick="completeSimpleSalesVisit(this,'${visit.id}')">保存并完成拜访</button><p class="sales-page-note">保存后资料会立即同步到主系统。</p>`);
+  return salesPage('记录拜访', `<section class="sales-tool-customer"><h2>${escapeHtml(account.businessName)}</h2><span>${escapeHtml(account.address || '')}</span></section><section class="sales-check-ok">✓ 门头照片、时间和现场定位已保存</section><section class="sales-form-card sales-simple-visit-form"><div class="sales-section-title"><b>本次拜访记录</b><span>一次填写并保存</span></div><div class="sales-two"><label>联系人<input id="salesSimpleContact" value="${escapeHtml(visit.contactMet || account.contactName || '')}"></label><label>联系电话<input value="${escapeHtml(account.phone || '')}" readonly></label></div><label>见到的人的情况与细节<textarea id="salesSimpleContactDetails" placeholder="对方职务、决策权、关注点和现场情况">${escapeHtml(visit.contactMetDetails || '')}</textarea></label><label>当时谈了什么 *<textarea id="salesSimpleReport" placeholder="客户需求、沟通情况和本次结果"></textarea></label><label>下一步要做什么<textarea id="salesSimpleNextAction" placeholder="回访、报价、送样或收款安排"></textarea></label><div class="sales-section-title"><b>成交 / 报价记录</b><span>没有成交可以留空</span></div>${salesProductDatalist()}<label>产品型号或名称<input id="salesSimpleProduct" list="salesProductModels" placeholder="搜索或直接填写产品"></label><div class="sales-two"><label>数量<input id="salesSimpleQuantity" type="number" min="0" step="1" value="0"></label><label>成交单价<input id="salesSimplePrice" type="number" min="0" step="0.01" value="0"></label></div><label>补充现场照片<input id="salesSimplePhotos" type="file" accept="image/*" capture="environment" multiple></label></section><button class="sales-page-primary" onclick="completeSimpleSalesVisit(this,'${visit.id}')">保存并完成拜访</button><p class="sales-page-note">保存后资料会立即同步到主系统。</p>`);
 }
 
 async function completeSimpleSalesVisit(button, visitId) {
@@ -1902,6 +1905,7 @@ async function completeSimpleSalesVisit(button, visitId) {
       reportText,
       nextAction:document.getElementById('salesSimpleNextAction')?.value || '',
       contactMet:document.getElementById('salesSimpleContact')?.value || '',
+      contactMetDetails:document.getElementById('salesSimpleContactDetails')?.value || '',
       outcome:product && quantity > 0 ? '已成交' : '继续跟进',
       evidencePhotoUrls,
       soldItems:product && quantity > 0 ? [{ product, quantity, unitPrice }] : []
@@ -2069,12 +2073,13 @@ function salesReviewVisitHtml(visit, trials, consignments, attachments = [], ord
     ...attachments.filter(item => String(item.contentType || '').startsWith('image/')).map(item => item.url)
   ];
   return `<article class="sales-review-visit">
-    <header><div><small>${escapeHtml(visit.outcome || visit.status || '')}</small><h4>${escapeHtml(formatMobileDateTime(visit.completedAt || visit.startedAt) || '—')}</h4></div><span>${escapeHtml(visit.userName || '')}</span></header>
+    <header><div><small>${escapeHtml(visit.outcome || visit.status || '')}</small><h4>${escapeHtml(formatMobileDateTime(visit.completedAt || visit.startedAt) || '—')}</h4></div><div class="sales-review-visit-actions"><span>${escapeHtml(visit.userName || '')}</span><button type="button" onclick="openSalesVisitEditDialog('${visit.id}')">${lang === 'en' ? 'Edit record' : '修改本次记录'}</button></div></header>
     <div class="sales-review-visit-times">
       ${salesReviewField(lang === 'en' ? 'Started' : '开始时间', formatMobileDateTime(visit.startedAt) || '')}
       ${salesReviewField(lang === 'en' ? 'Completed' : '完成时间', formatMobileDateTime(visit.completedAt) || '')}
       ${salesReviewField(lang === 'en' ? 'Sales representative' : '拜访业务员', visit.userName || '')}
       ${salesReviewField(lang === 'en' ? 'Person met' : '现场联系人', visit.contactMet || '')}
+      ${salesReviewField(lang === 'en' ? 'Person and meeting details' : '见到的人的情况与细节', visit.contactMetDetails || '', { wide:true })}
     </div>
     <div class="sales-review-facts">
       <span>📍 ${matched === true ? (lang === 'en' ? 'Location verified' : '定位已核验') : matched === false ? (lang === 'en' ? 'Outside location range' : '超出门店定位范围') : (lang === 'en' ? 'No location result' : '无定位结果')}</span>
@@ -2149,7 +2154,7 @@ function openSalesReviewDialog(accountId) {
     <div class="dialog-head sales-review-head"><div><small>${lang === 'en' ? 'Complete customer profile and visit review' : '完整客户资料与拜访复盘'}</small><strong>${escapeHtml(account.businessName)}</strong><span>${escapeHtml(account.stage || (lang === 'en' ? 'No stage' : '未设置阶段'))}</span></div><button aria-label="${lang === 'en' ? 'Close' : '关闭'}" onclick="this.closest('.mobile-modal').remove()">×</button></div>
     <div class="sales-review-scroll">
       <section class="sales-review-profile">
-        <div class="sales-review-section-heading"><div><small>${lang === 'en' ? 'CUSTOMER PROFILE' : '客户档案'}</small><h3>${lang === 'en' ? 'Customer details' : '客户详细资料'}</h3></div><a href="${escapeHtml(mapUrl)}" target="_blank">${lang === 'en' ? 'Open map' : '打开地图'}</a></div>
+        <div class="sales-review-section-heading"><div><small>${lang === 'en' ? 'CUSTOMER PROFILE' : '客户档案'}</small><h3>${lang === 'en' ? 'Customer details' : '客户详细资料'}</h3></div><div class="sales-review-profile-actions"><button type="button" onclick="openSalesCustomerEditDialog('${account.id}')">${lang === 'en' ? 'Edit profile' : '编辑客户资料'}</button><a href="${escapeHtml(mapUrl)}" target="_blank">${lang === 'en' ? 'Open map' : '打开地图'}</a></div></div>
         <div class="sales-review-profile-grid">
           ${salesReviewField(lang === 'en' ? 'Customer / store name' : '客户／门店名称', account.businessName, { wide:true })}
           ${salesReviewField(lang === 'en' ? 'Contact name' : '联系人姓名', account.contactName)}
@@ -2171,6 +2176,12 @@ function openSalesReviewDialog(accountId) {
           ${salesReviewField(lang === 'en' ? 'Last visit' : '最近拜访', formatMobileDateTime(account.lastVisitAt) || '')}
           ${salesReviewField(lang === 'en' ? 'Next visit' : '下次回访', formatMobileDateTime(account.nextVisitAt) || '')}
           ${salesReviewField(lang === 'en' ? 'Follow-up cycle' : '回访周期', `${Number(account.cadenceDays || 7)} ${lang === 'en' ? 'days' : '天'}`)}
+          ${salesReviewField(lang === 'en' ? 'Last person met' : '最近见到的人', account.lastContactMet)}
+          ${salesReviewField(lang === 'en' ? 'Person and meeting details' : '见到的人的情况与细节', account.lastContactDetails, { wide:true })}
+          ${salesReviewField(lang === 'en' ? 'Products currently handled' : '客户目前经营的产品', account.currentProducts, { wide:true })}
+          ${salesReviewField(lang === 'en' ? 'Products of interest' : '客户感兴趣的产品', (account.interestedProducts || []).join('、'), { wide:true })}
+          ${salesReviewField(lang === 'en' ? 'Latest discussion' : '最近谈的情况', account.discussionSummary, { wide:true })}
+          ${salesReviewField(lang === 'en' ? 'Next action' : '下一步要做什么', account.nextAction, { wide:true })}
           ${salesReviewField(lang === 'en' ? 'Customer notes' : '客户备注', account.note, { wide:true })}
         </div>
         ${accountAttachments.length ? `<div class="sales-review-account-files"><h4>${lang === 'en' ? 'Customer files and photos' : '客户档案附件与照片'}</h4><div class="sales-review-attachments">${accountAttachments.map(salesReviewAttachmentHtml).join('')}</div></div>` : ''}
@@ -2183,6 +2194,121 @@ function openSalesReviewDialog(accountId) {
   </div>`;
   overlay.addEventListener('click', event => { if (event.target === overlay) overlay.remove(); });
   document.body.appendChild(overlay);
+}
+
+const SALES_PRODUCT_INTERESTS = ['汽车隔热膜','PPF 隐形车衣','彩色 PPF','改色膜／车身膜','建筑玻璃膜','陶瓷镀膜','工具与耗材','其他'];
+
+function salesInterestOptions(selected = []) {
+  const values = new Set(Array.isArray(selected) ? selected : []);
+  return SALES_PRODUCT_INTERESTS.map(value => `<label><input type="checkbox" value="${escapeHtml(value)}" ${values.has(value) ? 'checked' : ''}>${escapeHtml(value)}</label>`).join('');
+}
+
+function openSalesCustomerEditDialog(accountId) {
+  const account = (state.fieldSales?.accounts || []).find(item => item.id === accountId);
+  if (!account) return;
+  const canAssign = state.fieldSales?.canManage === true;
+  const overlay = document.createElement('div');
+  overlay.className = 'mobile-modal sales-profile-edit-modal';
+  overlay.innerHTML = `<div class="mobile-dialog sales-profile-edit-dialog">
+    <div class="dialog-head"><div><small>${lang === 'en' ? 'EDIT CUSTOMER PROFILE' : '编辑客户档案'}</small><strong>${escapeHtml(account.businessName)}</strong></div><button onclick="this.closest('.mobile-modal').remove()">×</button></div>
+    <div class="sales-profile-edit-scroll">
+      <div class="sales-two"><label>${lang === 'en' ? 'Store name' : '客户／门店名称'}<input id="salesEditBusinessName" value="${escapeHtml(account.businessName || '')}"></label><label>${lang === 'en' ? 'Customer type' : '客户类型'}<input id="salesEditCustomerType" value="${escapeHtml(account.customerType || '')}" placeholder="贴膜店、改装店、经销商……"></label></div>
+      <label>${lang === 'en' ? 'Address' : '门店地址'}<input id="salesEditAddress" value="${escapeHtml(account.address || '')}"></label>
+      <div class="sales-two"><label>${lang === 'en' ? 'City / region' : '城市／区域'}<input id="salesEditCity" value="${escapeHtml(account.city || '')}"></label><label>${lang === 'en' ? 'Stage' : '客户阶段'}<select id="salesEditStage">${['待拜访','拜访中','持续跟进','已成交','暂不跟进'].map(value => `<option ${account.stage === value ? 'selected' : ''}>${value}</option>`).join('')}</select></label></div>
+      <div class="sales-two"><label>${lang === 'en' ? 'Contact name' : '联系人'}<input id="salesEditContactName" value="${escapeHtml(account.contactName || '')}"></label><label>${lang === 'en' ? 'Phone' : '电话'}<input id="salesEditPhone" inputmode="tel" value="${escapeHtml(account.phone || '')}"></label></div>
+      <div class="sales-two"><label>Email<input id="salesEditEmail" type="email" value="${escapeHtml(account.email || '')}"></label><label>${lang === 'en' ? 'Website' : '网站'}<input id="salesEditWebsite" value="${escapeHtml(account.website || '')}"></label></div>
+      ${canAssign ? `<label>${lang === 'en' ? 'Assigned sales representative' : '负责跟进的业务员'}<select id="salesEditAssignedUser"><option value="">公共待认领</option>${salesUserOptions(account.assignedUserId || '')}</select></label>` : ''}
+      <label>${lang === 'en' ? 'Last person met' : '本次／最近见到的人'}<input id="salesEditLastContact" value="${escapeHtml(account.lastContactMet || '')}"></label>
+      <label>${lang === 'en' ? 'Who they are and meeting details' : '见到的人的情况与细节'}<textarea id="salesEditContactDetails">${escapeHtml(account.lastContactDetails || '')}</textarea></label>
+      <label>${lang === 'en' ? 'Products currently handled' : '客户目前在做什么产品'}<textarea id="salesEditCurrentProducts" placeholder="品牌、产品类别、主要业务……">${escapeHtml(account.currentProducts || '')}</textarea></label>
+      <fieldset class="sales-interest-field"><legend>${lang === 'en' ? 'Products of interest' : '客户对哪些产品感兴趣'}</legend><div id="salesEditInterests">${salesInterestOptions(account.interestedProducts)}</div><input id="salesEditInterestNote" value="${escapeHtml(account.interestedProductsNote || '')}" placeholder="${lang === 'en' ? 'Additional interest details' : '补充具体型号、规格或数量'}"></fieldset>
+      <label>${lang === 'en' ? 'What was discussed' : '当时谈了什么情况'}<textarea id="salesEditDiscussion">${escapeHtml(account.discussionSummary || '')}</textarea></label>
+      <label>${lang === 'en' ? 'Next action' : '下一步要做什么'}<textarea id="salesEditNextAction">${escapeHtml(account.nextAction || '')}</textarea></label>
+      <div class="sales-two"><label>${lang === 'en' ? 'Follow-up cycle (days)' : '回访周期（天）'}<input id="salesEditCadence" type="number" min="1" max="365" value="${Number(account.cadenceDays || 7)}"></label><label>${lang === 'en' ? 'Next visit' : '下次回访时间'}<input id="salesEditNextVisit" type="datetime-local" value="${escapeHtml(localDateTimeValue(account.nextVisitAt || ''))}"></label></div>
+      <label>${lang === 'en' ? 'Customer notes' : '客户备注'}<textarea id="salesEditNote">${escapeHtml(account.note || '')}</textarea></label>
+    </div>
+    <div class="dialog-actions"><button onclick="this.closest('.mobile-modal').remove()">${t('cancel')}</button><button class="primary" onclick="saveSalesCustomerProfile(this,'${account.id}')">${lang === 'en' ? 'Save profile' : '保存客户资料'}</button></div>
+  </div>`;
+  document.body.appendChild(overlay);
+}
+
+async function saveSalesCustomerProfile(button, accountId) {
+  try {
+    button.disabled = true;
+    const assigned = document.getElementById('salesEditAssignedUser');
+    const body = {
+      businessName:document.getElementById('salesEditBusinessName').value,
+      customerType:document.getElementById('salesEditCustomerType').value,
+      address:document.getElementById('salesEditAddress').value,
+      city:document.getElementById('salesEditCity').value,
+      stage:document.getElementById('salesEditStage').value,
+      contactName:document.getElementById('salesEditContactName').value,
+      phone:document.getElementById('salesEditPhone').value,
+      email:document.getElementById('salesEditEmail').value,
+      website:document.getElementById('salesEditWebsite').value,
+      lastContactMet:document.getElementById('salesEditLastContact').value,
+      lastContactDetails:document.getElementById('salesEditContactDetails').value,
+      currentProducts:document.getElementById('salesEditCurrentProducts').value,
+      interestedProducts:[...document.querySelectorAll('#salesEditInterests input:checked')].map(input => input.value),
+      interestedProductsNote:document.getElementById('salesEditInterestNote').value,
+      discussionSummary:document.getElementById('salesEditDiscussion').value,
+      nextAction:document.getElementById('salesEditNextAction').value,
+      cadenceDays:document.getElementById('salesEditCadence').value,
+      nextVisitAt:document.getElementById('salesEditNextVisit').value,
+      note:document.getElementById('salesEditNote').value
+    };
+    if (assigned) body.assignedUserId = assigned.value;
+    state = await api(`/api/field-sales/accounts/${accountId}`, { method:'PUT', body:JSON.stringify(body) });
+    user = state.user;
+    button.closest('.mobile-modal').remove();
+    document.querySelector('.sales-review-modal')?.remove();
+    render();
+    openSalesReviewDialog(accountId);
+    alert(lang === 'en' ? 'Customer profile saved.' : '客户资料已保存。');
+  } catch (error) {
+    alert(error.message || (lang === 'en' ? 'Save failed.' : '保存失败。'));
+    button.disabled = false;
+  }
+}
+
+function openSalesVisitEditDialog(visitId) {
+  const visit = (state.fieldSales?.visits || []).find(item => item.id === visitId);
+  if (!visit) return;
+  const overlay = document.createElement('div');
+  overlay.className = 'mobile-modal';
+  overlay.innerHTML = `<div class="mobile-dialog"><div class="dialog-head"><strong>${lang === 'en' ? 'Edit visit record' : '修改本次拜访记录'}</strong><button onclick="this.closest('.mobile-modal').remove()">×</button></div>
+    <label>${lang === 'en' ? 'Person met' : '本次见到的人'}<input id="salesVisitEditContact" value="${escapeHtml(visit.contactMet || '')}"></label>
+    <label>${lang === 'en' ? 'Person and meeting details' : '见到的人的情况与细节'}<textarea id="salesVisitEditContactDetails">${escapeHtml(visit.contactMetDetails || '')}</textarea></label>
+    <label>${lang === 'en' ? 'What was discussed' : '当时谈了什么情况'}<textarea id="salesVisitEditReport">${escapeHtml(visit.reportText || '')}</textarea></label>
+    <label>${lang === 'en' ? 'Customer needs' : '客户需求'}<textarea id="salesVisitEditNeeds">${escapeHtml(visit.customerNeeds || '')}</textarea></label>
+    <label>${lang === 'en' ? 'Questions / objections' : '客户关注和异议'}<textarea id="salesVisitEditObjections">${escapeHtml(visit.objections || '')}</textarea></label>
+    <label>${lang === 'en' ? 'Next action' : '下一步要做什么'}<textarea id="salesVisitEditNext">${escapeHtml(visit.nextAction || '')}</textarea></label>
+    <label>${lang === 'en' ? 'Outcome' : '本次结果'}<select id="salesVisitEditOutcome">${['继续跟进','已成交','送样测试','暂不跟进'].map(value => `<option ${visit.outcome === value ? 'selected' : ''}>${value}</option>`).join('')}</select></label>
+    <div class="dialog-actions"><button onclick="this.closest('.mobile-modal').remove()">${t('cancel')}</button><button class="primary" onclick="saveSalesVisitEdit(this,'${visit.id}','${visit.accountId}')">${lang === 'en' ? 'Save record' : '保存本次记录'}</button></div></div>`;
+  document.body.appendChild(overlay);
+}
+
+async function saveSalesVisitEdit(button, visitId, accountId) {
+  try {
+    button.disabled = true;
+    state = await api(`/api/field-sales/visits/${visitId}`, { method:'PUT', body:JSON.stringify({
+      contactMet:document.getElementById('salesVisitEditContact').value,
+      contactMetDetails:document.getElementById('salesVisitEditContactDetails').value,
+      reportText:document.getElementById('salesVisitEditReport').value,
+      customerNeeds:document.getElementById('salesVisitEditNeeds').value,
+      objections:document.getElementById('salesVisitEditObjections').value,
+      nextAction:document.getElementById('salesVisitEditNext').value,
+      outcome:document.getElementById('salesVisitEditOutcome').value
+    }) });
+    user = state.user;
+    button.closest('.mobile-modal').remove();
+    document.querySelector('.sales-review-modal')?.remove();
+    openSalesReviewDialog(accountId);
+    alert(lang === 'en' ? 'Visit record updated.' : '本次拜访记录已更新。');
+  } catch (error) {
+    alert(error.message || (lang === 'en' ? 'Save failed.' : '保存失败。'));
+    button.disabled = false;
+  }
 }
 
 function salesUserOptions(selectedId = '') {
@@ -2331,14 +2457,101 @@ async function startSalesTrip(button, accountId) {
 function openSalesStartDialog(accountId) {
   const account = (state.fieldSales?.accounts || []).find(item => item.id === accountId);
   if (!account) return;
+  stopSalesLiveCamera();
+  salesLiveCameraFile = null;
+  salesLiveCameraCapturedAt = '';
   const overlay = document.createElement('div'); overlay.className = 'mobile-modal';
-  overlay.innerHTML = `<div class="mobile-dialog"><div class="dialog-head"><strong>${lang === 'en' ? 'Visit check-in' : '客户拜访打卡'}</strong><button onclick="this.closest('.mobile-modal').remove()">×</button></div>
+  overlay.innerHTML = `<div class="mobile-dialog sales-live-checkin-dialog"><div class="dialog-head"><strong>${lang === 'en' ? 'Visit check-in' : '客户拜访打卡'}</strong><button onclick="closeSalesStartDialog(this)">×</button></div>
     <p><b>${escapeHtml(account.businessName)}</b><br><span class="hint">${escapeHtml(account.address)}</span></p>
-    <label>${lang === 'en' ? 'Storefront live photo (required)' : '现场门店照片（必拍）'}<input id="salesVisitPhoto" type="file" accept="image/*" capture="environment"></label>
+    <section class="sales-live-camera">
+      <strong>${lang === 'en' ? 'Live storefront camera (required)' : '现场门店相机（必拍）'}</strong>
+      <div class="sales-live-camera-stage">
+        <video id="salesLiveCameraVideo" playsinline muted></video>
+        <img id="salesLiveCameraPreview" alt="${lang === 'en' ? 'Live storefront capture' : '现场门店照片'}" hidden>
+        <p id="salesLiveCameraPlaceholder">${lang === 'en' ? 'Open the rear camera and take a new photo here. Existing files cannot be selected.' : '请打开后置相机并在这里现场拍照，不能从相册或文件中选择。'}</p>
+      </div>
+      <div class="sales-live-camera-actions">
+        <button id="salesOpenCameraButton" type="button" onclick="startSalesLiveCamera(this)">${lang === 'en' ? 'Open rear camera' : '打开后置相机'}</button>
+        <button id="salesCaptureCameraButton" class="primary" type="button" onclick="captureSalesLivePhoto()" hidden>${lang === 'en' ? 'Take photo now' : '立即拍照'}</button>
+        <button id="salesRetakeCameraButton" type="button" onclick="retakeSalesLivePhoto(this)" hidden>${lang === 'en' ? 'Retake' : '重新拍摄'}</button>
+      </div>
+      <small id="salesLiveCameraStatus">${lang === 'en' ? 'No live photo yet.' : '尚未完成现场拍照。'}</small>
+    </section>
     <label>${lang === 'en' ? 'Person met' : '本次见到的人'}<input id="salesContactMet"></label>
-    <p class="hint">${lang === 'en' ? 'Tapping check-in captures this photo, the current location, and time.' : '点击确认后会同时保存门头照片、当前位置和时间。'}</p>
-    <div class="dialog-actions"><button onclick="this.closest('.mobile-modal').remove()">${t('cancel')}</button><button class="primary" onclick="startSalesVisit(this,'${account.id}')">${lang === 'en' ? 'Check in now' : '确认到店打卡'}</button></div></div>`;
+    <label>${lang === 'en' ? 'Who they are and meeting details' : '本次见到的人的情况与细节'}<textarea id="salesContactMetDetails" placeholder="${lang === 'en' ? 'Role, decision authority, interests, requests, and anything important observed onsite' : '对方职务、决策权、关注点、提出的要求和现场重要情况'}"></textarea></label>
+    <p class="hint">${lang === 'en' ? 'Check-in saves the newly captured photo, current phone location, capture time, and meeting details together.' : '确认打卡会同时保存刚刚拍摄的照片、手机当前位置、拍摄时间和见面情况。'}</p>
+    <div class="dialog-actions"><button onclick="closeSalesStartDialog(this)">${t('cancel')}</button><button class="primary" onclick="startSalesVisit(this,'${account.id}')">${lang === 'en' ? 'Check in now' : '确认到店打卡'}</button></div></div>`;
+  overlay.addEventListener('click', event => { if (event.target === overlay) closeSalesStartDialog(overlay); });
   document.body.appendChild(overlay);
+}
+
+function stopSalesLiveCamera() {
+  if (salesLiveCameraStream) salesLiveCameraStream.getTracks().forEach(track => track.stop());
+  salesLiveCameraStream = null;
+  const video = document.getElementById('salesLiveCameraVideo');
+  if (video) video.srcObject = null;
+}
+
+function closeSalesStartDialog(source) {
+  stopSalesLiveCamera();
+  salesLiveCameraFile = null;
+  salesLiveCameraCapturedAt = '';
+  const modal = source?.classList?.contains('mobile-modal') ? source : source?.closest?.('.mobile-modal');
+  modal?.remove();
+}
+
+async function startSalesLiveCamera(button) {
+  if (!navigator.mediaDevices?.getUserMedia) return alert(lang === 'en' ? 'This browser cannot open the live camera.' : '当前浏览器无法直接打开现场相机，请使用 Safari 或安装后的员工端。');
+  try {
+    if (button) button.disabled = true;
+    stopSalesLiveCamera();
+    salesLiveCameraStream = await navigator.mediaDevices.getUserMedia({ video:{ facingMode:{ ideal:'environment' }, width:{ ideal:1920 }, height:{ ideal:1080 } }, audio:false });
+    const video = document.getElementById('salesLiveCameraVideo');
+    if (!video) return stopSalesLiveCamera();
+    video.srcObject = salesLiveCameraStream;
+    await video.play();
+    video.hidden = false;
+    document.getElementById('salesLiveCameraPreview').hidden = true;
+    document.getElementById('salesLiveCameraPlaceholder').hidden = true;
+    document.getElementById('salesOpenCameraButton').hidden = true;
+    document.getElementById('salesCaptureCameraButton').hidden = false;
+    document.getElementById('salesRetakeCameraButton').hidden = true;
+    document.getElementById('salesLiveCameraStatus').textContent = lang === 'en' ? 'Camera is live. Point at the storefront and take the photo.' : '相机已打开，请对准门店后立即拍照。';
+  } catch (error) {
+    alert(lang === 'en' ? 'Camera permission was denied. Allow camera access in browser settings and retry.' : '无法打开相机。请在浏览器设置中允许相机权限后重试。');
+    if (button) button.disabled = false;
+  }
+}
+
+function captureSalesLivePhoto() {
+  const video = document.getElementById('salesLiveCameraVideo');
+  if (!video || !salesLiveCameraStream || !video.videoWidth) return alert(lang === 'en' ? 'Wait for the live camera image first.' : '请等待现场相机画面显示后再拍照。');
+  const scale = Math.min(1, 1600 / Math.max(video.videoWidth, video.videoHeight));
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.max(1, Math.round(video.videoWidth * scale));
+  canvas.height = Math.max(1, Math.round(video.videoHeight * scale));
+  canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height);
+  canvas.toBlob(blob => {
+    if (!blob) return alert(lang === 'en' ? 'The photo could not be captured. Please retry.' : '现场照片拍摄失败，请重试。');
+    salesLiveCameraCapturedAt = new Date().toISOString();
+    salesLiveCameraFile = new File([blob], `onsite-${Date.now()}.jpg`, { type:'image/jpeg', lastModified:Date.now() });
+    const preview = document.getElementById('salesLiveCameraPreview');
+    preview.src = URL.createObjectURL(blob);
+    preview.hidden = false;
+    video.hidden = true;
+    document.getElementById('salesCaptureCameraButton').hidden = true;
+    document.getElementById('salesRetakeCameraButton').hidden = false;
+    document.getElementById('salesLiveCameraStatus').textContent = `${lang === 'en' ? 'Live photo captured' : '现场照片已拍摄'} · ${new Date(salesLiveCameraCapturedAt).toLocaleTimeString()}`;
+    stopSalesLiveCamera();
+  }, 'image/jpeg', 0.86);
+}
+
+async function retakeSalesLivePhoto(button) {
+  salesLiveCameraFile = null;
+  salesLiveCameraCapturedAt = '';
+  document.getElementById('salesLiveCameraPreview').hidden = true;
+  document.getElementById('salesLiveCameraStatus').textContent = lang === 'en' ? 'Opening live camera…' : '正在重新打开现场相机…';
+  await startSalesLiveCamera(button);
 }
 
 async function uploadSalesPhoto(file) {
@@ -2347,7 +2560,7 @@ async function uploadSalesPhoto(file) {
 }
 
 async function startSalesVisit(button, accountId) {
-  const photo = document.getElementById('salesVisitPhoto')?.files?.[0];
+  const photo = salesLiveCameraFile;
   if (!photo) return alert(lang === 'en' ? 'Take a storefront photo first.' : '请先现场拍摄客户门店照片。');
   try {
     button.disabled = true; button.textContent = lang === 'en' ? 'Locating…' : '正在定位…';
@@ -2357,9 +2570,11 @@ async function startSalesVisit(button, accountId) {
     state = await api('/api/field-sales/visits/start', { method:'POST', body:JSON.stringify({
       accountId, locationConsent:true, lat:position.coords.latitude, lng:position.coords.longitude,
       accuracy:position.coords.accuracy, photoUrl:uploaded.url,
-      contactMet:document.getElementById('salesContactMet')?.value || ''
+      captureMode:'live-camera', capturedAt:salesLiveCameraCapturedAt,
+      contactMet:document.getElementById('salesContactMet')?.value || '',
+      contactMetDetails:document.getElementById('salesContactMetDetails')?.value || ''
     }) });
-    user = state.user; salesActiveAccountId = accountId; salesScreen = 'execution'; button.closest('.mobile-modal').remove(); render();
+    user = state.user; salesActiveAccountId = accountId; salesScreen = 'execution'; closeSalesStartDialog(button); render();
   } catch (error) { alert(error.message || t('locationFailed')); button.disabled = false; button.textContent = lang === 'en' ? 'Check in now' : '确认到店打卡'; }
 }
 

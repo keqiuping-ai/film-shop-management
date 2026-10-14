@@ -26,8 +26,8 @@ assert.match(mobileCss, /\.mobile-dialog\.sales-review-dialog[^}]*1180px[^}]*94d
   'desktop review must use a large dialog');
 assert.match(mobileCss, /@media \(max-width:620px\)[\s\S]*\.mobile-dialog\.sales-review-dialog[^}]*100vw[^}]*100dvh/,
   'phone review must use the full screen');
-assert.ok(mobileHtml.includes('/mobile.css?v=63'));
-assert.ok(mobileHtml.includes('/mobile.js?v=71'));
-assert.ok(serviceWorker.includes('film-shop-v174-santa-monica-prospects'));
+assert.ok(mobileHtml.includes('/mobile.css?v=64'));
+assert.ok(mobileHtml.includes('/mobile.js?v=72'));
+assert.ok(serviceWorker.includes('film-shop-v175-live-camera-customer-edit'));
 
 console.log('Field sales customer review detail tests passed.');

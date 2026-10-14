@@ -369,10 +369,13 @@ async function run() {
   // It must not require a plan or a separate departure action.
   const directVisit = await request('/api/field-sales/visits/start', {
     token:pricesToken, method:'POST',
-    body:{ accountId:'simple-account', locationConsent:true, lat:34.05, lng:-118.25, accuracy:5, photoUrl:'/customer-media/simple.jpg', contactMet:'Alex' }
+    body:{ accountId:'simple-account', locationConsent:true, lat:34.05, lng:-118.25, accuracy:5, photoUrl:'/customer-media/simple.jpg', captureMode:'live-camera', capturedAt:new Date().toISOString(), contactMet:'Alex', contactMetDetails:'Store owner and purchasing decision maker' }
   });
   assert.equal(directVisit.status, 201);
   assert.equal(directVisit.body.visit.status, '进行中');
+  assert.equal(directVisit.body.visit.checkIn.captureMode, 'live-camera');
+  assert.ok(Date.now() - new Date(directVisit.body.visit.checkIn.capturedAt).getTime() < 60000);
+  assert.equal(directVisit.body.visit.contactMetDetails, 'Store owner and purchasing decision maker');
   assert.equal(directVisit.body.fieldSales.trips.find(item => item.accountId === 'simple-account').simplifiedDirectCheckIn, true);
   const directComplete = await request(`/api/field-sales/visits/${directVisit.body.visit.id}/complete`, {
     token:pricesToken, method:'PUT',
@@ -387,6 +390,26 @@ async function run() {
   const savedDirectVisit = directComplete.body.fieldSales.visits.find(item => item.id === directVisit.body.visit.id);
   assert.equal(savedDirectVisit.contactMet, 'Alex Chen');
   assert.deepEqual(savedDirectVisit.soldItems, [{ product:'QD15-BLK-15218', quantity:2, unitPrice:320, total:640 }]);
+
+  const editedCustomer = await request('/api/field-sales/accounts/simple-account', {
+    token:managerToken, method:'PUT',
+    body:{ assignedUserId:'sales-prices', businessName:'Simple Visit Shop', address:'500 Simple St', city:'Los Angeles', customerType:'Tint shop', lastContactMet:'Alex Chen', lastContactDetails:'Owner and final decision maker', currentProducts:'Window film and ceramic coating', interestedProducts:['汽车隔热膜','PPF 隐形车衣'], interestedProductsNote:'Interested in QD15 samples', discussionSummary:'Compared wholesale pricing.', nextAction:'Send sample quote.', cadenceDays:10 }
+  });
+  assert.equal(editedCustomer.status, 200);
+  const savedCustomer = editedCustomer.body.fieldSales.accounts.find(item => item.id === 'simple-account');
+  assert.equal(savedCustomer.assignedUserId, 'sales-prices');
+  assert.deepEqual(savedCustomer.interestedProducts, ['汽车隔热膜','PPF 隐形车衣']);
+  assert.equal(savedCustomer.currentProducts, 'Window film and ceramic coating');
+
+  const editedVisit = await request(`/api/field-sales/visits/${directVisit.body.visit.id}`, {
+    token:pricesToken, method:'PUT',
+    body:{ contactMet:'Alex Chen', contactMetDetails:'Owner, purchasing decision maker', reportText:'Updated discussion after review.', customerNeeds:'Needs heat rejection samples.', objections:'Comparing warranty.', nextAction:'Deliver samples Friday.', outcome:'送样测试' }
+  });
+  assert.equal(editedVisit.status, 200);
+  const savedEditedVisit = editedVisit.body.fieldSales.visits.find(item => item.id === directVisit.body.visit.id);
+  assert.equal(savedEditedVisit.reportText, 'Updated discussion after review.');
+  assert.equal(savedEditedVisit.contactMetDetails, 'Owner, purchasing decision maker');
+  assert.equal(savedEditedVisit.outcome, '送样测试');
 
   const restarted = await request('/api/field-sales/trips/start', { token:pricesToken, method:'POST', body:{ accountId:'new-account', locationConsent:true, lat:36.11, lng:-115.21, accuracy:5 } });
   assert.equal(restarted.status, 201);

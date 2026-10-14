@@ -1,4 +1,4 @@
-const CACHE_NAME = 'film-shop-v174-santa-monica-prospects';
+const CACHE_NAME = 'film-shop-v175-live-camera-customer-edit';
 const ASSETS = [
     '/mobile.html',
     '/warranty.html',

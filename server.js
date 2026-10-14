@@ -9761,6 +9761,13 @@ async function api(req, res) {
       website: String(body.website || '').trim().slice(0, 500),
       city: String(body.city || '').trim().slice(0, 120),
       customerType: String(body.customerType || '').trim().slice(0, 80),
+      lastContactMet: String(body.lastContactMet || '').trim().slice(0, 120),
+      lastContactDetails: String(body.lastContactDetails || '').trim().slice(0, 3000),
+      currentProducts: String(body.currentProducts || '').trim().slice(0, 3000),
+      interestedProducts: (Array.isArray(body.interestedProducts) ? body.interestedProducts : []).map(value => String(value || '').trim().slice(0, 100)).filter(Boolean).slice(0, 20),
+      interestedProductsNote: String(body.interestedProductsNote || '').trim().slice(0, 1000),
+      discussionSummary: String(body.discussionSummary || '').trim().slice(0, 5000),
+      nextAction: String(body.nextAction || '').trim().slice(0, 3000),
       source: String(body.source || '').trim().slice(0, 80),
       language: body.language === 'en' ? 'en' : body.language === 'zh' ? 'zh' : 'auto',
       assignedUserId,
@@ -9948,9 +9955,12 @@ async function api(req, res) {
     const nextAddress = String(body.address ?? before.address).trim().slice(0, 300);
     const addressChanged = nextAddress !== String(before.address || '').trim();
     const geocoded = addressChanged ? await forwardGeocode(nextAddress) : null;
-    const assignedUserId = canManageFieldSales(user) && (db.users || []).some(item => item.id === body.assignedUserId)
-      ? String(body.assignedUserId)
+    const assignmentWasSubmitted = canManageFieldSales(user) && Object.prototype.hasOwnProperty.call(body, 'assignedUserId');
+    const requestedAssigneeId = String(body.assignedUserId || '').trim();
+    const assignedUserId = assignmentWasSubmitted
+      ? ((db.users || []).some(item => item.id === requestedAssigneeId) ? requestedAssigneeId : '')
       : before.assignedUserId;
+    const assignedUser = (db.users || []).find(item => item.id === assignedUserId);
     const next = {
       ...before,
       branchId: String(body.branchId ?? before.branchId ?? '').trim(),
@@ -9960,10 +9970,20 @@ async function api(req, res) {
       phone: String(body.phone ?? before.phone).trim().slice(0, 80),
       email: String(body.email ?? before.email).trim().slice(0, 180),
       website: String(body.website ?? before.website ?? '').trim().slice(0, 500),
+      city: String(body.city ?? before.city ?? '').trim().slice(0, 120),
+      customerType: String(body.customerType ?? before.customerType ?? '').trim().slice(0, 80),
       assignedUserId,
-      assignedUserName: (db.users || []).find(item => item.id === assignedUserId)?.name || before.assignedUserName || '',
+      assignedUserName: assignedUser?.name || assignedUser?.email || '',
+      leadPool: assignmentWasSubmitted ? !assignedUserId : before.leadPool,
       cadenceDays: Math.min(365, Math.max(1, Number(body.cadenceDays ?? before.cadenceDays ?? 7))),
       stage: String(body.stage ?? before.stage).trim().slice(0, 40),
+      lastContactMet: String(body.lastContactMet ?? before.lastContactMet ?? '').trim().slice(0, 120),
+      lastContactDetails: String(body.lastContactDetails ?? before.lastContactDetails ?? '').trim().slice(0, 3000),
+      currentProducts: String(body.currentProducts ?? before.currentProducts ?? '').trim().slice(0, 3000),
+      interestedProducts: (Array.isArray(body.interestedProducts) ? body.interestedProducts : (before.interestedProducts || [])).map(value => String(value || '').trim().slice(0, 100)).filter(Boolean).slice(0, 20),
+      interestedProductsNote: String(body.interestedProductsNote ?? before.interestedProductsNote ?? '').trim().slice(0, 1000),
+      discussionSummary: String(body.discussionSummary ?? before.discussionSummary ?? '').trim().slice(0, 5000),
+      nextAction: String(body.nextAction ?? before.nextAction ?? '').trim().slice(0, 3000),
       note: String(body.note ?? before.note).trim().slice(0, 3000),
       nextVisitAt: String(body.nextVisitAt ?? before.nextVisitAt).trim(),
       updatedAt: new Date().toISOString()
@@ -10002,6 +10022,15 @@ async function api(req, res) {
     if (!Number.isFinite(lat) || !Number.isFinite(lng)) return send(res, 400, { error: '没有获取到实时定位，不能开始拜访' });
     const photoUrl = String(body.photoUrl || '').trim();
     if (!photoUrl.includes('/customer-media/')) return send(res, 400, { error: '请现场拍摄客户门店照片' });
+    const captureMode = String(body.captureMode || '').trim() === 'live-camera' ? 'live-camera' : 'native-camera';
+    const capturedAt = String(body.capturedAt || '').trim().slice(0, 40);
+    if (captureMode === 'live-camera') {
+      const captureTime = new Date(capturedAt).getTime();
+      const captureAgeMs = Date.now() - captureTime;
+      if (!Number.isFinite(captureTime) || captureAgeMs < -60000 || captureAgeMs > 15 * 60 * 1000) {
+        return send(res, 400, { error: '现场照片不是刚刚拍摄的，请重新打开相机拍照' });
+      }
+    }
     const existing = (db.salesVisits || []).find(item => item.accountId === account.id && item.userId === user.id && item.status === '进行中');
     if (existing) return send(res, 200, { visit: existing, ...mobileSnapshot(db, user) });
     let activeTrip = (db.salesTrips || []).find(item => item.accountId === account.id && item.userId === user.id && item.status === '前往中');
@@ -10062,9 +10091,12 @@ async function api(req, res) {
         distanceToAccountMeters,
         allowedRadiusMeters,
         locationMatched,
-        locationConsent: true
+        locationConsent: true,
+        captureMode,
+        capturedAt: capturedAt || arrivedAt
       },
       contactMet: String(body.contactMet || '').trim().slice(0, 120),
+      contactMetDetails: String(body.contactMetDetails || '').trim().slice(0, 3000),
       createdAt: new Date().toISOString(), updatedAt: new Date().toISOString()
     };
     db.salesVisits.unshift(visit);
@@ -10078,6 +10110,8 @@ async function api(req, res) {
     const plannedVisit = (db.salesVisitPlans || []).find(item => item.accountId === account.id && item.userId === user.id && item.status === '前往中');
     if (plannedVisit) { plannedVisit.status = '拜访中'; plannedVisit.visitId = visit.id; plannedVisit.updatedAt = arrivedAt; }
     account.stage = '拜访中';
+    account.lastContactMet = visit.contactMet || account.lastContactMet || '';
+    account.lastContactDetails = visit.contactMetDetails || account.lastContactDetails || '';
     account.updatedAt = new Date().toISOString();
     audit(db, user, 'start-field-sales-visit', { collection: 'salesVisits', recordId: visit.id, recordLabel: account.businessName, after: visit, detail: `${visit.userName} 到店打卡 ${account.businessName}` });
     writeDb(db);
@@ -10108,6 +10142,7 @@ async function api(req, res) {
       objections: String(body.objections || '').trim().slice(0, 5000),
       nextAction: String(body.nextAction || '').trim().slice(0, 3000),
       contactMet: String(body.contactMet ?? visit.contactMet ?? '').trim().slice(0, 120),
+      contactMetDetails: String(body.contactMetDetails ?? visit.contactMetDetails ?? '').trim().slice(0, 3000),
       soldItems: (Array.isArray(body.soldItems) ? body.soldItems : []).slice(0, 20).map(item => ({
         product:String(item?.product || '').trim().slice(0, 180),
         quantity:Math.max(0, Number(item?.quantity || 0)),
@@ -10186,6 +10221,10 @@ async function api(req, res) {
     if (account) {
       account.lastVisitAt = now; account.nextVisitAt = nextVisitAt; account.cadenceDays = cadenceDays;
       account.stage = String(body.stage || (account.stage === '拜访中' ? '持续跟进' : account.stage) || '持续跟进').trim().slice(0, 40);
+      account.lastContactMet = next.contactMet || account.lastContactMet || '';
+      account.lastContactDetails = next.contactMetDetails || account.lastContactDetails || '';
+      account.discussionSummary = next.reportText || account.discussionSummary || '';
+      account.nextAction = next.nextAction || account.nextAction || '';
       account.updatedAt = now;
     }
     const daily = (db.salesDailyReports || []).find(item => item.userId === visit.userId && item.date === dateInTimezone(db.settings?.timezone || 'America/Los_Angeles', 0) && String(item.branchId || '') === String(visit.branchId || ''));
@@ -10203,6 +10242,41 @@ async function api(req, res) {
     audit(db, user, 'complete-field-sales-visit', { collection: 'salesVisits', recordId: next.id, recordLabel: next.businessName, after: next, detail: `${next.userName} 完成拜访 ${next.businessName}` });
     writeDb(db);
     notifyDataChanged('field-sales-visit-completed', next.id);
+    return send(res, 200, mobileSnapshot(db, user));
+  }
+
+  const fieldSalesVisitEditMatch = url.pathname.match(/^\/api\/field-sales\/visits\/([^/]+)$/);
+  if (req.method === 'PUT' && fieldSalesVisitEditMatch) {
+    if (!canUseFieldSales(user)) return send(res, 403, { error: '当前账号没有业务员管理权限' });
+    const visitId = decodeURIComponent(fieldSalesVisitEditMatch[1]);
+    const visitIndex = (db.salesVisits || []).findIndex(item => item.id === visitId);
+    if (visitIndex < 0 || (!canManageFieldSales(user) && db.salesVisits[visitIndex].userId !== user.id)) return send(res, 404, { error: '找不到本次拜访' });
+    const before = db.salesVisits[visitIndex];
+    if (!canAccessBranch(db, user, before.branchId)) return send(res, 403, { error: '你没有这次拜访所属分店的数据权限' });
+    const body = await readBody(req);
+    const next = {
+      ...before,
+      contactMet:String(body.contactMet ?? before.contactMet ?? '').trim().slice(0, 120),
+      contactMetDetails:String(body.contactMetDetails ?? before.contactMetDetails ?? '').trim().slice(0, 3000),
+      reportText:String(body.reportText ?? before.reportText ?? '').trim().slice(0, 12000),
+      customerNeeds:String(body.customerNeeds ?? before.customerNeeds ?? '').trim().slice(0, 5000),
+      objections:String(body.objections ?? before.objections ?? '').trim().slice(0, 5000),
+      nextAction:String(body.nextAction ?? before.nextAction ?? '').trim().slice(0, 3000),
+      outcome:String(body.outcome ?? before.outcome ?? '').trim().slice(0, 60),
+      updatedAt:new Date().toISOString()
+    };
+    db.salesVisits[visitIndex] = next;
+    const account = (db.salesAccounts || []).find(item => item.id === next.accountId);
+    if (account) {
+      account.lastContactMet = next.contactMet || account.lastContactMet || '';
+      account.lastContactDetails = next.contactMetDetails || account.lastContactDetails || '';
+      account.discussionSummary = next.reportText || account.discussionSummary || '';
+      account.nextAction = next.nextAction || account.nextAction || '';
+      account.updatedAt = next.updatedAt;
+    }
+    audit(db, user, 'update-field-sales-visit', { collection:'salesVisits', recordId:next.id, recordLabel:next.businessName, before, after:next, detail:`修改拜访记录 ${next.businessName}` });
+    writeDb(db);
+    notifyDataChanged('field-sales-visit-updated', next.id);
     return send(res, 200, mobileSnapshot(db, user));
   }
 

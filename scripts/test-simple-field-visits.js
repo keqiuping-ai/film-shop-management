@@ -21,15 +21,25 @@ assert(mobile.includes('下一步要做什么'), 'simple visit must capture the 
 assert(mobile.includes('salesSimpleProduct'), 'simple visit must capture product details');
 assert(mobile.includes('salesSimplePrice'), 'simple visit must capture price');
 assert(mobile.includes('salesSimpleContact'), 'simple visit must capture the contact');
+assert(mobile.includes('navigator.mediaDevices.getUserMedia'), 'check-in must open the live browser camera');
+assert(mobile.includes("captureMode:'live-camera'"), 'check-in must identify live camera captures');
+assert(!mobile.includes('id="salesVisitPhoto" type="file"'), 'check-in must not offer a file or photo-library picker');
+assert(mobile.includes('salesContactMetDetails'), 'check-in must capture details about the person met');
+assert(mobile.includes('openSalesCustomerEditDialog'), 'customer review must expose a complete editable profile');
+assert(mobile.includes('salesEditInterests'), 'customer profile must capture product interests');
+assert(mobile.includes('openSalesVisitEditDialog'), 'historical visit details must be editable');
 assert(mobile.includes('拜访资料已保存并同步到主系统'), 'save must give explicit success feedback');
 assert(server.includes('simplifiedDirectCheckIn:true'), 'server must permit direct check-in without a separate trip step');
 assert(server.includes('soldItems: (Array.isArray(body.soldItems)'), 'server must persist product and price records');
 assert(server.includes('contactMet: String(body.contactMet ?? visit.contactMet'), 'server must persist the visit contact');
+assert(server.includes("captureMode === 'live-camera'"), 'server must validate the live camera capture mode');
+assert(server.includes('captureAgeMs > 15 * 60 * 1000'), 'server must reject stale live-camera photos');
+assert(server.includes('update-field-sales-visit'), 'server must support audited visit record edits');
 assert(server.includes('applySantaMonicaFieldSalesProspectImport();'), 'production startup must run the idempotent prospect import');
 assert(server.includes('referenceMaterial === true'), 'public reference photos must remain visible in the customer profile');
 assert(server.includes('account.leadPool === true'), 'unassigned imported leads must be claimable by a salesperson');
 assert(css.includes('.sales-region-grid'), 'region selector must have mobile styling');
 assert(css.includes('.sales-simple-customer-photo'), 'imported storefront photos must have mobile styling');
-assert(html.includes('/mobile.js?v=71') && html.includes('/mobile.css?v=63'), 'mobile asset cache keys must be updated');
+assert(html.includes('/mobile.js?v=72') && html.includes('/mobile.css?v=64'), 'mobile asset cache keys must be updated');
 
 console.log('simple field visits regression test passed');
