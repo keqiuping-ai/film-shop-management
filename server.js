@@ -3357,6 +3357,50 @@ function inventoryAdjustmentPlan(db, payload = {}) {
   };
 }
 
+function inventoryAdjustmentSignatureFromInput(raw = {}) {
+  const snapshotQty = Number(raw.snapshotQty);
+  const countedQty = Number(raw.countedQty);
+  const delta = Math.round((countedQty - snapshotQty) * 1000) / 1000;
+  if (!String(raw.sku || '').trim() || !String(raw.branchId || '').trim()) return '';
+  if (![snapshotQty, countedQty, delta, Number(raw.delta)].every(Number.isFinite)) return '';
+  if (Math.abs(Number(raw.delta) - delta) > 0.0001 || Math.abs(delta) <= 0.0001) return '';
+  return [
+    String(raw.sku).trim(),
+    String(raw.branchId).trim(),
+    delta > 0 ? 'in' : 'out',
+    Math.abs(delta).toFixed(3),
+    snapshotQty.toFixed(3),
+    countedQty.toFixed(3),
+    String(raw.countDate || '').trim().slice(0, 10)
+  ].join('\u0000');
+}
+
+function inventoryAdjustmentSignatureFromMovement(row = {}) {
+  return [
+    String(row.sku || '').trim(),
+    String(row.branchId || '').trim(),
+    String(row.type || '').trim(),
+    Number(row.qty).toFixed(3),
+    Number(row.inventorySnapshotQty).toFixed(3),
+    Number(row.inventoryCountedQty).toFixed(3),
+    String(row.inventoryCountDate || '').trim().slice(0, 10)
+  ].join('\u0000');
+}
+
+function inventoryAdjustmentTotalsFromMovements(rows = []) {
+  return rows.reduce((result, row) => {
+    const branchId = String(row.branchId || '');
+    const branch = result[branchId] || { rows: 0, increases: 0, decreases: 0, netDelta: 0 };
+    const delta = String(row.type || '') === 'in' ? Number(row.qty || 0) : -Number(row.qty || 0);
+    branch.rows += 1;
+    if (delta > 0) branch.increases += 1;
+    else branch.decreases += 1;
+    branch.netDelta = Math.round((branch.netDelta + delta) * 1000) / 1000;
+    result[branchId] = branch;
+    return result;
+  }, {});
+}
+
 function productsForUser(db, user, canSeeCosts) {
   const products = sanitizeProducts(db.products || [], canSeeCosts);
   const scope = userBranchIds(db, user);
@@ -11665,8 +11709,8 @@ async function api(req, res) {
   if (req.method === 'POST' && ['/api/inventory-adjustments/preview', '/api/inventory-adjustments/apply'].includes(url.pathname)) {
     if (user.role !== 'owner' || !canAccess(user, 'inventoryEdit')) return send(res, 403, { error: '只有老板账号可以导入盘点调整' });
     const body = await readBody(req);
-    const plan = inventoryAdjustmentPlan(db, body);
     if (url.pathname.endsWith('/preview')) {
+      const plan = inventoryAdjustmentPlan(db, body);
       return send(res, 200, {
         ok: plan.ok,
         requestId: plan.requestId,
@@ -11676,9 +11720,10 @@ async function api(req, res) {
         errors: plan.errors
       });
     }
-    if (!plan.requestId) return send(res, 400, { error: '盘点调整缺少批次编号，不能防止重复导入' });
+    const requestId = String(body.requestId || '').trim().slice(0, 160);
+    if (!requestId) return send(res, 400, { error: '盘点调整缺少批次编号，不能防止重复导入' });
     const existingBatches = Array.isArray(db.inventoryAdjustmentBatches) ? db.inventoryAdjustmentBatches : [];
-    const existingBatch = existingBatches.find(batch => batch.requestId === plan.requestId);
+    const existingBatch = existingBatches.find(batch => batch.requestId === requestId);
     if (existingBatch) {
       return send(res, 200, {
         ok: true,
@@ -11687,6 +11732,74 @@ async function api(req, res) {
         data: sanitizeDbForUser(db, user)
       });
     }
+    const orphanedMovements = (db.movements || []).filter(row => row.inventoryAdjustment === true && row.inventoryAdjustmentRequestId === requestId);
+    if (orphanedMovements.length) {
+      const expectedSignatures = (Array.isArray(body.adjustments) ? body.adjustments : [])
+        .map(inventoryAdjustmentSignatureFromInput)
+        .filter(Boolean);
+      const counts = new Map();
+      expectedSignatures.forEach(signature => counts.set(signature, Number(counts.get(signature) || 0) + 1));
+      orphanedMovements.forEach(row => {
+        const signature = inventoryAdjustmentSignatureFromMovement(row);
+        counts.set(signature, Number(counts.get(signature) || 0) - 1);
+      });
+      const orphanBatchIds = [...new Set(orphanedMovements.map(row => String(row.inventoryAdjustmentBatchId || '')).filter(Boolean))];
+      const signaturesMatch = expectedSignatures.length === orphanedMovements.length
+        && [...counts.values()].every(value => value === 0)
+        && new Set(orphanedMovements.map(row => row.id)).size === orphanedMovements.length
+        && orphanBatchIds.length === 1;
+      if (!signaturesMatch) {
+        return send(res, 409, {
+          error: '检测到同批次的未登记库存流水，但与本次文件不完全一致；系统未再次调整库存，请人工复核',
+          requestId,
+          expectedRows: expectedSignatures.length,
+          persistedRows: orphanedMovements.length
+        });
+      }
+      const firstCreatedAt = orphanedMovements.map(row => new Date(row.createdAt || 0).getTime()).filter(Number.isFinite).sort((a, b) => a - b)[0] || 0;
+      const matchingBackup = listBackups().find(item => {
+        const createdAt = new Date(item.createdAt || 0).getTime();
+        return firstCreatedAt > 0 && createdAt <= firstCreatedAt && firstCreatedAt - createdAt <= 10 * 60 * 1000;
+      });
+      const recoveredDb = JSON.parse(JSON.stringify(db));
+      recoveredDb.inventoryAdjustmentBatches = Array.isArray(recoveredDb.inventoryAdjustmentBatches) ? recoveredDb.inventoryAdjustmentBatches : [];
+      const recoveredAt = new Date().toISOString();
+      const batch = {
+        id: orphanBatchIds[0],
+        requestId,
+        source: String(body.source || '').trim().slice(0, 500),
+        sourceSha256: String(body.sourceSha256 || '').trim().slice(0, 128),
+        backupFileName: String(matchingBackup?.name || ''),
+        totals: inventoryAdjustmentTotalsFromMovements(orphanedMovements),
+        rowCount: orphanedMovements.length,
+        movementIds: orphanedMovements.map(row => row.id),
+        appliedAt: String(orphanedMovements[0]?.createdAt || recoveredAt),
+        appliedBy: String(orphanedMovements[0]?.createdBy || user.name || user.email),
+        appliedByUserId: String(orphanedMovements[0]?.createdByUserId || user.id),
+        recoveredAt,
+        recoveredBy: user.name || user.email,
+        recoveredFromPersistedMovements: true
+      };
+      recoveredDb.inventoryAdjustmentBatches.push(batch);
+      audit(recoveredDb, user, 'recover-inventory-count-adjustment-batch', {
+        collection: 'movements',
+        recordId: batch.id,
+        recordLabel: requestId,
+        detail: `核对并补登记已完整写入的盘点调整 ${batch.rowCount} 条；没有再次增减库存`,
+        totals: batch.totals,
+        backupFileName: batch.backupFileName
+      });
+      writeDb(recoveredDb);
+      notifyDataChanged('recover-inventory-count-adjustment-batch', batch.id);
+      return send(res, 200, {
+        ok: true,
+        alreadyApplied: true,
+        recovered: true,
+        batch,
+        data: sanitizeDbForUser(recoveredDb, user)
+      });
+    }
+    const plan = inventoryAdjustmentPlan(db, body);
     if (!plan.ok) return send(res, 400, {
       error: '盘点调整预检未通过，系统未修改库存',
       errors: plan.errors,
