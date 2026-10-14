@@ -53,6 +53,7 @@ let salesSelectedAccountIds = [];
 let salesPlanDate = '';
 let salesNearbyOrigin = null;
 let salesActiveAccountId = '';
+let salesSelectedRegion = '';
 let salesInventoryPricingQuery = '';
 let salesInventoryPricingResults = [];
 let salesInventoryPricingLoading = false;
@@ -1767,18 +1768,44 @@ async function searchSalesInventoryPricing(event) {
 
 function salesHomeHtml() {
   const sales = state.fieldSales || {};
-  const today = salesLocalDate();
-  const plans = (sales.visitPlans || []).filter(item => item.date === today && item.userId === user?.id);
-  const completed = (sales.visits || []).filter(item => item.userId === user?.id && item.status === '已完成' && String(item.completedAt || '').slice(0,10) === today).length;
-  const pending = (sales.accounts || []).filter(item => item.nextVisitAt && new Date(item.nextVisitAt) <= new Date()).length;
-  const cards = [
-    ['add','＋','新增客户','录入新客户资料','teal'], ['customers','♟','客户列表','查看全部共享客户','blue'],
-    ['today','⌖','今日拜访','今天计划与进行中','orange'], ['plan','✓','计划拜访','选择客户并安排时间','purple'],
-    ['report','▤','工作日报','记录今天完成事项','green'], ['nearby','⌖','附近客户','洛杉矶 / 拉斯维加斯','rose']
-  ];
-  if (canViewSalesInventoryPricing()) cards.push(['inventory-pricing','▦',t('inventoryPricing'),t('inventoryPricingSub'),'blue']);
-  const workflow=[['建立客户资料','记录门店、联系人与业务机会'],['安排拜访计划','选择客户、日期、顺序和时间'],['到店并记录证据','保存现场照片、时间和 GPS'],['沟通与现场订单','记录需求、样品、价格与收款'],['创建下一次跟进','设置回访、收款或测试提醒'],['自动汇总工作日报','用正式业务记录形成当日总结']];
-  return salesLocalizedHtml(`<div class="sales-design-home"><section class="sales-design-hero"><small>QUaD FIELD SALES</small><h2>业务员管理中心</h2><p>客户 · 计划 · 拜访 · 总结</p></section><section class="sales-workflow"><div class="sales-section-title"><b>标准业务流程</b><span>6 个连续步骤</span></div><ol>${workflow.map((item,index)=>`<li><i>${index+1}</i><span><b>${item[0]}</b><small>${item[1]}</small></span></li>`).join('')}</ol></section><div class="sales-section-title"><b>常用功能</b><span>点击进入独立页面</span></div><div class="sales-menu-grid">${cards.map(([screen,icon,title,sub,color]) => `<button class="${color}" onclick="openSalesScreen('${screen}')"><i>${icon}</i><b>${title}</b><span>${sub}</span></button>`).join('')}</div><section class="sales-overview"><div class="sales-section-title"><b>今日概览</b><span>只显示数量</span></div><div><p><b>${plans.length}</b><span>计划拜访</span></p><p><b>${completed}</b><span>已经完成</span></p><p><b>${pending}</b><span>待跟进</span></p></div></section></div>`);
+  const accounts = sales.accounts || [];
+  const regionGroups = accounts.reduce((groups, account) => {
+    const region = salesAccountRegion(account);
+    (groups[region] ||= []).push(account);
+    return groups;
+  }, {});
+  const regions = ['洛杉矶地区', '橙县地区', '拉斯维加斯地区', '其他地区'].filter(region => regionGroups[region]?.length);
+  if (!salesSelectedRegion || !regionGroups[salesSelectedRegion]) salesSelectedRegion = regions[0] || '';
+  const visibleAccounts = regionGroups[salesSelectedRegion] || [];
+  const secondary = [
+    `<button onclick="openSalesScreen('add')">＋ 新增客户</button>`,
+    canViewSalesInventoryPricing() ? `<button onclick="openSalesScreen('inventory-pricing')">▦ 库存与报价</button>` : '',
+    `<button onclick="openSalesScreen('report')">▤ 工作日报</button>`
+  ].filter(Boolean).join('');
+  return salesLocalizedHtml(`<div class="sales-design-home sales-simple-home">
+    <section class="sales-design-hero"><small>QUaD FIELD SALES</small><h2>客户拜访</h2><p>选择区域和客户，拍照定位，填写结果</p></section>
+    <section class="sales-simple-step"><header><i>1</i><div><b>选择拜访区域</b><span>只显示该区域的客户</span></div></header><div class="sales-region-grid">${regions.map(region => `<button class="${region === salesSelectedRegion ? 'active' : ''}" onclick="selectSalesRegion('${region}')"><b>${region}</b><span>${regionGroups[region].length} 位客户</span></button>`).join('') || '<p class="hint">还没有客户，请先新增客户。</p>'}</div></section>
+    <section class="sales-simple-step"><header><i>2</i><div><b>${escapeHtml(salesSelectedRegion || '选择客户')}</b><span>点击客户即可拍照定位并开始拜访</span></div></header><label class="sales-search">⌕<input placeholder="搜索客户、地址或联系人" oninput="filterSalesCards(this.value)"></label><div id="salesCustomerCards" class="sales-simple-customers">${visibleAccounts.map(salesSimpleCustomerCard).join('') || '<p class="hint">这个区域还没有客户。</p>'}</div></section>
+    <div class="sales-simple-secondary">${secondary}</div>
+  </div>`);
+}
+
+function salesAccountRegion(account) {
+  const value = `${account.city || ''} ${account.address || ''}`.toLowerCase();
+  if (/las vegas|henderson|north las vegas|nevada|\bnv\b/.test(value)) return '拉斯维加斯地区';
+  if (/santa ana|anaheim|orange,|orange county|irvine|costa mesa|fullerton|yorba linda|buena park|garden grove/.test(value)) return '橙县地区';
+  if (/los angeles|santa monica|glendale|pasadena|burbank|torrance|inglewood|long beach|hollywood|california|\bca\b/.test(value)) return '洛杉矶地区';
+  return '其他地区';
+}
+
+function selectSalesRegion(region) {
+  salesSelectedRegion = region;
+  render();
+}
+
+function salesSimpleCustomerCard(account) {
+  const contact = [account.contactName, account.phone].filter(Boolean).map(escapeHtml).join(' · ');
+  return `<article class="sales-simple-customer"><div><b>${escapeHtml(account.businessName)}</b><p>${escapeHtml(account.address || '')}</p>${contact ? `<small>${contact}</small>` : ''}</div><button onclick="openSalesStartDialog('${account.id}')">拍照拜访</button></article>`;
 }
 
 function salesCustomerMiniCard(account, selectMode = false) {
@@ -1809,7 +1836,7 @@ function toggleSalesPlanAccount(id) {
 function quickPlanSalesAccount(id) { salesSelectedAccountIds = [id]; salesPlanDate = salesLocalDate(1); openSalesScreen('schedule'); }
 
 function salesAddCustomerHtml() {
-  return salesPage('新增客户', `<section class="sales-ai-import"><b>📷 拍照，AI 自动识别</b><span>识别店名、地址、电话和邮箱，并自动填入下方</span><input type="file" accept="image/*" capture onchange="analyzeSalesCustomerScreenshot(this)"></section><section class="sales-form-card"><div class="sales-section-title"><b>客户基本资料</b><span>也可以手动填写</span></div><label>客户或门店名称 *<input id="salesBusinessName"></label><label>客户地址 *<textarea id="salesAddress"></textarea></label><label>现场定位<button type="button" class="sales-location-button" onclick="fillSalesCurrentLocation()">📍 已到客户门口？获取当前位置</button></label><div class="sales-two"><label>城市<input id="salesCity"></label><label>联系电话<input id="salesPhone" type="tel"></label></div><label>电子邮箱<input id="salesEmail" type="email"></label><div class="sales-two"><label>客户类型<select id="salesCustomerType"><option value="贴膜门店">贴膜门店</option><option value="汽车改色店">汽车改色店</option><option value="汽车美容店">汽车美容店</option><option value="其他">其他</option></select></label><label>客户来源<select id="salesSource"><option value="Google 搜集">Google 搜集</option><option value="Yelp 搜集">Yelp 搜集</option><option value="业务员发现">业务员发现</option><option value="客户介绍">客户介绍</option></select></label></div><label>联系人<input id="salesContact"></label><label>客户备注<textarea id="salesNote"></textarea></label></section><button class="sales-page-primary" onclick="createSalesAccountFromPage(this)">保存到客户列表</button><p class="sales-page-note">新增客户时不安排拜访时间，保存后再到“计划拜访”选择。</p>`);
+  return salesPage('新增客户', `<section class="sales-form-card"><div class="sales-section-title"><b>客户基本资料</b><span>填写后即可拜访</span></div><label>客户或门店名称 *<input id="salesBusinessName"></label><label>客户地址 *<textarea id="salesAddress"></textarea></label><div class="sales-two"><label>城市 / 区域<input id="salesCity" placeholder="Los Angeles"></label><label>联系电话<input id="salesPhone" type="tel"></label></div><div class="sales-two"><label>联系人<input id="salesContact"></label><label>电子邮箱<input id="salesEmail" type="email"></label></div><label>客户备注<textarea id="salesNote" placeholder="客户需求、主营业务或其他重要信息"></textarea></label></section><button class="sales-page-primary" onclick="createSalesAccountFromPage(this)">保存客户</button><p class="sales-page-note">保存后回到区域客户列表，可直接拍照拜访。</p>`);
 }
 
 async function fillSalesCurrentLocation() {
@@ -1817,7 +1844,7 @@ async function fillSalesCurrentLocation() {
 }
 
 async function createSalesAccountFromPage(button) {
-  try { button.disabled=true; state=await api('/api/field-sales/accounts',{method:'POST',body:JSON.stringify({businessName:document.getElementById('salesBusinessName').value,address:document.getElementById('salesAddress').value,city:document.getElementById('salesCity').value,phone:document.getElementById('salesPhone').value,email:document.getElementById('salesEmail').value,customerType:document.getElementById('salesCustomerType').value,source:document.getElementById('salesSource').value,contactName:document.getElementById('salesContact').value,note:document.getElementById('salesNote').value,lat:salesNearbyOrigin?.lat,lng:salesNearbyOrigin?.lng})}); user=state.user; salesScreen='customers'; render(); } catch(e){ alert(e.message); button.disabled=false; }
+  try { button.disabled=true; state=await api('/api/field-sales/accounts',{method:'POST',body:JSON.stringify({businessName:document.getElementById('salesBusinessName').value,address:document.getElementById('salesAddress').value,city:document.getElementById('salesCity').value,phone:document.getElementById('salesPhone').value,email:document.getElementById('salesEmail').value,contactName:document.getElementById('salesContact').value,note:document.getElementById('salesNote').value,lat:salesNearbyOrigin?.lat,lng:salesNearbyOrigin?.lng})}); user=state.user; salesScreen='home'; render(); alert(lang === 'en' ? 'Customer saved.' : '客户已保存，可以直接开始拜访。'); } catch(e){ alert(e.message); button.disabled=false; }
 }
 
 function salesScheduleHtml() {
@@ -1848,7 +1875,44 @@ function salesActiveContext(){const sales=state.fieldSales||{};const account=(sa
 function salesConfirmedProductOptions(){return (state.fieldSales?.products||[]).map(item=>`<option value="${escapeHtml(item.sku)}">${escapeHtml(item.name||item.sku)}</option>`).join('');}
 function salesConsignmentPageHtml(account,visit,head){return salesPage('样品 / 放货',`${head}<div class="sales-choice-tabs"><button>免费样品</button><button class="active">试用放货</button></div><div class="sales-linked-data"><b>⛓ 关联正式产品、库存和客户应收</b><span>每项产品和金额都会独立保存为系统数据</span></div><section class="sales-tool-card"><h3>产品明细 <button type="button" onclick="addSalesTrialRow()">＋ 添加产品</button></h3>${salesProductDatalist()}<div id="salesTrialRows">${salesTrialRowHtml({productSku:'QD15-BLK-15218',quantity:2,singlePrice:350})}${salesTrialRowHtml({productSku:'QD35-SAMPLE',quantity:5,singlePrice:0})}</div></section><section class="sales-tool-card"><h3>试用与收款约定</h3><div class="sales-two"><label>出货仓库<input id="salesConsignWarehouse" value="洛杉矶业务车库存"></label><label>收款状态<select id="salesConsignStatus"><option>部分收款</option><option>未收款</option><option>已付清</option></select></label></div><div class="sales-two"><label>试用截止日期<input id="salesTrialFollowUp" type="date" value="${salesLocalDate(7)}"></label><label>预计收款日期<input id="salesPaymentDueAt" type="date" value="${salesLocalDate(8)}"></label></div><div class="sales-two"><label>本次已收金额<input id="salesAmountPaid" type="number" value="100"></label><label>付款方式<input id="salesConsignPayment" value="现金"></label></div><label>补充备注<textarea id="salesConsignNote" placeholder="记录特殊价格、退换条件或其他约定……"></textarea></label></section><section class="sales-tool-card"><h3>放货凭证</h3><label class="sales-proof-upload">📷<span><b>拍摄货物留店照片</b><small>照片保存时间、GPS 位置和产品信息</small></span><input id="salesEvidencePhotos" type="file" accept="image/*" capture="environment" multiple></label></section><div class="sales-money-summary"><p><span>货品总额</span><b>$700</b></p><p><span>本次已收</span><b>$100</b></p><p><span>客户欠款</span><b>$600</b></p></div><p class="sales-page-note">保存后自动生成库存出库、客户欠款和预计收款任务。</p><button class="sales-page-primary" onclick="openSalesVisitScreen('signature')">保存并进入客户签收</button>`);}
 function salesOrderPageHtml(account,visit,head){const products=state.fieldSales?.products||[];const p1=products[0]||{sku:'QD15-BLK-15218',name:'QD15 陶瓷隔热膜'};return salesPage('现场订单',`${head}<section class="sales-order-data"><label>订单号<input readonly placeholder="保存后自动生成"></label><label>业务员 · 可选可填<input value="${escapeHtml(user?.name||'')}"></label><label>订单类型<select id="salesOrderType"><option value="批发订单">批发订单</option></select></label><label>出货仓库<select id="salesOrderWarehouse"><option value="洛杉矶仓">洛杉矶仓</option><option value="拉斯维加斯仓">拉斯维加斯仓</option></select></label></section><section class="sales-tool-card"><h3>订单产品 <button type="button">＋ 选择或输入产品</button></h3>${salesProductDatalist()}<article class="sales-order-product"><label>产品型号<input id="salesOrderSku" list="salesProductModels" value="${escapeHtml(p1.sku||'')}"></label><small>${escapeHtml(p1.name||p1.sku||'')} · 系统产品库</small><div class="sales-order-values"><label>数量<input id="salesOrderQty" type="number" value="6"></label><label>成交单价<input id="salesOrderPrice" type="number" value="340"></label><label>折扣<input id="salesOrderDiscount" type="number" value="60"></label></div></article></section><section class="sales-tool-card"><h3>交付与付款</h3><div class="sales-two"><label>交付方式<select id="salesDeliveryMethod"><option value="现场交货">现场交货</option><option value="仓库自提">仓库自提</option><option value="快递配送">快递配送</option></select></label><label>交付日期<input type="date" value="${salesLocalDate()}"></label></div><div class="sales-two"><label>本次已收<input id="salesOrderPaid" type="number" value="1000"></label><label>付款方式<select id="salesOrderPayment"><option value="信用卡">信用卡</option><option value="现金">现金</option><option value="支票">支票</option></select></label></div><div class="sales-two"><label>余款到期日<input id="salesOrderDue" type="date" value="${salesLocalDate(8)}"></label><label>税务状态<select id="salesOrderTax"><option value="批发免税">批发免税</option><option value="应税">应税</option></select></label></div><label>订单备注<textarea id="salesOrderNote" placeholder="补充配送、价格或客户要求……"></textarea></label></section><section class="sales-tool-card"><h3>订单金额</h3><div class="sales-order-total"><p>产品小计 <b>$2,040.00</b></p><p>订单折扣 <b>− $60.00</b></p><p>销售税 <b>$0.00</b></p><p>订单总额 <b>$1,980.00</b></p></div><div class="sales-receipt-totals"><p>已收<b>$1,000</b></p><p>欠款<b>$980</b></p><p>产品<b>6 卷</b></p></div></section><button class="sales-page-primary" onclick="saveSalesFieldOrder(this,'${account.id}','${visit?.id||''}')">创建订单并进入客户签收</button><p class="sales-page-note">创建后自动生成库存出库、收款记录和客户应收账款。</p>`);}
-function salesExecutionHtml(){const {account,visit,trip}=salesActiveContext();if(!account)return salesTodayHtml();const items=[['📷','现场照片','门店、样品和陈列照片','photos'],['◉','沟通记录','录音转文字并由 AI 总结','conversation'],['▦','样品 / 放货','记录型号、数量和约定价格','consignment'],['＋','现场订单','直接建立客户销售订单','order'],['✎','客户签收','英文签收单和手写签名','signature'],['⌚','下次跟进','设置日期、原因和收款提醒','followup']];return salesPage('拜访执行', `<section class="sales-next-card"><small>已到店</small><h3>${escapeHtml(account.businessName)}</h3><p>${escapeHtml(account.address)}</p><div class="sales-trip-stats"><span>出发<b>${trip?.departedAt?formatMobileDateTime(trip.departedAt):'—'}</b></span><span>到达<b>${visit?.startedAt?formatMobileDateTime(visit.startedAt):'—'}</b></span></div></section><section class="sales-check-ok">✓ 到店打卡已完成<br><small>GPS 位置与客户地址匹配 · 门头照片已上传</small></section><div class="sales-execution-grid">${items.map(([icon,title,sub,screen])=>`<button onclick="openSalesVisitScreen('${screen}')"><i>${icon}</i><b>${title}</b><span>${sub}</span></button>`).join('')}</div><button class="sales-page-primary" onclick="openSalesVisitScreen('complete')">完成本次拜访</button>`);}
+function salesExecutionHtml(){
+  const {account,visit}=salesActiveContext();
+  if(!account||!visit)return salesHomeHtml();
+  return salesPage('记录拜访', `<section class="sales-tool-customer"><h2>${escapeHtml(account.businessName)}</h2><span>${escapeHtml(account.address || '')}</span></section><section class="sales-check-ok">✓ 门头照片、时间和现场定位已保存</section><section class="sales-form-card sales-simple-visit-form"><div class="sales-section-title"><b>本次拜访记录</b><span>一次填写并保存</span></div><div class="sales-two"><label>联系人<input id="salesSimpleContact" value="${escapeHtml(visit.contactMet || account.contactName || '')}"></label><label>联系电话<input value="${escapeHtml(account.phone || '')}" readonly></label></div><label>当时谈了什么 *<textarea id="salesSimpleReport" placeholder="客户需求、沟通情况和本次结果"></textarea></label><label>下一步要做什么<textarea id="salesSimpleNextAction" placeholder="回访、报价、送样或收款安排"></textarea></label><div class="sales-section-title"><b>成交 / 报价记录</b><span>没有成交可以留空</span></div>${salesProductDatalist()}<label>产品型号或名称<input id="salesSimpleProduct" list="salesProductModels" placeholder="搜索或直接填写产品"></label><div class="sales-two"><label>数量<input id="salesSimpleQuantity" type="number" min="0" step="1" value="0"></label><label>成交单价<input id="salesSimplePrice" type="number" min="0" step="0.01" value="0"></label></div><label>补充现场照片<input id="salesSimplePhotos" type="file" accept="image/*" capture="environment" multiple></label></section><button class="sales-page-primary" onclick="completeSimpleSalesVisit(this,'${visit.id}')">保存并完成拜访</button><p class="sales-page-note">保存后资料会立即同步到主系统。</p>`);
+}
+
+async function completeSimpleSalesVisit(button, visitId) {
+  const reportText = String(document.getElementById('salesSimpleReport')?.value || '').trim();
+  if (!reportText) return alert(lang === 'en' ? 'Enter the visit notes first.' : '请填写当时谈了什么和本次结果。');
+  try {
+    button.disabled = true;
+    button.textContent = lang === 'en' ? 'Saving…' : '正在保存…';
+    const evidencePhotoUrls = [];
+    for (const file of [...(document.getElementById('salesSimplePhotos')?.files || [])].slice(0, 12)) {
+      evidencePhotoUrls.push((await uploadSalesPhoto(file)).url);
+    }
+    const product = String(document.getElementById('salesSimpleProduct')?.value || '').trim();
+    const quantity = Math.max(0, Number(document.getElementById('salesSimpleQuantity')?.value || 0));
+    const unitPrice = Math.max(0, Number(document.getElementById('salesSimplePrice')?.value || 0));
+    state = await api(`/api/field-sales/visits/${visitId}/complete`, { method:'PUT', body:JSON.stringify({
+      reportText,
+      nextAction:document.getElementById('salesSimpleNextAction')?.value || '',
+      contactMet:document.getElementById('salesSimpleContact')?.value || '',
+      outcome:product && quantity > 0 ? '已成交' : '继续跟进',
+      evidencePhotoUrls,
+      soldItems:product && quantity > 0 ? [{ product, quantity, unitPrice }] : []
+    }) });
+    user = state.user;
+    salesActiveAccountId = '';
+    salesScreen = 'home';
+    render();
+    alert(lang === 'en' ? 'Visit saved successfully.' : '拜访资料已保存并同步到主系统。');
+  } catch (error) {
+    alert(error.message || (lang === 'en' ? 'Save failed.' : '保存失败。'));
+    button.disabled = false;
+    button.textContent = lang === 'en' ? 'Save and finish' : '保存并完成拜访';
+  }
+}
 
 function salesVisitToolHtml(screen){const {account,visit}=salesActiveContext();if(!account)return salesTodayHtml();const head=`<section class="sales-tool-customer"><h2>${escapeHtml(account.businessName)}</h2><span>本次拜访 · ${visit?.startedAt?new Date(visit.startedAt).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}):'已到店'}</span></section>`;
   if(screen==='photos')return salesPage('现场照片',`${head}<section class="sales-tool-card"><h3>🏪 门头照片 <em>必拍</em></h3><p>证明业务员已到达客户门店</p><label class="sales-photo-slot">＋<b>继续拍照</b><input type="file" accept="image/*" capture="environment"></label><div class="sales-tool-ok">✓ 照片时间和现场 GPS 位置已保存</div></section><section class="sales-tool-card"><h3>▣ 店内环境 <em>选填</em></h3><p>记录门店规模、施工区和陈列情况</p><label class="sales-photo-slot">＋<b>拍摄店内</b><input type="file" accept="image/*" capture="environment"></label></section><section class="sales-tool-card"><h3>▥ 产品 / 样品 <em>选填</em></h3><p>记录展示样品及客户感兴趣的产品</p><label class="sales-photo-slot">＋<b>添加照片</b><input type="file" accept="image/*" capture="environment"></label></section><button class="sales-page-primary" onclick="openSalesVisitScreen('execution')">保存照片并返回拜访</button>`);
@@ -2019,6 +2083,7 @@ function salesReviewVisitHtml(visit, trials, consignments, attachments = [], ord
     ${visit.customerNeeds ? `<section><b>${lang === 'en' ? 'Customer needs' : '客户需求'}</b><p>${escapeHtml(visit.customerNeeds)}</p></section>` : ''}
     ${visit.objections ? `<section><b>${lang === 'en' ? 'Customer questions and objections' : '客户关注和异议'}</b><p>${escapeHtml(visit.objections)}</p></section>` : ''}
     ${visit.nextAction ? `<section><b>${lang === 'en' ? 'Next action' : '下一步动作'}</b><p>${escapeHtml(visit.nextAction)}</p></section>` : ''}
+    ${visit.soldItems?.length ? `<section><b>${lang === 'en' ? 'Products and prices' : '成交产品与价格'}</b><div class="sales-review-orders">${visit.soldItems.map(item => `<article class="sales-review-order"><p><strong>${escapeHtml(item.product)}</strong> × ${Number(item.quantity || 0)} · ${money(item.unitPrice)} / ${lang === 'en' ? 'unit' : '件'} · ${lang === 'en' ? 'Total' : '合计'} ${money(item.total)}</p></article>`).join('')}</div></section>` : ''}
     ${visit.nextVisitAt ? `<p class="sales-review-next">⏰ ${lang === 'en' ? 'Next visit' : '下次回访'}：${escapeHtml(formatMobileDateTime(visit.nextVisitAt))}</p>` : ''}
     ${trials.length ? `<section><b>${lang === 'en' ? 'Products delivered' : '送出的试用产品'}</b><div class="sales-review-trials">${trials.map(salesReviewTrialHtml).join('')}</div></section>` : ''}
     ${consignments.length ? consignments.map(salesReviewConsignmentHtml).join('') : ''}
@@ -2262,8 +2327,7 @@ function openSalesStartDialog(accountId) {
     <p><b>${escapeHtml(account.businessName)}</b><br><span class="hint">${escapeHtml(account.address)}</span></p>
     <label>${lang === 'en' ? 'Storefront live photo (required)' : '现场门店照片（必拍）'}<input id="salesVisitPhoto" type="file" accept="image/*" capture="environment"></label>
     <label>${lang === 'en' ? 'Person met' : '本次见到的人'}<input id="salesContactMet"></label>
-    <label class="consent-row"><input id="salesLocationConsent" type="checkbox">${lang === 'en' ? 'I agree to use my current location for this visit.' : '我同意本次拜访使用手机实时定位'}</label>
-    <p class="hint">${lang === 'en' ? 'Location is collected only when you check in.' : '系统只在本次到店打卡时获取一次定位，不会后台持续跟踪。'}</p>
+    <p class="hint">${lang === 'en' ? 'Tapping check-in captures this photo, the current location, and time.' : '点击确认后会同时保存门头照片、当前位置和时间。'}</p>
     <div class="dialog-actions"><button onclick="this.closest('.mobile-modal').remove()">${t('cancel')}</button><button class="primary" onclick="startSalesVisit(this,'${account.id}')">${lang === 'en' ? 'Check in now' : '确认到店打卡'}</button></div></div>`;
   document.body.appendChild(overlay);
 }
@@ -2276,7 +2340,6 @@ async function uploadSalesPhoto(file) {
 async function startSalesVisit(button, accountId) {
   const photo = document.getElementById('salesVisitPhoto')?.files?.[0];
   if (!photo) return alert(lang === 'en' ? 'Take a storefront photo first.' : '请先现场拍摄客户门店照片。');
-  if (!document.getElementById('salesLocationConsent')?.checked) return alert(t('needConsent'));
   try {
     button.disabled = true; button.textContent = lang === 'en' ? 'Locating…' : '正在定位…';
     const position = await getPosition();

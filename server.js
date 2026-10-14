@@ -9885,8 +9885,21 @@ async function api(req, res) {
     if (!photoUrl.includes('/customer-media/')) return send(res, 400, { error: '请现场拍摄客户门店照片' });
     const existing = (db.salesVisits || []).find(item => item.accountId === account.id && item.userId === user.id && item.status === '进行中');
     if (existing) return send(res, 200, { visit: existing, ...mobileSnapshot(db, user) });
-    const activeTrip = (db.salesTrips || []).find(item => item.accountId === account.id && item.userId === user.id && item.status === '前往中');
-    if (!activeTrip) return send(res, 409, { error:'请先在客户卡片点击“准备出发”，到店后再拍照打卡' });
+    let activeTrip = (db.salesTrips || []).find(item => item.accountId === account.id && item.userId === user.id && item.status === '前往中');
+    // The simplified workflow checks in directly from the regional customer
+    // list. A lightweight trip keeps route and reporting data compatible
+    // without forcing a separate departure step.
+    if (!activeTrip) {
+      const startedAt = new Date().toISOString();
+      activeTrip = {
+        id:id(), accountId:account.id, businessName:account.businessName,
+        branchId:account.branchId || '', userId:user.id, userName:user.name || user.email,
+        status:'前往中', departedAt:startedAt, estimatedDistanceMeters:0, estimatedMinutes:0,
+        departure:{ lat, lng, accuracy:Number.isFinite(accuracy) ? Math.round(accuracy) : 0, address:'', mapUrl:mapUrlForLatLng(lat, lng) },
+        simplifiedDirectCheckIn:true, createdAt:startedAt, updatedAt:startedAt
+      };
+      db.salesTrips.unshift(activeTrip);
+    }
     const capturedAddress = String(body.address || '').trim().slice(0, 300);
     const address = (await reverseGeocode(lat, lng)) || capturedAddress || `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
     if (!hasValidCoordinates(account.lat, account.lng)) {
@@ -9975,6 +9988,13 @@ async function api(req, res) {
       customerNeeds: String(body.customerNeeds || '').trim().slice(0, 5000),
       objections: String(body.objections || '').trim().slice(0, 5000),
       nextAction: String(body.nextAction || '').trim().slice(0, 3000),
+      contactMet: String(body.contactMet ?? visit.contactMet ?? '').trim().slice(0, 120),
+      soldItems: (Array.isArray(body.soldItems) ? body.soldItems : []).slice(0, 20).map(item => ({
+        product:String(item?.product || '').trim().slice(0, 180),
+        quantity:Math.max(0, Number(item?.quantity || 0)),
+        unitPrice:Math.max(0, Number(item?.unitPrice || 0)),
+        total:Number((Math.max(0, Number(item?.quantity || 0)) * Math.max(0, Number(item?.unitPrice || 0))).toFixed(2))
+      })).filter(item => item.product && item.quantity > 0),
       nextVisitAt,
       evidencePhotoUrls: (Array.isArray(body.evidencePhotoUrls) ? body.evidencePhotoUrls : []).filter(value => String(value).includes('/customer-media/')).slice(0, 12),
       ownerPhotoUrl: String(body.ownerPhotoUrl || '').includes('/customer-media/') ? String(body.ownerPhotoUrl) : '',

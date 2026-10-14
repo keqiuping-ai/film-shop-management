@@ -169,6 +169,7 @@ async function seedIsolatedFixture() {
     { id:'new-account', businessName:'New Film Shop', address:'200 New St', lat:36.11, lng:-115.21, assignedUserId:'sales-prices', stage:'待拜访' },
     { id:'second-account', businessName:'Second Film Shop', address:'300 Second St', lat:36.12, lng:-115.22, assignedUserId:'sales-prices', stage:'待拜访' },
     { id:'third-account', businessName:'Third Film Shop', address:'400 Third St', lat:36.13, lng:-115.23, assignedUserId:'sales-prices', stage:'待拜访' },
+    { id:'simple-account', businessName:'Simple Visit Shop', address:'500 Simple St', city:'Los Angeles', lat:34.05, lng:-118.25, assignedUserId:'sales-prices', stage:'待拜访' },
     { id:'order-account', businessName:'Order Test Shop', address:'300 Order St', assignedUserId:'sales-orders', stage:'待拜访' },
     { id:'inventory-account', businessName:'Inventory Test Shop', address:'400 Inventory St', assignedUserId:'sales-inventory', stage:'待拜访' },
     { id:'account-a', businessName:'Sales A Customer', address:'500 A St', assignedUserId:'sales-a', assignedUserName:'sales-a', createdByUserId:'sales-b', stage:'待拜访' },
@@ -363,6 +364,29 @@ async function run() {
   assert.equal(cancelled.body.fieldSales.trips.find(item => item.id === 'old-trip').status, '已取消');
   assert.equal(cancelled.body.fieldSales.visitPlans.find(item => item.id === 'old-plan').status, '待出发');
   assert.equal(cancelled.body.fieldSales.accounts.find(item => item.id === 'old-account').stage, '待拜访');
+
+  // The new simple workflow starts directly from a regional customer card.
+  // It must not require a plan or a separate departure action.
+  const directVisit = await request('/api/field-sales/visits/start', {
+    token:pricesToken, method:'POST',
+    body:{ accountId:'simple-account', locationConsent:true, lat:34.05, lng:-118.25, accuracy:5, photoUrl:'/customer-media/simple.jpg', contactMet:'Alex' }
+  });
+  assert.equal(directVisit.status, 201);
+  assert.equal(directVisit.body.visit.status, '进行中');
+  assert.equal(directVisit.body.fieldSales.trips.find(item => item.accountId === 'simple-account').simplifiedDirectCheckIn, true);
+  const directComplete = await request(`/api/field-sales/visits/${directVisit.body.visit.id}/complete`, {
+    token:pricesToken, method:'PUT',
+    body:{
+      reportText:'Discussed tint film and agreed on a first order.',
+      nextAction:'Call customer next Tuesday.',
+      contactMet:'Alex Chen',
+      soldItems:[{ product:'QD15-BLK-15218', quantity:2, unitPrice:320 }]
+    }
+  });
+  assert.equal(directComplete.status, 200);
+  const savedDirectVisit = directComplete.body.fieldSales.visits.find(item => item.id === directVisit.body.visit.id);
+  assert.equal(savedDirectVisit.contactMet, 'Alex Chen');
+  assert.deepEqual(savedDirectVisit.soldItems, [{ product:'QD15-BLK-15218', quantity:2, unitPrice:320, total:640 }]);
 
   const restarted = await request('/api/field-sales/trips/start', { token:pricesToken, method:'POST', body:{ accountId:'new-account', locationConsent:true, lat:36.11, lng:-115.21, accuracy:5 } });
   assert.equal(restarted.status, 201);
