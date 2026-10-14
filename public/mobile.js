@@ -1630,9 +1630,57 @@ function openSalesScreen(screen) {
   render();
 }
 
+const SALES_CITY_LABELS = {
+  'los-angeles': { zh:'洛杉矶', en:'Los Angeles' },
+  'las-vegas': { zh:'拉斯维加斯', en:'Las Vegas' },
+  'san-francisco': { zh:'旧金山', en:'San Francisco' },
+  seattle: { zh:'西雅图', en:'Seattle' }, phoenix: { zh:'凤凰城', en:'Phoenix' }, vancouver: { zh:'温哥华', en:'Vancouver' }
+};
+const SALES_REGION_ENGLISH = {
+  '西区／圣莫尼卡':'Westside / Santa Monica','南湾／长滩':'South Bay / Long Beach','洛杉矶中心／东南区':'Central Los Angeles / Southeast LA','圣费尔南多谷／文图拉走廊':'San Fernando Valley / Ventura Corridor','圣克拉丽塔／羚羊谷':'Santa Clarita / Antelope Valley','圣盖博谷／内陆东区':'San Gabriel Valley / Inland East','橙县':'Orange County',
+  '公司周边／中南区':'Near Company / South Central','西区／Summerlin':'Westside / Summerlin','北区／北拉斯维加斯':'North / North Las Vegas','中心／东区':'Central / Eastside','亨德森':'Henderson','博尔德城':'Boulder City','外围50–100公里／Pahrump':'Outer 50–100 km / Pahrump',
+  '旧金山及半岛北部':'San Francisco / North Peninsula','半岛及硅谷西北':'Peninsula / Northwest Silicon Valley','南湾及圣何塞':'South Bay / San Jose','奥克兰、伯克利及东湾内侧':'Oakland / Berkeley / Inner East Bay','海沃德及弗里蒙特走廊':'Hayward / Fremont Corridor','东湾内陆及三谷区':'Inland East Bay / Tri-Valley','北湾、纳帕及索拉诺':'North Bay / Napa / Solano',
+  '西雅图及中心走廊':'Seattle / Central Corridor','东区、贝尔维尤及雷德蒙德':'Eastside / Bellevue / Redmond','北部及斯诺霍米什县':'North / Snohomish County','金县南部':'South King County','塔科马及皮尔斯县':'Tacoma / Pierce County','奥林匹亚及瑟斯顿走廊':'Olympia / Thurston Corridor','基萨普及岛屿渡轮路线':'Kitsap / Islands Ferry Route',
+  '凤凰城中心区':'Central Phoenix','斯科茨代尔及东北区':'Scottsdale / Northeast','格伦代尔及西北区':'Glendale / Northwest','西谷地区':'West Valley','坦佩、梅萨及东区':'Tempe / Mesa / East Valley','钱德勒、吉尔伯特及东南区':'Chandler / Gilbert / Southeast',
+  '温哥华市':'Vancouver City','列治文及三角洲市':'Richmond / Delta','本拿比及新西敏':'Burnaby / New Westminster','北岸及海天走廊':'North Shore / Sea-to-Sky Corridor','三联市及枫树岭':'Tri-Cities / Maple Ridge','素里、兰里及菲沙河谷':'Surrey / Langley / Fraser Valley','温哥华岛及阳光海岸':'Vancouver Island / Sunshine Coast',
+  '洛杉矶地区':'Los Angeles Area','橙县地区':'Orange County Area','拉斯维加斯地区':'Las Vegas Area','其他地区':'Other Area'
+};
+const SALES_STATUS_ENGLISH = {'待拜访':'To Visit','拜访中':'In Progress','持续跟进':'Follow-up','已成交':'Closed Won','暂不跟进':'On Hold','待出发':'Not Started','前往中':'En Route','进行中':'In Progress','已完成':'Completed','已取消':'Canceled'};
+const SALES_CUSTOMER_TYPE_ENGLISH = {'汽车贴膜门店':'Automotive Film Shop','汽车改色店':'Vehicle Wrap Shop','汽车美容店':'Auto Detailing Shop','建筑膜客户':'Architectural Film Customer','经销商':'Dealer','其他':'Other'};
+function salesCityLabel(city) { return SALES_CITY_LABELS[city]?.[lang === 'en' ? 'en' : 'zh'] || String(city || ''); }
+function salesRegionLabel(region) {
+  const value = String(region || '').trim();
+  if (lang !== 'en' || !value) return value;
+  if (SALES_REGION_ENGLISH[value]) return SALES_REGION_ENGLISH[value];
+  return value.replace(/^旧金山\s*·\s*建筑膜路线\s*/i, 'San Francisco · Architectural Film Route ').replace(/^西雅图\s*·\s*建筑膜路线\s*/i, 'Seattle · Architectural Film Route ').replace(/^凤凰城\s*·\s*建筑膜路线\s*/i, 'Phoenix · Architectural Film Route ').replace(/^温哥华\s*·\s*建筑膜路线\s*/i, 'Vancouver · Architectural Film Route ');
+}
+function salesStatusLabel(status) { const value = String(status || ''); return lang === 'en' ? (SALES_STATUS_ENGLISH[value] || value) : value; }
+function salesRouteStopLabel(stop) { return lang === 'en' ? `Stop ${Number(stop)}` : `第 ${Number(stop)} 站`; }
+function salesCustomerTypeLabel(type) { const value = String(type || ''); return lang === 'en' ? (SALES_CUSTOMER_TYPE_ENGLISH[value] || value) : value; }
+function salesCustomerTypeValue(type) {
+  const value = String(type || '');
+  if (lang !== 'en') return value;
+  return Object.entries(SALES_CUSTOMER_TYPE_ENGLISH).find(([, label]) => label === value)?.[0] || value;
+}
+function salesSystemDataLabel(value) {
+  const text = String(value || '');
+  if (lang !== 'en') return text;
+  if (text === '公开客户资料导入') return 'Public Prospect Import';
+  return text.replace(/资料照片\s*(\d+)/g, 'Reference Photo $1');
+}
+
 function salesLocalizedHtml(html) {
   if (lang !== 'en') return html;
   const phrases = {
+    '客户拜访':'Customer Visits','选择区域和客户，拍照定位，填写结果':'Choose an area and customer, take a location-tagged photo, and record the result',
+    '选择城市':'Select City','各城市客资、方向和路线独立显示':'Customers, areas, and routes are organized separately by city',
+    '选择拜访区域':'Select Visit Area','点击客户即可拍照定位并开始拜访':'Select a customer to take a location-tagged photo and start the visit',
+    '搜索客户、地址或联系人':'Search customer, address, or contact','这个城市还没有客户资料。':'No customers are available in this city yet.',
+    '这个区域还没有客户。':'No customers are available in this area.','选择客户':'Select Customer','暂无资料照片':'No profile photo',
+    '公共待认领客户':'Unassigned Shared Lead','拍照拜访':'Photo Check-in','库存与报价':'Inventory & Pricing',
+    '填写后即可拜访':'Complete this form to start a visit','城市 / 区域':'City / Area','公司网站':'Company Website','保存客户':'Save Customer',
+    '保存后回到区域客户列表，可直接拍照拜访。':'After saving, return to the area customer list and start a photo check-in.',
+    '客户需求、主营业务或其他重要信息':'Customer needs, main business, or other important information',
     '业务员管理中心':'Field Sales Center','客户 · 计划 · 拜访 · 总结':'Customers · Plans · Visits · Reports',
     '标准业务流程':'Standard Sales Workflow','6 个连续步骤':'6 connected steps','建立客户资料':'Create customer profile',
     '记录门店、联系人与业务机会':'Store contacts and sales opportunities','安排拜访计划':'Schedule a visit',
@@ -1696,7 +1744,13 @@ function salesLocalizedHtml(html) {
     '创建订单并进入客户签收':'Create Order and Continue to Acceptance','创建后自动生成库存出库、收款记录和客户应收账款。':'Saving creates inventory, payment, and customer receivable records.',
     '到店拜访':'On-site Visit','电话跟进':'Phone Follow-up','邮件跟进':'Email Follow-up','样品测试回访':'Sample Trial Follow-up','收款跟进':'Payment Follow-up','报价跟进':'Quote Follow-up',
     '到店打卡':'Arrival Check-in','下一步':'Next Step','今日完成 ':'Completed ',' 家客户拜访，现场订单 ':' customer visits, on-site orders ','，收款 ':'; payments ','，已建立 ':'; created ',' 项后续跟进。':' follow-up tasks.',
-    '新增客户':'New Customers','客户问题／需要公司协助':'Customer Issues / Support Needed'
+    '新增客户':'New Customers','客户问题／需要公司协助':'Customer Issues / Support Needed',
+    '保存并完成拜访':'Save and Complete Visit','记录拜访':'Visit Notes','本次拜访记录':'Current Visit Record','一次填写并保存':'Complete once and save',
+    '见到的人的情况与细节':'Person Met and Details','对方职务、决策权、关注点和现场情况':'Role, decision authority, interests, and on-site details',
+    '当时谈了什么 *':'What Was Discussed *','客户需求、沟通情况和本次结果':'Customer needs, discussion, and outcome','下一步要做什么':'Next Action',
+    '回访、报价、送样或收款安排':'Follow-up, quote, sample, or payment plan','成交 / 报价记录':'Sale / Quote Record','没有成交可以留空':'Leave blank if no sale was made',
+    '产品型号或名称':'Product Model or Name','搜索或直接填写产品':'Search or enter a product','补充现场照片':'Additional On-site Photos',
+    '保存后资料会立即同步到主系统。':'The record will sync to the main system immediately after saving.'
   };
   const translate = text => Object.entries(phrases)
     .sort((a,b)=>b[0].length-a[0].length)
@@ -1774,7 +1828,6 @@ function salesHomeHtml() {
   const sales = state.fieldSales || {};
   const accounts = sales.accounts || [];
   const cityOrder = ['los-angeles', 'las-vegas', 'san-francisco', 'seattle', 'phoenix', 'vancouver'];
-  const cityLabels = { 'los-angeles':'洛杉矶', 'las-vegas':'拉斯维加斯', 'san-francisco':'旧金山', seattle:'西雅图', phoenix:'凤凰城', vancouver:'温哥华' };
   const cityGroups = cityOrder.reduce((groups, city) => ({ ...groups, [city]:[] }), {});
   accounts.forEach(account => (cityGroups[salesAccountMarket(account)] ||= []).push(account));
   if (!salesSelectedCity || !cityOrder.includes(salesSelectedCity)) {
@@ -1806,9 +1859,9 @@ function salesHomeHtml() {
   ].filter(Boolean).join('');
   return salesLocalizedHtml(`<div class="sales-design-home sales-simple-home">
     <section class="sales-design-hero"><small>QUaD FIELD SALES</small><h2>客户拜访</h2><p>选择区域和客户，拍照定位，填写结果</p></section>
-    <section class="sales-simple-step"><header><i>1</i><div><b>选择城市</b><span>各城市客资、方向和路线独立显示</span></div></header><div class="sales-city-grid">${cityOrder.map(city => `<button class="${city === salesSelectedCity ? 'active' : ''}" onclick="selectSalesCity('${city}')"><b>${cityLabels[city]}</b><span>${cityGroups[city]?.length || 0} 位客户</span></button>`).join('')}</div></section>
-    <section class="sales-simple-step"><header><i>2</i><div><b>选择拜访区域</b><span>只显示${cityLabels[salesSelectedCity]}的方向和客户</span></div></header><div class="sales-region-grid">${regions.map(region => `<button class="${region === salesSelectedRegion ? 'active' : ''}" onclick="selectSalesRegion('${region}')"><b>${region}</b><span>${regionGroups[region].length} 位客户</span></button>`).join('') || '<p class="hint">这个城市还没有客户资料。</p>'}</div></section>
-    <section class="sales-simple-step"><header><i>3</i><div><b>${escapeHtml(salesSelectedRegion || '选择客户')}</b><span>点击客户即可拍照定位并开始拜访</span></div></header><label class="sales-search">⌕<input placeholder="搜索客户、地址或联系人" oninput="filterSalesCards(this.value)"></label><div id="salesCustomerCards" class="sales-simple-customers">${visibleAccounts.map(salesSimpleCustomerCard).join('') || '<p class="hint">这个区域还没有客户。</p>'}</div></section>
+    <section class="sales-simple-step"><header><i>1</i><div><b>选择城市</b><span>各城市客资、方向和路线独立显示</span></div></header><div class="sales-city-grid">${cityOrder.map(city => `<button class="${city === salesSelectedCity ? 'active' : ''}" onclick="selectSalesCity('${city}')"><b>${escapeHtml(salesCityLabel(city))}</b><span>${cityGroups[city]?.length || 0} ${lang === 'en' ? 'customers' : '位客户'}</span></button>`).join('')}</div></section>
+    <section class="sales-simple-step"><header><i>2</i><div><b>选择拜访区域</b><span>${lang === 'en' ? `Only show areas and customers in ${escapeHtml(salesCityLabel(salesSelectedCity))}` : `只显示${escapeHtml(salesCityLabel(salesSelectedCity))}的方向和客户`}</span></div></header><div class="sales-region-grid">${regions.map(region => `<button class="${region === salesSelectedRegion ? 'active' : ''}" onclick="selectSalesRegion('${region}')"><b>${escapeHtml(salesRegionLabel(region))}</b><span>${regionGroups[region].length} ${lang === 'en' ? 'customers' : '位客户'}</span></button>`).join('') || '<p class="hint">这个城市还没有客户资料。</p>'}</div></section>
+    <section class="sales-simple-step"><header><i>3</i><div><b>${escapeHtml(salesSelectedRegion ? salesRegionLabel(salesSelectedRegion) : (lang === 'en' ? 'Select Customer' : '选择客户'))}</b><span>点击客户即可拍照定位并开始拜访</span></div></header><label class="sales-search">⌕<input placeholder="搜索客户、地址或联系人" oninput="filterSalesCards(this.value)"></label><div id="salesCustomerCards" class="sales-simple-customers">${visibleAccounts.map(salesSimpleCustomerCard).join('') || '<p class="hint">这个区域还没有客户。</p>'}</div></section>
     <div class="sales-simple-secondary">${secondary}</div>
   </div>`);
 }
@@ -1849,16 +1902,16 @@ function selectSalesCity(city) {
 function salesSimpleCustomerCard(account) {
   const contact = [account.contactName, account.phone].filter(Boolean).map(escapeHtml).join(' · ');
   const photo = (account.referencePhotoUrls || [])[0];
-  const route = [account.visitBatch, account.visitStop ? `第 ${Number(account.visitStop)} 站` : ''].filter(Boolean).join(' · ');
+  const route = [account.visitBatch, account.visitStop ? salesRouteStopLabel(account.visitStop) : ''].filter(Boolean).join(' · ');
   return `<article class="sales-simple-customer">${photo ? `<div class="sales-simple-customer-photo"><img src="${escapeHtml(photo)}" alt="${escapeHtml(account.businessName)}"></div>` : '<div class="sales-simple-customer-photo empty">暂无资料照片</div>'}<div class="sales-simple-customer-main"><b>${escapeHtml(account.businessName)}</b><p>${escapeHtml(account.address || '')}</p>${contact ? `<small>${contact}</small>` : ''}${route ? `<small>${escapeHtml(route)}</small>` : ''}${account.leadPool ? '<em>公共待认领客户</em>' : ''}</div><div class="sales-simple-customer-actions"><button onclick="openSalesReviewDialog('${account.id}')">查看资料</button><button class="primary-inline" onclick="openSalesStartDialog('${account.id}')">拍照拜访</button></div></article>`;
 }
 
 function salesCustomerMiniCard(account, selectMode = false) {
   const selected = salesSelectedAccountIds.includes(account.id);
   const distance = salesDistanceMiles(account);
-  const type = account.customerType || account.stage || (lang === 'en' ? 'Customer' : '客户');
+  const type = account.customerType ? salesCustomerTypeLabel(account.customerType) : (account.stage ? salesStatusLabel(account.stage) : (lang === 'en' ? 'Customer' : '客户'));
   const contact = account.contactName ? `${lang === 'en' ? 'Contact: ' : '联系人：'}${escapeHtml(account.contactName)}` : (lang === 'en' ? 'No contact entered' : '尚未填写联系人');
-  return `<article class="sales-customer-mini ${selected ? 'selected' : ''}"><div class="sales-customer-icon">🏪</div><div><b>${escapeHtml(account.businessName)}</b><p>${escapeHtml(account.address || '')}</p><small>${escapeHtml(type)} · ${contact}${distance !== null ? ` · ${distance.toFixed(1)} mi` : ''}</small></div><div class="sales-card-actions"><button onclick="openSalesReviewDialog('${account.id}')">查看资料</button><button class="primary-inline" onclick="${selectMode ? `toggleSalesPlanAccount('${account.id}')` : `quickPlanSalesAccount('${account.id}')`}">${selectMode ? (selected ? '已选择' : '选择') : '加入拜访计划'}</button></div></article>`;
+  return `<article class="sales-customer-mini ${selected ? 'selected' : ''}"><div class="sales-customer-icon">🏪</div><div><b>${escapeHtml(account.businessName)}</b><p>${escapeHtml(account.address || '')}</p><small>${escapeHtml(type)} · ${contact}${distance !== null ? ` · ${distance.toFixed(1)} mi` : ''}</small></div><div class="sales-card-actions"><button onclick="openSalesReviewDialog('${account.id}')">查看资料</button><button class="primary-inline" onclick="${selectMode ? `toggleSalesPlanAccount('${account.id}')` : `quickPlanSalesAccount('${account.id}')`}">${selectMode ? (selected ? (lang === 'en' ? 'Selected' : '已选择') : (lang === 'en' ? 'Select' : '选择')) : '加入拜访计划'}</button></div></article>`;
 }
 
 function salesCustomersHtml(selectMode = false) {
@@ -2067,7 +2120,7 @@ function salesReviewField(label, value, { wide = false, href = '' } = {}) {
 
 function salesReviewAttachmentHtml(item) {
   const type = String(item.contentType || '');
-  const name = item.fileName || (lang === 'en' ? 'Attachment' : '附件');
+  const name = salesSystemDataLabel(item.fileName || (lang === 'en' ? 'Attachment' : '附件'));
   const isImage = type.startsWith('image/');
   const values = Object.entries(item.artifactValues || {}).filter(([, value]) => String(value ?? '').trim());
   return `<article class="sales-review-attachment ${isImage ? 'has-image' : 'file-only'}">
@@ -2189,7 +2242,7 @@ function openSalesReviewDialog(accountId) {
   const mapUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(account.address || '')}`;
   const overlay = document.createElement('div'); overlay.className = 'mobile-modal sales-review-modal';
   overlay.innerHTML = `<div class="mobile-dialog sales-review-dialog">
-    <div class="dialog-head sales-review-head"><div><small>${lang === 'en' ? 'Complete customer profile and visit review' : '完整客户资料与拜访复盘'}</small><strong>${escapeHtml(account.businessName)}</strong><span>${escapeHtml(account.stage || (lang === 'en' ? 'No stage' : '未设置阶段'))}</span></div><button aria-label="${lang === 'en' ? 'Close' : '关闭'}" onclick="this.closest('.mobile-modal').remove()">×</button></div>
+    <div class="dialog-head sales-review-head"><div><small>${lang === 'en' ? 'Complete customer profile and visit review' : '完整客户资料与拜访复盘'}</small><strong>${escapeHtml(account.businessName)}</strong><span>${escapeHtml(account.stage ? salesStatusLabel(account.stage) : (lang === 'en' ? 'No stage' : '未设置阶段'))}</span></div><button aria-label="${lang === 'en' ? 'Close' : '关闭'}" onclick="this.closest('.mobile-modal').remove()">×</button></div>
     <div class="sales-review-scroll">
       <section class="sales-review-profile">
         <div class="sales-review-section-heading"><div><small>${lang === 'en' ? 'CUSTOMER PROFILE' : '客户档案'}</small><h3>${lang === 'en' ? 'Customer details' : '客户详细资料'}</h3></div><div class="sales-review-profile-actions"><button class="sales-camera-shortcut" type="button" onclick="openSalesStartDialog('${account.id}')">📷 ${lang === 'en' ? 'Camera' : '拍照'}</button><a href="${escapeHtml(mapUrl)}" target="_blank">${lang === 'en' ? 'Open map' : '打开地图'}</a><button class="sales-profile-save" type="button" onclick="saveSalesCustomerProfile(this,'${account.id}')">${lang === 'en' ? 'Save' : '保存'}</button></div></div>
@@ -2208,21 +2261,22 @@ function openSalesReviewDialog(accountId) {
 }
 
 const SALES_PRODUCT_INTERESTS = ['汽车隔热膜','PPF 隐形车衣','彩色 PPF','改色膜／车身膜','建筑玻璃膜','陶瓷镀膜','工具与耗材','其他'];
+const SALES_PRODUCT_INTEREST_ENGLISH = {'汽车隔热膜':'Automotive Window Film','PPF 隐形车衣':'Paint Protection Film (PPF)','彩色 PPF':'Colored PPF','改色膜／车身膜':'Color Change / Vehicle Wrap','建筑玻璃膜':'Architectural Window Film','陶瓷镀膜':'Ceramic Coating','工具与耗材':'Tools & Supplies','其他':'Other'};
 
 function salesInterestOptions(selected = []) {
   const values = new Set(Array.isArray(selected) ? selected : []);
-  return SALES_PRODUCT_INTERESTS.map(value => `<label><input type="checkbox" value="${escapeHtml(value)}" ${values.has(value) ? 'checked' : ''}>${escapeHtml(value)}</label>`).join('');
+  return SALES_PRODUCT_INTERESTS.map(value => `<label><input type="checkbox" value="${escapeHtml(value)}" ${values.has(value) ? 'checked' : ''}>${escapeHtml(lang === 'en' ? SALES_PRODUCT_INTEREST_ENGLISH[value] : value)}</label>`).join('');
 }
 
 function salesInlineCustomerProfile(account, assignedUser, createdByUser) {
   const canAssign = state.fieldSales?.canManage === true;
   return `<div class="sales-inline-profile-form">
-    <div class="sales-two"><label>${lang === 'en' ? 'Store name' : '客户／门店名称'}<input id="salesEditBusinessName" value="${escapeHtml(account.businessName || '')}"></label><label>${lang === 'en' ? 'Customer type' : '客户类型'}<input id="salesEditCustomerType" value="${escapeHtml(account.customerType || '')}" placeholder="${lang === 'en' ? 'Tint shop, dealer…' : '贴膜店、改装店、经销商……'}"></label></div>
+    <div class="sales-two"><label>${lang === 'en' ? 'Store name' : '客户／门店名称'}<input id="salesEditBusinessName" value="${escapeHtml(account.businessName || '')}"></label><label>${lang === 'en' ? 'Customer type' : '客户类型'}<input id="salesEditCustomerType" value="${escapeHtml(salesCustomerTypeLabel(account.customerType || ''))}" placeholder="${lang === 'en' ? 'Tint shop, dealer…' : '贴膜店、改装店、经销商……'}"></label></div>
     <label>${lang === 'en' ? 'Address' : '门店地址'}<input id="salesEditAddress" value="${escapeHtml(account.address || '')}"></label>
-    <div class="sales-two"><label>${lang === 'en' ? 'City / region' : '城市／区域'}<input id="salesEditCity" value="${escapeHtml(account.city || '')}"></label><label>${lang === 'en' ? 'Stage' : '客户阶段'}<select id="salesEditStage">${['待拜访','拜访中','持续跟进','已成交','暂不跟进'].map(value => `<option ${account.stage === value ? 'selected' : ''}>${value}</option>`).join('')}</select></label></div>
+    <div class="sales-two"><label>${lang === 'en' ? 'City / region' : '城市／区域'}<input id="salesEditCity" value="${escapeHtml(account.city || '')}"></label><label>${lang === 'en' ? 'Stage' : '客户阶段'}<select id="salesEditStage">${['待拜访','拜访中','持续跟进','已成交','暂不跟进'].map(value => `<option value="${value}" ${account.stage === value ? 'selected' : ''}>${escapeHtml(salesStatusLabel(value))}</option>`).join('')}</select></label></div>
     <div class="sales-two"><label>${lang === 'en' ? 'Contact name' : '联系人'}<input id="salesEditContactName" value="${escapeHtml(account.contactName || '')}"></label><label>${lang === 'en' ? 'Phone' : '电话'}<input id="salesEditPhone" inputmode="tel" value="${escapeHtml(account.phone || '')}"></label></div>
     <div class="sales-two"><label>Email<input id="salesEditEmail" type="email" value="${escapeHtml(account.email || '')}"></label><label>${lang === 'en' ? 'Website' : '网站'}<input id="salesEditWebsite" value="${escapeHtml(account.website || '')}"></label></div>
-    ${canAssign ? `<label>${lang === 'en' ? 'Assigned sales representative' : '负责跟进的业务员'}<select id="salesEditAssignedUser"><option value="">公共待认领</option>${salesUserOptions(account.assignedUserId || '')}</select></label>` : `<div class="sales-profile-readonly"><small>${lang === 'en' ? 'Assigned sales representative' : '负责业务员'}</small><strong>${escapeHtml(account.assignedUserName || assignedUser?.name || assignedUser?.email || '—')}</strong></div>`}
+    ${canAssign ? `<label>${lang === 'en' ? 'Assigned sales representative' : '负责跟进的业务员'}<select id="salesEditAssignedUser"><option value="">${lang === 'en' ? 'Unassigned shared lead' : '公共待认领'}</option>${salesUserOptions(account.assignedUserId || '')}</select></label>` : `<div class="sales-profile-readonly"><small>${lang === 'en' ? 'Assigned sales representative' : '负责业务员'}</small><strong>${escapeHtml(account.assignedUserName || assignedUser?.name || assignedUser?.email || '—')}</strong></div>`}
     <label>${lang === 'en' ? 'Person met' : '本次／最近见到的人'}<input id="salesEditLastContact" value="${escapeHtml(account.lastContactMet || '')}"></label>
     <label>${lang === 'en' ? 'Who they are and meeting details' : '见到的人的情况与细节'}<textarea id="salesEditContactDetails" placeholder="${lang === 'en' ? 'Role, decision authority, interests and onsite details' : '对方职务、决策权、关注点、提出的要求和现场重要情况'}">${escapeHtml(account.lastContactDetails || '')}</textarea></label>
     <label>${lang === 'en' ? 'Products currently handled' : '客户目前在做什么产品'}<textarea id="salesEditCurrentProducts" placeholder="${lang === 'en' ? 'Brands, product categories and main business' : '品牌、产品类别、主要业务……'}">${escapeHtml(account.currentProducts || '')}</textarea></label>
@@ -2232,9 +2286,9 @@ function salesInlineCustomerProfile(account, assignedUser, createdByUser) {
     <div class="sales-two"><label>${lang === 'en' ? 'Follow-up cycle (days)' : '回访周期（天）'}<input id="salesEditCadence" type="number" min="1" max="365" value="${Number(account.cadenceDays || 7)}"></label><label>${lang === 'en' ? 'Next visit' : '下次回访时间'}<input id="salesEditNextVisit" type="datetime-local" value="${escapeHtml(localDateTimeValue(account.nextVisitAt || ''))}"></label></div>
     <label>${lang === 'en' ? 'Customer notes' : '客户备注'}<textarea id="salesEditNote">${escapeHtml(account.note || '')}</textarea></label>
     <div class="sales-profile-readonly-grid">
-      <div><small>${lang === 'en' ? 'Visit region' : '拜访区域'}</small><strong>${escapeHtml(account.visitRegion || '—')}</strong></div>
-      <div><small>${lang === 'en' ? 'Route order' : '路线顺序'}</small><strong>${escapeHtml([account.visitBatch, account.visitStop ? `第 ${Number(account.visitStop)} 站` : ''].filter(Boolean).join(' · ') || '—')}</strong></div>
-      <div><small>${lang === 'en' ? 'Created by' : '建档人员'}</small><strong>${escapeHtml(account.createdByName || createdByUser?.name || createdByUser?.email || '—')}</strong></div>
+      <div><small>${lang === 'en' ? 'Visit region' : '拜访区域'}</small><strong>${escapeHtml(salesRegionLabel(account.visitRegion) || '—')}</strong></div>
+      <div><small>${lang === 'en' ? 'Route order' : '路线顺序'}</small><strong>${escapeHtml([account.visitBatch, account.visitStop ? salesRouteStopLabel(account.visitStop) : ''].filter(Boolean).join(' · ') || '—')}</strong></div>
+      <div><small>${lang === 'en' ? 'Created by' : '建档人员'}</small><strong>${escapeHtml(salesSystemDataLabel(account.createdByName || createdByUser?.name || createdByUser?.email || '—'))}</strong></div>
       <div><small>${lang === 'en' ? 'Created at' : '建档时间'}</small><strong>${escapeHtml(formatMobileDateTime(account.createdAt) || '—')}</strong></div>
     </div>
   </div>`;
@@ -2249,15 +2303,15 @@ function openSalesCustomerEditDialog(accountId) {
   overlay.innerHTML = `<div class="mobile-dialog sales-profile-edit-dialog">
     <div class="dialog-head"><div><small>${lang === 'en' ? 'EDIT CUSTOMER PROFILE' : '编辑客户档案'}</small><strong>${escapeHtml(account.businessName)}</strong></div><button onclick="this.closest('.mobile-modal').remove()">×</button></div>
     <div class="sales-profile-edit-scroll">
-      <div class="sales-two"><label>${lang === 'en' ? 'Store name' : '客户／门店名称'}<input id="salesEditBusinessName" value="${escapeHtml(account.businessName || '')}"></label><label>${lang === 'en' ? 'Customer type' : '客户类型'}<input id="salesEditCustomerType" value="${escapeHtml(account.customerType || '')}" placeholder="贴膜店、改装店、经销商……"></label></div>
+      <div class="sales-two"><label>${lang === 'en' ? 'Store name' : '客户／门店名称'}<input id="salesEditBusinessName" value="${escapeHtml(account.businessName || '')}"></label><label>${lang === 'en' ? 'Customer type' : '客户类型'}<input id="salesEditCustomerType" value="${escapeHtml(salesCustomerTypeLabel(account.customerType || ''))}" placeholder="${lang === 'en' ? 'Tint shop, dealer…' : '贴膜店、改装店、经销商……'}"></label></div>
       <label>${lang === 'en' ? 'Address' : '门店地址'}<input id="salesEditAddress" value="${escapeHtml(account.address || '')}"></label>
-      <div class="sales-two"><label>${lang === 'en' ? 'City / region' : '城市／区域'}<input id="salesEditCity" value="${escapeHtml(account.city || '')}"></label><label>${lang === 'en' ? 'Stage' : '客户阶段'}<select id="salesEditStage">${['待拜访','拜访中','持续跟进','已成交','暂不跟进'].map(value => `<option ${account.stage === value ? 'selected' : ''}>${value}</option>`).join('')}</select></label></div>
+      <div class="sales-two"><label>${lang === 'en' ? 'City / region' : '城市／区域'}<input id="salesEditCity" value="${escapeHtml(account.city || '')}"></label><label>${lang === 'en' ? 'Stage' : '客户阶段'}<select id="salesEditStage">${['待拜访','拜访中','持续跟进','已成交','暂不跟进'].map(value => `<option value="${value}" ${account.stage === value ? 'selected' : ''}>${escapeHtml(salesStatusLabel(value))}</option>`).join('')}</select></label></div>
       <div class="sales-two"><label>${lang === 'en' ? 'Contact name' : '联系人'}<input id="salesEditContactName" value="${escapeHtml(account.contactName || '')}"></label><label>${lang === 'en' ? 'Phone' : '电话'}<input id="salesEditPhone" inputmode="tel" value="${escapeHtml(account.phone || '')}"></label></div>
       <div class="sales-two"><label>Email<input id="salesEditEmail" type="email" value="${escapeHtml(account.email || '')}"></label><label>${lang === 'en' ? 'Website' : '网站'}<input id="salesEditWebsite" value="${escapeHtml(account.website || '')}"></label></div>
-      ${canAssign ? `<label>${lang === 'en' ? 'Assigned sales representative' : '负责跟进的业务员'}<select id="salesEditAssignedUser"><option value="">公共待认领</option>${salesUserOptions(account.assignedUserId || '')}</select></label>` : ''}
+      ${canAssign ? `<label>${lang === 'en' ? 'Assigned sales representative' : '负责跟进的业务员'}<select id="salesEditAssignedUser"><option value="">${lang === 'en' ? 'Unassigned shared lead' : '公共待认领'}</option>${salesUserOptions(account.assignedUserId || '')}</select></label>` : ''}
       <label>${lang === 'en' ? 'Last person met' : '本次／最近见到的人'}<input id="salesEditLastContact" value="${escapeHtml(account.lastContactMet || '')}"></label>
       <label>${lang === 'en' ? 'Who they are and meeting details' : '见到的人的情况与细节'}<textarea id="salesEditContactDetails">${escapeHtml(account.lastContactDetails || '')}</textarea></label>
-      <label>${lang === 'en' ? 'Products currently handled' : '客户目前在做什么产品'}<textarea id="salesEditCurrentProducts" placeholder="品牌、产品类别、主要业务……">${escapeHtml(account.currentProducts || '')}</textarea></label>
+      <label>${lang === 'en' ? 'Products currently handled' : '客户目前在做什么产品'}<textarea id="salesEditCurrentProducts" placeholder="${lang === 'en' ? 'Brands, product categories and main business' : '品牌、产品类别、主要业务……'}">${escapeHtml(account.currentProducts || '')}</textarea></label>
       <fieldset class="sales-interest-field"><legend>${lang === 'en' ? 'Products of interest' : '客户对哪些产品感兴趣'}</legend><div id="salesEditInterests">${salesInterestOptions(account.interestedProducts)}</div><input id="salesEditInterestNote" value="${escapeHtml(account.interestedProductsNote || '')}" placeholder="${lang === 'en' ? 'Additional interest details' : '补充具体型号、规格或数量'}"></fieldset>
       <label>${lang === 'en' ? 'What was discussed' : '当时谈了什么情况'}<textarea id="salesEditDiscussion">${escapeHtml(account.discussionSummary || '')}</textarea></label>
       <label>${lang === 'en' ? 'Next action' : '下一步要做什么'}<textarea id="salesEditNextAction">${escapeHtml(account.nextAction || '')}</textarea></label>
@@ -2275,7 +2329,7 @@ async function saveSalesCustomerProfile(button, accountId) {
     const assigned = document.getElementById('salesEditAssignedUser');
     const body = {
       businessName:document.getElementById('salesEditBusinessName').value,
-      customerType:document.getElementById('salesEditCustomerType').value,
+      customerType:salesCustomerTypeValue(document.getElementById('salesEditCustomerType').value),
       address:document.getElementById('salesEditAddress').value,
       city:document.getElementById('salesEditCity').value,
       stage:document.getElementById('salesEditStage').value,

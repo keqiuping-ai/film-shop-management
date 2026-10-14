@@ -1,4 +1,4 @@
-const CACHE_NAME = 'film-shop-v180-regional-field-sales-markets';
+const CACHE_NAME = 'film-shop-v181-field-sales-english-ui';
 const ASSETS = [
     '/mobile.html',
     '/warranty.html',

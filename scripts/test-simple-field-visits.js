@@ -50,6 +50,6 @@ assert(server.includes('referenceMaterial === true'), 'public reference photos m
 assert(server.includes('account.leadPool === true'), 'unassigned imported leads must be claimable by a salesperson');
 assert(css.includes('.sales-region-grid'), 'region selector must have mobile styling');
 assert(css.includes('.sales-simple-customer-photo'), 'imported storefront photos must have mobile styling');
-assert(html.includes('/mobile.js?v=77') && html.includes('/mobile.css?v=66'), 'mobile asset cache keys must be updated');
+assert(html.includes('/mobile.js?v=78') && html.includes('/mobile.css?v=66'), 'mobile asset cache keys must be updated');
 
 console.log('simple field visits regression test passed');
