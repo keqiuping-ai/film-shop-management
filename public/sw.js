@@ -1,4 +1,4 @@
-const CACHE_NAME = 'film-shop-v176-auto-camera-inline-profile';
+const CACHE_NAME = 'film-shop-v179-city-routes-las-vegas';
 const ASSETS = [
     '/mobile.html',
     '/warranty.html',

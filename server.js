@@ -28,6 +28,7 @@ const SESSION_SECRET_FILE = path.join(DATA_DIR, 'session-secret');
 const CONFIG_FILE = path.join(ROOT, 'server-config.json');
 const VERSION_FILE = path.join(ROOT, 'version.json');
 const SANTA_MONICA_FIELD_SALES_SEED_FILE = path.join(ROOT, 'migrations', 'santa-monica-field-sales-2026-10-13.json');
+const LAS_VEGAS_FIELD_SALES_SEED_FILE = path.join(ROOT, 'migrations', 'las-vegas-field-sales-2026-10-13.json');
 const MAX_MESSAGE_ATTACHMENT_BYTES = 20 * 1024 * 1024;
 const MAX_AVATAR_DATA_URL_BYTES = 2 * 1024 * 1024;
 const MAX_EMPLOYEE_DOCUMENT_BYTES = 8 * 1024 * 1024;
@@ -790,6 +791,112 @@ function applySantaMonicaFieldSalesProspectImport() {
   db.santaMonicaFieldSalesImportSummary = { accounts:importedAccountIds.length, photos:(seed.records || []).reduce((sum, row) => sum + (row.referencePhotos || []).length, 0), createdAccounts, updatedAccounts, createdPhotos, importedAt:now };
   audit(db, { id:'system-import', name:'公开客户资料导入' }, 'import-santa-monica-field-sales-prospects', {
     collection:'salesAccounts', detail:`导入 ${importedAccountIds.length} 家门店与 ${db.santaMonicaFieldSalesImportSummary.photos} 张公开资料照片`
+  });
+  writeDb(db);
+}
+
+function applyLasVegasFieldSalesProspectImport() {
+  const enabled = process.env.ENABLE_LAS_VEGAS_FIELD_SALES_IMPORT === 'true'
+    || DATA_DIR === '/app/data'
+    || Boolean(process.env.RAILWAY_PROJECT_ID || process.env.RAILWAY_ENVIRONMENT_NAME || process.env.RAILWAY_SERVICE_ID);
+  if (!enabled || !fs.existsSync(LAS_VEGAS_FIELD_SALES_SEED_FILE)) return;
+  const seed = JSON.parse(fs.readFileSync(LAS_VEGAS_FIELD_SALES_SEED_FILE, 'utf8'));
+  const versionKey = String(seed.version || 'las-vegas-field-sales-2026-10-13-v1');
+  const db = readDb();
+  if (db.lasVegasFieldSalesImportVersion === versionKey) return;
+  const now = new Date().toISOString();
+  const importedAt = '2026-10-14T16:45:00.000Z';
+  const normalizeKey = value => String(value || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+  const existingByRecord = new Map((db.salesAccounts || []).filter(row => row.publicRecordId).map(row => [String(row.publicRecordId), row]));
+  const existingByNameAddress = new Map((db.salesAccounts || []).map(row => [`${normalizeKey(row.businessName)}|${normalizeKey(row.address)}`, row]));
+  let createdAccounts = 0;
+  let updatedAccounts = 0;
+  let createdPhotos = 0;
+  const importedAccountIds = [];
+  for (const source of (seed.records || [])) {
+    const recordId = String(source.publicRecordId || '').trim();
+    if (!recordId || !source.businessName || !source.address) continue;
+    const dedupeKey = `${normalizeKey(source.businessName)}|${normalizeKey(source.address)}`;
+    let account = existingByRecord.get(recordId) || existingByNameAddress.get(dedupeKey);
+    if (!account) {
+      account = {
+        id:`lv-prospect-${recordId.toLowerCase()}`,
+        businessName:String(source.businessName).slice(0, 180),
+        address:String(source.address).slice(0, 300),
+        branchId:'las-vegas',
+        contactName:'', phone:String(source.phone || '').slice(0, 80), email:'',
+        city:String(source.city || '').slice(0, 120),
+        customerType:'汽车贴膜门店', source:'3359 周边公开客户资料', language:'auto',
+        assignedUserId:'', assignedUserName:'', leadPool:true,
+        cadenceDays:30, stage:'待拜访', lastVisitAt:'', nextVisitAt:'',
+        createdByUserId:'system-import', createdByName:'公开客户资料导入',
+        createdAt:importedAt, updatedAt:now
+      };
+      db.salesAccounts.unshift(account);
+      existingByNameAddress.set(dedupeKey, account);
+      createdAccounts += 1;
+    } else {
+      updatedAccounts += 1;
+    }
+    account.branchId = 'las-vegas';
+    account.publicRecordId = recordId;
+    account.importBatchId = versionKey;
+    account.website = String(source.website || '').slice(0, 500);
+    account.googleMapsUrl = String(source.googleMapsUrl || '').slice(0, 1000);
+    account.directorySource = String(source.directorySource || '').slice(0, 1000);
+    account.socialLinks = source.socialLinks && typeof source.socialLinks === 'object' ? source.socialLinks : {};
+    account.services = String(source.services || '').slice(0, 3000);
+    account.filmBrands = String(source.filmBrands || '').slice(0, 1000);
+    account.serviceEvidence = String(source.serviceEvidence || '').slice(0, 1000);
+    account.visitRegion = String(source.visitRegion || '').slice(0, 120);
+    account.visitRoute = String(source.route || '').slice(0, 20);
+    account.visitBatch = String(source.visitBatch || '').slice(0, 40);
+    account.visitStop = Math.max(0, Number(source.visitStop || 0));
+    account.distanceFromStoreKm = Math.max(0, Number(source.distanceKm || 0));
+    account.navigationUrl = String(source.navigationUrl || '').slice(0, 1500);
+    account.referencePhotoUrls = (source.referencePhotos || []).map(row => String(row.url || '')).filter(Boolean).slice(0, 4);
+    if (!account.phone && source.phone) account.phone = String(source.phone).slice(0, 80);
+    if (!account.city && source.city) account.city = String(source.city).slice(0, 120);
+    if (!account.note) {
+      account.note = [source.services, source.filmBrands ? `公开资料提及品牌：${source.filmBrands}` : '', source.serviceEvidence, source.researchNotes]
+        .filter(Boolean).join('\n').slice(0, 3000);
+    }
+    if (!account.assignedUserId) account.leadPool = true;
+    if (Number.isFinite(Number(source.lat)) && Number.isFinite(Number(source.lng))) {
+      account.lat = Number(source.lat);
+      account.lng = Number(source.lng);
+      account.geocodedAddress = account.address;
+      account.locationSource = 'public-research-coordinate-unverified';
+      account.locationVerifiedAt = '';
+    }
+    account.updatedAt = now;
+    existingByRecord.set(recordId, account);
+    importedAccountIds.push(account.id);
+    (source.referencePhotos || []).forEach((photo, index) => {
+      const attachmentId = `lv-reference-photo-${recordId.toLowerCase()}-${index + 1}`;
+      if ((db.salesAttachments || []).some(item => item.id === attachmentId)) return;
+      db.salesAttachments.unshift({
+        id:attachmentId, objectId:account.id, accountId:account.id, visitId:'',
+        userId:'system-import', userName:'公开客户资料导入', branchId:'las-vegas',
+        fileName:`${account.businessName} 资料照片 ${index + 1}`.slice(0, 160),
+        contentType:String(photo.contentType || 'image/jpeg'), sizeBytes:0,
+        url:String(photo.url || ''), referenceMaterial:true, locationVerified:false,
+        sourceLabel:'公开网站或目录资料照片，拍摄地点未核实',
+        sourceUrl:String(photo.sourceUrl || source.website || source.directorySource || '').slice(0, 1000),
+        createdAt:importedAt
+      });
+      createdPhotos += 1;
+    });
+  }
+  if (importedAccountIds.length !== Number(seed.recordCount || 148)) {
+    throw new Error(`Las Vegas field-sales import expected ${seed.recordCount || 148} accounts, found ${importedAccountIds.length}`);
+  }
+  fs.mkdirSync(BACKUP_DIR, { recursive:true });
+  fs.copyFileSync(DB_FILE, path.join(BACKUP_DIR, `db-before-las-vegas-field-sales-${now.replace(/[:.]/g, '-')}.json`));
+  db.lasVegasFieldSalesImportVersion = versionKey;
+  db.lasVegasFieldSalesImportSummary = { accounts:importedAccountIds.length, photos:(seed.records || []).reduce((sum, row) => sum + (row.referencePhotos || []).length, 0), routes:Number(seed.routeCount || 0), batches:Number(seed.batchCount || 0), createdAccounts, updatedAccounts, createdPhotos, importedAt:now };
+  audit(db, { id:'system-import', name:'公开客户资料导入' }, 'import-las-vegas-field-sales-prospects', {
+    collection:'salesAccounts', detail:`导入 ${importedAccountIds.length} 家拉斯维加斯门店与 ${db.lasVegasFieldSalesImportSummary.photos} 张公开资料照片`
   });
   writeDb(db);
 }
@@ -8912,6 +9019,8 @@ async function api(req, res) {
   if (req.method === 'GET' && url.pathname === '/api/health') {
     const importedAccounts = (db.salesAccounts || []).filter(item => item.active !== false && item.importBatchId === db.santaMonicaFieldSalesImportVersion).length;
     const importedPhotos = (db.salesAttachments || []).filter(item => item.referenceMaterial === true && item.id.startsWith('sm-reference-photo-')).length;
+    const importedLasVegasAccounts = (db.salesAccounts || []).filter(item => item.active !== false && item.importBatchId === db.lasVegasFieldSalesImportVersion).length;
+    const importedLasVegasPhotos = (db.salesAttachments || []).filter(item => item.referenceMaterial === true && item.id.startsWith('lv-reference-photo-')).length;
     return send(res, 200, {
       ok: true,
       service: 'film-shop-cloud-app',
@@ -8921,6 +9030,7 @@ async function api(req, res) {
       port: PORT,
       publicUrl: config.publicUrl || null,
       santaMonicaFieldSalesImport: { version:db.santaMonicaFieldSalesImportVersion || '', accounts:importedAccounts, photos:importedPhotos },
+      lasVegasFieldSalesImport: { version:db.lasVegasFieldSalesImportVersion || '', accounts:importedLasVegasAccounts, photos:importedLasVegasPhotos, routes:Number(db.lasVegasFieldSalesImportSummary?.routes || 0), batches:Number(db.lasVegasFieldSalesImportSummary?.batches || 0) },
       time: new Date().toISOString()
     });
   }
@@ -13655,6 +13765,7 @@ applyCustomerNumberRemoval();
 applyLasVegasLegacyBranchMigration();
 applyGmProCanonicalSkuMigration();
 applySantaMonicaFieldSalesProspectImport();
+applyLasVegasFieldSalesProspectImport();
 expireInternalMessageVideos();
 cleanupStaleMediaUploadParts();
 let privateChatModule;

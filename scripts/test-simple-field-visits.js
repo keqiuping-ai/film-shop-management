@@ -9,7 +9,11 @@ const html = fs.readFileSync(path.join(root, 'public/mobile.html'), 'utf8');
 const server = fs.readFileSync(path.join(root, 'server.js'), 'utf8');
 
 assert(mobile.includes('选择拜访区域'), 'home must start with region selection');
+assert(mobile.includes('选择城市'), 'home must separate customers by city before region selection');
+assert(mobile.includes("'los-angeles', 'las-vegas', 'san-francisco'"), 'city selector must include Los Angeles, Las Vegas, and San Francisco');
+assert(mobile.includes('salesAccountMarket'), 'city grouping must use the customer branch and address');
 assert(mobile.includes('visibleAccounts.map(salesSimpleCustomerCard)'), 'home must list only customers in the selected region');
+assert(mobile.includes("String(a.visitBatch || '').localeCompare"), 'customers must follow batch and stop order inside each direction');
 assert(mobile.includes('拍照拜访'), 'customer card must open direct photo check-in');
 assert(mobile.includes('openSalesReviewDialog'), 'customer card must expose the imported customer profile');
 assert(mobile.includes('公开资料照片；拍摄地点未核实'), 'reference photos must be clearly distinguished from on-site photos');
@@ -45,6 +49,6 @@ assert(server.includes('referenceMaterial === true'), 'public reference photos m
 assert(server.includes('account.leadPool === true'), 'unassigned imported leads must be claimable by a salesperson');
 assert(css.includes('.sales-region-grid'), 'region selector must have mobile styling');
 assert(css.includes('.sales-simple-customer-photo'), 'imported storefront photos must have mobile styling');
-assert(html.includes('/mobile.js?v=73') && html.includes('/mobile.css?v=65'), 'mobile asset cache keys must be updated');
+assert(html.includes('/mobile.js?v=76') && html.includes('/mobile.css?v=66'), 'mobile asset cache keys must be updated');
 
 console.log('simple field visits regression test passed');

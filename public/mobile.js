@@ -54,6 +54,7 @@ let salesPlanDate = '';
 let salesNearbyOrigin = null;
 let salesActiveAccountId = '';
 let salesSelectedRegion = '';
+let salesSelectedCity = '';
 let salesInventoryPricingQuery = '';
 let salesInventoryPricingResults = [];
 let salesInventoryPricingLoading = false;
@@ -1772,15 +1773,24 @@ async function searchSalesInventoryPricing(event) {
 function salesHomeHtml() {
   const sales = state.fieldSales || {};
   const accounts = sales.accounts || [];
-  const regionGroups = accounts.reduce((groups, account) => {
+  const cityOrder = ['los-angeles', 'las-vegas', 'san-francisco'];
+  const cityLabels = { 'los-angeles':'洛杉矶', 'las-vegas':'拉斯维加斯', 'san-francisco':'旧金山' };
+  const cityGroups = cityOrder.reduce((groups, city) => ({ ...groups, [city]:[] }), {});
+  accounts.forEach(account => (cityGroups[salesAccountMarket(account)] ||= []).push(account));
+  if (!salesSelectedCity || !cityOrder.includes(salesSelectedCity)) {
+    const preferredCity = salesAccountMarket({ branchId:user?.defaultBranchId || '' });
+    salesSelectedCity = cityGroups[preferredCity]?.length ? preferredCity : (cityOrder.find(city => cityGroups[city]?.length) || 'los-angeles');
+  }
+  const cityAccounts = cityGroups[salesSelectedCity] || [];
+  const regionGroups = cityAccounts.reduce((groups, account) => {
     const region = salesAccountRegion(account);
     (groups[region] ||= []).push(account);
     return groups;
   }, {});
-  const preferredRegions = ['西区／圣莫尼卡', '南湾／长滩', '洛杉矶中心／东南区', '圣费尔南多谷／文图拉走廊', '圣克拉丽塔／羚羊谷', '圣盖博谷／内陆东区', '橙县', '洛杉矶地区', '橙县地区', '拉斯维加斯地区', '其他地区'];
+  const preferredRegions = ['西区／圣莫尼卡', '南湾／长滩', '洛杉矶中心／东南区', '圣费尔南多谷／文图拉走廊', '圣克拉丽塔／羚羊谷', '圣盖博谷／内陆东区', '橙县', '公司周边／中南区', '西区／Summerlin', '北区／北拉斯维加斯', '中心／东区', '亨德森', '博尔德城', '外围50–100公里／Pahrump', '洛杉矶地区', '橙县地区', '拉斯维加斯地区', '其他地区'];
   const regions = [...preferredRegions.filter(region => regionGroups[region]?.length), ...Object.keys(regionGroups).filter(region => !preferredRegions.includes(region))];
   if (!salesSelectedRegion || !regionGroups[salesSelectedRegion]) salesSelectedRegion = regions[0] || '';
-  const visibleAccounts = regionGroups[salesSelectedRegion] || [];
+  const visibleAccounts = [...(regionGroups[salesSelectedRegion] || [])].sort((a, b) => String(a.visitBatch || '').localeCompare(String(b.visitBatch || ''), undefined, { numeric:true }) || Number(a.visitStop || 0) - Number(b.visitStop || 0));
   const secondary = [
     `<button onclick="openSalesScreen('add')">＋ 新增客户</button>`,
     canViewSalesInventoryPricing() ? `<button onclick="openSalesScreen('inventory-pricing')">▦ 库存与报价</button>` : '',
@@ -1788,10 +1798,19 @@ function salesHomeHtml() {
   ].filter(Boolean).join('');
   return salesLocalizedHtml(`<div class="sales-design-home sales-simple-home">
     <section class="sales-design-hero"><small>QUaD FIELD SALES</small><h2>客户拜访</h2><p>选择区域和客户，拍照定位，填写结果</p></section>
-    <section class="sales-simple-step"><header><i>1</i><div><b>选择拜访区域</b><span>只显示该区域的客户</span></div></header><div class="sales-region-grid">${regions.map(region => `<button class="${region === salesSelectedRegion ? 'active' : ''}" onclick="selectSalesRegion('${region}')"><b>${region}</b><span>${regionGroups[region].length} 位客户</span></button>`).join('') || '<p class="hint">还没有客户，请先新增客户。</p>'}</div></section>
-    <section class="sales-simple-step"><header><i>2</i><div><b>${escapeHtml(salesSelectedRegion || '选择客户')}</b><span>点击客户即可拍照定位并开始拜访</span></div></header><label class="sales-search">⌕<input placeholder="搜索客户、地址或联系人" oninput="filterSalesCards(this.value)"></label><div id="salesCustomerCards" class="sales-simple-customers">${visibleAccounts.map(salesSimpleCustomerCard).join('') || '<p class="hint">这个区域还没有客户。</p>'}</div></section>
+    <section class="sales-simple-step"><header><i>1</i><div><b>选择城市</b><span>洛杉矶、拉斯维加斯和旧金山独立管理</span></div></header><div class="sales-city-grid">${cityOrder.map(city => `<button class="${city === salesSelectedCity ? 'active' : ''}" onclick="selectSalesCity('${city}')"><b>${cityLabels[city]}</b><span>${cityGroups[city]?.length || 0} 位客户</span></button>`).join('')}</div></section>
+    <section class="sales-simple-step"><header><i>2</i><div><b>选择拜访区域</b><span>只显示${cityLabels[salesSelectedCity]}的方向和客户</span></div></header><div class="sales-region-grid">${regions.map(region => `<button class="${region === salesSelectedRegion ? 'active' : ''}" onclick="selectSalesRegion('${region}')"><b>${region}</b><span>${regionGroups[region].length} 位客户</span></button>`).join('') || '<p class="hint">这个城市还没有客户资料。</p>'}</div></section>
+    <section class="sales-simple-step"><header><i>3</i><div><b>${escapeHtml(salesSelectedRegion || '选择客户')}</b><span>点击客户即可拍照定位并开始拜访</span></div></header><label class="sales-search">⌕<input placeholder="搜索客户、地址或联系人" oninput="filterSalesCards(this.value)"></label><div id="salesCustomerCards" class="sales-simple-customers">${visibleAccounts.map(salesSimpleCustomerCard).join('') || '<p class="hint">这个区域还没有客户。</p>'}</div></section>
     <div class="sales-simple-secondary">${secondary}</div>
   </div>`);
+}
+
+function salesAccountMarket(account) {
+  const branchId = String(account.branchId || '').toLowerCase();
+  const value = `${account.city || ''} ${account.address || ''}`.toLowerCase();
+  if (branchId.includes('vegas') || /las vegas|henderson|north las vegas|nevada|\bnv\b/.test(value)) return 'las-vegas';
+  if (branchId.includes('san-francisco') || /san francisco|oakland|san jose|bay area|\bsf\b/.test(value)) return 'san-francisco';
+  return 'los-angeles';
 }
 
 function salesAccountRegion(account) {
@@ -1805,6 +1824,12 @@ function salesAccountRegion(account) {
 
 function selectSalesRegion(region) {
   salesSelectedRegion = region;
+  render();
+}
+
+function selectSalesCity(city) {
+  salesSelectedCity = city;
+  salesSelectedRegion = '';
   render();
 }
 
@@ -1832,7 +1857,7 @@ function salesCustomersHtml(selectMode = false) {
 
 function filterSalesCards(value) {
   const query = String(value || '').trim().toLowerCase();
-  document.querySelectorAll('#salesCustomerCards .sales-customer-mini').forEach(card => { card.hidden = query && !card.textContent.toLowerCase().includes(query); });
+  document.querySelectorAll('#salesCustomerCards .sales-customer-mini, #salesCustomerCards .sales-simple-customer').forEach(card => { card.hidden = query && !card.textContent.toLowerCase().includes(query); });
 }
 
 function toggleSalesPlanAccount(id) {
