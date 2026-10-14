@@ -24,8 +24,13 @@ assert(mobile.includes('salesSimpleContact'), 'simple visit must capture the con
 assert(mobile.includes('navigator.mediaDevices.getUserMedia'), 'check-in must open the live browser camera');
 assert(mobile.includes("captureMode:'live-camera'"), 'check-in must identify live camera captures');
 assert(!mobile.includes('id="salesVisitPhoto" type="file"'), 'check-in must not offer a file or photo-library picker');
-assert(mobile.includes('salesContactMetDetails'), 'check-in must capture details about the person met');
-assert(mobile.includes('openSalesCustomerEditDialog'), 'customer review must expose a complete editable profile');
+assert(mobile.includes('salesEditContactDetails'), 'inline customer profile must capture details about the person met');
+assert(mobile.includes('salesInlineCustomerProfile'), 'customer review must open directly as an editable profile');
+assert(!mobile.match(/sales-review-profile-actions[\s\S]{0,300}openSalesCustomerEditDialog/), 'customer review must not require a second edit dialog');
+assert(mobile.includes('captureSalesLivePhoto(\'${account.id}\')'), 'camera capture must know which customer to check in');
+assert(mobile.includes("startSalesVisit(captureButton, accountId, { keepProfile:true })"), 'camera capture must automatically upload and check in');
+assert(!mobile.includes("lang === 'en' ? 'Check in now' : '确认到店打卡'"), 'camera flow must not require a second check-in confirmation');
+assert(mobile.includes('sales-profile-bottom-save'), 'inline customer profile must include a bottom save action');
 assert(mobile.includes('salesEditInterests'), 'customer profile must capture product interests');
 assert(mobile.includes('openSalesVisitEditDialog'), 'historical visit details must be editable');
 assert(mobile.includes('拜访资料已保存并同步到主系统'), 'save must give explicit success feedback');
@@ -40,6 +45,6 @@ assert(server.includes('referenceMaterial === true'), 'public reference photos m
 assert(server.includes('account.leadPool === true'), 'unassigned imported leads must be claimable by a salesperson');
 assert(css.includes('.sales-region-grid'), 'region selector must have mobile styling');
 assert(css.includes('.sales-simple-customer-photo'), 'imported storefront photos must have mobile styling');
-assert(html.includes('/mobile.js?v=72') && html.includes('/mobile.css?v=64'), 'mobile asset cache keys must be updated');
+assert(html.includes('/mobile.js?v=73') && html.includes('/mobile.css?v=65'), 'mobile asset cache keys must be updated');
 
 console.log('simple field visits regression test passed');

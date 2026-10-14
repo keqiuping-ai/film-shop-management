@@ -1,4 +1,4 @@
-const CACHE_NAME = 'film-shop-v175-live-camera-customer-edit';
+const CACHE_NAME = 'film-shop-v176-auto-camera-inline-profile';
 const ASSETS = [
     '/mobile.html',
     '/warranty.html',
