@@ -691,6 +691,7 @@ function applyDefaultReplyTemplatesMigration() {
 
 function applySantaMonicaFieldSalesProspectImport() {
   const enabled = process.env.ENABLE_SANTA_MONICA_FIELD_SALES_IMPORT === 'true'
+    || DATA_DIR === '/app/data'
     || Boolean(process.env.RAILWAY_PROJECT_ID || process.env.RAILWAY_ENVIRONMENT_NAME || process.env.RAILWAY_SERVICE_ID);
   if (!enabled || !fs.existsSync(SANTA_MONICA_FIELD_SALES_SEED_FILE)) return;
   const seed = JSON.parse(fs.readFileSync(SANTA_MONICA_FIELD_SALES_SEED_FILE, 'utf8'));
