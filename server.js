@@ -981,6 +981,25 @@ function createDatabaseBackup(db, kind = 'manual', actor = { id: 'system', name:
   return { fileName, created: true };
 }
 
+function createInventoryAdjustmentBackup(db, requestId = '') {
+  fs.mkdirSync(BACKUP_DIR, { recursive: true });
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const safeRequestId = String(requestId || 'inventory-adjustment')
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 80) || 'inventory-adjustment';
+  const fileName = `before-${safeRequestId}-${stamp}.json`;
+  const filePath = backupPath(fileName);
+  fs.writeFileSync(filePath, JSON.stringify(db, null, 2));
+  const verified = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+  if (!Array.isArray(verified.products) || !Array.isArray(verified.movements)) {
+    throw new Error('库存调整备份校验失败');
+  }
+  pruneExpiredBackups();
+  return { fileName, created: true };
+}
+
 function applyStartupPasswordReset() {
   const resetPassword = process.env.RESET_ADMIN_PASSWORD;
   const resetNewEmail = process.env.RESET_ADMIN_NEW_EMAIL;
@@ -11548,8 +11567,8 @@ async function api(req, res) {
       });
     }
     if (!plan.requestId) return send(res, 400, { error: '盘点调整缺少批次编号，不能防止重复导入' });
-    db.inventoryAdjustmentBatches = Array.isArray(db.inventoryAdjustmentBatches) ? db.inventoryAdjustmentBatches : [];
-    const existingBatch = db.inventoryAdjustmentBatches.find(batch => batch.requestId === plan.requestId);
+    const existingBatches = Array.isArray(db.inventoryAdjustmentBatches) ? db.inventoryAdjustmentBatches : [];
+    const existingBatch = existingBatches.find(batch => batch.requestId === plan.requestId);
     if (existingBatch) {
       return send(res, 200, {
         ok: true,
@@ -11564,7 +11583,11 @@ async function api(req, res) {
       rows: plan.rows,
       totals: plan.totals
     });
-    const backup = createDatabaseBackup(db, 'manual', user);
+    // Build the whole batch in an isolated copy. A failed verification must
+    // never leave cachedDb (and therefore the live process) half-mutated.
+    const workingDb = JSON.parse(JSON.stringify(db));
+    workingDb.inventoryAdjustmentBatches = Array.isArray(workingDb.inventoryAdjustmentBatches) ? workingDb.inventoryAdjustmentBatches : [];
+    const backup = createInventoryAdjustmentBackup(db, plan.requestId);
     const now = new Date().toISOString();
     const movementDate = dateInTimezone(db.settings?.timezone || 'America/Los_Angeles', 0);
     const batchId = id();
@@ -11589,8 +11612,8 @@ async function api(req, res) {
         createdBy: user.name || user.email,
         createdByUserId: user.id
       };
-      db.movements.push(movement);
-      applyMovement(db, movement);
+      workingDb.movements.push(movement);
+      applyMovement(workingDb, movement);
       movementIds.push(movement.id);
     });
     const verificationRows = plan.executableRows.map(row => ({
@@ -11599,7 +11622,7 @@ async function api(req, res) {
       beforeQty: row.currentQty,
       delta: row.delta,
       expectedQty: row.afterQty,
-      actualQty: Math.round(branchStockQty(db, row.sku, row.branchId) * 1000) / 1000
+      actualQty: Math.round(branchStockQty(workingDb, row.sku, row.branchId) * 1000) / 1000
     }));
     const verificationErrors = verificationRows.filter(row => Math.abs(row.expectedQty - row.actualQty) > 0.0001);
     if (verificationErrors.length) {
@@ -11618,8 +11641,8 @@ async function api(req, res) {
       appliedBy: user.name || user.email,
       appliedByUserId: user.id
     };
-    db.inventoryAdjustmentBatches.push(batch);
-    audit(db, user, 'apply-inventory-count-adjustment', {
+    workingDb.inventoryAdjustmentBatches.push(batch);
+    audit(workingDb, user, 'apply-inventory-count-adjustment', {
       collection: 'movements',
       recordId: batchId,
       recordLabel: plan.requestId,
@@ -11628,14 +11651,14 @@ async function api(req, res) {
       source: plan.source,
       sourceSha256: plan.sourceSha256
     });
-    writeDb(db);
+    writeDb(workingDb);
     notifyDataChanged('apply-inventory-count-adjustment', batchId);
     return send(res, 200, {
       ok: true,
       alreadyApplied: false,
       batch,
       verificationRows,
-      data: sanitizeDbForUser(db, user)
+      data: sanitizeDbForUser(workingDb, user)
     });
   }
 
