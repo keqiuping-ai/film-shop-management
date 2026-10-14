@@ -17,6 +17,7 @@
     "test:customer-wrap-previews": "node scripts/test-customer-wrap-vehicle-previews.js",
     "test:customer-wrap-materials": "node scripts/test-customer-wrap-material-experience.js",
     "test:customer-tint-experience": "node scripts/test-customer-tint-experience.js",
+    "test:customer-window-film-cart": "node scripts/test-customer-window-film-cart-flow.js",
     "test:portal-safety": "node scripts/test-portal-customer-safety.js",
     "test:portal-messages": "node scripts/test-portal-message-status.js",
     "test:portal-links": "node scripts/test-portal-customer-link-reconciliation.js",

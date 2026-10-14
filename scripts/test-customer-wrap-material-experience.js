@@ -42,10 +42,10 @@ assert(!css.includes('.wrap-material-card.selected'), 'Informational cards must 
 assert(i18n.includes('Understand the materials before choosing a color'), 'Display-only guide English localization is missing');
 assert(i18n.includes('Color selection and inventory ordering below work exactly as before.'), 'Preserved workflow explanation localization is missing');
 assert(!i18n.includes('Your material choice filters the products'), 'Material filter wording must be removed');
-assert(html.includes('/customer.css?v=38'));
-assert(html.includes('/customer-ordering.js?v=60'));
-assert(html.includes('/customer-i18n.js?v=39'));
-assert(sw.includes('film-shop-v171-customer-racing-reference-gallery'));
+assert(html.includes('/customer.css?v=39'));
+assert(html.includes('/customer-ordering.js?v=62'));
+assert(html.includes('/customer-i18n.js?v=40'));
+assert(sw.includes('film-shop-v173-window-film-cart-flow'));
 
 ['vinyl-swirl-detail.jpeg', 'tpu-reflection-clean.png', 'vinyl-aged-two-years.jpeg'].forEach(file => {
   assert(fs.existsSync(path.join(root, 'public/retail/assets/wrap-comparison', file)), `Missing comparison asset: ${file}`);

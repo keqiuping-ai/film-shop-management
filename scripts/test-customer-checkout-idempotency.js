@@ -17,6 +17,10 @@ let stripeIdempotencyKey = '';
 let stripeSession = null;
 
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+const currentLosAngelesDate = () => {
+  const parts = Object.fromEntries(new Intl.DateTimeFormat('en-US', { timeZone:'America/Los_Angeles', year:'numeric', month:'2-digit', day:'2-digit' }).formatToParts(new Date()).map(part => [part.type, part.value]));
+  return `${parts.year}-${parts.month}-${parts.day}`;
+};
 
 function listen(server, port) {
   return new Promise((resolve, reject) => {
@@ -96,7 +100,7 @@ async function run() {
     assert.equal(product.response.status, 200, JSON.stringify(product.body));
     const movement = await request('/api/movements', {
       method:'POST', headers:adminHeaders,
-      body:JSON.stringify({ date:'2026-09-30',branchId:'las-vegas',sku,type:'in',qty:10,note:'checkout idempotency test' })
+      body:JSON.stringify({ date:currentLosAngelesDate(),branchId:'las-vegas',sku,type:'in',qty:10,note:'checkout idempotency test' })
     });
     assert.equal(movement.response.status, 200, JSON.stringify(movement.body));
     const customerCreated = await request('/api/portal-customers', {
