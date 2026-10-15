@@ -1,4 +1,4 @@
-const CACHE_NAME = 'film-shop-v182-field-sales-customer-category';
+const CACHE_NAME = 'film-shop-v183-public-catalog-cards';
 const ASSETS = [
     '/mobile.html',
     '/warranty.html',

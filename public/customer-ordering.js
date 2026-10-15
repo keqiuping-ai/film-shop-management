@@ -37,6 +37,24 @@ document.querySelectorAll('#orderCenter .order-category-list article').forEach(a
   article.addEventListener('keydown',event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();openButton.click()}});
 });
 
+document.querySelectorAll('#collections .collection-card').forEach(card=>{
+  const openButton=card.querySelector('button');
+  if(!openButton)return;
+  const title=card.querySelector('h3')?.textContent?.trim()||'product category';
+  card.tabIndex=0;
+  card.setAttribute('role','link');
+  card.setAttribute('aria-label',`Explore ${title}`);
+  card.addEventListener('click',event=>{if(!event.target.closest('button,a,input,select,textarea'))openButton.click()});
+  card.addEventListener('keydown',event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();openButton.click()}});
+});
+
+function requireDealerForCatalogOrder(category){
+  if(token&&state?.customer)return true;
+  sessionStorage.setItem('quadCustomer.resumeCatalog',category);
+  showLogin();
+  return false;
+}
+
 document.body.insertAdjacentHTML('beforeend', `
   <section id="ppfCatalog" class="ppf-catalog hidden">
     <header class="order-center-header">
@@ -188,6 +206,7 @@ function appendWrapSelection({code,name,color='#888',finish='库存型号',size=
 }
 
 window.addManualWrapColor = function () {
+  if(!requireDealerForCatalogOrder('color-wrap'))return;
   const quickOrder=document.querySelector('.wrap-manual');
   const code=document.getElementById('manualWrapCode').value.trim().toUpperCase();
   const name=document.getElementById('manualWrapName').value.trim();
@@ -442,6 +461,7 @@ window.showPpfCatalog = function () {
 };
 
 window.addPpfProductToCart = function (button, name) {
+  if(!requireDealerForCatalogOrder('ppf'))return;
   const product = button.closest('.ppf-product-copy');
   const variants = [...product.querySelectorAll('.ppf-variant-row')];
   const selected = variants.map(row => {
@@ -563,6 +583,7 @@ window.selectPpfInventoryProduct=function(sku){
   order.scrollIntoView({behavior:'smooth',block:'center'});
 };
 window.addPpfInventoryProduct=function(){
+  if(!requireDealerForCatalogOrder('ppf'))return;
   const order=document.getElementById('ppfInventoryOrder'),product=catalogInventoryUtils().findBySku(state?.products||[],order.dataset.productSku,'ppf');
   if(!product){alert(inventorySearchCopy('ppf','select'));return}
   const qty=Math.max(1,Number(document.getElementById('ppfInventoryQty').value||1)),rows=document.getElementById('ppfSelectedRows'),row=document.createElement('div'),model=product.model||product.sku,size=product.specification||product.sku;
@@ -648,6 +669,7 @@ window.selectWindowFilmModel=function(button,series,model,scroll=true){document.
 let windowFilmAddLocked=false;
 window.addWindowFilmOrder=function(button){
   if(windowFilmAddLocked)return;
+  if(!requireDealerForCatalogOrder('window-film'))return;
   const quick=document.getElementById('windowFilmQuickOrder'),sizeSelect=document.getElementById('windowFilmSize'),size=sizeSelect.value,sizeLabel=sizeSelect.selectedOptions[0]?.textContent||size,qty=Math.max(1,Math.floor(Number(document.getElementById('windowFilmQty').value||1))),directProduct=quick.dataset.productSku?(state?.products||[]).find(item=>item.sku===quick.dataset.productSku):null;
   if(!quick.dataset.model){alert(window.QuadI18n?.t('Please select a window-film model first.')||'Please select a window-film model first.');return}
   if(!size){alert(window.QuadI18n?.t('Please select a roll size.')||'Please select a roll size.');return}
@@ -861,6 +883,7 @@ login=async function(){
   await customerLoginWithoutResume();
   if(token&&state&&window.quadResumeCustomWrapPayment){window.quadResumeCustomWrapPayment=false;window.showColorWrapCatalog();setTimeout(()=>window.submitCustomPrintedFilmPayment(),0);return}
   if(token&&state&&window.quadResumeDealerCheckout){window.quadResumeDealerCheckout=false;window.showDealerCheckout()}
+  if(token&&state){const resumeCatalog=sessionStorage.getItem('quadCustomer.resumeCatalog');if(resumeCatalog){sessionStorage.removeItem('quadCustomer.resumeCatalog');openProductCategory(resumeCatalog)}}
 };
 
 const showOrderCenterWithoutCheckout=window.showOrderCenter;

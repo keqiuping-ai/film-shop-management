@@ -27,8 +27,8 @@ assert(ordering.includes('data-window-film-model='), 'Catalog model buttons need
 assert(css.includes('.customer-tint-experience'), 'Customer tint experience styling is required');
 assert(css.includes('.customer-tint-shade'), 'VLT preview shade styling is required');
 assert(i18n.includes("Where Does the Sun's Heat Go?"), 'Interactive tint copy must be translated');
-assert(html.includes('/customer.css?v=39'));
-assert(html.includes('/customer-ordering.js?v=62'));
+assert(html.includes('/customer.css?v=40'));
+assert(html.includes('/customer-ordering.js?v=63'));
 assert(html.includes('/customer-i18n.js?v=40'));
 
 console.log('Customer tint experience tests passed: heat videos, VLT preview, model-to-order synchronization, localization, and cache versions.');
