@@ -746,6 +746,7 @@ function applySantaMonicaFieldSalesProspectImport() {
     account.directorySource = String(source.directorySource || '').slice(0, 1000);
     account.socialLinks = source.socialLinks && typeof source.socialLinks === 'object' ? source.socialLinks : {};
     account.services = String(source.services || '').slice(0, 3000);
+    account.architecturalServices = String(source.architecturalServices || account.architecturalServices || '').slice(0, 3000);
     account.filmBrands = String(source.filmBrands || '').slice(0, 1000);
     account.serviceEvidence = String(source.serviceEvidence || '').slice(0, 1000);
     account.visitRegion = String(source.visitRegion || '').slice(0, 120);
@@ -755,6 +756,12 @@ function applySantaMonicaFieldSalesProspectImport() {
     account.distanceFromStoreKm = Math.max(0, Number(source.distanceKm || 0));
     account.navigationUrl = String(source.navigationUrl || '').slice(0, 1500);
     account.referencePhotoUrls = (source.referencePhotos || []).map(row => String(row.url || '')).filter(Boolean).slice(0, 4);
+    account.interestedProducts = [...new Set([
+      ...(Array.isArray(account.interestedProducts) ? account.interestedProducts : []),
+      ...(Array.isArray(source.interestedProducts) ? source.interestedProducts : [])
+    ].map(value => String(value || '').trim()).filter(Boolean))].slice(0, 20);
+    if (source.currentProducts) account.currentProducts = String(source.currentProducts).slice(0, 3000);
+    if (source.architecturalServices) account.customerType = '建筑膜客户';
     if (!account.phone && source.phone) account.phone = String(source.phone).slice(0, 80);
     if (!account.city && source.city) account.city = String(source.city).slice(0, 120);
     if (!account.note) {
@@ -852,6 +859,7 @@ function applyLasVegasFieldSalesProspectImport() {
     account.directorySource = String(source.directorySource || '').slice(0, 1000);
     account.socialLinks = source.socialLinks && typeof source.socialLinks === 'object' ? source.socialLinks : {};
     account.services = String(source.services || '').slice(0, 3000);
+    account.architecturalServices = String(source.architecturalServices || account.architecturalServices || '').slice(0, 3000);
     account.filmBrands = String(source.filmBrands || '').slice(0, 1000);
     account.serviceEvidence = String(source.serviceEvidence || '').slice(0, 1000);
     account.visitRegion = String(source.visitRegion || '').slice(0, 120);
@@ -861,6 +869,12 @@ function applyLasVegasFieldSalesProspectImport() {
     account.distanceFromStoreKm = Math.max(0, Number(source.distanceKm || 0));
     account.navigationUrl = String(source.navigationUrl || '').slice(0, 1500);
     account.referencePhotoUrls = (source.referencePhotos || []).map(row => String(row.url || '')).filter(Boolean).slice(0, 4);
+    account.interestedProducts = [...new Set([
+      ...(Array.isArray(account.interestedProducts) ? account.interestedProducts : []),
+      ...(Array.isArray(source.interestedProducts) ? source.interestedProducts : [])
+    ].map(value => String(value || '').trim()).filter(Boolean))].slice(0, 20);
+    if (source.currentProducts) account.currentProducts = String(source.currentProducts).slice(0, 3000);
+    if (source.architecturalServices) account.customerType = '建筑膜客户';
     if (!account.phone && source.phone) account.phone = String(source.phone).slice(0, 80);
     if (!account.city && source.city) account.city = String(source.city).slice(0, 120);
     if (!account.note) {
@@ -9201,8 +9215,10 @@ async function api(req, res) {
 
   if (req.method === 'GET' && url.pathname === '/api/health') {
     const importedAccounts = (db.salesAccounts || []).filter(item => item.active !== false && item.importBatchId === db.santaMonicaFieldSalesImportVersion).length;
+    const importedArchitecturalAccounts = (db.salesAccounts || []).filter(item => item.active !== false && item.importBatchId === db.santaMonicaFieldSalesImportVersion && (item.customerType === '建筑膜客户' || String(item.architecturalServices || '').trim())).length;
     const importedPhotos = (db.salesAttachments || []).filter(item => item.referenceMaterial === true && item.id.startsWith('sm-reference-photo-')).length;
     const importedLasVegasAccounts = (db.salesAccounts || []).filter(item => item.active !== false && item.importBatchId === db.lasVegasFieldSalesImportVersion).length;
+    const importedLasVegasArchitecturalAccounts = (db.salesAccounts || []).filter(item => item.active !== false && item.importBatchId === db.lasVegasFieldSalesImportVersion && (item.customerType === '建筑膜客户' || String(item.architecturalServices || '').trim())).length;
     const importedLasVegasPhotos = (db.salesAttachments || []).filter(item => item.referenceMaterial === true && item.id.startsWith('lv-reference-photo-')).length;
     const regionalFieldSalesImports = Object.fromEntries(REGIONAL_FIELD_SALES_IMPORTS.map(config => {
       const versionKey = String(db.regionalFieldSalesImportVersions?.[config.marketId] || '');
@@ -9210,6 +9226,7 @@ async function api(req, res) {
       return [config.marketId, {
         version:versionKey,
         accounts:(db.salesAccounts || []).filter(item => item.active !== false && item.marketId === config.marketId && item.importBatchId === versionKey).length,
+        architecturalAccounts:(db.salesAccounts || []).filter(item => item.active !== false && item.marketId === config.marketId && item.importBatchId === versionKey && (item.customerType === '建筑膜客户' || String(item.architecturalServices || '').trim())).length,
         photos:(db.salesAttachments || []).filter(item => item.referenceMaterial === true && item.id.startsWith(`${config.photoPrefix}-reference-photo-`)).length,
         routes:Number(summary.routes || 0),
         batches:Number(summary.batches || 0)
@@ -9223,8 +9240,8 @@ async function api(req, res) {
       build: version.build,
       port: PORT,
       publicUrl: config.publicUrl || null,
-      santaMonicaFieldSalesImport: { version:db.santaMonicaFieldSalesImportVersion || '', accounts:importedAccounts, photos:importedPhotos },
-      lasVegasFieldSalesImport: { version:db.lasVegasFieldSalesImportVersion || '', accounts:importedLasVegasAccounts, photos:importedLasVegasPhotos, routes:Number(db.lasVegasFieldSalesImportSummary?.routes || 0), batches:Number(db.lasVegasFieldSalesImportSummary?.batches || 0) },
+      santaMonicaFieldSalesImport: { version:db.santaMonicaFieldSalesImportVersion || '', accounts:importedAccounts, architecturalAccounts:importedArchitecturalAccounts, photos:importedPhotos },
+      lasVegasFieldSalesImport: { version:db.lasVegasFieldSalesImportVersion || '', accounts:importedLasVegasAccounts, architecturalAccounts:importedLasVegasArchitecturalAccounts, photos:importedLasVegasPhotos, routes:Number(db.lasVegasFieldSalesImportSummary?.routes || 0), batches:Number(db.lasVegasFieldSalesImportSummary?.batches || 0) },
       regionalFieldSalesImports,
       time: new Date().toISOString()
     });

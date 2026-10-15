@@ -1,10 +1,10 @@
 {
-  "version": "santa-monica-field-sales-2026-10-13-v1",
+  "version": "santa-monica-field-sales-2026-10-14-v2",
   "sourceWorkbook": "SantaMonica_3212_Visit_Routes_EN_CN.xlsx",
   "sourcePdf": "SantaMonica_3212_Visit_Route_Cards_EN_CN.pdf",
   "sourceStore": "3212 Santa Monica Blvd, Santa Monica, CA 90404",
-  "recordCount": 398,
-  "photoCount": 366,
+  "recordCount": 401,
+  "photoCount": 369,
   "records": [
     {
       "publicRecordId": "SM001",
@@ -497,6 +497,48 @@
           "sourceLabel": "Public website or directory image; location unverified"
         }
       ]
+    },
+    {
+      "publicRecordId": "ARCH-LA001",
+      "businessName": "American Window Film Los Angeles",
+      "city": "Carson",
+      "address": "118 Savarona Way, Carson, CA 90746",
+      "distanceKm": 31.8,
+      "distanceBand": "0–50 km / 公里",
+      "services": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜; Solar and heat-control film / 隔热防晒膜; Safety and security film / 安全防爆膜; Anti-graffiti film / 防涂鸦膜; Decorative and privacy film / 装饰及隐私膜",
+      "filmBrands": "3M",
+      "phone": "+1 818-888-1600",
+      "website": "https://americanwindowfilm.com/locations/los-angeles-window-film",
+      "directorySource": "https://findawrap.com/shops/carson-ca/american-window-film-commercial-home-window-tinting-los-angeles-carson-ca",
+      "serviceSources": [
+        "https://americanwindowfilm.com/locations/los-angeles-window-film"
+      ],
+      "lat": 33.867193,
+      "lng": -118.274606,
+      "researchNotes": "Official location page confirms residential and commercial architectural window film services / 官方分店页面确认住宅及商业建筑窗膜服务",
+      "route": "B",
+      "visitRegion": "南湾／长滩",
+      "visitBatch": "ARCH-LA-B-01",
+      "visitStop": 1,
+      "referencePhotos": [
+        {
+          "url": "https://americanwindowfilm.com/hubfs/los-angeles-window-fim/los-angeles-window-film.jpg",
+          "fileName": "ARCH-LA001-official.jpg",
+          "contentType": "image/jpeg",
+          "sourceLabel": "Official website reference image; not a field check-in photo",
+          "sourceUrl": "https://americanwindowfilm.com/locations/los-angeles-window-film"
+        }
+      ],
+      "googleMapsUrl": "https://www.google.com/maps/search/?api=1&query=American%20Window%20Film%20Los%20Angeles%2C%20118%20Savarona%20Way%2C%20Carson%2C%20CA%2090746",
+      "navigationUrl": "https://www.google.com/maps/dir/?api=1&origin=3212%20Santa%20Monica%20Blvd%2C%20Santa%20Monica%2C%20CA%2090404&destination=118%20Savarona%20Way%2C%20Carson%2C%20CA%2090746&travelmode=driving",
+      "socialLinks": {},
+      "architecturalServices": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜; Solar and heat-control film / 隔热防晒膜; Safety and security film / 安全防爆膜; Anti-graffiti film / 防涂鸦膜; Decorative and privacy film / 装饰及隐私膜",
+      "interestedProducts": [
+        "建筑玻璃膜"
+      ],
+      "currentProducts": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜; Solar and heat-control film / 隔热防晒膜; Safety and security film / 安全防爆膜; Anti-graffiti film / 防涂鸦膜; Decorative and privacy film / 装饰及隐私膜",
+      "customerType": "建筑膜客户",
+      "serviceEvidence": "Official location page confirms residential and commercial architectural window film services / 官方分店页面确认住宅及商业建筑窗膜服务"
     },
     {
       "publicRecordId": "SM019",
@@ -2069,6 +2111,48 @@
       "navigationUrl": "https://www.google.com/maps/dir/?api=1&origin=1349+Granada+Ave%2C+Long+Beach%2C+CA+90804&destination=32+Glendora+Ave%2C+Long+Beach%2C+CA+90803%2C+United+States&travelmode=driving",
       "socialLinks": {},
       "referencePhotos": []
+    },
+    {
+      "publicRecordId": "ARCH-LA002",
+      "businessName": "Window Film Depot Los Angeles",
+      "city": "Los Angeles",
+      "address": "4445 S Figueroa St 31st Flr, Los Angeles, CA 90037",
+      "distanceKm": 20.7,
+      "distanceBand": "0–50 km / 公里",
+      "services": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜; Solar and energy-saving film / 隔热节能膜; Safety and security film / 安全防爆膜; Decorative film / 装饰膜; Commercial graphics / 商业图文膜",
+      "filmBrands": "3M",
+      "phone": "+1 323-800-2653 / +1 866-933-3456",
+      "website": "https://www.windowfilmdepot.com/locations/california/los-angeles/",
+      "directorySource": "https://findawrap.com/shops/los-angeles-ca/window-film-depot-home-commercial-window-tint-los-angeles-ca",
+      "serviceSources": [
+        "https://www.windowfilmdepot.com/locations/california/los-angeles/"
+      ],
+      "lat": 34.0029027,
+      "lng": -118.2830187,
+      "researchNotes": "Official location page confirms residential, commercial, retail and government window film installation / 官方分店页面确认住宅、商业、零售及政府建筑窗膜安装",
+      "route": "C",
+      "visitRegion": "洛杉矶中心／东南区",
+      "visitBatch": "ARCH-LA-C-01",
+      "visitStop": 1,
+      "referencePhotos": [
+        {
+          "url": "https://www.windowfilmdepot.com/wp-content/uploads/2018/11/Los-angeles-california.jpg",
+          "fileName": "ARCH-LA002-official.jpg",
+          "contentType": "image/jpeg",
+          "sourceLabel": "Official website reference image; not a field check-in photo",
+          "sourceUrl": "https://www.windowfilmdepot.com/locations/california/los-angeles/"
+        }
+      ],
+      "googleMapsUrl": "https://www.google.com/maps/search/?api=1&query=Window%20Film%20Depot%20Los%20Angeles%2C%204445%20S%20Figueroa%20St%2031st%20Flr%2C%20Los%20Angeles%2C%20CA%2090037",
+      "navigationUrl": "https://www.google.com/maps/dir/?api=1&origin=3212%20Santa%20Monica%20Blvd%2C%20Santa%20Monica%2C%20CA%2090404&destination=4445%20S%20Figueroa%20St%2031st%20Flr%2C%20Los%20Angeles%2C%20CA%2090037&travelmode=driving",
+      "socialLinks": {},
+      "architecturalServices": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜; Solar and energy-saving film / 隔热节能膜; Safety and security film / 安全防爆膜; Decorative film / 装饰膜; Commercial graphics / 商业图文膜",
+      "interestedProducts": [
+        "建筑玻璃膜"
+      ],
+      "currentProducts": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜; Solar and energy-saving film / 隔热节能膜; Safety and security film / 安全防爆膜; Decorative film / 装饰膜; Commercial graphics / 商业图文膜",
+      "customerType": "建筑膜客户",
+      "serviceEvidence": "Official location page confirms residential, commercial, retail and government window film installation / 官方分店页面确认住宅、商业、零售及政府建筑窗膜安装"
     },
     {
       "publicRecordId": "SM012",
@@ -7215,9 +7299,9 @@
       "address": "17205 Sierra Hwy Unit 104, Santa Clarita, CA 91351",
       "distanceKm": 44.3,
       "distanceBand": "0–50 km\n0–50公里",
-      "services": "Automotive window tint\n汽车隔热膜",
+      "services": "Automotive window tint\n汽车隔热膜\n建筑膜业务 / Architectural film: Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜",
       "filmBrands": "3M",
-      "serviceEvidence": "Website describes automotive film services\n官网有汽车膜服务描述",
+      "serviceEvidence": "Official website and public business listing identify commercial and residential window film services / 官网及公开商家资料明确列出商业与住宅窗膜服务",
       "phone": "+1 818-618-8434",
       "website": "http://tintpluswindowtinting.com/",
       "googleMapsUrl": "https://www.google.com/maps/search/?api=1&query=TintPlus%20-%20Auto%2C%20Commercial%20And%20Residential%E2%80%A6%2C%2017205%20Sierra%20Hwy%20Unit%20104%2C%20Santa%20Clarita%2C%20CA%2091351",
@@ -7237,7 +7321,13 @@
         "instagram": "http://instagram.com/tintplusglendale",
         "facebook": "https://www.facebook.com/wix"
       },
-      "referencePhotos": []
+      "referencePhotos": [],
+      "architecturalServices": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜",
+      "interestedProducts": [
+        "建筑玻璃膜"
+      ],
+      "currentProducts": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜",
+      "customerType": "建筑膜客户"
     },
     {
       "publicRecordId": "SM196",
@@ -7381,9 +7471,9 @@
       "address": "25520 Avenue Stanford, Valencia, CA 91355",
       "distanceKm": 45,
       "distanceBand": "0–50 km\n0–50公里",
-      "services": "Vehicle wraps / graphics\n车身膜／车辆图文包覆",
+      "services": "Vehicle wraps / graphics\n车身膜／车辆图文包覆\n建筑膜业务 / Architectural film: Architectural film / 建筑膜; Commercial glass film / 商业建筑玻璃膜",
       "filmBrands": "Not publicly verified\n未公开核实",
-      "serviceEvidence": "Website describes automotive film services\n官网有汽车膜服务描述",
+      "serviceEvidence": "Public business listing identifies automotive and architectural film services; confirm exact product lines before visiting / 公开商家资料明确列出汽车膜与建筑膜，出访前确认具体产品线",
       "phone": "+1 310-425-4734",
       "website": "https://www.thefrenchwrapper.com/",
       "googleMapsUrl": "https://www.google.com/maps/search/?api=1&query=THE%20FRENCH%20WRAPPER%20%E2%AD%90%E2%AD%90%E2%AD%90%E2%AD%90%E2%AD%90%20-%20Premium%20Wrapping%E2%80%A6%2C%2025520%20Avenue%20Stanford%2C%20Valencia%2C%20CA%2091355",
@@ -7410,7 +7500,13 @@
           "contentType": "image/jpeg",
           "sourceLabel": "Public website or directory image; location unverified"
         }
-      ]
+      ],
+      "architecturalServices": "Architectural film / 建筑膜; Commercial glass film / 商业建筑玻璃膜",
+      "interestedProducts": [
+        "建筑玻璃膜"
+      ],
+      "currentProducts": "Architectural film / 建筑膜; Commercial glass film / 商业建筑玻璃膜",
+      "customerType": "建筑膜客户"
     },
     {
       "publicRecordId": "SM187",
@@ -9795,6 +9891,48 @@
           "sourceLabel": "Public website or directory image; location unverified"
         }
       ]
+    },
+    {
+      "publicRecordId": "ARCH-LA003",
+      "businessName": "American Window Film Orange County",
+      "city": "Laguna Hills",
+      "address": "23042 Mill Creek Dr, Laguna Hills, CA 92653",
+      "distanceKm": 82.9,
+      "distanceBand": "50–100 km / 公里",
+      "services": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜; Solar and heat-control film / 隔热防晒膜; Safety and security film / 安全防爆膜; Decorative and privacy film / 装饰及隐私膜",
+      "filmBrands": "3M",
+      "phone": "+1 949-770-8969",
+      "website": "https://americanwindowfilm.com/locations/orange-county-window-film",
+      "directorySource": "https://findawrap.com/shops/laguna-hills-ca/american-window-film-commercial-home-window-laguna-hills-ca",
+      "serviceSources": [
+        "https://americanwindowfilm.com/locations/orange-county-window-film"
+      ],
+      "lat": 33.627518,
+      "lng": -117.734933,
+      "researchNotes": "Official regional location serves residential and commercial architectural film projects / 官方区域分店提供住宅及商业建筑膜服务",
+      "route": "G",
+      "visitRegion": "橙县",
+      "visitBatch": "ARCH-LA-G-01",
+      "visitStop": 1,
+      "referencePhotos": [
+        {
+          "url": "https://americanwindowfilm.com/hubfs/orange-county-window-film/orange-county-window-film.jpg",
+          "fileName": "ARCH-LA003-official.jpg",
+          "contentType": "image/jpeg",
+          "sourceLabel": "Official website reference image; not a field check-in photo",
+          "sourceUrl": "https://americanwindowfilm.com/locations/orange-county-window-film"
+        }
+      ],
+      "googleMapsUrl": "https://www.google.com/maps/search/?api=1&query=American%20Window%20Film%20Orange%20County%2C%2023042%20Mill%20Creek%20Dr%2C%20Laguna%20Hills%2C%20CA%2092653",
+      "navigationUrl": "https://www.google.com/maps/dir/?api=1&origin=3212%20Santa%20Monica%20Blvd%2C%20Santa%20Monica%2C%20CA%2090404&destination=23042%20Mill%20Creek%20Dr%2C%20Laguna%20Hills%2C%20CA%2092653&travelmode=driving",
+      "socialLinks": {},
+      "architecturalServices": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜; Solar and heat-control film / 隔热防晒膜; Safety and security film / 安全防爆膜; Decorative and privacy film / 装饰及隐私膜",
+      "interestedProducts": [
+        "建筑玻璃膜"
+      ],
+      "currentProducts": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜; Solar and heat-control film / 隔热防晒膜; Safety and security film / 安全防爆膜; Decorative and privacy film / 装饰及隐私膜",
+      "customerType": "建筑膜客户",
+      "serviceEvidence": "Official regional location serves residential and commercial architectural film projects / 官方区域分店提供住宅及商业建筑膜服务"
     },
     {
       "publicRecordId": "SM185",

@@ -8,20 +8,29 @@ const seed = JSON.parse(fs.readFileSync(seedPath, 'utf8'));
 const serverSource = fs.readFileSync(path.join(root, 'server.js'), 'utf8');
 const dockerfile = fs.readFileSync(path.join(root, 'Dockerfile'), 'utf8');
 
-assert.equal(seed.version, 'santa-monica-field-sales-2026-10-13-v1');
-assert.equal(seed.recordCount, 398);
-assert.equal(seed.photoCount, 366);
-assert.equal(seed.records.length, 398);
-assert.equal(new Set(seed.records.map(item => item.publicRecordId)).size, 398);
+assert.equal(seed.version, 'santa-monica-field-sales-2026-10-14-v2');
+assert.equal(seed.recordCount, 401);
+assert.equal(seed.photoCount, 369);
+assert.equal(seed.records.length, 401);
+assert.equal(new Set(seed.records.map(item => item.publicRecordId)).size, 401);
 assert(seed.records.every(item => item.businessName && item.address && item.visitRegion), 'every imported record needs a name, address, and visit region');
 
 const photos = seed.records.flatMap(item => item.referencePhotos || []);
-assert.equal(photos.length, 366);
+assert.equal(photos.length, 369);
 photos.forEach(photo => {
-  const localPath = path.join(root, 'public', String(photo.url || '').replace(/^\//, ''));
-  assert(fs.existsSync(localPath), `missing imported photo ${photo.url}`);
-  assert(fs.statSync(localPath).size > 0, `empty imported photo ${photo.url}`);
+  if (String(photo.url || '').startsWith('/')) {
+    const localPath = path.join(root, 'public', String(photo.url || '').replace(/^\//, ''));
+    assert(fs.existsSync(localPath), `missing imported photo ${photo.url}`);
+    assert(fs.statSync(localPath).size > 0, `empty imported photo ${photo.url}`);
+  } else {
+    assert(/^https:\/\//.test(photo.url), `invalid remote reference photo ${photo.url}`);
+  }
 });
+
+const architectural = seed.records.filter(item => item.architecturalServices);
+assert.equal(architectural.length, 5);
+assert(architectural.every(item => item.customerType === '建筑膜客户'));
+assert(architectural.every(item => item.interestedProducts.includes('建筑玻璃膜')));
 
 const first = seed.records.find(item => item.publicRecordId === 'SM001');
 assert(first);

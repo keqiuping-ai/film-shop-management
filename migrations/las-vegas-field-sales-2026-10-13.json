@@ -1,11 +1,11 @@
 {
-  "version": "las-vegas-field-sales-2026-10-13-v1",
+  "version": "las-vegas-field-sales-2026-10-14-v2",
   "sourceWorkbook": "LasVegas_3359_100km_Visit_Routes_EN_CN.xlsx",
   "sourceStore": "3359 W Oquendo Rd, Las Vegas, NV 89118",
-  "recordCount": 148,
-  "photoCount": 119,
+  "recordCount": 152,
+  "photoCount": 120,
   "routeCount": 7,
-  "batchCount": 27,
+  "batchCount": 30,
   "records": [
     {
       "publicRecordId": "LV001",
@@ -1514,6 +1514,112 @@
       ]
     },
     {
+      "publicRecordId": "ARCH-LV002",
+      "businessName": "Las Vegas Window Tinting",
+      "city": "Las Vegas",
+      "address": "5615 Cameron St Unit 2, Las Vegas, NV 89118",
+      "distanceKm": 4.1,
+      "distanceBand": "0–50 km / 公里",
+      "services": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜; Commercial security film / 商业安全膜; Decorative and privacy film / 装饰及隐私膜; Anti-graffiti film / 防涂鸦膜",
+      "filmBrands": "3M, Avery Dennison, Huper Optik",
+      "phone": "",
+      "website": "https://www.lvtint.com/",
+      "directorySource": "https://www.lvtint.com/",
+      "serviceSources": [
+        "https://www.lvtint.com/"
+      ],
+      "researchNotes": "Official website confirms home, commercial, security, decorative and anti-graffiti window film / 官网确认住宅、商业、安全、装饰及防涂鸦窗膜服务",
+      "route": "A",
+      "visitRegion": "公司周边／中南区",
+      "visitBatch": "ARCH-LV-A-01",
+      "visitStop": 1,
+      "referencePhotos": [],
+      "googleMapsUrl": "https://www.google.com/maps/search/?api=1&query=Las%20Vegas%20Window%20Tinting%2C%205615%20Cameron%20St%20Unit%202%2C%20Las%20Vegas%2C%20NV%2089118",
+      "navigationUrl": "https://www.google.com/maps/dir/?api=1&origin=3359%20W%20Oquendo%20Rd%2C%20Las%20Vegas%2C%20NV%2089118&destination=5615%20Cameron%20St%20Unit%202%2C%20Las%20Vegas%2C%20NV%2089118&travelmode=driving",
+      "socialLinks": {},
+      "architecturalServices": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜; Commercial security film / 商业安全膜; Decorative and privacy film / 装饰及隐私膜; Anti-graffiti film / 防涂鸦膜",
+      "interestedProducts": [
+        "建筑玻璃膜"
+      ],
+      "currentProducts": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜; Commercial security film / 商业安全膜; Decorative and privacy film / 装饰及隐私膜; Anti-graffiti film / 防涂鸦膜",
+      "customerType": "建筑膜客户",
+      "serviceEvidence": "Official website confirms home, commercial, security, decorative and anti-graffiti window film / 官网确认住宅、商业、安全、装饰及防涂鸦窗膜服务"
+    },
+    {
+      "publicRecordId": "ARCH-LV001",
+      "businessName": "Golden State Window Tinting",
+      "city": "Las Vegas",
+      "address": "11822 Tres Bispos Ave, Las Vegas, NV 89138",
+      "distanceKm": 21.8,
+      "distanceBand": "0–50 km / 公里",
+      "services": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜; Solar and heat-control film / 隔热防晒膜",
+      "filmBrands": "",
+      "phone": "+1 702-646-5336",
+      "website": "http://www.windowtintinglasvegas.com/",
+      "directorySource": "https://findawrap.com/shops/las-vegas-nv/golden-state-window-tinting-residential-las-vegas-nv",
+      "serviceSources": [
+        "http://www.windowtintinglasvegas.com/"
+      ],
+      "lat": 36.174274,
+      "lng": -115.3562164,
+      "researchNotes": "Public business listing identifies residential window tinting; confirm current commercial product range before visiting / 公开商家资料明确住宅窗膜业务，出访前确认当前商业产品线",
+      "route": "B",
+      "visitRegion": "西区／Summerlin",
+      "visitBatch": "ARCH-LV-B-01",
+      "visitStop": 1,
+      "referencePhotos": [
+        {
+          "url": "https://windowtintinglasvegas.com/wp-content/uploads/2025/10/unnamed-10.png",
+          "fileName": "ARCH-LV001-official.png",
+          "contentType": "image/png",
+          "sourceLabel": "Official website reference image; not a field check-in photo",
+          "sourceUrl": "https://windowtintinglasvegas.com/"
+        }
+      ],
+      "googleMapsUrl": "https://www.google.com/maps/search/?api=1&query=Golden%20State%20Window%20Tinting%2C%2011822%20Tres%20Bispos%20Ave%2C%20Las%20Vegas%2C%20NV%2089138",
+      "navigationUrl": "https://www.google.com/maps/dir/?api=1&origin=3359%20W%20Oquendo%20Rd%2C%20Las%20Vegas%2C%20NV%2089118&destination=11822%20Tres%20Bispos%20Ave%2C%20Las%20Vegas%2C%20NV%2089138&travelmode=driving",
+      "socialLinks": {},
+      "architecturalServices": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜; Solar and heat-control film / 隔热防晒膜",
+      "interestedProducts": [
+        "建筑玻璃膜"
+      ],
+      "currentProducts": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜; Solar and heat-control film / 隔热防晒膜",
+      "customerType": "建筑膜客户",
+      "serviceEvidence": "Public business listing identifies residential window tinting; confirm current commercial product range before visiting / 公开商家资料明确住宅窗膜业务，出访前确认当前商业产品线"
+    },
+    {
+      "publicRecordId": "ARCH-LV004",
+      "businessName": "Pacific Tint",
+      "city": "Las Vegas",
+      "address": "8075 Rams Collide St, Las Vegas, NV 89166",
+      "distanceKm": 26.7,
+      "distanceBand": "0–50 km / 公里",
+      "services": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜; Security film / 安全防爆膜; Anti-graffiti film / 防涂鸦膜; Architectural surface finishes / 建筑表面装饰膜",
+      "filmBrands": "3M, DI-NOC, FASARA",
+      "phone": "+1 702-254-5054",
+      "website": "https://pacifictintlv.com/",
+      "directorySource": "https://pacifictintlv.com/",
+      "serviceSources": [
+        "https://pacifictintlv.com/"
+      ],
+      "researchNotes": "Official website confirms residential and commercial window tinting, security, graffiti protection and DI-NOC architectural finishes / 官网确认住宅商业窗膜、安全膜、防涂鸦膜及DI-NOC建筑饰面",
+      "route": "B",
+      "visitRegion": "西区／Summerlin",
+      "visitBatch": "ARCH-LV-B-01",
+      "visitStop": 2,
+      "referencePhotos": [],
+      "googleMapsUrl": "https://www.google.com/maps/search/?api=1&query=Pacific%20Tint%2C%208075%20Rams%20Collide%20St%2C%20Las%20Vegas%2C%20NV%2089166",
+      "navigationUrl": "https://www.google.com/maps/dir/?api=1&origin=3359%20W%20Oquendo%20Rd%2C%20Las%20Vegas%2C%20NV%2089118&destination=8075%20Rams%20Collide%20St%2C%20Las%20Vegas%2C%20NV%2089166&travelmode=driving",
+      "socialLinks": {},
+      "architecturalServices": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜; Security film / 安全防爆膜; Anti-graffiti film / 防涂鸦膜; Architectural surface finishes / 建筑表面装饰膜",
+      "interestedProducts": [
+        "建筑玻璃膜"
+      ],
+      "currentProducts": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜; Security film / 安全防爆膜; Anti-graffiti film / 防涂鸦膜; Architectural surface finishes / 建筑表面装饰膜",
+      "customerType": "建筑膜客户",
+      "serviceEvidence": "Official website confirms residential and commercial window tinting, security, graffiti protection and DI-NOC architectural finishes / 官网确认住宅商业窗膜、安全膜、防涂鸦膜及DI-NOC建筑饰面"
+    },
+    {
       "publicRecordId": "LV040",
       "businessName": "Battle Born Protection Films",
       "city": "Las Vegas",
@@ -1750,15 +1856,16 @@
       "address": "6930 Paddington Way, Las Vegas, NV 89147",
       "distanceKm": 6.7,
       "distanceBand": "0–50 km / 公里",
-      "services": "Window tint / solar & ceramic film / 汽车隔热膜／陶瓷膜; Paint protection film (PPF) / 漆面保护膜（PPF）; Ceramic coating / 陶瓷镀膜",
+      "services": "Window tint / solar & ceramic film / 汽车隔热膜／陶瓷膜; Paint protection film (PPF) / 漆面保护膜（PPF）; Ceramic coating / 陶瓷镀膜\n建筑膜业务 / Architectural film: Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜",
       "filmBrands": "Not publicly verified\n未公开核实",
-      "serviceEvidence": "Official/manufacturer service evidence / 官网或厂家服务佐证",
+      "serviceEvidence": "Public business listings identify residential and commercial window tinting / 公开商家资料明确列出住宅与商业窗膜服务",
       "phone": "+1 702-769-2819",
       "website": "http://midnighttintlv.com/",
       "googleMapsUrl": "https://www.google.com/maps/search/?api=1&query=Midnight%20Tint%20-%20Auto%2C%20Residential%20and%E2%80%A6%2C%206930%20Paddington%20Way%2C%20Las%20Vegas%2C%20NV%2089147",
       "directorySource": "https://findawrap.com/shops/las-vegas-nv/midnight-tint-auto-residential-and-las-vegas-nv",
       "serviceSources": [
-        "https://midnighttint8.godaddysites.com/"
+        "https://midnighttint8.godaddysites.com/",
+        "http://midnighttintlv.com/"
       ],
       "lat": 36.1189104,
       "lng": -115.2439119,
@@ -1770,7 +1877,13 @@
       "navigationUrl": "https://www.google.com/maps/dir/?api=1&origin=3359+W+Oquendo+Rd%2C+Las+Vegas%2C+NV+89118&destination=6930+Paddington+Way%2C+Las+Vegas%2C+NV+89147&travelmode=driving",
       "socialLinks": {},
       "photoVerification": "No usable public photo found / 未找到可用公开照片",
-      "referencePhotos": []
+      "referencePhotos": [],
+      "architecturalServices": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜",
+      "interestedProducts": [
+        "建筑玻璃膜"
+      ],
+      "currentProducts": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜",
+      "customerType": "建筑膜客户"
     },
     {
       "publicRecordId": "LV075",
@@ -2158,6 +2271,39 @@
       },
       "photoVerification": "No usable public photo found / 未找到可用公开照片",
       "referencePhotos": []
+    },
+    {
+      "publicRecordId": "ARCH-LV003",
+      "businessName": "WindowTintNV.com",
+      "city": "Las Vegas",
+      "address": "5820 Taj Mahal Dr, Las Vegas, NV 89130",
+      "distanceKm": 18.3,
+      "distanceBand": "0–50 km / 公里",
+      "services": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜; Security film / 安全防爆膜; Anti-graffiti film / 防涂鸦膜",
+      "filmBrands": "",
+      "phone": "+1 702-286-6095",
+      "website": "https://www.windowtintnv.com/",
+      "directorySource": "https://www.windowtintnv.com/",
+      "serviceSources": [
+        "https://www.windowtintnv.com/",
+        "https://www.windowtintnv.com/residential-commercial-film"
+      ],
+      "researchNotes": "Official website confirms automotive, residential and commercial window film installation / 官网确认汽车、住宅及商业窗膜安装服务",
+      "route": "C",
+      "visitRegion": "北区／北拉斯维加斯",
+      "visitBatch": "ARCH-LV-C-01",
+      "visitStop": 1,
+      "referencePhotos": [],
+      "googleMapsUrl": "https://www.google.com/maps/search/?api=1&query=WindowTintNV.com%2C%205820%20Taj%20Mahal%20Dr%2C%20Las%20Vegas%2C%20NV%2089130",
+      "navigationUrl": "https://www.google.com/maps/dir/?api=1&origin=3359%20W%20Oquendo%20Rd%2C%20Las%20Vegas%2C%20NV%2089118&destination=5820%20Taj%20Mahal%20Dr%2C%20Las%20Vegas%2C%20NV%2089130&travelmode=driving",
+      "socialLinks": {},
+      "architecturalServices": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜; Security film / 安全防爆膜; Anti-graffiti film / 防涂鸦膜",
+      "interestedProducts": [
+        "建筑玻璃膜"
+      ],
+      "currentProducts": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜; Security film / 安全防爆膜; Anti-graffiti film / 防涂鸦膜",
+      "customerType": "建筑膜客户",
+      "serviceEvidence": "Official website confirms automotive, residential and commercial window film installation / 官网确认汽车、住宅及商业窗膜安装服务"
     },
     {
       "publicRecordId": "LV099",
@@ -3805,16 +3951,17 @@
       "address": "2520 E Sunset Rd #7, Las Vegas, NV 89120",
       "distanceKm": 6.3,
       "distanceBand": "0–50 km / 公里",
-      "services": "Window tint / solar & ceramic film / 汽车隔热膜／陶瓷膜; Paint protection film (PPF) / 漆面保护膜（PPF）",
+      "services": "Window tint / solar & ceramic film / 汽车隔热膜／陶瓷膜; Paint protection film (PPF) / 漆面保护膜（PPF）\n建筑膜业务 / Architectural film: Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜",
       "filmBrands": "3M",
-      "serviceEvidence": "Official/manufacturer service evidence / 官网或厂家服务佐证",
+      "serviceEvidence": "Official website and public listings identify commercial and residential window tinting / 官网及公开资料明确列出商业与住宅窗膜服务",
       "phone": "+1 702-541-8484",
       "website": "https://millenniumtints.com/",
       "googleMapsUrl": "https://www.google.com/maps/search/?api=1&query=Millennium%20Tints%20-%20Auto%2C%20Commercial%2C%E2%80%A6%2C%202520%20E%20Sunset%20Rd%20%237%2C%20Las%20Vegas%2C%20NV%2089120",
       "directorySource": "https://findawrap.com/shops/las-vegas-nv/millennium-tints-auto-commercial-las-vegas-nv",
       "serviceSources": [
         "https://millenniumtints.com/",
-        "https://millenniumtints.com/#contact-section"
+        "https://millenniumtints.com/#contact-section",
+        "https://millenniumtints.com/contact-us/"
       ],
       "lat": 36.0731062,
       "lng": -115.1164264,
@@ -3836,7 +3983,13 @@
           "sourceLabel": "Public website or directory image; location unverified",
           "sourceUrl": "https://millenniumtints.com/"
         }
-      ]
+      ],
+      "architecturalServices": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜",
+      "interestedProducts": [
+        "建筑玻璃膜"
+      ],
+      "currentProducts": "Residential glass film / 住宅玻璃膜; Commercial glass film / 商业建筑玻璃膜",
+      "customerType": "建筑膜客户"
     },
     {
       "publicRecordId": "LV055",
