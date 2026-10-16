@@ -1,0 +1,11 @@
+'use strict';
+const form=document.querySelector('#depositForm'),pay=document.querySelector('#pay'),status=document.querySelector('#status'),retry=document.querySelector('#retry');
+let session,available=[],busy=false;
+const amount=()=>Number(form.elements.amount.value);
+async function api(route,body){const res=await fetch('/api/retail/'+route,{method:body?'POST':'GET',headers:{'Content-Type':'application/json'},body:body?JSON.stringify(body):undefined});const data=await res.json();if(!res.ok)throw Error(data.error||'Unable to connect. Please try again.');return data;}
+function update(){pay.textContent='Pay $'+amount()+' deposit';pay.disabled=busy||!session||!available.includes(amount());}
+form.onchange=update;
+async function start(){retry.hidden=true;pay.disabled=true;status.textContent='Loading secure payment…';try{const match=location.hash.match(/^#invite\/([A-Za-z0-9_-]+)(?:\?target=deposit)?$/);if(location.hash&&!match)throw Error('Invalid customer link. Please ask QUAD FILM for a new link.');if(match)await api('redeem',{token:match[1]});session=await api('session');available=(await api('payment-options')).available;update();status.textContent=available.includes(amount())?'':'This deposit amount is unavailable. Please choose another amount.';}catch(e){status.textContent=e.message;retry.hidden=false;}}
+retry.onclick=start;
+form.onsubmit=async e=>{e.preventDefault();if(pay.disabled||busy)return;busy=true;update();status.textContent='Opening secure checkout…';try{const key='quad-deposit:'+session.id+':'+amount();let saved;try{saved=JSON.parse(sessionStorage.getItem(key)||'null')}catch{}if(!saved){saved={requestKey:crypto.randomUUID()};sessionStorage.setItem(key,JSON.stringify(saved));}if(!saved.quoteId){const q=await api('quotes',{express:true,product:'deposit',deposit:amount(),requestKey:saved.requestKey});saved.quoteId=q.id;sessionStorage.setItem(key,JSON.stringify(saved));}const payment=await api('checkout',{quoteId:saved.quoteId,locale:'en'});const url=new URL(payment.url);if(url.protocol!=='https:'||url.hostname!=='buy.stripe.com')throw Error('Payment link unavailable. Please contact QUAD FILM.');location.assign(url.href);}catch(e){status.textContent=e.message;busy=false;update();}};
+start();

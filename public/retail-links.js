@@ -1,6 +1,7 @@
 /* Shared, allowlisted retail destinations. Tokens remain in the URL fragment. */
 (function(root){
  const destinations=[
+  ['deposit','快捷付定金 · $100 / $200 / $500','Quick Deposit · $100 / $200 / $500','deposit'],
   ['ppf','PPF 隐形车衣','PPF Paint Protection','product/ppf'],
   ['wrap','改色膜 · 产品介绍','Color Wraps · Overview','product/wrap'],
   ['colors','改色膜 · 直接选颜色','Color Wraps · Choose Colors','product/wrap/colors'],
@@ -10,7 +11,7 @@
   ['all','全部产品首页','All Products','home']
  ];
  const route=key=>destinations.find(d=>d[0]===key)?.[3]||'home';
- const withTarget=(url,key)=>url.split('?target=')[0]+'?target='+encodeURIComponent(destinations.some(d=>d[0]===key)?key:'all');
+ const withTarget=(url,key)=>(key==='deposit'?url.replace('/retail/index.html','/deposit.html'):url.replace('/deposit.html','/retail/index.html')).split('?target=')[0]+'?target='+encodeURIComponent(destinations.some(d=>d[0]===key)?key:'all');
  const parseInvite=hash=>{const m=hash.match(/^#invite\/([A-Za-z0-9_-]+)(?:\?target=([A-Za-z0-9_-]+))?$/);return m?{token:m[1],route:route(m[2])}:null};
  const api={destinations,route,withTarget,parseInvite};
  if(typeof module==='object'&&module.exports)module.exports=api;else root.RetailLinks=api;

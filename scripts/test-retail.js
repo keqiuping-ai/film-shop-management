@@ -26,6 +26,7 @@ assert.equal((await call('quotes',{...q,requestKey:'bad',parts:['fake']},alice))
 assert.equal((await call('checkout',{quoteId:booking.data.id},other)).status,404);
 const checkout=await call('checkout',{quoteId:booking.data.id,locale:'ja'},alice);assert.equal(checkout.status,200);assert.equal(new URL(checkout.data.url).hostname,'buy.stripe.com');assert.equal(new URL(checkout.data.url).searchParams.get('client_reference_id'),booking.data.id);
 let snapshot=(await call('session',undefined,alice)).data;assert.equal(snapshot.quotes[0].estimate,1950);assert.equal(snapshot.quotes[0].paymentStatus,'awaiting_payment');
+const depositOnly=await call('quotes',{express:true,product:'deposit',deposit:200,requestKey:'deposit-only'},alice);assert.equal(depositOnly.status,200);assert.equal((await call('checkout',{quoteId:depositOnly.data.id},alice)).status,200);assert.equal((await call('checkout',{quoteId:depositOnly.data.id},other)).status,404);assert.equal((await call('quotes',{express:true,product:'deposit',deposit:1,requestKey:'bad-deposit'},alice)).status,400);
 const express={...q,name:'',contact:'',vehicle:'',year:'',express:true,requestKey:'express'};
 const quick=await call('quotes',express,alice);assert.equal(quick.status,200);
 assert.equal((await call('quotes',express,alice)).data.id,quick.data.id,'Express retry stays idempotent');

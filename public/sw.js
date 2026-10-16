@@ -1,4 +1,4 @@
-const CACHE_NAME = 'film-shop-v183-public-catalog-cards';
+const CACHE_NAME = 'film-shop-deposit-20261016';
 const ASSETS = [
     '/mobile.html',
     '/warranty.html',
