@@ -27,7 +27,7 @@ assert(mobile.includes("salesCategoryLabel(category)"), 'customer category selec
 assert(mobile.includes("Public Prospect Import"), 'system importer name must have an English display value');
 assert(mobile.includes("Reference Photo $1"), 'generated reference-photo names must be localized');
 assert(mobile.includes("value=\"${value}\""), 'localized stage options must preserve API values');
-assert(html.includes('/mobile.js?v=82'), 'mobile bundle cache key was not bumped');
-assert(sw.includes('film-shop-field-sales-visit-review-20261017'), 'service-worker cache key was not bumped');
+assert(html.includes('/mobile.js?v=83'), 'mobile bundle cache key was not bumped');
+assert(sw.includes('film-shop-field-sales-bilingual-workspace-20261017'), 'service-worker cache key was not bumped');
 
 console.log('field sales English UI regression passed');

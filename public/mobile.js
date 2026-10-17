@@ -1939,25 +1939,41 @@ function salesSimpleCustomerCard(account) {
   const route = [account.visitBatch, account.visitStop ? salesRouteStopLabel(account.visitStop) : ''].filter(Boolean).join(' · ');
   const verificationStatus = String(account.googleVerificationStatus || 'pending');
   const verification = verificationStatus === 'confirmed'
-    ? '<em class="sales-google-status confirmed">✓ 谷歌已确认</em>'
+    ? `<em class="sales-google-status confirmed">✓ ${lang === 'en' ? 'Google Verified' : '谷歌已确认'}</em>`
     : verificationStatus === 'needs_review'
-      ? '<em class="sales-google-status unconfirmed">? 未确认</em>'
+      ? `<em class="sales-google-status unconfirmed">? ${lang === 'en' ? 'Unverified' : '未确认'}</em>`
       : verificationStatus === 'rejected'
-        ? '<em class="sales-google-status rejected">✕ 无效客户</em>'
-        : '<em class="sales-google-status pending">⌛ 待确认</em>';
-  const accountVisits = (state.fieldSales?.visits || []).filter(item => item.accountId === account.id && item.userId === user?.id);
+        ? `<em class="sales-google-status rejected">✕ ${lang === 'en' ? 'Invalid customer' : '无效客户'}</em>`
+        : `<em class="sales-google-status pending">⌛ ${lang === 'en' ? 'Pending review' : '待确认'}</em>`;
+  const accountVisits = (state.fieldSales?.visits || []).filter(item => item.accountId === account.id);
   const activeVisit = accountVisits.find(item => item.status === '进行中');
   const completedVisit = accountVisits.find(item => item.status === '已完成');
   const visitStatus = activeVisit
-    ? '<em class="sales-visit-status active">● 拜访中</em>'
+    ? `<em class="sales-visit-status active">● ${lang === 'en' ? 'In progress' : '拜访中'}</em>`
     : completedVisit
-      ? '<em class="sales-visit-status visited">✓ 已拜访</em>'
-      : '<em class="sales-visit-status not-visited">○ 未拜访</em>';
+      ? `<em class="sales-visit-status visited">✓ ${lang === 'en' ? 'Visited' : '已拜访'}</em>`
+      : `<em class="sales-visit-status not-visited">○ ${lang === 'en' ? 'Not visited' : '未拜访'}</em>`;
   const nextVisitTime = account.nextVisitAt ? new Date(account.nextVisitAt) : null;
   const nextVisit = nextVisitTime && Number.isFinite(nextVisitTime.getTime()) && nextVisitTime.getTime() > Date.now()
-    ? `<em class="sales-visit-status scheduled">◷ 已预约 ${escapeHtml(formatMobileDateTime(account.nextVisitAt))}</em>`
+    ? `<em class="sales-visit-status scheduled">◷ ${lang === 'en' ? 'Next' : '已预约'} ${escapeHtml(formatMobileDateTime(account.nextVisitAt))}</em>`
     : '';
-  return `<article class="sales-simple-customer"><div class="sales-simple-customer-photo-column">${photo ? `<div class="sales-simple-customer-photo"><img src="${escapeHtml(photo)}" alt="${escapeHtml(account.businessName)}"></div>` : '<div class="sales-simple-customer-photo empty">暂无资料照片</div>'}<div class="sales-card-statuses">${verification}${visitStatus}${nextVisit}</div></div><div class="sales-simple-customer-main"><b>${escapeHtml(account.businessName)}</b><p>${escapeHtml(account.address || '')}</p>${contact ? `<small>${contact}</small>` : ''}${route ? `<small>${escapeHtml(route)}</small>` : ''}${account.leadPool ? '<em>公共待认领客户</em>' : ''}</div><div class="sales-simple-customer-actions"><button onclick="openSalesReviewDialog('${account.id}')">查看资料</button><button class="primary-inline" onclick="openSalesStartDialog('${account.id}')">进入拜访</button></div></article>`;
+  const intent = ['高意向','普通','低意向'].includes(account.intentLevel) ? account.intentLevel : '普通';
+  const intentLabel = value => lang === 'en' ? ({'高意向':'High intent','普通':'Medium intent','低意向':'Low intent'}[value]) : value;
+  return `<article class="sales-simple-customer"><div class="sales-simple-customer-photo-column">${photo ? `<div class="sales-simple-customer-photo"><img src="${escapeHtml(photo)}" alt="${escapeHtml(account.businessName)}"></div>` : `<div class="sales-simple-customer-photo empty">${lang === 'en' ? 'No reference photo' : '暂无资料照片'}</div>`}<div class="sales-card-statuses">${verification}${visitStatus}${nextVisit}</div></div><div class="sales-simple-customer-main"><b>${escapeHtml(account.businessName)}</b><p>${escapeHtml(account.address || '')}</p>${contact ? `<small>${contact}</small>` : ''}${route ? `<small>${escapeHtml(route)}</small>` : ''}${account.leadPool ? `<em>${lang === 'en' ? 'Shared lead' : '公共待认领客户'}</em>` : ''}</div><div class="sales-simple-customer-actions"><button class="primary-inline" onclick="openSalesReviewDialog('${account.id}')">${lang === 'en' ? 'Profile & Visit' : '资料与拜访'}</button><select class="sales-intent-quick ${intent === '高意向' ? 'high' : intent === '低意向' ? 'low' : ''}" aria-label="${lang === 'en' ? 'Customer intent' : '客户意向'}" onchange="saveSalesCustomerIntent(this,'${account.id}')">${['高意向','普通','低意向'].map(value => `<option value="${value}" ${intent === value ? 'selected' : ''}>${intentLabel(value)}</option>`).join('')}</select></div></article>`;
+}
+
+async function saveSalesCustomerIntent(select, accountId) {
+  const previous = (state.fieldSales?.accounts || []).find(item => item.id === accountId)?.intentLevel || '普通';
+  try {
+    select.disabled = true;
+    state = await api(`/api/field-sales/accounts/${accountId}`, { method:'PUT', body:JSON.stringify({ intentLevel:select.value }) });
+    user = state.user;
+    render();
+  } catch (error) {
+    select.value = previous;
+    select.disabled = false;
+    alert(error.message || (lang === 'en' ? 'Could not update customer intent.' : '客户意向更新失败。'));
+  }
 }
 
 function salesCustomerMiniCard(account, selectMode = false) {
@@ -2364,6 +2380,7 @@ function salesInterestOptions(selected = []) {
 
 function salesInlineCustomerProfile(account, assignedUser, createdByUser) {
   const canAssign = state.fieldSales?.canManage === true;
+  const analysis = account.aiAnalysis || {};
   return `<div class="sales-inline-profile-form">
     <div class="sales-two"><label>${lang === 'en' ? 'Store name' : '客户／门店名称'}<input id="salesEditBusinessName" value="${escapeHtml(account.businessName || '')}"></label><label>${lang === 'en' ? 'Customer type' : '客户类型'}<input id="salesEditCustomerType" value="${escapeHtml(salesCustomerTypeLabel(account.customerType || ''))}" placeholder="${lang === 'en' ? 'Tint shop, dealer…' : '贴膜店、改装店、经销商……'}"></label></div>
     <label>${lang === 'en' ? 'Address' : '门店地址'}<input id="salesEditAddress" value="${escapeHtml(account.address || '')}"></label>
@@ -2372,11 +2389,16 @@ function salesInlineCustomerProfile(account, assignedUser, createdByUser) {
     <div class="sales-two"><label>Email<input id="salesEditEmail" type="email" value="${escapeHtml(account.email || '')}"></label><label>${lang === 'en' ? 'Website' : '网站'}<input id="salesEditWebsite" value="${escapeHtml(account.website || '')}"></label></div>
     ${canAssign ? `<label>${lang === 'en' ? 'Assigned sales representative' : '负责跟进的业务员'}<select id="salesEditAssignedUser"><option value="">${lang === 'en' ? 'Unassigned shared lead' : '公共待认领'}</option>${salesUserOptions(account.assignedUserId || '')}</select></label>` : `<div class="sales-profile-readonly"><small>${lang === 'en' ? 'Assigned sales representative' : '负责业务员'}</small><strong>${escapeHtml(account.assignedUserName || assignedUser?.name || assignedUser?.email || '—')}</strong></div>`}
     <label>${lang === 'en' ? 'Person met' : '本次／最近见到的人'}<input id="salesEditLastContact" value="${escapeHtml(account.lastContactMet || '')}"></label>
+    ${salesReviewBilingualField(lang === 'en' ? 'Bilingual contact' : '联系人中英文对照', '', analysis.contactMetZh, analysis.contactMetEn)}
     <label>${lang === 'en' ? 'Who they are and meeting details' : '见到的人的情况与细节'}<textarea id="salesEditContactDetails" placeholder="${lang === 'en' ? 'Role, decision authority, interests and onsite details' : '对方职务、决策权、关注点、提出的要求和现场重要情况'}">${escapeHtml(account.lastContactDetails || '')}</textarea></label>
+    ${salesReviewBilingualField(lang === 'en' ? 'Person and meeting details' : '见到的人的情况与细节', '', analysis.contactMetDetailsZh, analysis.contactMetDetailsEn)}
     <label>${lang === 'en' ? 'Products currently handled' : '客户目前在做什么产品'}<textarea id="salesEditCurrentProducts" placeholder="${lang === 'en' ? 'Brands, product categories and main business' : '品牌、产品类别、主要业务……'}">${escapeHtml(account.currentProducts || '')}</textarea></label>
+    ${salesReviewBilingualField(lang === 'en' ? 'Bilingual product profile' : '主营产品中英文对照', '', analysis.currentProductsZh, analysis.currentProductsEn)}
     <fieldset class="sales-interest-field"><legend>${lang === 'en' ? 'Products of interest' : '客户对哪些产品感兴趣'}</legend><div id="salesEditInterests">${salesInterestOptions(account.interestedProducts)}</div><input id="salesEditInterestNote" value="${escapeHtml(account.interestedProductsNote || '')}" placeholder="${lang === 'en' ? 'Models, specifications or quantities' : '补充具体型号、规格或数量'}"></fieldset>
     <label>${lang === 'en' ? 'What was discussed' : '当时谈了什么情况'}<textarea id="salesEditDiscussion">${escapeHtml(account.discussionSummary || '')}</textarea></label>
+    ${salesReviewBilingualField(lang === 'en' ? 'Bilingual discussion' : '沟通内容中英文对照', '', analysis.reportTextZh, analysis.reportTextEn)}
     <label>${lang === 'en' ? 'Next action' : '下一步要做什么'}<textarea id="salesEditNextAction">${escapeHtml(account.nextAction || '')}</textarea></label>
+    ${salesReviewBilingualField(lang === 'en' ? 'Bilingual next action' : '下一步中英文对照', '', analysis.nextActionZh, analysis.nextActionEn)}
     <div class="sales-two"><label>${lang === 'en' ? 'Follow-up cycle (days)' : '回访周期（天）'}<input id="salesEditCadence" type="number" min="1" max="365" value="${Number(account.cadenceDays || 7)}"></label><label>${lang === 'en' ? 'Next visit' : '下次回访时间'}<input id="salesEditNextVisit" type="datetime-local" value="${escapeHtml(localDateTimeValue(account.nextVisitAt || ''))}"></label></div>
     <label>${lang === 'en' ? 'Customer notes' : '客户备注'}<textarea id="salesEditNote">${escapeHtml(account.note || '')}</textarea></label>
     <div class="sales-profile-readonly-grid">
@@ -2418,8 +2440,10 @@ function openSalesCustomerEditDialog(accountId) {
 }
 
 async function saveSalesCustomerProfile(button, accountId) {
+  let translationReady = true;
   try {
     button.disabled = true;
+    button.textContent = lang === 'en' ? 'Saving and translating…' : '正在保存并生成中英文…';
     const assigned = document.getElementById('salesEditAssignedUser');
     const body = {
       businessName:document.getElementById('salesEditBusinessName').value,
@@ -2445,11 +2469,22 @@ async function saveSalesCustomerProfile(button, accountId) {
     if (assigned) body.assignedUserId = assigned.value;
     state = await api(`/api/field-sales/accounts/${accountId}`, { method:'PUT', body:JSON.stringify(body) });
     user = state.user;
+    if ([body.lastContactDetails, body.discussionSummary, body.nextAction].some(value => String(value || '').trim())) {
+      try {
+        state = await api(`/api/field-sales/accounts/${accountId}/analyze`, { method:'POST', body:'{}' });
+        user = state.user;
+      } catch (analysisError) {
+        translationReady = false;
+        console.warn('Customer profile bilingual analysis failed', analysisError);
+      }
+    }
     button.closest('.mobile-modal').remove();
     document.querySelector('.sales-review-modal')?.remove();
     render();
     openSalesReviewDialog(accountId);
-    alert(lang === 'en' ? 'Customer profile saved.' : '客户资料已保存。');
+    alert(translationReady
+      ? (lang === 'en' ? 'Customer profile saved with Chinese-English translation.' : '客户资料已保存，并生成中英文对照。')
+      : (lang === 'en' ? 'Customer profile saved. Translation is temporarily unavailable; please try Save again.' : '客户资料已保存；中英文对照暂时生成失败，请稍后再点一次保存。'));
   } catch (error) {
     alert(error.message || (lang === 'en' ? 'Save failed.' : '保存失败。'));
     button.disabled = false;
@@ -2486,6 +2521,12 @@ async function saveSalesVisitEdit(button, visitId, accountId) {
       outcome:document.getElementById('salesVisitEditOutcome').value
     }) });
     user = state.user;
+    try {
+      state = await api(`/api/field-sales/visits/${visitId}/analyze`, { method:'POST', body:'{}' });
+      user = state.user;
+    } catch (analysisError) {
+      console.warn('Visit bilingual analysis failed', analysisError);
+    }
     button.closest('.mobile-modal').remove();
     document.querySelector('.sales-review-modal')?.remove();
     openSalesReviewDialog(accountId);

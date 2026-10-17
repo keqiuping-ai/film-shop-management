@@ -17,9 +17,11 @@ const salesHome = mobile.slice(mobile.indexOf('function salesHomeHtml()'), mobil
 assert(salesHome.indexOf('sales-simple-secondary-top') < salesHome.indexOf('<b>选择城市</b>'), 'new customer, inventory and report shortcuts must be placed above city and customer selection');
 assert(mobile.includes("String(a.visitBatch || '').localeCompare"), 'customers must follow batch and stop order inside each direction');
 assert(mobile.includes('routeForRegion'), 'directions must follow the workbook route order');
-assert(mobile.includes('进入拜访'), 'customer card must enter the visit before opening live photo check-in');
+assert(mobile.includes('Profile & Visit') && mobile.includes('资料与拜访'), 'customer card must merge profile and visit into one workspace');
+assert(mobile.includes('saveSalesCustomerIntent'), 'customer card must provide a quick intent selector');
+assert(mobile.includes("lang === 'en' ? 'Not visited' : '未拜访'"), 'visit status must be fully localized in English mode');
 assert(mobile.includes('谷歌已确认'), 'confirmed Google businesses must have a visible badge');
-assert(mobile.includes('⌛ 待确认'), 'field-added customers must show a pending Google verification badge');
+assert(mobile.includes("lang === 'en' ? 'Pending review' : '待确认'"), 'field-added customers must show a localized pending Google verification badge');
 assert(mobile.includes('salesNewCustomerPhotoFile'), 'new customer flow must require an on-site storefront photo');
 assert(mobile.includes('capture="environment"'), 'new customer photo must request the rear camera on mobile');
 assert(mobile.includes('storefrontPhotoUrl:uploaded.url'), 'new customer flow must upload the storefront photo');
@@ -62,9 +64,12 @@ assert(server.includes("body.onsiteCapture === true && (!storefrontPhotoUrl || !
 assert(server.includes("account.active = source.active === true && account.googleVerificationStatus === 'confirmed'"), 'only Google-confirmed imported Los Angeles records may remain active');
 assert(css.includes('.sales-region-grid'), 'region selector must have mobile styling');
 assert(css.includes('.sales-simple-customer-photo'), 'imported storefront photos must have mobile styling');
-assert(html.includes('/mobile.js?v=82') && html.includes('/mobile.css?v=68'), 'mobile asset cache keys must be updated');
+assert(html.includes('/mobile.js?v=83') && html.includes('/mobile.css?v=69'), 'mobile asset cache keys must be updated');
 assert(mobile.includes('sales-visit-status visited') && mobile.includes('sales-google-status confirmed'), 'customer cards must show Google and visit status badges');
 assert(mobile.includes('正在生成中英文对照') && mobile.includes('salesReviewBilingualField'), 'completed visits must generate and display bilingual fields');
+assert(mobile.includes("/api/field-sales/accounts/${accountId}/analyze") && server.includes('fieldSalesAccountAnalyzeMatch'), 'saved customer profiles must generate bilingual fields');
+assert(server.includes('currentProductsZh, currentProductsEn'), 'customer product profiles must be translated in both languages');
 assert(css.includes('.sales-simple-visit-form .sales-main-note textarea') && css.includes('.sales-card-statuses'), 'mobile visit notes and card status styles must be present');
+assert(css.includes('grid-template-columns:repeat(2,minmax(0,1fr))') && css.includes('font-size:14px'), 'product interest choices must be compact with larger readable text');
 
 console.log('simple field visits regression test passed');

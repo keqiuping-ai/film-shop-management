@@ -4398,6 +4398,7 @@ async function createFieldSalesAnalysis(visit, requestedProvider = '') {
 Customer: ${visit.businessName}
 Person met: ${visit.contactMet || ''}
 Person and meeting details: ${visit.contactMetDetails || ''}
+Products currently handled: ${visit.currentProducts || ''}
 Report: ${visit.reportText}
 Outcome: ${visit.outcome || ''}
 Next action: ${visit.nextAction || ''}
@@ -4408,11 +4409,11 @@ Location verification: ${JSON.stringify({
   customerAddress: visit.customerAddress || '',
   checkInAddress: visit.checkIn?.address || ''
 })}
-Return exactly these fields: contactMetZh, contactMetEn, contactMetDetailsZh, contactMetDetailsEn, reportTextZh, reportTextEn, nextActionZh, nextActionEn, summaryZh, summaryEn, customerNeedsZh, customerNeedsEn, objectionsZh, objectionsEn, nextActionsZh, nextActionsEn, riskLevel, managerAdviceZh, managerAdviceEn. For the four paired visit fields, preserve the exact factual meaning and produce both natural Chinese and natural English, regardless of the source language. riskLevel must be low, medium, or high. Be concise and factual.`;
+Return exactly these fields: contactMetZh, contactMetEn, contactMetDetailsZh, contactMetDetailsEn, currentProductsZh, currentProductsEn, reportTextZh, reportTextEn, nextActionZh, nextActionEn, summaryZh, summaryEn, customerNeedsZh, customerNeedsEn, objectionsZh, objectionsEn, nextActionsZh, nextActionsEn, riskLevel, managerAdviceZh, managerAdviceEn. For every paired field, preserve the exact factual meaning and produce both natural Chinese and natural English, regardless of the source language. riskLevel must be low, medium, or high. Be concise and factual.`;
   let content = '';
   if (provider === 'openai') {
     if (!process.env.OPENAI_API_KEY) throw new Error('OpenAI API Key 尚未配置');
-    const value = await fetchAiJson('https://api.openai.com/v1/chat/completions', {
+    const value = await fetchAiJson(`${String(process.env.OPENAI_API_BASE_URL || 'https://api.openai.com/v1').replace(/\/+$/, '')}/chat/completions`, {
       method:'POST', headers:{ 'Content-Type':'application/json', Authorization:`Bearer ${process.env.OPENAI_API_KEY}` },
       body:JSON.stringify({ model:process.env.OPENAI_TASK_MODEL || 'gpt-5.6', messages:[{ role:'user', content:prompt }], response_format:{ type:'json_object' } })
     });
@@ -10483,6 +10484,7 @@ async function api(req, res) {
       currentProducts: String(body.currentProducts ?? before.currentProducts ?? '').trim().slice(0, 3000),
       interestedProducts: (Array.isArray(body.interestedProducts) ? body.interestedProducts : (before.interestedProducts || [])).map(value => String(value || '').trim().slice(0, 100)).filter(Boolean).slice(0, 20),
       interestedProductsNote: String(body.interestedProductsNote ?? before.interestedProductsNote ?? '').trim().slice(0, 1000),
+      intentLevel: ['高意向','普通','低意向'].includes(String(body.intentLevel || '')) ? String(body.intentLevel) : (before.intentLevel || '普通'),
       discussionSummary: String(body.discussionSummary ?? before.discussionSummary ?? '').trim().slice(0, 5000),
       nextAction: String(body.nextAction ?? before.nextAction ?? '').trim().slice(0, 3000),
       note: String(body.note ?? before.note).trim().slice(0, 3000),
@@ -10504,6 +10506,42 @@ async function api(req, res) {
     writeDb(db);
     notifyDataChanged('field-sales-account-updated', next.id);
     return send(res, 200, mobileSnapshot(db, user));
+  }
+
+  const fieldSalesAccountAnalyzeMatch = url.pathname.match(/^\/api\/field-sales\/accounts\/([^/]+)\/analyze$/);
+  if (req.method === 'POST' && fieldSalesAccountAnalyzeMatch) {
+    if (!canUseFieldSales(user)) return send(res, 403, { error:'当前账号没有业务员管理权限' });
+    const accountId = decodeURIComponent(fieldSalesAccountAnalyzeMatch[1]);
+    const account = (db.salesAccounts || []).find(item => item.id === accountId && fieldSalesVisible(item, user));
+    if (!account) return send(res, 404, { error:'找不到这个业务客户' });
+    if (!canAccessBranch(db, user, account.branchId)) return send(res, 403, { error:'你没有这个业务客户所属分店的数据权限' });
+    try {
+      const result = await createFieldSalesAnalysis({
+        businessName:account.businessName,
+        contactMet:account.lastContactMet || '',
+        contactMetDetails:account.lastContactDetails || '',
+        currentProducts:account.currentProducts || '',
+        reportText:account.discussionSummary || '',
+        outcome:account.stage || '',
+        nextAction:account.nextAction || '',
+        customerAddress:account.address || ''
+      });
+      account.aiAnalysis = result.analysis;
+      account.aiProvider = result.provider;
+      account.aiStatus = '已完成';
+      account.aiAnalyzedAt = new Date().toISOString();
+      account.updatedAt = account.aiAnalyzedAt;
+      audit(db, user, 'analyze-field-sales-account', { collection:'salesAccounts', recordId:account.id, recordLabel:account.businessName, detail:`生成客户资料中英文对照 ${account.businessName}` });
+      writeDb(db);
+      notifyDataChanged('field-sales-account-analyzed', account.id);
+      return send(res, 200, mobileSnapshot(db, user));
+    } catch (error) {
+      account.aiStatus = '失败';
+      account.aiError = String(error.message || error).slice(0, 500);
+      account.updatedAt = new Date().toISOString();
+      writeDb(db);
+      return send(res, 502, { error:`中英文对照生成失败：${account.aiError}` });
+    }
   }
 
   if (req.method === 'POST' && url.pathname === '/api/field-sales/visits/start') {

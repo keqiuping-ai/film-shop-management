@@ -21,7 +21,18 @@ function startAiServer() {
     req.on('end', () => {
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({
-        choices: [{ message: { content: JSON.stringify({ translatedText: '来自原生 App 的隔离测试回复' }) } }]
+        choices: [{ message: { content: JSON.stringify({
+          translatedText: '来自原生 App 的隔离测试回复',
+          contactMetZh: '亚历克斯', contactMetEn: 'Alex',
+          contactMetDetailsZh: '负责门店采购。', contactMetDetailsEn: 'Responsible for store purchasing.',
+          currentProductsZh: '目前经营汽车隔热膜。', currentProductsEn: 'Currently carries automotive window film.',
+          reportTextZh: '客户希望了解 QUaD 产品。', reportTextEn: 'The customer wants to learn about QUaD products.',
+          nextActionZh: '发送产品资料。', nextActionEn: 'Send product information.',
+          summaryZh: '需要继续跟进。', summaryEn: 'Follow-up is needed.',
+          customerNeedsZh: '产品资料', customerNeedsEn: 'Product information',
+          objectionsZh: '', objectionsEn: '', nextActionsZh: '发送资料', nextActionsEn: 'Send information',
+          riskLevel: 'low', managerAdviceZh: '及时跟进。', managerAdviceEn: 'Follow up promptly.'
+        }) } }]
       }));
     });
   });
@@ -438,6 +449,18 @@ async function run() {
   assert.equal(bootstrap.body.fieldSales.visitPlans[0].accountId, 'existing-native-customer');
   assert.equal(bootstrap.body.fieldSales.locationPoints.length, 5);
   assert.equal(bootstrap.body.fieldSales.locationPoints[0].clientPointId, 'isolated-client-point');
+
+  const intentUpdate = await jsonRequest('/api/field-sales/accounts/existing-native-customer', {
+    method:'PUT', token:login.body.token,
+    body:{ intentLevel:'高意向', lastContactMet:'Alex', lastContactDetails:'Purchasing lead', currentProducts:'Automotive window film', discussionSummary:'Customer wants QUaD product information.', nextAction:'Send product information.' }
+  });
+  assert.equal(intentUpdate.status, 200);
+  assert.equal(intentUpdate.body.fieldSales.accounts.find(item => item.id === 'existing-native-customer').intentLevel, '高意向');
+  const accountAnalysis = await jsonRequest('/api/field-sales/accounts/existing-native-customer/analyze', { method:'POST', token:login.body.token, body:{} });
+  assert.equal(accountAnalysis.status, 200);
+  const analyzedAccount = accountAnalysis.body.fieldSales.accounts.find(item => item.id === 'existing-native-customer');
+  assert.equal(analyzedAccount.aiAnalysis.reportTextZh, '客户希望了解 QUaD 产品。');
+  assert.equal(analyzedAccount.aiAnalysis.currentProductsEn, 'Currently carries automotive window film.');
 
   const clockIn = await jsonRequest('/api/mobile/clock', {
     method: 'POST',
