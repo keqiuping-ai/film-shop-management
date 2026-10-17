@@ -60,6 +60,6 @@ assert(server.includes("body.onsiteCapture === true && (!storefrontPhotoUrl || !
 assert(server.includes("account.active = source.active === true && account.googleVerificationStatus === 'confirmed'"), 'only Google-confirmed imported Los Angeles records may remain active');
 assert(css.includes('.sales-region-grid'), 'region selector must have mobile styling');
 assert(css.includes('.sales-simple-customer-photo'), 'imported storefront photos must have mobile styling');
-assert(html.includes('/mobile.js?v=80') && html.includes('/mobile.css?v=67'), 'mobile asset cache keys must be updated');
+assert(html.includes('/mobile.js?v=81') && html.includes('/mobile.css?v=67'), 'mobile asset cache keys must be updated');
 
 console.log('simple field visits regression test passed');

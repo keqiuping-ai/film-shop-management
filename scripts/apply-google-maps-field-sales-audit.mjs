@@ -6,6 +6,7 @@ import path from 'node:path';
 const root = path.resolve(import.meta.dirname, '..');
 const seedPath = path.resolve(root, process.argv[2] || 'migrations/santa-monica-field-sales-2026-10-13.json');
 const auditPath = path.resolve(root, process.argv[3] || 'output/google-maps-la-audit.json');
+const requestedVersion = String(process.argv[4] || '').trim();
 const seed = JSON.parse(fs.readFileSync(seedPath, 'utf8'));
 const audit = JSON.parse(fs.readFileSync(auditPath, 'utf8'));
 const auditedById = new Map((audit.results || []).map(item => [String(item.publicRecordId), item]));
@@ -60,7 +61,7 @@ const counts = records.reduce((summary, item) => {
 
 const payload = {
   ...seed,
-  version:'santa-monica-field-sales-2026-10-16-v3-google-audited',
+  version:requestedVersion || `${String(seed.version || 'field-sales').replace(/-v\d+(?:-[a-z0-9-]+)?$/i, '')}-v3-google-audited`,
   googleAuditSource:'Google Maps public business pages',
   googleAuditGeneratedAt:audit.generatedAt,
   googleAuditCounts:counts,

@@ -1645,7 +1645,8 @@ const SALES_REGION_ENGLISH = {
   '西雅图及中心走廊':'Seattle / Central Corridor','东区、贝尔维尤及雷德蒙德':'Eastside / Bellevue / Redmond','北部及斯诺霍米什县':'North / Snohomish County','金县南部':'South King County','塔科马及皮尔斯县':'Tacoma / Pierce County','奥林匹亚及瑟斯顿走廊':'Olympia / Thurston Corridor','基萨普及岛屿渡轮路线':'Kitsap / Islands Ferry Route',
   '凤凰城中心区':'Central Phoenix','斯科茨代尔及东北区':'Scottsdale / Northeast','格伦代尔及西北区':'Glendale / Northwest','西谷地区':'West Valley','坦佩、梅萨及东区':'Tempe / Mesa / East Valley','钱德勒、吉尔伯特及东南区':'Chandler / Gilbert / Southeast',
   '温哥华市':'Vancouver City','列治文及三角洲市':'Richmond / Delta','本拿比及新西敏':'Burnaby / New Westminster','北岸及海天走廊':'North Shore / Sea-to-Sky Corridor','三联市及枫树岭':'Tri-Cities / Maple Ridge','素里、兰里及菲沙河谷':'Surrey / Langley / Fraser Valley','温哥华岛及阳光海岸':'Vancouver Island / Sunshine Coast',
-  '洛杉矶地区':'Los Angeles Area','橙县地区':'Orange County Area','拉斯维加斯地区':'Las Vegas Area','其他地区':'Other Area'
+  '洛杉矶地区':'Los Angeles Area','橙县地区':'Orange County Area','拉斯维加斯地区':'Las Vegas Area','其他地区':'Other Area',
+  'Google 已确认新增／待规划':'Google Verified Additions / Route Pending','北区／Google 已确认新增':'North / Google Verified Additions','亨德森／Google 已确认新增':'Henderson / Google Verified Additions','南湾／长滩／Google 已确认新增':'South Bay / Long Beach / Google Verified Additions','西区／Google 已确认新增':'Westside / Google Verified Additions','东湾／Google 已确认新增':'East Bay / Google Verified Additions','南湾／Google 已确认新增':'South Bay / Google Verified Additions','大温南区／Google 已确认新增':'South Metro Vancouver / Google Verified Additions'
 };
 const SALES_STATUS_ENGLISH = {'待拜访':'To Visit','拜访中':'In Progress','持续跟进':'Follow-up','已成交':'Closed Won','暂不跟进':'On Hold','待出发':'Not Started','前往中':'En Route','进行中':'In Progress','已完成':'Completed','已取消':'Canceled'};
 const SALES_CUSTOMER_TYPE_ENGLISH = {'汽车贴膜门店':'Automotive Film Shop','汽车改色店':'Vehicle Wrap Shop','汽车美容店':'Auto Detailing Shop','建筑膜客户':'Architectural Film Customer','经销商':'Dealer','其他':'Other'};

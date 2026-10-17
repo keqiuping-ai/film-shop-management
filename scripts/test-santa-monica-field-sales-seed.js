@@ -8,19 +8,19 @@ const seed = JSON.parse(fs.readFileSync(seedPath, 'utf8'));
 const serverSource = fs.readFileSync(path.join(root, 'server.js'), 'utf8');
 const dockerfile = fs.readFileSync(path.join(root, 'Dockerfile'), 'utf8');
 
-assert.equal(seed.version, 'santa-monica-field-sales-2026-10-16-v3-google-audited');
-assert.equal(seed.recordCount, 401);
-assert.equal(seed.photoCount, 369);
-assert.equal(seed.records.length, 401);
-assert.equal(new Set(seed.records.map(item => item.publicRecordId)).size, 401);
+assert.equal(seed.version, 'santa-monica-field-sales-2026-10-16-v4-google-expanded');
+assert.equal(seed.recordCount, 412);
+assert.equal(seed.photoCount, 368);
+assert.equal(seed.records.length, 412);
+assert.equal(new Set(seed.records.map(item => item.publicRecordId)).size, 412);
 assert(seed.records.every(item => item.businessName && item.address && item.visitRegion), 'every imported record needs a name, address, and visit region');
-assert.deepEqual(seed.googleAuditCounts, { confirmed:319, rejected:32, needs_review:50 });
+assert.deepEqual(seed.googleAuditCounts, { confirmed:330, rejected:32, needs_review:50 });
 assert(seed.records.every(item => ['confirmed', 'rejected', 'needs_review'].includes(item.googleVerificationStatus)), 'every Los Angeles prospect needs a Google verification status');
 assert(seed.records.filter(item => item.googleVerificationStatus === 'confirmed').every(item => item.active === true && item.googleHasBusinessHours && item.googleHasBusinessPhotos && item.googleAddressMatches), 'confirmed stores must have hours, photos, and a matching address');
 assert(seed.records.filter(item => item.googleVerificationStatus !== 'confirmed').every(item => item.active === false), 'unconfirmed records must be hidden from field visits');
 
 const photos = seed.records.flatMap(item => item.referencePhotos || []);
-assert.equal(photos.length, 369);
+assert.equal(photos.length, 368);
 photos.forEach(photo => {
   if (String(photo.url || '').startsWith('/')) {
     const localPath = path.join(root, 'public', String(photo.url || '').replace(/^\//, ''));

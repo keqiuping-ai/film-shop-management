@@ -696,6 +696,38 @@ function applyDefaultReplyTemplatesMigration() {
   writeDb(db);
 }
 
+function applyGoogleFieldSalesVerification(account, source) {
+  account.googleVerificationStatus = String(source.googleVerificationStatus || 'needs_review').slice(0, 40);
+  account.googleVerifiedAt = String(source.googleVerifiedAt || '').slice(0, 80);
+  account.googleBusinessName = String(source.googleBusinessName || '').slice(0, 180);
+  account.googleBusinessCategory = String(source.googleBusinessCategory || '').slice(0, 180);
+  account.googleBusinessHours = String(source.googleBusinessHours || '').slice(0, 500);
+  account.googleBusinessAddress = String(source.googleBusinessAddress || '').slice(0, 300);
+  account.googlePhotoCount = Math.max(0, Number(source.googlePhotoCount || 0));
+  account.googleReviewCount = Math.max(0, Number(source.googleReviewCount || 0));
+  account.googleRating = Math.max(0, Number(source.googleRating || 0));
+  account.googleHasBusinessHours = source.googleHasBusinessHours === true;
+  account.googleHasBusinessPhotos = source.googleHasBusinessPhotos === true;
+  account.googleAddressMatches = source.googleAddressMatches === true;
+  account.googleVerificationReasons = (Array.isArray(source.googleVerificationReasons) ? source.googleVerificationReasons : []).map(value => String(value || '').slice(0, 300)).slice(0, 12);
+  account.active = source.active === true && account.googleVerificationStatus === 'confirmed';
+  if (account.googleVerificationStatus === 'confirmed') {
+    account.businessName = String(source.businessName || account.businessName).slice(0, 180);
+    account.address = String(source.address || account.address).slice(0, 300);
+    account.phone = String(source.phone || account.phone || '').slice(0, 80);
+    account.website = String(source.website || account.website || '').slice(0, 500);
+  }
+}
+
+function googleFieldSalesAuditCounts(seed) {
+  const rows = Array.isArray(seed?.records) ? seed.records : [];
+  return {
+    confirmedAccounts:rows.filter(row => row.googleVerificationStatus === 'confirmed' && row.active === true).length,
+    rejectedAccounts:rows.filter(row => row.googleVerificationStatus === 'rejected').length,
+    needsReviewAccounts:rows.filter(row => row.googleVerificationStatus === 'needs_review').length
+  };
+}
+
 function applySantaMonicaFieldSalesProspectImport() {
   const enabled = process.env.ENABLE_SANTA_MONICA_FIELD_SALES_IMPORT === 'true'
     || DATA_DIR === '/app/data'
@@ -743,26 +775,7 @@ function applySantaMonicaFieldSalesProspectImport() {
     account.importBatchId = versionKey;
     account.website = String(source.website || '').slice(0, 500);
     account.googleMapsUrl = String(source.googleMapsUrl || '').slice(0, 1000);
-    account.googleVerificationStatus = String(source.googleVerificationStatus || 'needs_review').slice(0, 40);
-    account.googleVerifiedAt = String(source.googleVerifiedAt || '').slice(0, 80);
-    account.googleBusinessName = String(source.googleBusinessName || '').slice(0, 180);
-    account.googleBusinessCategory = String(source.googleBusinessCategory || '').slice(0, 180);
-    account.googleBusinessHours = String(source.googleBusinessHours || '').slice(0, 500);
-    account.googleBusinessAddress = String(source.googleBusinessAddress || '').slice(0, 300);
-    account.googlePhotoCount = Math.max(0, Number(source.googlePhotoCount || 0));
-    account.googleReviewCount = Math.max(0, Number(source.googleReviewCount || 0));
-    account.googleRating = Math.max(0, Number(source.googleRating || 0));
-    account.googleHasBusinessHours = source.googleHasBusinessHours === true;
-    account.googleHasBusinessPhotos = source.googleHasBusinessPhotos === true;
-    account.googleAddressMatches = source.googleAddressMatches === true;
-    account.googleVerificationReasons = (Array.isArray(source.googleVerificationReasons) ? source.googleVerificationReasons : []).map(value => String(value || '').slice(0, 300)).slice(0, 12);
-    account.active = source.active === true && account.googleVerificationStatus === 'confirmed';
-    if (account.googleVerificationStatus === 'confirmed') {
-      account.businessName = String(source.businessName || account.businessName).slice(0, 180);
-      account.address = String(source.address || account.address).slice(0, 300);
-      account.phone = String(source.phone || account.phone || '').slice(0, 80);
-      account.website = String(source.website || account.website || '').slice(0, 500);
-    }
+    applyGoogleFieldSalesVerification(account, source);
     account.directorySource = String(source.directorySource || '').slice(0, 1000);
     account.socialLinks = source.socialLinks && typeof source.socialLinks === 'object' ? source.socialLinks : {};
     account.services = String(source.services || '').slice(0, 3000);
@@ -789,7 +802,7 @@ function applySantaMonicaFieldSalesProspectImport() {
         .filter(Boolean).join('\n').slice(0, 3000);
     }
     if (!account.assignedUserId) account.leadPool = true;
-    if (Number.isFinite(Number(source.lat)) && Number.isFinite(Number(source.lng))) {
+    if (hasValidCoordinates(source.lat, source.lng) && !(Number(source.lat) === 0 && Number(source.lng) === 0)) {
       account.lat = Number(source.lat);
       account.lng = Number(source.lng);
       account.geocodedAddress = account.address;
@@ -823,9 +836,7 @@ function applySantaMonicaFieldSalesProspectImport() {
   db.santaMonicaFieldSalesImportVersion = versionKey;
   db.santaMonicaFieldSalesImportSummary = {
     accounts:importedAccountIds.length,
-    confirmedAccounts:(seed.records || []).filter(row => row.googleVerificationStatus === 'confirmed' && row.active === true).length,
-    rejectedAccounts:(seed.records || []).filter(row => row.googleVerificationStatus === 'rejected').length,
-    needsReviewAccounts:(seed.records || []).filter(row => row.googleVerificationStatus === 'needs_review').length,
+    ...googleFieldSalesAuditCounts(seed),
     photos:(seed.records || []).reduce((sum, row) => sum + (row.referencePhotos || []).length, 0),
     createdAccounts, updatedAccounts, createdPhotos, importedAt:now
   };
@@ -883,6 +894,7 @@ function applyLasVegasFieldSalesProspectImport() {
     account.importBatchId = versionKey;
     account.website = String(source.website || '').slice(0, 500);
     account.googleMapsUrl = String(source.googleMapsUrl || '').slice(0, 1000);
+    applyGoogleFieldSalesVerification(account, source);
     account.directorySource = String(source.directorySource || '').slice(0, 1000);
     account.socialLinks = source.socialLinks && typeof source.socialLinks === 'object' ? source.socialLinks : {};
     account.services = String(source.services || '').slice(0, 3000);
@@ -909,12 +921,12 @@ function applyLasVegasFieldSalesProspectImport() {
         .filter(Boolean).join('\n').slice(0, 3000);
     }
     if (!account.assignedUserId) account.leadPool = true;
-    if (Number.isFinite(Number(source.lat)) && Number.isFinite(Number(source.lng))) {
+    if (hasValidCoordinates(source.lat, source.lng) && !(Number(source.lat) === 0 && Number(source.lng) === 0)) {
       account.lat = Number(source.lat);
       account.lng = Number(source.lng);
       account.geocodedAddress = account.address;
-      account.locationSource = 'public-research-coordinate-unverified';
-      account.locationVerifiedAt = '';
+      account.locationSource = account.googleVerificationStatus === 'confirmed' ? 'google-maps-confirmed' : 'public-research-coordinate-unverified';
+      account.locationVerifiedAt = account.googleVerificationStatus === 'confirmed' ? account.googleVerifiedAt : '';
     }
     account.updatedAt = now;
     existingByRecord.set(recordId, account);
@@ -941,7 +953,7 @@ function applyLasVegasFieldSalesProspectImport() {
   fs.mkdirSync(BACKUP_DIR, { recursive:true });
   fs.copyFileSync(DB_FILE, path.join(BACKUP_DIR, `db-before-las-vegas-field-sales-${now.replace(/[:.]/g, '-')}.json`));
   db.lasVegasFieldSalesImportVersion = versionKey;
-  db.lasVegasFieldSalesImportSummary = { accounts:importedAccountIds.length, photos:(seed.records || []).reduce((sum, row) => sum + (row.referencePhotos || []).length, 0), routes:Number(seed.routeCount || 0), batches:Number(seed.batchCount || 0), createdAccounts, updatedAccounts, createdPhotos, importedAt:now };
+  db.lasVegasFieldSalesImportSummary = { accounts:importedAccountIds.length, ...googleFieldSalesAuditCounts(seed), photos:(seed.records || []).reduce((sum, row) => sum + (row.referencePhotos || []).length, 0), routes:Number(seed.routeCount || 0), batches:Number(seed.batchCount || 0), createdAccounts, updatedAccounts, createdPhotos, importedAt:now };
   audit(db, { id:'system-import', name:'公开客户资料导入' }, 'import-las-vegas-field-sales-prospects', {
     collection:'salesAccounts', detail:`导入 ${importedAccountIds.length} 家拉斯维加斯门店与 ${db.lasVegasFieldSalesImportSummary.photos} 张公开资料照片`
   });
@@ -1007,6 +1019,7 @@ function applyRegionalFieldSalesProspectImports() {
       account.importBatchId = versionKey;
       account.website = String(source.website || '').slice(0, 500);
       account.googleMapsUrl = String(source.googleMapsUrl || '').slice(0, 1000);
+      applyGoogleFieldSalesVerification(account, source);
       account.directorySource = String(source.directorySource || '').slice(0, 1000);
       account.socialLinks = source.socialLinks && typeof source.socialLinks === 'object' ? source.socialLinks : {};
       account.services = String(source.services || '').slice(0, 3000);
@@ -1032,12 +1045,12 @@ function applyRegionalFieldSalesProspectImports() {
           .filter(Boolean).join('\n').slice(0, 3000);
       }
       if (!account.assignedUserId) account.leadPool = true;
-      if (Number.isFinite(Number(source.lat)) && Number.isFinite(Number(source.lng))) {
+      if (hasValidCoordinates(source.lat, source.lng) && !(Number(source.lat) === 0 && Number(source.lng) === 0)) {
         account.lat = Number(source.lat);
         account.lng = Number(source.lng);
         account.geocodedAddress = account.address;
-        account.locationSource = 'public-research-coordinate-unverified';
-        account.locationVerifiedAt = '';
+        account.locationSource = account.googleVerificationStatus === 'confirmed' ? 'google-maps-confirmed' : 'public-research-coordinate-unverified';
+        account.locationVerifiedAt = account.googleVerificationStatus === 'confirmed' ? account.googleVerifiedAt : '';
       }
       account.updatedAt = now;
       existingByRecord.set(recordId, account);
@@ -1065,6 +1078,7 @@ function applyRegionalFieldSalesProspectImports() {
     db.regionalFieldSalesImportVersions[config.marketId] = versionKey;
     db.regionalFieldSalesImportSummaries[config.marketId] = {
       accounts:importedAccountIds.length,
+      ...googleFieldSalesAuditCounts(seed),
       photos:(seed.records || []).reduce((sum, row) => sum + (row.referencePhotos || []).length, 0),
       routes:Number(seed.routeCount || 0), batches:Number(seed.batchCount || 0),
       createdAccounts, updatedAccounts, createdPhotos, importedAt:now
@@ -9256,7 +9270,11 @@ async function api(req, res) {
         architecturalAccounts:(db.salesAccounts || []).filter(item => item.active !== false && item.marketId === config.marketId && item.importBatchId === versionKey && (item.customerType === '建筑膜客户' || String(item.architecturalServices || '').trim())).length,
         photos:(db.salesAttachments || []).filter(item => item.referenceMaterial === true && item.id.startsWith(`${config.photoPrefix}-reference-photo-`)).length,
         routes:Number(summary.routes || 0),
-        batches:Number(summary.batches || 0)
+        batches:Number(summary.batches || 0),
+        totalAudited:Number(summary.accounts || 0),
+        googleConfirmed:Number(summary.confirmedAccounts || 0),
+        googleRejected:Number(summary.rejectedAccounts || 0),
+        googleNeedsReview:Number(summary.needsReviewAccounts || 0)
       }];
     }));
     return send(res, 200, {
@@ -9277,7 +9295,15 @@ async function api(req, res) {
         googleRejected:Number(db.santaMonicaFieldSalesImportSummary?.rejectedAccounts || 0),
         googleNeedsReview:Number(db.santaMonicaFieldSalesImportSummary?.needsReviewAccounts || 0)
       },
-      lasVegasFieldSalesImport: { version:db.lasVegasFieldSalesImportVersion || '', accounts:importedLasVegasAccounts, architecturalAccounts:importedLasVegasArchitecturalAccounts, photos:importedLasVegasPhotos, routes:Number(db.lasVegasFieldSalesImportSummary?.routes || 0), batches:Number(db.lasVegasFieldSalesImportSummary?.batches || 0) },
+      lasVegasFieldSalesImport: {
+        version:db.lasVegasFieldSalesImportVersion || '', accounts:importedLasVegasAccounts,
+        architecturalAccounts:importedLasVegasArchitecturalAccounts, photos:importedLasVegasPhotos,
+        routes:Number(db.lasVegasFieldSalesImportSummary?.routes || 0), batches:Number(db.lasVegasFieldSalesImportSummary?.batches || 0),
+        totalAudited:Number(db.lasVegasFieldSalesImportSummary?.accounts || 0),
+        googleConfirmed:Number(db.lasVegasFieldSalesImportSummary?.confirmedAccounts || 0),
+        googleRejected:Number(db.lasVegasFieldSalesImportSummary?.rejectedAccounts || 0),
+        googleNeedsReview:Number(db.lasVegasFieldSalesImportSummary?.needsReviewAccounts || 0)
+      },
       regionalFieldSalesImports,
       time: new Date().toISOString()
     });

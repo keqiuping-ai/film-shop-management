@@ -13,6 +13,9 @@ for (const label of ['Los Angeles','Las Vegas','San Francisco','Seattle','Phoeni
 for (const label of ['Westside / Santa Monica','Near Company / South Central','San Francisco / North Peninsula','Seattle / Central Corridor','Central Phoenix','Vancouver City']) {
   assert(mobile.includes(`'${label}'`), `missing English region label: ${label}`);
 }
+for (const label of ['Google Verified Additions / Route Pending','East Bay / Google Verified Additions','Henderson / Google Verified Additions']) {
+  assert(mobile.includes(`'${label}'`), `missing Google-added English region label: ${label}`);
+}
 assert(mobile.includes("function salesRegionLabel(region)"), 'English region display helper is required');
 assert(mobile.includes("salesRegionLabel(salesSelectedRegion)"), 'selected region must use localized display label');
 assert(mobile.includes("salesCityLabel(city)"), 'city buttons must use localized display labels');
@@ -24,7 +27,7 @@ assert(mobile.includes("salesCategoryLabel(category)"), 'customer category selec
 assert(mobile.includes("Public Prospect Import"), 'system importer name must have an English display value');
 assert(mobile.includes("Reference Photo $1"), 'generated reference-photo names must be localized');
 assert(mobile.includes("value=\"${value}\""), 'localized stage options must preserve API values');
-assert(html.includes('/mobile.js?v=79'), 'mobile bundle cache key was not bumped');
-assert(sw.includes('film-shop-v183-public-catalog-cards'), 'service-worker cache key was not bumped');
+assert(html.includes('/mobile.js?v=81'), 'mobile bundle cache key was not bumped');
+assert(sw.includes('film-shop-google-prospects-20261016'), 'service-worker cache key was not bumped');
 
 console.log('field sales English UI regression passed');

@@ -4,10 +4,10 @@ const path = require('path');
 
 const root = path.resolve(__dirname, '..');
 const expected = {
-  'san-francisco': { file:'san-francisco-field-sales-2026-10-14.json', records:271, photos:253, routes:7, batches:60, prefix:'SF', architectural:62, architecturalAccounts:62, architecturalOnly:2 },
-  seattle: { file:'seattle-field-sales-2026-10-14.json', records:219, photos:240, routes:7, batches:41, prefix:'SEA', architectural:51, architecturalAccounts:51, architecturalOnly:4 },
-  phoenix: { file:'phoenix-field-sales-2026-10-14.json', records:333, photos:386, routes:6, batches:57, prefix:'PHX', architectural:108, architecturalAccounts:102, architecturalOnly:2 },
-  vancouver: { file:'vancouver-field-sales-2026-10-14.json', records:243, photos:215, routes:7, batches:48, prefix:'VAN', architectural:26, architecturalAccounts:26, architecturalOnly:1 }
+  'san-francisco': { file:'san-francisco-field-sales-2026-10-14.json', records:279, photos:253, routes:7, batches:60, prefix:'SF', architectural:62, architecturalAccounts:62, architecturalOnly:2, audit:{ confirmed:237, rejected:15, needs_review:27 } },
+  seattle: { file:'seattle-field-sales-2026-10-14.json', records:227, photos:240, routes:7, batches:41, prefix:'SEA', architectural:51, architecturalAccounts:51, architecturalOnly:4, audit:{ confirmed:158, rejected:14, needs_review:55 } },
+  phoenix: { file:'phoenix-field-sales-2026-10-14.json', records:341, photos:386, routes:7, batches:58, prefix:'PHX', architectural:108, architecturalAccounts:102, architecturalOnly:2, audit:{ confirmed:267, rejected:20, needs_review:54 } },
+  vancouver: { file:'vancouver-field-sales-2026-10-14.json', records:251, photos:215, routes:7, batches:48, prefix:'VAN', architectural:26, architecturalAccounts:26, architecturalOnly:1, audit:{ confirmed:183, rejected:25, needs_review:43 } }
 };
 
 for (const [marketId, config] of Object.entries(expected)) {
@@ -19,6 +19,9 @@ for (const [marketId, config] of Object.entries(expected)) {
   assert.equal(seed.batchCount, config.batches);
   assert.equal(seed.records.length, config.records);
   assert.equal(new Set(seed.records.map(item => item.publicRecordId)).size, config.records);
+  assert.deepEqual(seed.googleAuditCounts, config.audit, `${marketId} Google audit counts mismatch`);
+  assert(seed.records.filter(item => item.googleVerificationStatus === 'confirmed').every(item => item.active === true && item.googleHasBusinessHours && item.googleHasBusinessPhotos), `${marketId} confirmed stores need Google hours and photos`);
+  assert(seed.records.filter(item => item.googleVerificationStatus !== 'confirmed').every(item => item.active === false), `${marketId} unconfirmed stores must be hidden`);
   assert(seed.records.every(item => item.publicRecordId.startsWith(config.prefix) || item.publicRecordId.startsWith(`ARCH-${config.prefix}`)), `${marketId} record prefix mismatch`);
   assert(seed.records.every(item => item.marketId === marketId), `${marketId} market marker missing`);
   assert(seed.records.every(item => item.businessName && item.address && item.visitRegion && item.visitBatch && item.navigationUrl), `${marketId} required visit fields missing`);

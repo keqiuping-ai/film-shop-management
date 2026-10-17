@@ -24,6 +24,7 @@ const limit = Math.max(0, Number(args.get('limit') || 0));
 const start = Math.max(0, Number(args.get('start') || 0));
 const concurrency = Math.min(3, Math.max(1, Number(args.get('concurrency') || 2)));
 const headless = args.get('headed') !== true;
+const googleCountry = String(args.get('gl') || 'us').toLowerCase().replace(/[^a-z]/g, '').slice(0, 2) || 'us';
 
 const seed = JSON.parse(fs.readFileSync(inputPath, 'utf8'));
 const records = (seed.records || []).slice(start, limit ? start + limit : undefined);
@@ -66,7 +67,7 @@ async function textOf(locator) {
 
 async function auditRecord(page, source) {
   const query = `${source.businessName}, ${source.address}`;
-  const searchUrl = `https://www.google.com/maps/search/?api=1&hl=en&gl=us&query=${encodeURIComponent(query)}`;
+  const searchUrl = `https://www.google.com/maps/search/?api=1&hl=en&gl=${googleCountry}&query=${encodeURIComponent(query)}`;
   const startedAt = new Date().toISOString();
   try {
     await page.goto(searchUrl, { waitUntil:'domcontentloaded', timeout:25000 });

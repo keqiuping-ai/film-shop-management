@@ -9,26 +9,32 @@ const serverSource = fs.readFileSync(path.join(root, 'server.js'), 'utf8');
 const mobileSource = fs.readFileSync(path.join(root, 'public/mobile.js'), 'utf8');
 const dockerfile = fs.readFileSync(path.join(root, 'Dockerfile'), 'utf8');
 
-assert.equal(seed.version, 'las-vegas-field-sales-2026-10-14-v2');
-assert.equal(seed.recordCount, 152);
+assert.equal(seed.version, 'las-vegas-field-sales-2026-10-16-v4-google-expanded');
+assert.equal(seed.recordCount, 159);
 assert.equal(seed.photoCount, 120);
 assert.equal(seed.routeCount, 7);
-assert.equal(seed.batchCount, 30);
-assert.equal(seed.records.length, 152);
-assert.equal(new Set(seed.records.map(item => item.publicRecordId)).size, 152);
+assert.equal(seed.batchCount, 29);
+assert.equal(seed.records.length, 159);
+assert.equal(new Set(seed.records.map(item => item.publicRecordId)).size, 159);
+assert.deepEqual(seed.googleAuditCounts, { confirmed:115, rejected:17, needs_review:27 });
+assert(seed.records.filter(item => item.googleVerificationStatus === 'confirmed').every(item => item.active === true && item.googleHasBusinessHours && item.googleHasBusinessPhotos), 'confirmed Las Vegas stores need Google hours and photos');
+assert(seed.records.filter(item => item.googleVerificationStatus !== 'confirmed').every(item => item.active === false), 'unconfirmed Las Vegas stores must be hidden');
 assert.equal(new Set(seed.records.map(item => item.route)).size, 7);
-assert.equal(new Set(seed.records.map(item => item.visitBatch)).size, 30);
+assert.equal(new Set(seed.records.map(item => item.visitBatch)).size, 29);
 assert(seed.records.every(item => item.businessName && item.address && item.visitRegion && item.navigationUrl), 'every imported record needs a name, address, region, and navigation link');
 
 const regionCounts = Object.fromEntries([...new Set(seed.records.map(item => item.visitRegion))].map(region => [region, seed.records.filter(item => item.visitRegion === region).length]));
 assert.deepEqual(regionCounts, {
   '公司周边／中南区': 39,
   '西区／Summerlin': 19,
-  '北区／北拉斯维加斯': 30,
+  '北区／北拉斯维加斯': 29,
   '中心／东区': 46,
   '亨德森': 12,
   '博尔德城': 2,
   '外围50–100公里／Pahrump': 4
+  ,'北区／Google 已确认新增': 1
+  ,'Google 已确认新增／待规划': 5
+  ,'亨德森／Google 已确认新增': 2
 });
 
 const photos = seed.records.flatMap(item => item.referencePhotos || []);
