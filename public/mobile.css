@@ -1259,3 +1259,10 @@ button {
     padding: 14px;
   }
 }
+.sales-google-status{display:inline-flex!important;align-items:center;width:max-content;padding:4px 9px;border-radius:999px;font-size:12px!important;font-style:normal;font-weight:800}
+.sales-google-status.confirmed{color:#087f5b;background:#e6fcf5;border:1px solid #96f2d7}
+.sales-google-status.pending{color:#9a6700;background:#fff8db;border:1px solid #ffe08a}
+.sales-new-customer-camera{display:flex!important;align-items:center;gap:12px;padding:14px;border:1px solid #8bd8e3;border-radius:16px;background:#effbfc;color:#087f8f;cursor:pointer}
+.sales-new-customer-camera>span{display:grid;gap:3px;flex:1}.sales-new-customer-camera small{color:#667085;font-weight:600}
+.sales-new-customer-camera input{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none}
+.sales-new-customer-preview{display:block;width:100%;max-height:280px;object-fit:cover;border-radius:16px;border:1px solid #d7e3e7;margin-top:10px}

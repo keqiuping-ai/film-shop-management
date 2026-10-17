@@ -743,6 +743,26 @@ function applySantaMonicaFieldSalesProspectImport() {
     account.importBatchId = versionKey;
     account.website = String(source.website || '').slice(0, 500);
     account.googleMapsUrl = String(source.googleMapsUrl || '').slice(0, 1000);
+    account.googleVerificationStatus = String(source.googleVerificationStatus || 'needs_review').slice(0, 40);
+    account.googleVerifiedAt = String(source.googleVerifiedAt || '').slice(0, 80);
+    account.googleBusinessName = String(source.googleBusinessName || '').slice(0, 180);
+    account.googleBusinessCategory = String(source.googleBusinessCategory || '').slice(0, 180);
+    account.googleBusinessHours = String(source.googleBusinessHours || '').slice(0, 500);
+    account.googleBusinessAddress = String(source.googleBusinessAddress || '').slice(0, 300);
+    account.googlePhotoCount = Math.max(0, Number(source.googlePhotoCount || 0));
+    account.googleReviewCount = Math.max(0, Number(source.googleReviewCount || 0));
+    account.googleRating = Math.max(0, Number(source.googleRating || 0));
+    account.googleHasBusinessHours = source.googleHasBusinessHours === true;
+    account.googleHasBusinessPhotos = source.googleHasBusinessPhotos === true;
+    account.googleAddressMatches = source.googleAddressMatches === true;
+    account.googleVerificationReasons = (Array.isArray(source.googleVerificationReasons) ? source.googleVerificationReasons : []).map(value => String(value || '').slice(0, 300)).slice(0, 12);
+    account.active = source.active === true && account.googleVerificationStatus === 'confirmed';
+    if (account.googleVerificationStatus === 'confirmed') {
+      account.businessName = String(source.businessName || account.businessName).slice(0, 180);
+      account.address = String(source.address || account.address).slice(0, 300);
+      account.phone = String(source.phone || account.phone || '').slice(0, 80);
+      account.website = String(source.website || account.website || '').slice(0, 500);
+    }
     account.directorySource = String(source.directorySource || '').slice(0, 1000);
     account.socialLinks = source.socialLinks && typeof source.socialLinks === 'object' ? source.socialLinks : {};
     account.services = String(source.services || '').slice(0, 3000);
@@ -773,8 +793,8 @@ function applySantaMonicaFieldSalesProspectImport() {
       account.lat = Number(source.lat);
       account.lng = Number(source.lng);
       account.geocodedAddress = account.address;
-      account.locationSource = 'public-research-coordinate-unverified';
-      account.locationVerifiedAt = '';
+      account.locationSource = account.googleVerificationStatus === 'confirmed' ? 'google-maps-confirmed' : 'public-research-coordinate-unverified';
+      account.locationVerifiedAt = account.googleVerificationStatus === 'confirmed' ? account.googleVerifiedAt : '';
     }
     account.updatedAt = now;
     existingByRecord.set(recordId, account);
@@ -801,7 +821,14 @@ function applySantaMonicaFieldSalesProspectImport() {
   fs.mkdirSync(BACKUP_DIR, { recursive:true });
   fs.copyFileSync(DB_FILE, path.join(BACKUP_DIR, `db-before-santa-monica-field-sales-${now.replace(/[:.]/g, '-')}.json`));
   db.santaMonicaFieldSalesImportVersion = versionKey;
-  db.santaMonicaFieldSalesImportSummary = { accounts:importedAccountIds.length, photos:(seed.records || []).reduce((sum, row) => sum + (row.referencePhotos || []).length, 0), createdAccounts, updatedAccounts, createdPhotos, importedAt:now };
+  db.santaMonicaFieldSalesImportSummary = {
+    accounts:importedAccountIds.length,
+    confirmedAccounts:(seed.records || []).filter(row => row.googleVerificationStatus === 'confirmed' && row.active === true).length,
+    rejectedAccounts:(seed.records || []).filter(row => row.googleVerificationStatus === 'rejected').length,
+    needsReviewAccounts:(seed.records || []).filter(row => row.googleVerificationStatus === 'needs_review').length,
+    photos:(seed.records || []).reduce((sum, row) => sum + (row.referencePhotos || []).length, 0),
+    createdAccounts, updatedAccounts, createdPhotos, importedAt:now
+  };
   audit(db, { id:'system-import', name:'公开客户资料导入' }, 'import-santa-monica-field-sales-prospects', {
     collection:'salesAccounts', detail:`导入 ${importedAccountIds.length} 家门店与 ${db.santaMonicaFieldSalesImportSummary.photos} 张公开资料照片`
   });
@@ -9240,7 +9267,16 @@ async function api(req, res) {
       build: version.build,
       port: PORT,
       publicUrl: config.publicUrl || null,
-      santaMonicaFieldSalesImport: { version:db.santaMonicaFieldSalesImportVersion || '', accounts:importedAccounts, architecturalAccounts:importedArchitecturalAccounts, photos:importedPhotos },
+      santaMonicaFieldSalesImport: {
+        version:db.santaMonicaFieldSalesImportVersion || '',
+        accounts:importedAccounts,
+        architecturalAccounts:importedArchitecturalAccounts,
+        photos:importedPhotos,
+        totalAudited:Number(db.santaMonicaFieldSalesImportSummary?.accounts || 0),
+        googleConfirmed:Number(db.santaMonicaFieldSalesImportSummary?.confirmedAccounts || 0),
+        googleRejected:Number(db.santaMonicaFieldSalesImportSummary?.rejectedAccounts || 0),
+        googleNeedsReview:Number(db.santaMonicaFieldSalesImportSummary?.needsReviewAccounts || 0)
+      },
       lasVegasFieldSalesImport: { version:db.lasVegasFieldSalesImportVersion || '', accounts:importedLasVegasAccounts, architecturalAccounts:importedLasVegasArchitecturalAccounts, photos:importedLasVegasPhotos, routes:Number(db.lasVegasFieldSalesImportSummary?.routes || 0), batches:Number(db.lasVegasFieldSalesImportSummary?.batches || 0) },
       regionalFieldSalesImports,
       time: new Date().toISOString()
@@ -10163,6 +10199,13 @@ async function api(req, res) {
     const geocoded = hasValidCoordinates(body.lat, body.lng)
       ? { lat: Number(body.lat), lng: Number(body.lng), displayName: address }
       : await forwardGeocode(address);
+    const storefrontPhotoUrl = String(body.storefrontPhotoUrl || '').trim().slice(0, 1500);
+    if (body.onsiteCapture === true && (!storefrontPhotoUrl || !hasValidCoordinates(body.lat, body.lng))) {
+      return send(res, 400, { error:'现场新增客户必须拍摄门店照片并取得手机定位' });
+    }
+    if (storefrontPhotoUrl && !storefrontPhotoUrl.startsWith(`${requestPublicBaseUrl(req)}/customer-media/`)) {
+      return send(res, 400, { error:'门店照片必须先通过系统现场上传' });
+    }
     const account = {
       id: id(), businessName, address,
       branchId: String(body.branchId || assignedUser?.defaultBranchId || user.defaultBranchId || '').trim(),
@@ -10179,7 +10222,7 @@ async function api(req, res) {
       interestedProductsNote: String(body.interestedProductsNote || '').trim().slice(0, 1000),
       discussionSummary: String(body.discussionSummary || '').trim().slice(0, 5000),
       nextAction: String(body.nextAction || '').trim().slice(0, 3000),
-      source: String(body.source || '').trim().slice(0, 80),
+      source: String(body.source || '业务员现场新增').trim().slice(0, 80),
       language: body.language === 'en' ? 'en' : body.language === 'zh' ? 'zh' : 'auto',
       assignedUserId,
       assignedUserName: (db.users || []).find(item => item.id === assignedUserId)?.name || '',
@@ -10189,8 +10232,15 @@ async function api(req, res) {
       lat: geocoded?.lat ?? null,
       lng: geocoded?.lng ?? null,
       geocodedAddress: geocoded?.displayName || '',
-      locationSource: geocoded ? 'customer-address-geocode' : 'address-pending',
-      locationVerifiedAt: geocoded ? now : '',
+      locationSource: geocoded ? (storefrontPhotoUrl ? 'field-sales-onsite-capture' : 'customer-address-geocode') : 'address-pending',
+      locationVerifiedAt: geocoded && storefrontPhotoUrl ? now : '',
+      locationAccuracy:Number.isFinite(Number(body.accuracy)) ? Math.max(0, Number(body.accuracy)) : null,
+      googleVerificationStatus:'pending',
+      googleVerifiedAt:'',
+      googleVerificationReasons:['现场新增客户，等待 Google 商家资料核验'],
+      leadPool:false,
+      active:true,
+      referencePhotoUrls:storefrontPhotoUrl ? [storefrontPhotoUrl] : [],
       lastVisitAt: '',
       nextVisitAt: String(body.nextVisitAt || '').trim() || addDaysIso(db, 0, 17),
       createdByUserId: user.id,
@@ -10200,6 +10250,18 @@ async function api(req, res) {
     const branchError = assignRecordBranch(db, user, account, 'salesAccounts');
     if (branchError) return send(res, 400, { error: branchError });
     db.salesAccounts.unshift(account);
+    if (storefrontPhotoUrl) {
+      db.salesAttachments.unshift({
+        id:id(), objectId:account.id, accountId:account.id, visitId:'',
+        userId:user.id, userName:user.name || user.email, branchId:account.branchId || '',
+        fileName:`${businessName} 现场门店照片`.slice(0, 160), contentType:'image/jpeg', sizeBytes:0,
+        url:storefrontPhotoUrl, referenceMaterial:false, locationVerified:Boolean(geocoded),
+        lat:geocoded?.lat ?? null, lng:geocoded?.lng ?? null,
+        accuracy:Number.isFinite(Number(body.accuracy)) ? Math.max(0, Number(body.accuracy)) : null,
+        capturedAt:String(body.capturedAt || now).slice(0, 80), sourceLabel:'业务员现场新增客户门店照片',
+        createdAt:now
+      });
+    }
     audit(db, user, 'create-field-sales-account', { collection: 'salesAccounts', recordId: account.id, recordLabel: businessName, after: account, detail: `新增外勤客户 ${businessName}` });
     writeDb(db);
     notifyDataChanged('field-sales-account-created', account.id);

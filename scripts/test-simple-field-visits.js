@@ -16,6 +16,12 @@ assert(mobile.includes('visibleAccounts.map(salesSimpleCustomerCard)'), 'home mu
 assert(mobile.includes("String(a.visitBatch || '').localeCompare"), 'customers must follow batch and stop order inside each direction');
 assert(mobile.includes('routeForRegion'), 'directions must follow the workbook route order');
 assert(mobile.includes('拍照拜访'), 'customer card must open direct photo check-in');
+assert(mobile.includes('谷歌已确认'), 'confirmed Google businesses must have a visible badge');
+assert(mobile.includes('待谷歌核验'), 'field-added customers must show a pending Google verification badge');
+assert(mobile.includes('salesNewCustomerPhotoFile'), 'new customer flow must require an on-site storefront photo');
+assert(mobile.includes('capture="environment"'), 'new customer photo must request the rear camera on mobile');
+assert(mobile.includes('storefrontPhotoUrl:uploaded.url'), 'new customer flow must upload the storefront photo');
+assert(mobile.includes('onsiteCapture:true'), 'new customer flow must identify itself as a verified on-site capture');
 assert(mobile.includes('openSalesReviewDialog'), 'customer card must expose the imported customer profile');
 assert(mobile.includes('公开资料照片；拍摄地点未核实'), 'reference photos must be clearly distinguished from on-site photos');
 assert(mobile.includes('account.website'), 'customer profile must display the imported website');
@@ -48,8 +54,12 @@ assert(server.includes('update-field-sales-visit'), 'server must support audited
 assert(server.includes('applySantaMonicaFieldSalesProspectImport();'), 'production startup must run the idempotent prospect import');
 assert(server.includes('referenceMaterial === true'), 'public reference photos must remain visible in the customer profile');
 assert(server.includes('account.leadPool === true'), 'unassigned imported leads must be claimable by a salesperson');
+assert(server.includes("googleVerificationStatus:'pending'"), 'field-added customers must start pending Google verification');
+assert(server.includes("locationSource: geocoded ? (storefrontPhotoUrl ? 'field-sales-onsite-capture'"), 'field-added customers must retain on-site GPS evidence');
+assert(server.includes("body.onsiteCapture === true && (!storefrontPhotoUrl || !hasValidCoordinates(body.lat, body.lng))"), 'server must reject incomplete on-site customer captures');
+assert(server.includes("account.active = source.active === true && account.googleVerificationStatus === 'confirmed'"), 'only Google-confirmed imported Los Angeles records may remain active');
 assert(css.includes('.sales-region-grid'), 'region selector must have mobile styling');
 assert(css.includes('.sales-simple-customer-photo'), 'imported storefront photos must have mobile styling');
-assert(html.includes('/mobile.js?v=79') && html.includes('/mobile.css?v=66'), 'mobile asset cache keys must be updated');
+assert(html.includes('/mobile.js?v=80') && html.includes('/mobile.css?v=67'), 'mobile asset cache keys must be updated');
 
 console.log('simple field visits regression test passed');

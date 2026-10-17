@@ -62,6 +62,7 @@ let salesInventoryPricingLoading = false;
 let salesLiveCameraStream = null;
 let salesLiveCameraFile = null;
 let salesLiveCameraCapturedAt = '';
+let salesNewCustomerPhotoFile = null;
 
 const I18N = {
   zh: {
@@ -1704,6 +1705,10 @@ function salesLocalizedHtml(html) {
     '设置回访、收款或测试提醒':'Set visit, payment, or trial reminders','自动汇总工作日报':'Generate the daily report',
     '用正式业务记录形成当日总结':'Summarize the day from verified records','常用功能':'Quick Actions','点击进入独立页面':'Open a dedicated page',
     '新增客户':'Add Customer','录入新客户资料':'Create a customer profile','客户列表':'Customers','查看全部共享客户':'View all shared customers',
+    '谷歌已确认':'Google Verified','待谷歌核验':'Pending Google Verification','现场新增客户':'Add Customer On Site','仅归当前业务员，待谷歌核验':'Assigned only to you · Pending Google verification',
+    '拍摄门店照片 *':'Take Storefront Photo *','请在客户门口直接拍摄，保存现场定位':'Take the photo at the storefront; the current location will be saved',
+    '现场门店照片':'On-site Storefront Photo','保存时自动取得当前 GPS 位置。':'Current GPS location will be captured when you save.',
+    '保存新增客户':'Save New Customer','保存后可立即拜访；核验通过后显示“谷歌已确认”。':'You can visit immediately after saving. The Google Verified badge appears after review.',
     '今日拜访':'Today\'s Visits','今天计划与进行中':'Today\'s plan and visits','计划拜访':'Plan Visits','选择客户并安排时间':'Choose customers and schedule time',
     '工作日报':'Daily Report','记录今天完成事项':'Record today\'s completed work','附近客户':'Nearby Customers','洛杉矶 / 拉斯维加斯':'Los Angeles / Las Vegas',
     '今日概览':'Today at a Glance','只显示数量':'Counts only','已经完成':'Completed','待跟进':'Follow-ups Due','等待拜访':'Awaiting Visit',
@@ -1758,7 +1763,7 @@ function salesLocalizedHtml(html) {
     '创建订单并进入客户签收':'Create Order and Continue to Acceptance','创建后自动生成库存出库、收款记录和客户应收账款。':'Saving creates inventory, payment, and customer receivable records.',
     '到店拜访':'On-site Visit','电话跟进':'Phone Follow-up','邮件跟进':'Email Follow-up','样品测试回访':'Sample Trial Follow-up','收款跟进':'Payment Follow-up','报价跟进':'Quote Follow-up',
     '到店打卡':'Arrival Check-in','下一步':'Next Step','今日完成 ':'Completed ',' 家客户拜访，现场订单 ':' customer visits, on-site orders ','，收款 ':'; payments ','，已建立 ':'; created ',' 项后续跟进。':' follow-up tasks.',
-    '新增客户':'New Customers','客户问题／需要公司协助':'Customer Issues / Support Needed',
+    '新增客户':'Add Customer','客户问题／需要公司协助':'Customer Issues / Support Needed',
     '保存并完成拜访':'Save and Complete Visit','记录拜访':'Visit Notes','本次拜访记录':'Current Visit Record','一次填写并保存':'Complete once and save',
     '见到的人的情况与细节':'Person Met and Details','对方职务、决策权、关注点和现场情况':'Role, decision authority, interests, and on-site details',
     '当时谈了什么 *':'What Was Discussed *','客户需求、沟通情况和本次结果':'Customer needs, discussion, and outcome','下一步要做什么':'Next Action',
@@ -1929,7 +1934,10 @@ function salesSimpleCustomerCard(account) {
   const contact = [account.contactName, account.phone].filter(Boolean).map(escapeHtml).join(' · ');
   const photo = (account.referencePhotoUrls || [])[0];
   const route = [account.visitBatch, account.visitStop ? salesRouteStopLabel(account.visitStop) : ''].filter(Boolean).join(' · ');
-  return `<article class="sales-simple-customer">${photo ? `<div class="sales-simple-customer-photo"><img src="${escapeHtml(photo)}" alt="${escapeHtml(account.businessName)}"></div>` : '<div class="sales-simple-customer-photo empty">暂无资料照片</div>'}<div class="sales-simple-customer-main"><b>${escapeHtml(account.businessName)}</b><p>${escapeHtml(account.address || '')}</p>${contact ? `<small>${contact}</small>` : ''}${route ? `<small>${escapeHtml(route)}</small>` : ''}${account.leadPool ? '<em>公共待认领客户</em>' : ''}</div><div class="sales-simple-customer-actions"><button onclick="openSalesReviewDialog('${account.id}')">查看资料</button><button class="primary-inline" onclick="openSalesStartDialog('${account.id}')">拍照拜访</button></div></article>`;
+  const verification = account.googleVerificationStatus === 'confirmed'
+    ? '<em class="sales-google-status confirmed">✓ 谷歌已确认</em>'
+    : '<em class="sales-google-status pending">⌛ 待谷歌核验</em>';
+  return `<article class="sales-simple-customer">${photo ? `<div class="sales-simple-customer-photo"><img src="${escapeHtml(photo)}" alt="${escapeHtml(account.businessName)}"></div>` : '<div class="sales-simple-customer-photo empty">暂无资料照片</div>'}<div class="sales-simple-customer-main"><b>${escapeHtml(account.businessName)}</b><p>${escapeHtml(account.address || '')}</p>${contact ? `<small>${contact}</small>` : ''}${route ? `<small>${escapeHtml(route)}</small>` : ''}${verification}${account.leadPool ? '<em>公共待认领客户</em>' : ''}</div><div class="sales-simple-customer-actions"><button onclick="openSalesReviewDialog('${account.id}')">查看资料</button><button class="primary-inline" onclick="openSalesStartDialog('${account.id}')">拍照拜访</button></div></article>`;
 }
 
 function salesCustomerMiniCard(account, selectMode = false) {
@@ -1960,7 +1968,16 @@ function toggleSalesPlanAccount(id) {
 function quickPlanSalesAccount(id) { salesSelectedAccountIds = [id]; salesPlanDate = salesLocalDate(1); openSalesScreen('schedule'); }
 
 function salesAddCustomerHtml() {
-  return salesPage('新增客户', `<section class="sales-form-card"><div class="sales-section-title"><b>客户基本资料</b><span>填写后即可拜访</span></div><label>客户或门店名称 *<input id="salesBusinessName"></label><label>客户地址 *<textarea id="salesAddress"></textarea></label><div class="sales-two"><label>城市 / 区域<input id="salesCity" placeholder="Los Angeles"></label><label>联系电话<input id="salesPhone" type="tel"></label></div><div class="sales-two"><label>联系人<input id="salesContact"></label><label>电子邮箱<input id="salesEmail" type="email"></label></div><label>公司网站<input id="salesWebsite" type="url" placeholder="https://"></label><label>客户备注<textarea id="salesNote" placeholder="客户需求、主营业务或其他重要信息"></textarea></label></section><button class="sales-page-primary" onclick="createSalesAccountFromPage(this)">保存客户</button><p class="sales-page-note">保存后回到区域客户列表，可直接拍照拜访。</p>`);
+  salesNewCustomerPhotoFile = null;
+  return salesPage('新增客户', `<section class="sales-form-card"><div class="sales-section-title"><b>现场新增客户</b><span>仅归当前业务员，待谷歌核验</span></div><label class="sales-new-customer-camera">📷<span><b>拍摄门店照片 *</b><small>请在客户门口直接拍摄，保存现场定位</small></span><input id="salesNewCustomerPhoto" type="file" accept="image/*" capture="environment" onchange="prepareSalesNewCustomerPhoto(this)"></label><img id="salesNewCustomerPreview" class="sales-new-customer-preview" alt="现场门店照片" hidden><p id="salesNewCustomerLocation" class="sales-page-note">保存时自动取得当前 GPS 位置。</p><label>客户或门店名称 *<input id="salesBusinessName"></label><label>客户地址 *<textarea id="salesAddress"></textarea></label><div class="sales-two"><label>城市 / 区域<input id="salesCity" placeholder="Los Angeles"></label><label>联系电话<input id="salesPhone" type="tel"></label></div><div class="sales-two"><label>联系人<input id="salesContact"></label><label>电子邮箱<input id="salesEmail" type="email"></label></div><label>公司网站<input id="salesWebsite" type="url" placeholder="https://"></label><label>客户备注<textarea id="salesNote" placeholder="客户需求、主营业务或其他重要信息"></textarea></label></section><button class="sales-page-primary" onclick="createSalesAccountFromPage(this)">保存新增客户</button><p class="sales-page-note">保存后可立即拜访；核验通过后显示“谷歌已确认”。</p>`);
+}
+
+function prepareSalesNewCustomerPhoto(input) {
+  salesNewCustomerPhotoFile = input?.files?.[0] || null;
+  const preview = document.getElementById('salesNewCustomerPreview');
+  if (!preview || !salesNewCustomerPhotoFile) return;
+  preview.src = URL.createObjectURL(salesNewCustomerPhotoFile);
+  preview.hidden = false;
 }
 
 async function fillSalesCurrentLocation() {
@@ -1968,7 +1985,17 @@ async function fillSalesCurrentLocation() {
 }
 
 async function createSalesAccountFromPage(button) {
-  try { button.disabled=true; state=await api('/api/field-sales/accounts',{method:'POST',body:JSON.stringify({businessName:document.getElementById('salesBusinessName').value,address:document.getElementById('salesAddress').value,city:document.getElementById('salesCity').value,phone:document.getElementById('salesPhone').value,email:document.getElementById('salesEmail').value,website:document.getElementById('salesWebsite').value,contactName:document.getElementById('salesContact').value,note:document.getElementById('salesNote').value,lat:salesNearbyOrigin?.lat,lng:salesNearbyOrigin?.lng})}); user=state.user; salesScreen='home'; render(); alert(lang === 'en' ? 'Customer saved.' : '客户已保存，可以直接开始拜访。'); } catch(e){ alert(e.message); button.disabled=false; }
+  if (!salesNewCustomerPhotoFile) return alert(lang === 'en' ? 'Take a storefront photo first.' : '请先在现场拍摄门店照片。');
+  try {
+    button.disabled = true;
+    button.textContent = lang === 'en' ? 'Locating…' : '正在定位…';
+    const position = await getPosition();
+    document.getElementById('salesNewCustomerLocation').textContent = lang === 'en' ? 'Location captured. Uploading photo…' : '现场定位已取得，正在上传照片……';
+    button.textContent = lang === 'en' ? 'Uploading…' : '正在上传…';
+    const uploaded = await uploadSalesPhoto(salesNewCustomerPhotoFile);
+    state = await api('/api/field-sales/accounts',{method:'POST',body:JSON.stringify({businessName:document.getElementById('salesBusinessName').value,address:document.getElementById('salesAddress').value,city:document.getElementById('salesCity').value,phone:document.getElementById('salesPhone').value,email:document.getElementById('salesEmail').value,website:document.getElementById('salesWebsite').value,contactName:document.getElementById('salesContact').value,note:document.getElementById('salesNote').value,lat:position.coords.latitude,lng:position.coords.longitude,accuracy:position.coords.accuracy,storefrontPhotoUrl:uploaded.url,capturedAt:new Date().toISOString(),source:'业务员现场新增',onsiteCapture:true})});
+    user=state.user; salesNewCustomerPhotoFile=null; salesScreen='home'; render(); alert(lang === 'en' ? 'Customer saved and queued for Google verification.' : '客户已保存，已进入谷歌核验队列，可以立即开始拜访。');
+  } catch(e){ alert(e.message); button.disabled=false; button.textContent=lang === 'en' ? 'Save Customer' : '保存新增客户'; }
 }
 
 function salesScheduleHtml() {
