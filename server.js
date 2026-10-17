@@ -4396,6 +4396,8 @@ async function createFieldSalesAnalysis(visit, requestedProvider = '') {
   const provider = requestedProvider === 'deepseek' ? 'deepseek' : requestedProvider === 'openai' ? 'openai' : (process.env.OPENAI_API_KEY ? 'openai' : 'deepseek');
   const prompt = `You are QUaD Film's bilingual field-sales coach. Analyze this visit report and return JSON only.
 Customer: ${visit.businessName}
+Person met: ${visit.contactMet || ''}
+Person and meeting details: ${visit.contactMetDetails || ''}
 Report: ${visit.reportText}
 Outcome: ${visit.outcome || ''}
 Next action: ${visit.nextAction || ''}
@@ -4406,7 +4408,7 @@ Location verification: ${JSON.stringify({
   customerAddress: visit.customerAddress || '',
   checkInAddress: visit.checkIn?.address || ''
 })}
-Return exactly these fields: summaryZh, summaryEn, customerNeedsZh, customerNeedsEn, objectionsZh, objectionsEn, nextActionsZh, nextActionsEn, riskLevel, managerAdviceZh, managerAdviceEn. riskLevel must be low, medium, or high. Be concise and factual.`;
+Return exactly these fields: contactMetZh, contactMetEn, contactMetDetailsZh, contactMetDetailsEn, reportTextZh, reportTextEn, nextActionZh, nextActionEn, summaryZh, summaryEn, customerNeedsZh, customerNeedsEn, objectionsZh, objectionsEn, nextActionsZh, nextActionsEn, riskLevel, managerAdviceZh, managerAdviceEn. For the four paired visit fields, preserve the exact factual meaning and produce both natural Chinese and natural English, regardless of the source language. riskLevel must be low, medium, or high. Be concise and factual.`;
   let content = '';
   if (provider === 'openai') {
     if (!process.env.OPENAI_API_KEY) throw new Error('OpenAI API Key 尚未配置');

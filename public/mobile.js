@@ -1875,7 +1875,9 @@ function salesHomeHtml() {
     return (preferredA < 0 ? 999 : preferredA) - (preferredB < 0 ? 999 : preferredB) || a.localeCompare(b);
   });
   if (!salesSelectedRegion || !regionGroups[salesSelectedRegion]) salesSelectedRegion = regions[0] || '';
-  const visibleAccounts = [...(regionGroups[salesSelectedRegion] || [])].sort((a, b) => String(a.visitBatch || '').localeCompare(String(b.visitBatch || ''), undefined, { numeric:true }) || Number(a.visitStop || 0) - Number(b.visitStop || 0));
+  const visibleAccounts = [...(regionGroups[salesSelectedRegion] || [])]
+    .filter(account => account.active !== false && account.googleVerificationStatus !== 'rejected')
+    .sort((a, b) => String(a.visitBatch || '').localeCompare(String(b.visitBatch || ''), undefined, { numeric:true }) || Number(a.visitStop || 0) - Number(b.visitStop || 0));
   const secondary = [
     `<button onclick="openSalesScreen('add')">＋ 新增客户</button>`,
     canViewSalesInventoryPricing() ? `<button onclick="openSalesScreen('inventory-pricing')">▦ 库存与报价</button>` : '',
@@ -1883,11 +1885,11 @@ function salesHomeHtml() {
   ].filter(Boolean).join('');
   return salesLocalizedHtml(`<div class="sales-design-home sales-simple-home">
     <section class="sales-design-hero"><small>QUaD FIELD SALES</small><h2>客户拜访</h2><p>选择区域和客户，拍照定位，填写结果</p></section>
+    <nav class="sales-simple-secondary sales-simple-secondary-top" aria-label="${lang === 'en' ? 'Quick actions' : '常用功能'}">${secondary}</nav>
     <section class="sales-simple-step"><header><i>1</i><div><b>选择城市</b><span>各城市客资、方向和路线独立显示</span></div></header><div class="sales-city-grid">${cityOrder.map(city => `<button class="${city === salesSelectedCity ? 'active' : ''}" onclick="selectSalesCity('${city}')"><b>${escapeHtml(salesCityLabel(city))}</b><span>${cityGroups[city]?.length || 0} ${lang === 'en' ? 'customers' : '位客户'}</span></button>`).join('')}</div></section>
     <section class="sales-simple-step"><header><i>2</i><div><b>选择客户类型</b><span>汽车膜与建筑膜客户分开显示</span></div></header><div class="sales-category-grid">${['automotive','architectural'].map(category => `<button class="${category === salesSelectedCustomerCategory ? 'active' : ''}" onclick="selectSalesCustomerCategory('${category}')"><b>${escapeHtml(salesCategoryLabel(category))}</b><span>${categoryGroups[category].length} ${lang === 'en' ? 'customers' : '位客户'}</span></button>`).join('')}</div></section>
     <section class="sales-simple-step"><header><i>3</i><div><b>选择拜访区域</b><span>${lang === 'en' ? `Only show ${escapeHtml(salesCategoryLabel(salesSelectedCustomerCategory).toLowerCase())} customers in ${escapeHtml(salesCityLabel(salesSelectedCity))}` : `只显示${escapeHtml(salesCityLabel(salesSelectedCity))}的${escapeHtml(salesCategoryLabel(salesSelectedCustomerCategory))}客户`}</span></div></header><div class="sales-region-grid">${regions.map(region => `<button class="${region === salesSelectedRegion ? 'active' : ''}" onclick="selectSalesRegion('${region}')"><b>${escapeHtml(salesRegionLabel(region))}</b><span>${regionGroups[region].length} ${lang === 'en' ? 'customers' : '位客户'}</span></button>`).join('') || '<p class="hint">这个类型还没有客户资料。</p>'}</div></section>
     <section class="sales-simple-step"><header><i>4</i><div><b>${escapeHtml(salesSelectedRegion ? salesRegionLabel(salesSelectedRegion) : (lang === 'en' ? 'Select Customer' : '选择客户'))}</b><span>点击客户即可拍照定位并开始拜访</span></div></header><label class="sales-search">⌕<input placeholder="搜索客户、地址或联系人" oninput="filterSalesCards(this.value)"></label><div id="salesCustomerCards" class="sales-simple-customers">${visibleAccounts.map(salesSimpleCustomerCard).join('') || '<p class="hint">这个区域还没有客户。</p>'}</div></section>
-    <div class="sales-simple-secondary">${secondary}</div>
   </div>`);
 }
 
@@ -1935,10 +1937,27 @@ function salesSimpleCustomerCard(account) {
   const contact = [account.contactName, account.phone].filter(Boolean).map(escapeHtml).join(' · ');
   const photo = (account.referencePhotoUrls || [])[0];
   const route = [account.visitBatch, account.visitStop ? salesRouteStopLabel(account.visitStop) : ''].filter(Boolean).join(' · ');
-  const verification = account.googleVerificationStatus === 'confirmed'
+  const verificationStatus = String(account.googleVerificationStatus || 'pending');
+  const verification = verificationStatus === 'confirmed'
     ? '<em class="sales-google-status confirmed">✓ 谷歌已确认</em>'
-    : '<em class="sales-google-status pending">⌛ 待谷歌核验</em>';
-  return `<article class="sales-simple-customer">${photo ? `<div class="sales-simple-customer-photo"><img src="${escapeHtml(photo)}" alt="${escapeHtml(account.businessName)}"></div>` : '<div class="sales-simple-customer-photo empty">暂无资料照片</div>'}<div class="sales-simple-customer-main"><b>${escapeHtml(account.businessName)}</b><p>${escapeHtml(account.address || '')}</p>${contact ? `<small>${contact}</small>` : ''}${route ? `<small>${escapeHtml(route)}</small>` : ''}${verification}${account.leadPool ? '<em>公共待认领客户</em>' : ''}</div><div class="sales-simple-customer-actions"><button onclick="openSalesReviewDialog('${account.id}')">查看资料</button><button class="primary-inline" onclick="openSalesStartDialog('${account.id}')">拍照拜访</button></div></article>`;
+    : verificationStatus === 'needs_review'
+      ? '<em class="sales-google-status unconfirmed">? 未确认</em>'
+      : verificationStatus === 'rejected'
+        ? '<em class="sales-google-status rejected">✕ 无效客户</em>'
+        : '<em class="sales-google-status pending">⌛ 待确认</em>';
+  const accountVisits = (state.fieldSales?.visits || []).filter(item => item.accountId === account.id && item.userId === user?.id);
+  const activeVisit = accountVisits.find(item => item.status === '进行中');
+  const completedVisit = accountVisits.find(item => item.status === '已完成');
+  const visitStatus = activeVisit
+    ? '<em class="sales-visit-status active">● 拜访中</em>'
+    : completedVisit
+      ? '<em class="sales-visit-status visited">✓ 已拜访</em>'
+      : '<em class="sales-visit-status not-visited">○ 未拜访</em>';
+  const nextVisitTime = account.nextVisitAt ? new Date(account.nextVisitAt) : null;
+  const nextVisit = nextVisitTime && Number.isFinite(nextVisitTime.getTime()) && nextVisitTime.getTime() > Date.now()
+    ? `<em class="sales-visit-status scheduled">◷ 已预约 ${escapeHtml(formatMobileDateTime(account.nextVisitAt))}</em>`
+    : '';
+  return `<article class="sales-simple-customer"><div class="sales-simple-customer-photo-column">${photo ? `<div class="sales-simple-customer-photo"><img src="${escapeHtml(photo)}" alt="${escapeHtml(account.businessName)}"></div>` : '<div class="sales-simple-customer-photo empty">暂无资料照片</div>'}<div class="sales-card-statuses">${verification}${visitStatus}${nextVisit}</div></div><div class="sales-simple-customer-main"><b>${escapeHtml(account.businessName)}</b><p>${escapeHtml(account.address || '')}</p>${contact ? `<small>${contact}</small>` : ''}${route ? `<small>${escapeHtml(route)}</small>` : ''}${account.leadPool ? '<em>公共待认领客户</em>' : ''}</div><div class="sales-simple-customer-actions"><button onclick="openSalesReviewDialog('${account.id}')">查看资料</button><button class="primary-inline" onclick="openSalesStartDialog('${account.id}')">进入拜访</button></div></article>`;
 }
 
 function salesCustomerMiniCard(account, selectMode = false) {
@@ -2030,7 +2049,7 @@ function salesOrderPageHtml(account,visit,head){const products=state.fieldSales?
 function salesExecutionHtml(){
   const {account,visit}=salesActiveContext();
   if(!account||!visit)return salesHomeHtml();
-  return salesPage('记录拜访', `<section class="sales-tool-customer"><h2>${escapeHtml(account.businessName)}</h2><span>${escapeHtml(account.address || '')}</span></section><section class="sales-check-ok">✓ 门头照片、时间和现场定位已保存</section><section class="sales-form-card sales-simple-visit-form"><div class="sales-section-title"><b>本次拜访记录</b><span>一次填写并保存</span></div><div class="sales-two"><label>联系人<input id="salesSimpleContact" value="${escapeHtml(visit.contactMet || account.contactName || '')}"></label><label>联系电话<input value="${escapeHtml(account.phone || '')}" readonly></label></div><label>见到的人的情况与细节<textarea id="salesSimpleContactDetails" placeholder="对方职务、决策权、关注点和现场情况">${escapeHtml(visit.contactMetDetails || '')}</textarea></label><label>当时谈了什么 *<textarea id="salesSimpleReport" placeholder="客户需求、沟通情况和本次结果"></textarea></label><label>下一步要做什么<textarea id="salesSimpleNextAction" placeholder="回访、报价、送样或收款安排"></textarea></label><div class="sales-section-title"><b>成交 / 报价记录</b><span>没有成交可以留空</span></div>${salesProductDatalist()}<label>产品型号或名称<input id="salesSimpleProduct" list="salesProductModels" placeholder="搜索或直接填写产品"></label><div class="sales-two"><label>数量<input id="salesSimpleQuantity" type="number" min="0" step="1" value="0"></label><label>成交单价<input id="salesSimplePrice" type="number" min="0" step="0.01" value="0"></label></div><label>补充现场照片<input id="salesSimplePhotos" type="file" accept="image/*" capture="environment" multiple></label></section><button class="sales-page-primary" onclick="completeSimpleSalesVisit(this,'${visit.id}')">保存并完成拜访</button><p class="sales-page-note">保存后资料会立即同步到主系统。</p>`);
+  return salesPage('记录拜访', `<section class="sales-tool-customer"><h2>${escapeHtml(account.businessName)}</h2><span>${escapeHtml(account.address || '')}</span></section><section class="sales-check-ok">✓ 门头照片、时间和现场定位已保存</section><section class="sales-form-card sales-simple-visit-form"><div class="sales-section-title"><b>本次拜访记录</b><span>一次填写并保存</span></div><div class="sales-two"><label>见到什么人<input id="salesSimpleContact" value="${escapeHtml(visit.contactMet || account.contactName || '')}" placeholder="姓名和职务"></label><label>联系电话<input value="${escapeHtml(account.phone || '')}" readonly></label></div><label class="sales-main-note">见到的人的情况与细节<textarea id="salesSimpleContactDetails" placeholder="对方职务、决策权、关注点和现场情况">${escapeHtml(visit.contactMetDetails || '')}</textarea></label><label class="sales-main-note">当时谈了什么 *<textarea id="salesSimpleReport" placeholder="客户需求、沟通情况和本次结果"></textarea></label><label class="sales-main-note">下一步要做什么<textarea id="salesSimpleNextAction" placeholder="回访、报价、送样或收款安排"></textarea></label><div class="sales-section-title"><b>成交 / 报价记录</b><span>没有成交可以留空</span></div>${salesProductDatalist()}<label>产品型号或名称<input id="salesSimpleProduct" list="salesProductModels" placeholder="搜索或直接填写产品"></label><div class="sales-two"><label>数量<input id="salesSimpleQuantity" type="number" min="0" step="1" value="0"></label><label>成交单价<input id="salesSimplePrice" type="number" min="0" step="0.01" value="0"></label></div><label>补充现场照片<input id="salesSimplePhotos" type="file" accept="image/*" capture="environment" multiple></label></section><button class="sales-page-primary" onclick="completeSimpleSalesVisit(this,'${visit.id}')">保存并完成拜访</button><p class="sales-page-note">保存后资料会立即同步到主系统，并自动生成中英文对照。</p>`);
 }
 
 async function completeSimpleSalesVisit(button, visitId) {
@@ -2056,6 +2075,16 @@ async function completeSimpleSalesVisit(button, visitId) {
       soldItems:product && quantity > 0 ? [{ product, quantity, unitPrice }] : []
     }) });
     user = state.user;
+    const savedVisit = (state.fieldSales?.visits || []).find(item => item.id === visitId);
+    if (savedVisit && savedVisit.aiStatus === '待分析') {
+      button.textContent = lang === 'en' ? 'Translating…' : '正在生成中英文对照…';
+      try {
+        state = await api(`/api/field-sales/visits/${visitId}/analyze`, { method:'POST', body:JSON.stringify({}) });
+        user = state.user;
+      } catch (analysisError) {
+        console.warn('Field-sales bilingual analysis failed after save', analysisError);
+      }
+    }
     salesActiveAccountId = '';
     salesScreen = 'home';
     render();
@@ -2203,6 +2232,15 @@ function salesReviewPhotoGallery(urls, label) {
   return `<section><b>${escapeHtml(label)}</b><div class="sales-evidence-grid">${photos.map((url, index) => `<a href="${escapeHtml(url)}" target="_blank"><img src="${escapeHtml(url)}" alt="${escapeHtml(label)} ${index + 1}"></a>`).join('')}</div></section>`;
 }
 
+function salesReviewBilingualField(label, source, zh, en) {
+  const original = String(source || '').trim();
+  const chinese = String(zh || '').trim();
+  const english = String(en || '').trim();
+  if (!original && !chinese && !english) return '';
+  const translated = chinese || english;
+  return `<section class="sales-review-bilingual"><b>${escapeHtml(label)}</b>${original ? `<p class="sales-review-original">${escapeHtml(original)}</p>` : ''}${translated ? `<div><small>中文</small><p>${escapeHtml(chinese || original)}</p><small>English</small><p>${escapeHtml(english || original)}</p></div>` : `<p class="hint">${lang === 'en' ? 'Translation is being generated.' : '中英文对照正在生成。'}</p>`}</section>`;
+}
+
 function salesReviewVisitHtml(visit, trials, consignments, attachments = [], orders = [], followUps = []) {
   const analysis = visit.aiAnalysis || {};
   const summary = lang === 'en' ? analysis.summaryEn : analysis.summaryZh;
@@ -2233,10 +2271,12 @@ function salesReviewVisitHtml(visit, trials, consignments, attachments = [], ord
     </div>
     <section class="sales-review-location"><b>${lang === 'en' ? 'Check-in and location' : '到店与定位明细'}</b><p><strong>${lang === 'en' ? 'Customer address' : '客户登记地址'}：</strong>${escapeHtml(visit.customerAddress || '—')}</p><p><strong>${lang === 'en' ? 'Check-in address' : '现场定位地址'}：</strong>${escapeHtml(checkIn.address || '—')}</p>${checkIn.accuracy ? `<p><strong>GPS ${lang === 'en' ? 'accuracy' : '精度'}：</strong>${Math.round(Number(checkIn.accuracy))}m</p>` : ''}${checkIn.mapUrl ? `<a href="${escapeHtml(checkIn.mapUrl)}" target="_blank">${lang === 'en' ? 'Open check-in map' : '打开现场定位地图'}</a>` : ''}</section>
     ${checkIn.photoUrl ? `<button type="button" class="sales-review-photo" onclick="openSalesVisitPhoto('${visit.accountId}','${visit.id}')"><img src="${escapeHtml(checkIn.photoUrl)}" alt="${lang === 'en' ? 'Storefront check-in' : '到店打卡照片'}"><span>${lang === 'en' ? 'Open full check-in photo and location details' : '打开完整门头照片和定位凭证'}</span></button>` : ''}
-    <section><b>${lang === 'en' ? 'Visit report and full conversation' : '当时拜访情况／完整沟通记录'}</b><p>${escapeHtml(visit.reportText || (lang === 'en' ? 'No report.' : '没有填写拜访内容。'))}</p></section>
+    ${salesReviewBilingualField(lang === 'en' ? 'Person met' : '见到什么人', visit.contactMet, analysis.contactMetZh, analysis.contactMetEn)}
+    ${salesReviewBilingualField(lang === 'en' ? 'Person and meeting details' : '见到的人的情况与细节', visit.contactMetDetails, analysis.contactMetDetailsZh, analysis.contactMetDetailsEn)}
+    ${salesReviewBilingualField(lang === 'en' ? 'Visit report and full conversation' : '当时谈了什么', visit.reportText, analysis.reportTextZh, analysis.reportTextEn)}
     ${visit.customerNeeds ? `<section><b>${lang === 'en' ? 'Customer needs' : '客户需求'}</b><p>${escapeHtml(visit.customerNeeds)}</p></section>` : ''}
     ${visit.objections ? `<section><b>${lang === 'en' ? 'Customer questions and objections' : '客户关注和异议'}</b><p>${escapeHtml(visit.objections)}</p></section>` : ''}
-    ${visit.nextAction ? `<section><b>${lang === 'en' ? 'Next action' : '下一步动作'}</b><p>${escapeHtml(visit.nextAction)}</p></section>` : ''}
+    ${salesReviewBilingualField(lang === 'en' ? 'Next action' : '下一步要做什么', visit.nextAction, analysis.nextActionZh, analysis.nextActionEn)}
     ${visit.soldItems?.length ? `<section><b>${lang === 'en' ? 'Products and prices' : '成交产品与价格'}</b><div class="sales-review-orders">${visit.soldItems.map(item => `<article class="sales-review-order"><p><strong>${escapeHtml(item.product)}</strong> × ${Number(item.quantity || 0)} · ${money(item.unitPrice)} / ${lang === 'en' ? 'unit' : '件'} · ${lang === 'en' ? 'Total' : '合计'} ${money(item.total)}</p></article>`).join('')}</div></section>` : ''}
     ${visit.nextVisitAt ? `<p class="sales-review-next">⏰ ${lang === 'en' ? 'Next visit' : '下次回访'}：${escapeHtml(formatMobileDateTime(visit.nextVisitAt))}</p>` : ''}
     ${trials.length ? `<section><b>${lang === 'en' ? 'Products delivered' : '送出的试用产品'}</b><div class="sales-review-trials">${trials.map(salesReviewTrialHtml).join('')}</div></section>` : ''}

@@ -64,14 +64,14 @@ async function run() {
   assert.match(appSource, /const deletedInternalMessageIds = new Set\(\)/, 'Deleted messages must retain a local tombstone against stale refresh responses');
   assert.match(appSource, /applyInternalMessageTombstones/, 'Every message snapshot must remove locally deleted ids');
   assert.match(serverSource, /DELETE is intentionally idempotent/, 'Repeated deletes must return current state without a false not-found error');
-  assert(indexSource.includes('/app.js?v=163'), 'Desktop app asset marker must be bumped');
-  assert(indexSource.includes('/styles.css?v=110'), 'Desktop stylesheet marker must match the current release');
+  assert(indexSource.includes('/app.js?v=164'), 'Desktop app asset marker must be bumped');
+  assert(indexSource.includes('/styles.css?v=111'), 'Desktop stylesheet marker must match the current release');
   assert.match(mobileSource, /const mobileMessageSendQueue = new Map\(\)/, 'Mobile text sends must survive bootstrap replacement');
   assert.match(mobileSource, /mobileMessageSendQueue\.set\(pendingId/, 'Mobile text must render optimistically');
   assert.match(mobileSource, /正在发送…/, 'Mobile pending text must show sending status');
   assert.match(mobileSource, /preserveMobileMessageSnapshot/, 'Mobile refreshes must preserve a visible non-empty thread');
-  assert(mobileHtml.includes('/mobile.js?v=73'), 'Mobile app asset marker must be bumped');
-  assert(serviceWorker.includes('film-shop-v183-public-catalog-cards'), 'Service worker cache must be bumped');
+  assert(mobileHtml.includes('/mobile.js?v=82'), 'Mobile app asset marker must be bumped');
+  assert(serviceWorker.includes('film-shop-field-sales-visit-review-20261017'), 'Service worker cache must be bumped');
   assert.match(appSource, /function capturePageContinuityState\(\)/, 'Desktop refreshes must capture page and nested-scroll positions');
   assert.match(appSource, /function restorePageContinuityState\(snapshot\)/, 'Desktop refreshes must restore page and nested-scroll positions');
   assert.match(appSource, /const unchangedBackgroundRefresh = Boolean\(/, 'Unchanged background refreshes must not rebuild the current page');

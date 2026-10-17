@@ -1,4 +1,4 @@
-const CACHE_NAME = 'film-shop-google-prospects-20261016';
+const CACHE_NAME = 'film-shop-field-sales-visit-review-20261017';
 const ASSETS = [
     '/mobile.html',
     '/warranty.html',

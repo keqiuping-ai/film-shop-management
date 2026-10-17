@@ -77,6 +77,7 @@ let customerNurtureDraft = {
 let fieldSalesUserFilter = 'all';
 let fieldSalesEmployeeDates = {};
 let fieldSalesExpandedEmployeeId = '';
+let fieldSalesEmployeeViewModes = {};
 let activityHeartbeatTimer = null;
 let lastEmployeeInteractionAt = Date.now();
 let deferredInstall = null;
@@ -4676,6 +4677,11 @@ function setFieldSalesEmployeeDate(personId, value) {
   render();
 }
 
+function setFieldSalesEmployeeViewMode(personId, mode) {
+  fieldSalesEmployeeViewModes[personId] = ['all', 'day', 'new'].includes(mode) ? mode : 'all';
+  render();
+}
+
 function toggleFieldSalesEmployeeLane(personId) {
   const closing = fieldSalesExpandedEmployeeId === personId;
   fieldSalesExpandedEmployeeId = closing ? '' : personId;
@@ -4941,7 +4947,14 @@ function fieldSalesVisitSummaryBlock(visit) {
   const analysis = visit.aiAnalysis || {};
   const summary = lang === 'zh' ? (analysis.summaryZh || analysis.summaryEn) : (analysis.summaryEn || analysis.summaryZh);
   const advice = lang === 'zh' ? (analysis.managerAdviceZh || analysis.managerAdviceEn) : (analysis.managerAdviceEn || analysis.managerAdviceZh);
-  return `<div class="field-sales-visit-summary"><p><b>${lang === 'zh' ? '拜访总结：' : 'Visit summary: '}</b>${escapeHtml(visit.reportText || (lang === 'zh' ? '尚未提交' : 'Not submitted'))}</p>${summary ? `<p><b>${lang === 'zh' ? 'AI 总结：' : 'AI summary: '}</b>${escapeHtml(summary)}</p>` : ''}${advice ? `<p class="field-sales-manager-advice"><b>${lang === 'zh' ? '管理建议：' : 'Manager advice: '}</b>${escapeHtml(advice)}</p>` : ''}</div>`;
+  const paired = (label, source, zh, en) => {
+    const original = String(source || '').trim();
+    const chinese = String(zh || '').trim();
+    const english = String(en || '').trim();
+    if (!original && !chinese && !english) return '';
+    return `<div class="field-sales-bilingual"><b>${escapeHtml(label)}</b>${original ? `<p>${escapeHtml(original)}</p>` : ''}${chinese || english ? `<small>中文</small><p>${escapeHtml(chinese || original)}</p><small>English</small><p>${escapeHtml(english || original)}</p>` : `<small>${lang === 'zh' ? '中英文对照正在生成' : 'Bilingual translation pending'}</small>`}</div>`;
+  };
+  return `<div class="field-sales-visit-summary">${paired(lang === 'zh' ? '见到什么人' : 'Person met', visit.contactMet, analysis.contactMetZh, analysis.contactMetEn)}${paired(lang === 'zh' ? '见到的人的情况与细节' : 'Person and meeting details', visit.contactMetDetails, analysis.contactMetDetailsZh, analysis.contactMetDetailsEn)}${paired(lang === 'zh' ? '当时谈了什么' : 'What was discussed', visit.reportText, analysis.reportTextZh, analysis.reportTextEn)}${paired(lang === 'zh' ? '下一步要做什么' : 'Next action', visit.nextAction, analysis.nextActionZh, analysis.nextActionEn)}${summary ? `<p><b>${lang === 'zh' ? 'AI 总结：' : 'AI summary: '}</b>${escapeHtml(summary)}</p>` : ''}${advice ? `<p class="field-sales-manager-advice"><b>${lang === 'zh' ? '管理建议：' : 'Manager advice: '}</b>${escapeHtml(advice)}</p>` : ''}</div>`;
 }
 
 function fieldSalesMeetingArtifacts(personId, data) {
@@ -5053,17 +5066,35 @@ function openFieldSalesCustomerDetail(accountId, personId = '', selectedDate = '
   if (cancel) cancel.hidden = true;
 }
 
+function fieldSalesEmployeeVisitCards(visits, personId, selectedDate) {
+  if (!visits.length) return `<p class="field-sales-lane-empty">${lang === 'zh' ? '还没有拜访记录。' : 'No visits yet.'}</p>`;
+  return `<div class="field-sales-visit-feed">${visits.map(visit => `<article class="field-sales-customer-visit"><header><span><b>${escapeHtml(visit.businessName || '')}</b><small>${fieldSalesDateTime(visit.completedAt || visit.startedAt || visit.createdAt)}</small></span><button class="btn" onclick="openFieldSalesCustomerDetail('${visit.accountId}', '${personId}', '${selectedDate}')">${lang === 'zh' ? '完整客户档案' : 'Full profile'}</button></header>${fieldSalesVisitSummaryBlock(visit)}</article>`).join('')}</div>`;
+}
+
+function fieldSalesEmployeeDayJourney(personId, data, selectedDate, visits) {
+  const clockRows = (state.clockRecords || []).filter(item => item.userId === personId && fieldSalesMatchesSelectedDate(item, ['at'], selectedDate));
+  const events = [
+    ...clockRows.map(item => ({ at:item.at, kind:item.type === 'in' ? 'clock-in' : 'clock-out', title:item.type === 'in' ? (lang === 'zh' ? '上班打卡' : 'Clock in') : (lang === 'zh' ? '下班打卡' : 'Clock out'), detail:item.address || '' })),
+    ...visits.map((item, index) => ({ at:item.arrivedAt || item.startedAt || item.createdAt, kind:'visit', stop:index + 1, title:`${lang === 'zh' ? `第 ${index + 1} 家` : `Stop ${index + 1}`} · ${item.businessName || ''}`, detail:item.customerAddress || item.checkIn?.address || '', accountId:item.accountId }))
+  ].filter(item => item.at).sort((a, b) => String(a.at).localeCompare(String(b.at)));
+  if (!events.length) return `<p class="field-sales-lane-empty">${lang === 'zh' ? '当天还没有上班打卡或拜访记录。' : 'No clock or visit activity that day.'}</p>`;
+  return `<ol class="field-sales-day-journey">${events.map(item => `<li class="${item.kind}"><i>${item.kind === 'visit' ? item.stop : item.kind === 'clock-in' ? '始' : '终'}</i><div><b>${escapeHtml(item.title)}</b><small>${fieldSalesDateTime(item.at)}</small>${item.detail ? `<p>${escapeHtml(item.detail)}</p>` : ''}</div>${item.accountId ? `<button class="btn" onclick="openFieldSalesCustomerDetail('${item.accountId}', '${personId}', '${selectedDate}')">${lang === 'zh' ? '查看' : 'View'}</button>` : ''}</li>`).join('')}</ol>`;
+}
+
 function fieldSalesEmployeeLane(person, data) {
   const personId = person.id;
   const selectedDate = fieldSalesEmployeeDate(personId);
   const plans = (data.visitPlans || []).filter(item => (item.assignedUserId || item.userId) === personId);
   const dayPlans = plans.filter(item => item.date === selectedDate || fieldSalesMatchesSelectedDate(item, ['plannedAt'], selectedDate));
-  const visits = (data.visits || []).filter(item => item.userId === personId && fieldSalesMatchesSelectedDate(item, ['startedAt', 'arrivedAt', 'createdAt'], selectedDate));
+  const allVisits = (data.visits || []).filter(item => item.userId === personId).sort((a, b) => String(b.completedAt || b.startedAt || b.createdAt || '').localeCompare(String(a.completedAt || a.startedAt || a.createdAt || '')));
+  const visits = allVisits.filter(item => fieldSalesMatchesSelectedDate(item, ['startedAt', 'arrivedAt', 'createdAt'], selectedDate)).sort((a, b) => String(a.arrivedAt || a.startedAt || a.createdAt || '').localeCompare(String(b.arrivedAt || b.startedAt || b.createdAt || '')));
   const reports = (data.dailyReports || []).filter(item => item.userId === personId && (item.date === selectedDate || fieldSalesMatchesSelectedDate(item, ['createdAt'], selectedDate)));
   const recordings = (data.attachments || []).filter(item => item.userId === personId && String(item.contentType || '').startsWith('audio/') && fieldSalesMatchesSelectedDate(item, ['createdAt'], selectedDate));
   const dayAccounts = fieldSalesDayCustomers(data, dayPlans, visits);
   const selected = fieldSalesUserFilter === personId;
   const expanded = fieldSalesExpandedEmployeeId === personId;
+  const mode = fieldSalesEmployeeViewModes[personId] || 'all';
+  const newAccounts = (data.accounts || []).filter(item => item.createdByUserId === personId && fieldSalesMatchesSelectedDate(item, ['createdAt'], selectedDate));
   return `<article class="field-sales-employee-lane ${selected ? 'selected' : ''} ${expanded ? 'expanded' : ''}">
     <header class="field-sales-employee-head">
       <button type="button" class="field-sales-employee-identity" onclick="toggleFieldSalesEmployeeLane('${personId}')" aria-expanded="${expanded}">${userAvatarHtml(person, 'large')}<span><strong>${escapeHtml(person.name || person.email)}</strong><small>${escapeHtml(roleNames[person.role] || person.role || '')}</small></span></button>
@@ -5080,10 +5111,10 @@ function fieldSalesEmployeeLane(person, data) {
       <small class="field-sales-employee-toggle-hint">${expanded ? (lang === 'zh' ? '点击收起并返回全部业务员' : 'Collapse and return to all salespeople') : (lang === 'zh' ? `点击查看 ${selectedDate} 的详情` : `Click to view details for ${selectedDate}`)}</small>
     </button>
     ${expanded ? `<div class="field-sales-employee-detail">
-      <section><h4>${lang === 'zh' ? `${selectedDate} 行动轨迹` : `Route for ${selectedDate}`}</h4>${fieldSalesEmployeeRouteMap(personId, data, selectedDate)}</section>
-      <section><h4>${lang === 'zh' ? '当天客户（点击查看全部细节）' : 'Customers for the day (open full details)'}</h4>${fieldSalesEmployeeMiniRows(dayAccounts, lang === 'zh' ? '当天没有安排或拜访客户' : 'No customers scheduled or visited that day', account => `<button class="field-sales-lane-row action customer-entry" onclick="openFieldSalesCustomerDetail('${account.id}', '${personId}', '${selectedDate}')"><span><b>${escapeHtml(account.businessName || '')}</b><small>${escapeHtml(account.address || '')}</small></span><span class="field-sales-customer-open">${lang === 'zh' ? '照片 · 订货 · 沟通 · 历史 ›' : 'Photos · Orders · Conversations · History ›'}</span></button>`)}</section>
-      <section><h4>${lang === 'zh' ? '当天拜访计划' : 'Visit plans for the day'}</h4>${fieldSalesEmployeeMiniRows(dayPlans, lang === 'zh' ? '当天没有拜访计划' : 'No visit plans that day', plan => `<div class="field-sales-lane-row"><span><b>${escapeHtml(plan.businessName || '')}</b><small>${fieldSalesDateTime(plan.plannedAt)}</small></span>${fieldSalesStatusPill(plan.status || '待出发', 'warn')}</div>`)}</section>
-      <details><summary>${lang === 'zh' ? `当天工作日报（${reports.length}）` : `Daily summaries for the day (${reports.length})`}</summary>${fieldSalesEmployeeMiniRows(reports, lang === 'zh' ? '当天没有工作日报' : 'No daily summaries that day', report => `<div class="field-sales-lane-row stacked"><span><b>${escapeHtml(report.date || '')}</b><small>${fieldSalesDateTime(report.createdAt)}</small></span><p>${escapeHtml(report.summary || '—')}</p></div>`)}</details>
+      <nav class="field-sales-employee-tabs"><button class="${mode === 'all' ? 'active' : ''}" onclick="setFieldSalesEmployeeViewMode('${personId}','all')">${lang === 'zh' ? `全部拜访 ${allVisits.length}` : `All visits ${allVisits.length}`}</button><button class="${mode === 'day' ? 'active' : ''}" onclick="setFieldSalesEmployeeViewMode('${personId}','day')">${lang === 'zh' ? `当天拜访 ${visits.length}` : `Day visits ${visits.length}`}</button><button class="${mode === 'new' ? 'active' : ''}" onclick="setFieldSalesEmployeeViewMode('${personId}','new')">${lang === 'zh' ? `当天新增 ${newAccounts.length}` : `New that day ${newAccounts.length}`}</button></nav>
+      ${mode === 'all' ? `<section><h4>${lang === 'zh' ? '全部历史拜访（最近优先）' : 'All visit history (newest first)'}</h4>${fieldSalesEmployeeVisitCards(allVisits, personId, selectedDate)}</section>` : ''}
+      ${mode === 'day' ? `<section><h4>${lang === 'zh' ? `${selectedDate} 完整工作路线` : `Complete route for ${selectedDate}`}</h4>${fieldSalesEmployeeRouteMap(personId, data, selectedDate)}</section><section><h4>${lang === 'zh' ? '上班 → 逐店拜访 → 下班' : 'Clock in → customer stops → clock out'}</h4>${fieldSalesEmployeeDayJourney(personId, data, selectedDate, visits)}</section><section><h4>${lang === 'zh' ? '当天拜访内容' : 'Visit details that day'}</h4>${fieldSalesEmployeeVisitCards(visits, personId, selectedDate)}</section>` : ''}
+      ${mode === 'new' ? `<section><h4>${lang === 'zh' ? `${selectedDate} 新增客户` : `Customers added on ${selectedDate}`}</h4>${fieldSalesEmployeeMiniRows(newAccounts, lang === 'zh' ? '当天没有申请新增客户' : 'No customers added that day', account => `<button class="field-sales-lane-row action customer-entry" onclick="openFieldSalesCustomerDetail('${account.id}', '${personId}', '${selectedDate}')"><span><b>${escapeHtml(account.businessName || '')}</b><small>${escapeHtml(account.address || '')}</small></span><span class="field-sales-customer-open">${lang === 'zh' ? '查看资料 ›' : 'Open profile ›'}</span></button>`)}</section>` : ''}
       <footer><button class="btn" onclick="setFieldSalesUserFilter('${personId}')">${lang === 'zh' ? '查看该业务员全部记录' : 'View all salesperson records'}</button><button class="btn primary" onclick="openFieldSalesPlan('${personId}')">${lang === 'zh' ? '安排拜访' : 'Schedule visits'}</button></footer>
     </div>` : ''}
   </article>`;
@@ -5127,8 +5158,8 @@ function fieldSalesManagementView() {
   return `<div class="field-sales-management">
     <section class="field-sales-hero"><div><span>QUaD FIELD SALES</span><h2>${lang === 'zh' ? '业务员管理中心' : 'Field Sales Management Center'}</h2><p>${lang === 'zh' ? '每位业务员独立一栏，统一管理行动轨迹、名下客户、拜访计划、沟通总结、AI 建议和录音回放。' : 'One lane per salesperson for routes, assigned customers, visit plans, conversations, AI insights, and recordings.'}</p></div><div class="field-sales-hero-actions"><button class="btn" onclick="openFieldSalesPlan()">${lang === 'zh' ? '+ 安排拜访' : '+ Schedule visits'}</button><button class="btn primary" onclick="openFieldSalesAccount()">${lang === 'zh' ? '+ 新增 / 分配客户' : '+ Add / Assign customer'}</button></div></section>
     ${fieldSalesUnassignedAccounts(unassignedAccounts)}
-    <section class="field-sales-employee-board"><header><div><h3>${lang === 'zh' ? '业务员独立档案' : 'Salesperson lanes'}</h3><p>${lang === 'zh' ? '每位业务员独立选择日期；点击业务员后只显示该员工当天的客户、轨迹、计划、总结和录音。' : 'Each salesperson has an independent date. Open one salesperson to focus on that employee’s customers, route, plans, summaries, and recordings for the selected day.'}</p></div></header>${fieldSalesEmployeeLanes(people, data)}</section>
-    <div class="field-sales-toolbar"><label>${lang === 'zh' ? '查看业务员' : 'Salesperson'}<select onchange="setFieldSalesUserFilter(this.value)"><option value="all">${lang === 'zh' ? '全部业务员' : 'All salespeople'}</option>${people.map(item => `<option value="${escapeHtml(item.id)}" ${fieldSalesUserFilter === item.id ? 'selected' : ''}>${escapeHtml(item.name || item.email)}</option>`).join('')}</select></label><small>${lang === 'zh' ? '手机端数据会自动同步到这里' : 'Mobile activity syncs here automatically'}</small></div>
+    <section class="field-sales-employee-board"><header><div><h3>${lang === 'zh' ? '业务员拜访总览' : 'Salesperson visit overview'}</h3><p>${lang === 'zh' ? '打开业务员后默认显示全部历史拜访；可切换当天拜访、当天新增，并查看从上班到下班的完整路线。' : 'Open a salesperson to see all visits by default, switch to day visits or newly added customers, and review the complete clock-in-to-clock-out route.'}</p></div></header>${fieldSalesEmployeeLanes(people, data)}</section>
+    ${fieldSalesExpandedEmployeeId ? '' : `<div class="field-sales-toolbar"><label>${lang === 'zh' ? '查看业务员' : 'Salesperson'}<select onchange="setFieldSalesUserFilter(this.value)"><option value="all">${lang === 'zh' ? '全部业务员' : 'All salespeople'}</option>${people.map(item => `<option value="${escapeHtml(item.id)}" ${fieldSalesUserFilter === item.id ? 'selected' : ''}>${escapeHtml(item.name || item.email)}</option>`).join('')}</select></label><small>${lang === 'zh' ? '手机端数据会自动同步到这里' : 'Mobile activity syncs here automatically'}</small></div>
     <div class="grid stats field-sales-stats"><div class="stat"><span>${lang === 'zh' ? '负责客户' : 'Accounts'}</span><strong>${accounts.length}</strong></div><div class="stat"><span>${lang === 'zh' ? '今日拜访' : 'Visits today'}</span><strong>${todayVisits}</strong></div><div class="stat"><span>${lang === 'zh' ? '逾期回访' : 'Overdue'}</span><strong class="${overdue ? 'field-sales-danger' : ''}">${overdue}</strong></div><div class="stat"><span>${lang === 'zh' ? '进行中' : 'In progress'}</span><strong>${activeVisits}</strong></div><div class="stat"><span>${lang === 'zh' ? '位置差异' : 'Location differences'}</span><strong>${locationIssues}</strong></div></div>
     ${panel(lang === 'zh' ? '客户分配与回访计划' : 'Assignments and follow-up plan', `<button class="btn primary" onclick="openFieldSalesAccount()">${lang === 'zh' ? '新增客户' : 'New account'}</button>`, fieldSalesAccountTable(accounts))}
     ${panel(lang === 'zh' ? '上下班打卡记录' : 'Clock-in and clock-out records', '', desktopClockTable(clockRecords))}
@@ -5137,7 +5168,7 @@ function fieldSalesManagementView() {
     ${panel(lang === 'zh' ? '定位拜访审核' : 'Verified visit review', '', fieldSalesVisitCards(visits))}
     ${panel(lang === 'zh' ? '历史位置差异记录' : 'Historical location differences', '', fieldSalesLocationIssueCards(checkInAttempts))}
     ${panel(lang === 'zh' ? '业务员工作日报与 AI 分析' : 'Daily reports and AI analysis', '', fieldSalesReportCards(reports))}
-    ${panel(lang === 'zh' ? '试用膜与批发转化跟进' : 'Trial rolls and wholesale conversion', '', fieldSalesTrialTable(trials))}
+    ${panel(lang === 'zh' ? '试用膜与批发转化跟进' : 'Trial rolls and wholesale conversion', '', fieldSalesTrialTable(trials))}`}
   </div>`;
 }
 

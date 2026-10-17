@@ -379,6 +379,9 @@ async function run() {
   assert(adminSource.includes("let fieldSalesExpandedEmployeeId = ''"), 'salesperson lanes must start collapsed');
   assert(adminSource.includes('function toggleFieldSalesEmployeeLane'), 'salesperson summaries must expand only when clicked');
   assert(adminSource.includes('function setFieldSalesEmployeeDate(personId, value)'), 'each salesperson date must update independently');
+  assert(adminSource.includes('function setFieldSalesEmployeeViewMode(personId, mode)'), 'salesperson details must switch between all visits, day visits, and new customers');
+  assert(adminSource.includes('全部历史拜访（最近优先）'), 'salesperson details must default to newest-first visit history');
+  assert(adminSource.includes('上班 → 逐店拜访 → 下班'), 'salesperson day view must show the complete work journey');
   assert(adminSource.includes('function openFieldSalesCustomerDetail'), 'day customers must open a complete customer profile');
   assert(adminSource.includes('门店与现场照片'), 'customer profile must group storefront and visit photos');
   assert(adminSource.includes('订货、样品与放货'), 'customer profile must group orders and product activity');

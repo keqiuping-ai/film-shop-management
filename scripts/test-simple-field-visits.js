@@ -13,11 +13,13 @@ assert(mobile.includes('选择城市'), 'home must separate customers by city be
 assert(mobile.includes("'los-angeles', 'las-vegas', 'san-francisco', 'seattle', 'phoenix', 'vancouver'"), 'city selector must include every imported city market');
 assert(mobile.includes('salesAccountMarket'), 'city grouping must use the customer branch and address');
 assert(mobile.includes('visibleAccounts.map(salesSimpleCustomerCard)'), 'home must list only customers in the selected region');
+const salesHome = mobile.slice(mobile.indexOf('function salesHomeHtml()'), mobile.indexOf('function salesAccountRegion'));
+assert(salesHome.indexOf('sales-simple-secondary-top') < salesHome.indexOf('<b>选择城市</b>'), 'new customer, inventory and report shortcuts must be placed above city and customer selection');
 assert(mobile.includes("String(a.visitBatch || '').localeCompare"), 'customers must follow batch and stop order inside each direction');
 assert(mobile.includes('routeForRegion'), 'directions must follow the workbook route order');
-assert(mobile.includes('拍照拜访'), 'customer card must open direct photo check-in');
+assert(mobile.includes('进入拜访'), 'customer card must enter the visit before opening live photo check-in');
 assert(mobile.includes('谷歌已确认'), 'confirmed Google businesses must have a visible badge');
-assert(mobile.includes('待谷歌核验'), 'field-added customers must show a pending Google verification badge');
+assert(mobile.includes('⌛ 待确认'), 'field-added customers must show a pending Google verification badge');
 assert(mobile.includes('salesNewCustomerPhotoFile'), 'new customer flow must require an on-site storefront photo');
 assert(mobile.includes('capture="environment"'), 'new customer photo must request the rear camera on mobile');
 assert(mobile.includes('storefrontPhotoUrl:uploaded.url'), 'new customer flow must upload the storefront photo');
@@ -60,6 +62,9 @@ assert(server.includes("body.onsiteCapture === true && (!storefrontPhotoUrl || !
 assert(server.includes("account.active = source.active === true && account.googleVerificationStatus === 'confirmed'"), 'only Google-confirmed imported Los Angeles records may remain active');
 assert(css.includes('.sales-region-grid'), 'region selector must have mobile styling');
 assert(css.includes('.sales-simple-customer-photo'), 'imported storefront photos must have mobile styling');
-assert(html.includes('/mobile.js?v=81') && html.includes('/mobile.css?v=67'), 'mobile asset cache keys must be updated');
+assert(html.includes('/mobile.js?v=82') && html.includes('/mobile.css?v=68'), 'mobile asset cache keys must be updated');
+assert(mobile.includes('sales-visit-status visited') && mobile.includes('sales-google-status confirmed'), 'customer cards must show Google and visit status badges');
+assert(mobile.includes('正在生成中英文对照') && mobile.includes('salesReviewBilingualField'), 'completed visits must generate and display bilingual fields');
+assert(css.includes('.sales-simple-visit-form .sales-main-note textarea') && css.includes('.sales-card-statuses'), 'mobile visit notes and card status styles must be present');
 
 console.log('simple field visits regression test passed');

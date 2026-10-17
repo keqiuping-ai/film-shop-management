@@ -11,8 +11,8 @@ const serviceWorker = fs.readFileSync(path.join(root, 'public/sw.js'), 'utf8');
 for (const marker of [
   '客户／门店名称', '联系人', '电话', '门店地址', '城市／区域',
   '客户类型', '负责业务员', '建档人员', '建档时间',
-  '下次回访时间', '客户备注', '完整沟通记录', '客户需求', '客户关注和异议',
-  '本次拜访全部照片', '本次拜访附件与沟通记录', '本次现场订单', '全部后续跟进任务'
+  '下次回访时间', '客户备注', '当时谈了什么', '客户需求', '客户关注和异议',
+  '本次拜访全部照片', '本次拜访附件与沟通记录', '本次现场订单', '后续跟进任务'
 ]) assert.ok(mobileJs.includes(marker), `missing detailed review field: ${marker}`);
 
 assert.match(mobileJs, /\.filter\(item => item\.accountId === accountId\)\s*\.sort/,
@@ -26,8 +26,8 @@ assert.match(mobileCss, /\.mobile-dialog\.sales-review-dialog[^}]*1180px[^}]*94d
   'desktop review must use a large dialog');
 assert.match(mobileCss, /@media \(max-width:620px\)[\s\S]*\.mobile-dialog\.sales-review-dialog[^}]*100vw[^}]*100dvh/,
   'phone review must use the full screen');
-assert.ok(mobileHtml.includes('/mobile.css?v=65'));
-assert.ok(mobileHtml.includes('/mobile.js?v=73'));
-assert.ok(serviceWorker.includes('film-shop-v183-public-catalog-cards'));
+assert.ok(mobileHtml.includes('/mobile.css?v=68'));
+assert.ok(mobileHtml.includes('/mobile.js?v=82'));
+assert.ok(serviceWorker.includes('film-shop-field-sales-visit-review-20261017'));
 
 console.log('Field sales customer review detail tests passed.');
