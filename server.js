@@ -10403,6 +10403,41 @@ async function api(req, res) {
   }
 
   const fieldSalesAccountMatch = url.pathname.match(/^\/api\/field-sales\/accounts\/([^/]+)$/);
+  if (req.method === 'POST' && url.pathname === '/api/field-sales/accounts/bulk-assign') {
+    if (!canManageFieldSales(user)) return send(res, 403, { error:'当前账号没有批量分配业务客户的权限' });
+    const body = await readBody(req);
+    const accountIds = [...new Set((Array.isArray(body.accountIds) ? body.accountIds : []).map(value => String(value || '').trim()).filter(Boolean))].slice(0, 500);
+    if (!accountIds.length) return send(res, 400, { error:'请至少选择一位待分配客户' });
+    const assignedUserId = String(body.assignedUserId || '').trim();
+    const assignedUser = (db.users || []).find(item => {
+      if (item.id !== assignedUserId || item.active === false || item.role === 'owner') return false;
+      const permissions = effectivePermissions(item);
+      return item.fieldSalesRosterEnabled === true || (item.fieldSalesRosterEnabled !== false && (item.role === 'sales' || (!['owner', 'manager'].includes(item.role) && (permissions.fieldSalesView || permissions.fieldSalesEdit))));
+    });
+    if (!assignedUser) return send(res, 400, { error:'请选择业务员名单中的有效员工' });
+    const requestedIds = new Set(accountIds);
+    const matched = (db.salesAccounts || []).filter(item => requestedIds.has(item.id) && item.active !== false);
+    if (matched.length !== accountIds.length) return send(res, 400, { error:'部分客户不存在或已失效，请刷新页面后重试' });
+    const inaccessible = matched.find(item => !canAccessBranch(db, user, item.branchId));
+    if (inaccessible) return send(res, 403, { error:`你没有客户“${inaccessible.businessName || ''}”所属分店的数据权限` });
+    const notUnassigned = matched.find(item => String(item.assignedUserId || '').trim());
+    if (notUnassigned) return send(res, 409, { error:`客户“${notUnassigned.businessName || ''}”已经分配，请刷新页面后重试` });
+    const now = new Date().toISOString();
+    matched.forEach(account => {
+      const before = { ...account };
+      account.assignedUserId = assignedUser.id;
+      account.assignedUserName = assignedUser.name || assignedUser.email || '';
+      account.leadPool = false;
+      account.updatedAt = now;
+      audit(db, user, 'bulk-assign-field-sales-account', {
+        collection:'salesAccounts', recordId:account.id, recordLabel:account.businessName,
+        before, after:{ ...account }, detail:`批量分配外勤客户 ${account.businessName} 给 ${account.assignedUserName}`
+      });
+    });
+    writeDb(db);
+    notifyDataChanged('field-sales-accounts-bulk-assigned', assignedUser.id);
+    return send(res, 200, { assignedCount:matched.length, assignedUserId:assignedUser.id, assignedUserName:assignedUser.name || assignedUser.email || '' });
+  }
   if (req.method === 'DELETE' && fieldSalesAccountMatch) {
     if (user.role !== 'owner') return send(res, 403, { error: '只有老板可以删除业务客户', code: 'FIELD_SALES_ACCOUNT_DELETE_FORBIDDEN' });
     const accountId = decodeURIComponent(fieldSalesAccountMatch[1]);
