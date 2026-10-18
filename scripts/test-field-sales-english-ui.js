@@ -28,6 +28,6 @@ assert(mobile.includes("Public Prospect Import"), 'system importer name must hav
 assert(mobile.includes("Reference Photo $1"), 'generated reference-photo names must be localized');
 assert(mobile.includes("value=\"${value}\""), 'localized stage options must preserve API values');
 assert(html.includes('/mobile.js?v=83'), 'mobile bundle cache key was not bumped');
-assert(sw.includes('film-shop-field-sales-bilingual-workspace-20261017'), 'service-worker cache key was not bumped');
+assert(sw.includes('film-shop-field-sales-roster-filters-20261017'), 'service-worker cache key was not bumped');
 
 console.log('field sales English UI regression passed');

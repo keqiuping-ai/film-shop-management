@@ -6,6 +6,8 @@ const root = path.resolve(__dirname, '..');
 const mobile = fs.readFileSync(path.join(root, 'public/mobile.js'), 'utf8');
 const css = fs.readFileSync(path.join(root, 'public/mobile.css'), 'utf8');
 const html = fs.readFileSync(path.join(root, 'public/mobile.html'), 'utf8');
+const desktop = fs.readFileSync(path.join(root, 'public/app.js'), 'utf8');
+const desktopCss = fs.readFileSync(path.join(root, 'public/styles.css'), 'utf8');
 const server = fs.readFileSync(path.join(root, 'server.js'), 'utf8');
 
 assert(mobile.includes('选择拜访区域'), 'home must start with region selection');
@@ -71,5 +73,14 @@ assert(mobile.includes("/api/field-sales/accounts/${accountId}/analyze") && serv
 assert(server.includes('currentProductsZh, currentProductsEn'), 'customer product profiles must be translated in both languages');
 assert(css.includes('.sales-simple-visit-form .sales-main-note textarea') && css.includes('.sales-card-statuses'), 'mobile visit notes and card status styles must be present');
 assert(css.includes('grid-template-columns:repeat(2,minmax(0,1fr))') && css.includes('font-size:14px'), 'product interest choices must be compact with larger readable text');
+assert(desktop.includes('fieldSalesUnassignedCity') && desktop.includes('选择客户类型') && desktop.includes('建筑膜'), 'desktop unassigned leads must filter by city and customer type');
+assert(desktop.includes('fieldSalesAccountMarket') && desktop.includes("'las-vegas':'拉斯维加斯'"), 'desktop city step must group local municipalities into the six sales markets');
+assert(desktop.includes('filtered.slice(0, 12)') && desktop.includes('fieldSalesUnassignedExpanded'), 'desktop unassigned leads must stay collapsed by default');
+assert(desktop.includes('fieldSalesUnassignedSelected') && desktop.includes('assignSelectedFieldSalesAccounts') && desktop.includes('全选当前显示'), 'desktop must support checkbox-based bulk customer assignment');
+assert(desktop.includes("'/api/field-sales/accounts/bulk-assign'"), 'desktop bulk assignment must call the server endpoint');
+assert(server.includes("url.pathname === '/api/field-sales/accounts/bulk-assign'") && server.includes('bulk-assign-field-sales-account'), 'server must validate and audit bulk assignment');
+assert(desktop.includes('fieldSalesRosterManager') && desktop.includes('/api/field-sales/roster/'), 'desktop must let managers maintain the salesperson roster');
+assert(server.includes('fieldSalesRosterMatch') && server.includes('fieldSalesRosterEnabled'), 'server must persist audited salesperson roster membership');
+assert(desktopCss.includes('.field-sales-unassigned-choices') && desktopCss.includes('.field-sales-unassigned-customer') && desktopCss.includes('.field-sales-roster-grid'), 'desktop bulk assignment steps and roster must be styled');
 
 console.log('simple field visits regression test passed');

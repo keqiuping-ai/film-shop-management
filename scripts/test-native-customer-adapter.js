@@ -880,6 +880,22 @@ async function run() {
     body: { email: 'native-owner@test.local', password: 'isolated-owner-password' }
   });
   assert.equal(ownerLogin.status, 200);
+  const rosterAdded = await jsonRequest('/api/field-sales/roster/native-manager-no-field-sales', {
+    method:'PUT', token:ownerLogin.body.token, body:{ enabled:true }
+  });
+  assert.equal(rosterAdded.status, 200);
+  const addedRosterUser = rosterAdded.body.users.find(item => item.id === 'native-manager-no-field-sales');
+  assert.equal(addedRosterUser.fieldSalesRosterEnabled, true);
+  assert.equal(addedRosterUser.permissions.fieldSalesView, true);
+  assert.equal(addedRosterUser.permissions.fieldSalesEdit, true);
+  const rosterRemoved = await jsonRequest('/api/field-sales/roster/native-manager-no-field-sales', {
+    method:'PUT', token:ownerLogin.body.token, body:{ enabled:false }
+  });
+  assert.equal(rosterRemoved.status, 200);
+  const removedRosterUser = rosterRemoved.body.users.find(item => item.id === 'native-manager-no-field-sales');
+  assert.equal(removedRosterUser.fieldSalesRosterEnabled, false);
+  assert.equal(removedRosterUser.permissions.fieldSalesView, false);
+  assert.equal(removedRosterUser.permissions.fieldSalesEdit, false);
   const ownerSnapshot = await jsonRequest('/api/mobile/bootstrap', { token:ownerLogin.body.token });
   assert.equal(ownerSnapshot.status, 200);
   const ownerFieldSales = ownerSnapshot.body.fieldSales;

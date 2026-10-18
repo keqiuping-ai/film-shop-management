@@ -4392,8 +4392,9 @@ async function createInternalMessageAnalysis(db, user, rows, targetDate) {
   };
 }
 
-async function createFieldSalesAnalysis(visit, requestedProvider = '') {
-  const provider = requestedProvider === 'deepseek' ? 'deepseek' : requestedProvider === 'openai' ? 'openai' : (process.env.OPENAI_API_KEY ? 'openai' : 'deepseek');
+async function createFieldSalesAnalysis(db, visit, requestedProvider = '') {
+  const openAiKey = openAiCustomerReplyKey(db);
+  const provider = requestedProvider === 'deepseek' ? 'deepseek' : requestedProvider === 'openai' ? 'openai' : (openAiKey ? 'openai' : 'deepseek');
   const prompt = `You are QUaD Film's bilingual field-sales coach. Analyze this visit report and return JSON only.
 Customer: ${visit.businessName}
 Person met: ${visit.contactMet || ''}
@@ -4412,10 +4413,10 @@ Location verification: ${JSON.stringify({
 Return exactly these fields: contactMetZh, contactMetEn, contactMetDetailsZh, contactMetDetailsEn, currentProductsZh, currentProductsEn, reportTextZh, reportTextEn, nextActionZh, nextActionEn, summaryZh, summaryEn, customerNeedsZh, customerNeedsEn, objectionsZh, objectionsEn, nextActionsZh, nextActionsEn, riskLevel, managerAdviceZh, managerAdviceEn. For every paired field, preserve the exact factual meaning and produce both natural Chinese and natural English, regardless of the source language. riskLevel must be low, medium, or high. Be concise and factual.`;
   let content = '';
   if (provider === 'openai') {
-    if (!process.env.OPENAI_API_KEY) throw new Error('OpenAI API Key 尚未配置');
+    if (!openAiKey) throw new Error('OpenAI API Key 尚未配置');
     const value = await fetchAiJson(`${String(process.env.OPENAI_API_BASE_URL || 'https://api.openai.com/v1').replace(/\/+$/, '')}/chat/completions`, {
-      method:'POST', headers:{ 'Content-Type':'application/json', Authorization:`Bearer ${process.env.OPENAI_API_KEY}` },
-      body:JSON.stringify({ model:process.env.OPENAI_TASK_MODEL || 'gpt-5.6', messages:[{ role:'user', content:prompt }], response_format:{ type:'json_object' } })
+      method:'POST', headers:{ 'Content-Type':'application/json', Authorization:`Bearer ${openAiKey}` },
+      body:JSON.stringify({ model:process.env.OPENAI_TASK_MODEL || customerAiReplyModel(db), messages:[{ role:'user', content:prompt }], response_format:{ type:'json_object' } })
     });
     content = value?.choices?.[0]?.message?.content || '';
   } else {
@@ -4429,8 +4430,9 @@ Return exactly these fields: contactMetZh, contactMetEn, contactMetDetailsZh, co
   return { provider, analysis: parseAiBossDraft(content) };
 }
 
-async function createFieldSalesDailyAnalysis(report, visits, checkInAttempts = [], requestedProvider = '') {
-  const provider = requestedProvider === 'deepseek' ? 'deepseek' : requestedProvider === 'openai' ? 'openai' : (process.env.OPENAI_API_KEY ? 'openai' : 'deepseek');
+async function createFieldSalesDailyAnalysis(db, report, visits, checkInAttempts = [], requestedProvider = '') {
+  const openAiKey = openAiCustomerReplyKey(db);
+  const provider = requestedProvider === 'deepseek' ? 'deepseek' : requestedProvider === 'openai' ? 'openai' : (openAiKey ? 'openai' : 'deepseek');
   const visitDigest = visits.map(item => ({
     customer: item.businessName, outcome: item.outcome, report: item.reportText,
     nextAction: item.nextAction, completedAt: item.completedAt,
@@ -4458,10 +4460,10 @@ Historical location differences: ${JSON.stringify(locationIncidents)}
 Return exactly these fields: performanceSummaryZh, performanceSummaryEn, customerPatternsZh, customerPatternsEn, coachingZh, coachingEn, followUpsZh, followUpsEn, riskLevel. riskLevel must be low, medium, or high. Be concise, factual, and do not invent visits.`;
   let content = '';
   if (provider === 'openai') {
-    if (!process.env.OPENAI_API_KEY) throw new Error('OpenAI API Key 尚未配置');
-    const value = await fetchAiJson('https://api.openai.com/v1/chat/completions', {
-      method:'POST', headers:{ 'Content-Type':'application/json', Authorization:`Bearer ${process.env.OPENAI_API_KEY}` },
-      body:JSON.stringify({ model:process.env.OPENAI_TASK_MODEL || 'gpt-5.6', messages:[{ role:'user', content:prompt }], response_format:{ type:'json_object' } })
+    if (!openAiKey) throw new Error('OpenAI API Key 尚未配置');
+    const value = await fetchAiJson(`${String(process.env.OPENAI_API_BASE_URL || 'https://api.openai.com/v1').replace(/\/+$/, '')}/chat/completions`, {
+      method:'POST', headers:{ 'Content-Type':'application/json', Authorization:`Bearer ${openAiKey}` },
+      body:JSON.stringify({ model:process.env.OPENAI_TASK_MODEL || customerAiReplyModel(db), messages:[{ role:'user', content:prompt }], response_format:{ type:'json_object' } })
     });
     content = value?.choices?.[0]?.message?.content || '';
   } else {
@@ -10401,6 +10403,41 @@ async function api(req, res) {
   }
 
   const fieldSalesAccountMatch = url.pathname.match(/^\/api\/field-sales\/accounts\/([^/]+)$/);
+  if (req.method === 'POST' && url.pathname === '/api/field-sales/accounts/bulk-assign') {
+    if (!canManageFieldSales(user)) return send(res, 403, { error:'当前账号没有批量分配业务客户的权限' });
+    const body = await readBody(req);
+    const accountIds = [...new Set((Array.isArray(body.accountIds) ? body.accountIds : []).map(value => String(value || '').trim()).filter(Boolean))].slice(0, 500);
+    if (!accountIds.length) return send(res, 400, { error:'请至少选择一位待分配客户' });
+    const assignedUserId = String(body.assignedUserId || '').trim();
+    const assignedUser = (db.users || []).find(item => {
+      if (item.id !== assignedUserId || item.active === false || item.role === 'owner') return false;
+      const permissions = effectivePermissions(item);
+      return item.fieldSalesRosterEnabled === true || (item.fieldSalesRosterEnabled !== false && (item.role === 'sales' || (!['owner', 'manager'].includes(item.role) && (permissions.fieldSalesView || permissions.fieldSalesEdit))));
+    });
+    if (!assignedUser) return send(res, 400, { error:'请选择业务员名单中的有效员工' });
+    const requestedIds = new Set(accountIds);
+    const matched = (db.salesAccounts || []).filter(item => requestedIds.has(item.id) && item.active !== false);
+    if (matched.length !== accountIds.length) return send(res, 400, { error:'部分客户不存在或已失效，请刷新页面后重试' });
+    const inaccessible = matched.find(item => !canAccessBranch(db, user, item.branchId));
+    if (inaccessible) return send(res, 403, { error:`你没有客户“${inaccessible.businessName || ''}”所属分店的数据权限` });
+    const notUnassigned = matched.find(item => String(item.assignedUserId || '').trim());
+    if (notUnassigned) return send(res, 409, { error:`客户“${notUnassigned.businessName || ''}”已经分配，请刷新页面后重试` });
+    const now = new Date().toISOString();
+    matched.forEach(account => {
+      const before = { ...account };
+      account.assignedUserId = assignedUser.id;
+      account.assignedUserName = assignedUser.name || assignedUser.email || '';
+      account.leadPool = false;
+      account.updatedAt = now;
+      audit(db, user, 'bulk-assign-field-sales-account', {
+        collection:'salesAccounts', recordId:account.id, recordLabel:account.businessName,
+        before, after:{ ...account }, detail:`批量分配外勤客户 ${account.businessName} 给 ${account.assignedUserName}`
+      });
+    });
+    writeDb(db);
+    notifyDataChanged('field-sales-accounts-bulk-assigned', assignedUser.id);
+    return send(res, 200, { assignedCount:matched.length, assignedUserId:assignedUser.id, assignedUserName:assignedUser.name || assignedUser.email || '' });
+  }
   if (req.method === 'DELETE' && fieldSalesAccountMatch) {
     if (user.role !== 'owner') return send(res, 403, { error: '只有老板可以删除业务客户', code: 'FIELD_SALES_ACCOUNT_DELETE_FORBIDDEN' });
     const accountId = decodeURIComponent(fieldSalesAccountMatch[1]);
@@ -10508,6 +10545,26 @@ async function api(req, res) {
     return send(res, 200, mobileSnapshot(db, user));
   }
 
+  const fieldSalesRosterMatch = url.pathname.match(/^\/api\/field-sales\/roster\/([^/]+)$/);
+  if (req.method === 'PUT' && fieldSalesRosterMatch) {
+    if (!canManageFieldSales(user)) return send(res, 403, { error:'当前账号没有管理业务员名单的权限' });
+    const personId = decodeURIComponent(fieldSalesRosterMatch[1]);
+    const person = (db.users || []).find(item => item.id === personId && item.active !== false && item.role !== 'owner');
+    if (!person) return send(res, 404, { error:'找不到这个员工账号' });
+    const body = await readBody(req);
+    const enabled = body.enabled === true;
+    const before = { fieldSalesRosterEnabled:person.fieldSalesRosterEnabled, permissions:{ ...(person.permissions || {}) } };
+    person.fieldSalesRosterEnabled = enabled;
+    person.permissions = { ...defaultPermissions(person.role), ...(person.permissions || {}), fieldSalesView:enabled, fieldSalesEdit:enabled };
+    audit(db, user, enabled ? 'add-field-sales-roster-member' : 'remove-field-sales-roster-member', {
+      collection:'users', recordId:person.id, recordLabel:person.name || person.email, before, after:{ fieldSalesRosterEnabled:enabled, permissions:{ ...person.permissions } },
+      detail:enabled ? `将 ${person.name || person.email} 加入业务员管理中心` : `将 ${person.name || person.email} 从业务员管理中心移除；历史记录保留`
+    });
+    writeDb(db);
+    notifyDataChanged('field-sales-roster-updated', person.id);
+    return send(res, 200, sanitizeDbForUser(db, user));
+  }
+
   const fieldSalesAccountAnalyzeMatch = url.pathname.match(/^\/api\/field-sales\/accounts\/([^/]+)\/analyze$/);
   if (req.method === 'POST' && fieldSalesAccountAnalyzeMatch) {
     if (!canUseFieldSales(user)) return send(res, 403, { error:'当前账号没有业务员管理权限' });
@@ -10516,7 +10573,7 @@ async function api(req, res) {
     if (!account) return send(res, 404, { error:'找不到这个业务客户' });
     if (!canAccessBranch(db, user, account.branchId)) return send(res, 403, { error:'你没有这个业务客户所属分店的数据权限' });
     try {
-      const result = await createFieldSalesAnalysis({
+      const result = await createFieldSalesAnalysis(db, {
         businessName:account.businessName,
         contactMet:account.lastContactMet || '',
         contactMetDetails:account.lastContactDetails || '',
@@ -10691,8 +10748,8 @@ async function api(req, res) {
       nextVisitAt,
       evidencePhotoUrls: (Array.isArray(body.evidencePhotoUrls) ? body.evidencePhotoUrls : []).filter(value => String(value).includes('/customer-media/')).slice(0, 12),
       ownerPhotoUrl: String(body.ownerPhotoUrl || '').includes('/customer-media/') ? String(body.ownerPhotoUrl) : '',
-      aiStatus: (process.env.OPENAI_API_KEY || process.env.DEEPSEEK_API_KEY) ? '待分析' : '未配置',
-      aiProvider: process.env.OPENAI_API_KEY ? 'openai' : process.env.DEEPSEEK_API_KEY ? 'deepseek' : ''
+      aiStatus: (openAiCustomerReplyKey(db) || process.env.DEEPSEEK_API_KEY) ? '待分析' : '未配置',
+      aiProvider: openAiCustomerReplyKey(db) ? 'openai' : process.env.DEEPSEEK_API_KEY ? 'deepseek' : ''
     };
     if (body.trialDelivered === true) {
       const trialNumber = (value, fallback, minimum) => {
@@ -10828,7 +10885,7 @@ async function api(req, res) {
     if (!canAccessBranch(db, user, visit.branchId)) return send(res, 403, { error: '你没有这次拜访所属分店的数据权限' });
     try {
       const body = await readBody(req);
-      const result = await createFieldSalesAnalysis(visit, String(body.provider || ''));
+      const result = await createFieldSalesAnalysis(db, visit, String(body.provider || ''));
       visit.aiStatus = '已完成';
       visit.aiProvider = result.provider;
       visit.aiAnalysis = result.analysis;
@@ -10867,7 +10924,7 @@ async function api(req, res) {
     report.checkInAttemptIds = (db.salesCheckInAttempts || [])
       .filter(item => item.userId === user.id && String(item.branchId || '') === branchId && instantDateInTimezone(item.attemptedAt, db.settings?.timezone || 'America/Los_Angeles') === date)
       .map(item => item.id);
-    report.aiStatus = (process.env.OPENAI_API_KEY || process.env.DEEPSEEK_API_KEY) ? '待分析' : '未配置';
+    report.aiStatus = (openAiCustomerReplyKey(db) || process.env.DEEPSEEK_API_KEY) ? '待分析' : '未配置';
     report.updatedAt = new Date().toISOString();
     audit(db, user, 'submit-field-sales-daily-report', { collection: 'salesDailyReports', recordId: report.id, recordLabel: `${report.userName} ${date}`, after: report, detail: `${report.userName} 提交业务日报` });
     writeDb(db);
@@ -10888,7 +10945,7 @@ async function api(req, res) {
         item.userId === report.userId
         && instantDateInTimezone(item.attemptedAt, db.settings?.timezone || 'America/Los_Angeles') === report.date
       );
-      const result = await createFieldSalesDailyAnalysis(report, visits, checkInAttempts, String(body.provider || ''));
+      const result = await createFieldSalesDailyAnalysis(db, report, visits, checkInAttempts, String(body.provider || ''));
       report.aiStatus = '已完成';
       report.aiProvider = result.provider;
       report.aiAnalysis = result.analysis;

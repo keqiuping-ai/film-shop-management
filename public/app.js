@@ -78,6 +78,14 @@ let fieldSalesUserFilter = 'all';
 let fieldSalesEmployeeDates = {};
 let fieldSalesExpandedEmployeeId = '';
 let fieldSalesEmployeeViewModes = {};
+let fieldSalesUnassignedSearch = '';
+let fieldSalesUnassignedCity = 'los-angeles';
+let fieldSalesUnassignedType = 'automotive';
+let fieldSalesUnassignedRegion = 'all';
+let fieldSalesUnassignedExpanded = false;
+let fieldSalesUnassignedSelected = new Set();
+let fieldSalesUnassignedAssignee = '';
+let fieldSalesRosterExpanded = false;
 let activityHeartbeatTimer = null;
 let lastEmployeeInteractionAt = Date.now();
 let deferredInstall = null;
@@ -4657,7 +4665,7 @@ function fieldSalesDateTimeInput(value) {
 }
 
 function fieldSalesPeopleOptions(selected = '') {
-  return (state.users || []).filter(item => item.active !== false).map(item =>
+  return fieldSalesPeople().map(item =>
     `<option value="${escapeHtml(item.id)}" ${item.id === selected ? 'selected' : ''}>${escapeHtml(item.name || item.email)}</option>`
   ).join('');
 }
@@ -4808,17 +4816,44 @@ function fieldSalesAttachmentCards(rows) {
 }
 
 function fieldSalesPeople(data = state.fieldSales || {}) {
-  const assignedIds = new Set([
-    ...(data.accounts || []).map(item => item.assignedUserId),
-    ...(data.visitPlans || []).map(item => item.assignedUserId || item.userId),
-    ...(data.visits || []).map(item => item.userId),
-    ...(data.dailyReports || []).map(item => item.userId)
-  ].filter(Boolean));
   return (state.users || []).filter(item => item.active !== false && (
-    item.role === 'sales' ||
-    assignedIds.has(item.id) ||
-    (!['owner', 'manager'].includes(item.role) && (item.permissions?.fieldSalesView || item.permissions?.fieldSalesEdit))
+    item.fieldSalesRosterEnabled === true ||
+    (item.fieldSalesRosterEnabled !== false && (
+      item.role === 'sales' ||
+      (!['owner', 'manager'].includes(item.role) && (item.permissions?.fieldSalesView || item.permissions?.fieldSalesEdit))
+    ))
   ));
+}
+
+function fieldSalesRosterIsEnabled(person) {
+  if (person.fieldSalesRosterEnabled === true) return true;
+  if (person.fieldSalesRosterEnabled === false) return false;
+  return person.role === 'sales' || (!['owner', 'manager'].includes(person.role) && (person.permissions?.fieldSalesView || person.permissions?.fieldSalesEdit));
+}
+
+async function setFieldSalesRosterMember(personId, enabled) {
+  try {
+    state = await api(`/api/field-sales/roster/${encodeURIComponent(personId)}`, { method:'PUT', body:JSON.stringify({ enabled }) });
+    user = state.user;
+    render();
+  } catch (error) {
+    alert(error.message || (lang === 'zh' ? '业务员名单更新失败' : 'Could not update the salesperson roster'));
+  }
+}
+
+function fieldSalesRosterManager() {
+  const people = (state.users || []).filter(item => item.active !== false && item.role !== 'owner');
+  const enabledCount = people.filter(fieldSalesRosterIsEnabled).length;
+  return `<section class="field-sales-roster ${fieldSalesRosterExpanded ? 'expanded' : ''}">
+    <button type="button" class="field-sales-roster-toggle" onclick="fieldSalesRosterExpanded=!fieldSalesRosterExpanded;render()" aria-expanded="${fieldSalesRosterExpanded}">
+      <span><strong>${lang === 'zh' ? `业务员名单（${enabledCount} 人）` : `Salesperson roster (${enabledCount})`}</strong><small>${lang === 'zh' ? '只在这里加入或移除业务员，不会删除员工账号和历史记录。' : 'Add or remove people from this board without deleting accounts or history.'}</small></span>
+      <b>${fieldSalesRosterExpanded ? '−' : '+'}</b>
+    </button>
+    ${fieldSalesRosterExpanded ? `<div class="field-sales-roster-grid">${people.map(person => {
+      const enabled = fieldSalesRosterIsEnabled(person);
+      return `<article><span>${userAvatarHtml(person)}<span><b>${escapeHtml(person.name || person.email)}</b><small>${escapeHtml(roleNames[person.role] || person.role || '')}</small></span></span><button type="button" class="btn ${enabled ? '' : 'primary'}" onclick="setFieldSalesRosterMember('${person.id}',${enabled ? 'false' : 'true'})">${enabled ? (lang === 'zh' ? '从业务员中心移除' : 'Remove from board') : (lang === 'zh' ? '加入业务员中心' : 'Add to board')}</button></article>`;
+    }).join('')}</div>` : ''}
+  </section>`;
 }
 
 function fieldSalesEmployeeMiniRows(rows, emptyText, renderRow) {
@@ -5128,9 +5163,119 @@ function fieldSalesEmployeeLanes(people, data) {
   return `<div class="field-sales-employee-lanes ${expandedPerson ? 'has-expanded' : ''}">${visiblePeople.map(person => fieldSalesEmployeeLane(person, data)).join('')}</div>`;
 }
 
+function setFieldSalesUnassignedFilter(key, value) {
+  if (key === 'search') fieldSalesUnassignedSearch = String(value || '');
+  if (key === 'city') fieldSalesUnassignedCity = value || 'all';
+  if (key === 'type') fieldSalesUnassignedType = value || 'all';
+  if (key === 'region') fieldSalesUnassignedRegion = value || 'all';
+  fieldSalesUnassignedSelected.clear();
+  fieldSalesUnassignedExpanded = false;
+  render();
+}
+
+function toggleFieldSalesUnassignedCustomer(accountId, checked) {
+  if (checked) fieldSalesUnassignedSelected.add(accountId);
+  else fieldSalesUnassignedSelected.delete(accountId);
+  render();
+}
+
+function selectVisibleFieldSalesUnassigned(accountIds, checked) {
+  (Array.isArray(accountIds) ? accountIds : []).forEach(accountId => {
+    if (checked) fieldSalesUnassignedSelected.add(accountId);
+    else fieldSalesUnassignedSelected.delete(accountId);
+  });
+  render();
+}
+
+async function assignSelectedFieldSalesAccounts() {
+  const accountIds = [...fieldSalesUnassignedSelected];
+  const assignedUserId = fieldSalesUnassignedAssignee || fieldSalesPeople()[0]?.id || '';
+  if (!accountIds.length) return alert(lang === 'zh' ? '请先勾选要分配的客户。' : 'Select the customers to assign.');
+  if (!assignedUserId) return alert(lang === 'zh' ? '请先选择负责业务员。' : 'Choose a salesperson.');
+  const button = document.getElementById('fieldSalesBulkAssign');
+  if (button) { button.disabled = true; button.textContent = lang === 'zh' ? '正在分配…' : 'Assigning…'; }
+  try {
+    const result = await api('/api/field-sales/accounts/bulk-assign', {
+      method:'POST',
+      body:JSON.stringify({ accountIds, assignedUserId }),
+      timeoutMs:20000
+    });
+    fieldSalesUnassignedSelected.clear();
+    await sync({ silent:true });
+    render();
+    showActionFeedback(lang === 'zh'
+      ? `已把 ${Number(result.assignedCount || accountIds.length)} 位客户分配给 ${result.assignedUserName || '所选业务员'}。`
+      : `${Number(result.assignedCount || accountIds.length)} customers assigned to ${result.assignedUserName || 'the selected salesperson'}.`, 'success');
+  } catch (error) {
+    if (button) { button.disabled = false; button.textContent = lang === 'zh' ? '确认分配' : 'Assign selected'; }
+    showActionFeedback(`${lang === 'zh' ? '分配失败：' : 'Assignment failed: '}${error.message}`, 'error');
+  }
+}
+
+function fieldSalesAccountTypeGroup(account) {
+  const text = `${account.customerType || ''} ${account.currentProducts || ''}`.toLowerCase();
+  return /建筑|architect|commercial|residential|flat glass/.test(text) ? 'architectural' : 'automotive';
+}
+
+function fieldSalesAccountMarket(account) {
+  const marketId = String(account.marketId || '').toLowerCase();
+  if (['los-angeles', 'las-vegas', 'san-francisco', 'seattle', 'phoenix', 'vancouver'].includes(marketId)) return marketId;
+  const branchId = String(account.branchId || '').toLowerCase();
+  const value = `${account.city || ''} ${account.address || ''}`.toLowerCase();
+  if (branchId.includes('vegas') || /las vegas|henderson|north las vegas|nevada|\bnv\b/.test(value)) return 'las-vegas';
+  if (branchId.includes('san-francisco') || /san francisco|oakland|san jose|bay area|\bsf\b/.test(value)) return 'san-francisco';
+  if (/seattle|bellevue|tacoma|washington|\bwa\b/.test(value)) return 'seattle';
+  if (/phoenix|scottsdale|tempe|mesa|arizona|\baz\b/.test(value)) return 'phoenix';
+  if (/vancouver|burnaby|surrey|richmond, bc|british columbia|\bbc\b|canada/.test(value)) return 'vancouver';
+  return 'los-angeles';
+}
+
+function fieldSalesMarketLabel(market) {
+  const labels = lang === 'zh'
+    ? { 'los-angeles':'洛杉矶', 'las-vegas':'拉斯维加斯', 'san-francisco':'旧金山', seattle:'西雅图', phoenix:'凤凰城', vancouver:'温哥华' }
+    : { 'los-angeles':'Los Angeles', 'las-vegas':'Las Vegas', 'san-francisco':'San Francisco', seattle:'Seattle', phoenix:'Phoenix', vancouver:'Vancouver' };
+  return labels[market] || market;
+}
+
 function fieldSalesUnassignedAccounts(accounts) {
   if (!accounts.length) return '';
-  return `<section class="field-sales-unassigned"><header><div><strong>${lang === 'zh' ? `待分配客户（${accounts.length}）` : `Unassigned customers (${accounts.length})`}</strong><small>${lang === 'zh' ? '请指定负责业务员，分配后会自动进入该员工栏。' : 'Assign an owner to move each customer into that employee’s lane.'}</small></div></header><div>${accounts.map(account => `<button class="field-sales-lane-row action" onclick="openFieldSalesAccount('${account.id}')"><span><b>${escapeHtml(account.businessName || '')}</b><small>${escapeHtml(account.address || '')}</small></span><span class="btn">${lang === 'zh' ? '立即分配' : 'Assign'}</span></button>`).join('')}</div></section>`;
+  const unique = values => [...new Set(values.map(value => String(value || '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+  const marketOrder = ['los-angeles', 'las-vegas', 'san-francisco', 'seattle', 'phoenix', 'vancouver'];
+  const cities = marketOrder.filter(market => accounts.some(account => fieldSalesAccountMarket(account) === market));
+  const cityFilteredAccounts = accounts.filter(account => fieldSalesUnassignedCity === 'all' || fieldSalesAccountMarket(account) === fieldSalesUnassignedCity);
+  const typeFilteredAccounts = cityFilteredAccounts.filter(account =>
+    (fieldSalesUnassignedCity === 'all' || fieldSalesAccountMarket(account) === fieldSalesUnassignedCity)
+      && (fieldSalesUnassignedType === 'all' || fieldSalesAccountTypeGroup(account) === fieldSalesUnassignedType));
+  const regions = unique(typeFilteredAccounts.map(item => item.visitRegion || item.visitBatch));
+  if (fieldSalesUnassignedRegion !== 'all' && !regions.includes(fieldSalesUnassignedRegion)) fieldSalesUnassignedRegion = 'all';
+  const needle = fieldSalesUnassignedSearch.trim().toLowerCase();
+  const filtered = accounts.filter(account => {
+    const haystack = [account.businessName, account.address, account.phone, account.contactName, account.city, account.visitRegion, account.visitBatch].join(' ').toLowerCase();
+    return (!needle || haystack.includes(needle))
+      && (fieldSalesUnassignedCity === 'all' || fieldSalesAccountMarket(account) === fieldSalesUnassignedCity)
+      && (fieldSalesUnassignedType === 'all' || fieldSalesAccountTypeGroup(account) === fieldSalesUnassignedType)
+      && (fieldSalesUnassignedRegion === 'all' || (account.visitRegion || account.visitBatch) === fieldSalesUnassignedRegion);
+  });
+  const visible = fieldSalesUnassignedExpanded ? filtered : filtered.slice(0, 12);
+  const people = fieldSalesPeople();
+  if (!people.some(item => item.id === fieldSalesUnassignedAssignee)) fieldSalesUnassignedAssignee = people[0]?.id || '';
+  const selectedVisibleCount = visible.filter(account => fieldSalesUnassignedSelected.has(account.id)).length;
+  const jsString = value => escapeHtml(JSON.stringify(String(value || '')).replace(/'/g, '\\u0027'));
+  const choiceButtons = (values, selected, key, allLabel) => `<button type="button" class="${selected === 'all' ? 'active' : ''}" onclick="setFieldSalesUnassignedFilter('${key}','all')"><b>${allLabel}</b><small>${key === 'city' ? accounts.length : key === 'region' ? typeFilteredAccounts.length : accounts.length} ${lang === 'zh' ? '位客户' : 'customers'}</small></button>${values.map(value => {
+    const countSource = key === 'region' ? typeFilteredAccounts : accounts;
+    const count = countSource.filter(account => key === 'city' ? fieldSalesAccountMarket(account) === value : (account.visitRegion || account.visitBatch) === value).length;
+    const label = key === 'city' ? fieldSalesMarketLabel(value) : value;
+    return `<button type="button" class="${selected === value ? 'active' : ''}" onclick='setFieldSalesUnassignedFilter("${key}",${jsString(value)})'><b>${escapeHtml(label)}</b><small>${count} ${lang === 'zh' ? '位客户' : 'customers'}</small></button>`;
+  }).join('')}`;
+  return `<section class="field-sales-unassigned"><header><div><strong>${lang === 'zh' ? `待分配客户（${accounts.length}）` : `Unassigned customers (${accounts.length})`}</strong><small>${lang === 'zh' ? '按城市、客户类型和拜访区域逐步选择，再勾选客户一次分配。' : 'Choose a city, customer type, and visit region, then check customers and assign them together.'}</small></div></header>
+    <div class="field-sales-unassigned-step"><h4><i>1</i><span>${lang === 'zh' ? '选择城市' : 'Choose city'}</span></h4><div class="field-sales-unassigned-choices">${choiceButtons(cities, fieldSalesUnassignedCity, 'city', lang === 'zh' ? '全部城市' : 'All cities')}</div></div>
+    <div class="field-sales-unassigned-step"><h4><i>2</i><span>${lang === 'zh' ? '选择客户类型' : 'Choose customer type'}</span></h4><div class="field-sales-unassigned-choices"><button type="button" class="${fieldSalesUnassignedType === 'all' ? 'active' : ''}" onclick="setFieldSalesUnassignedFilter('type','all')"><b>${lang === 'zh' ? '全部类型' : 'All types'}</b><small>${cityFilteredAccounts.length} ${lang === 'zh' ? '位客户' : 'customers'}</small></button><button type="button" class="${fieldSalesUnassignedType === 'automotive' ? 'active' : ''}" onclick="setFieldSalesUnassignedFilter('type','automotive')"><b>${lang === 'zh' ? '汽车膜' : 'Automotive film'}</b><small>${cityFilteredAccounts.filter(account => fieldSalesAccountTypeGroup(account) === 'automotive').length} ${lang === 'zh' ? '位客户' : 'customers'}</small></button><button type="button" class="${fieldSalesUnassignedType === 'architectural' ? 'active' : ''}" onclick="setFieldSalesUnassignedFilter('type','architectural')"><b>${lang === 'zh' ? '建筑膜' : 'Architectural film'}</b><small>${cityFilteredAccounts.filter(account => fieldSalesAccountTypeGroup(account) === 'architectural').length} ${lang === 'zh' ? '位客户' : 'customers'}</small></button></div></div>
+    <div class="field-sales-unassigned-step"><h4><i>3</i><span>${lang === 'zh' ? '选择拜访区域' : 'Choose visit region'}</span></h4><div class="field-sales-unassigned-choices">${choiceButtons(regions, fieldSalesUnassignedRegion, 'region', lang === 'zh' ? '全部区域' : 'All regions')}</div></div>
+    <div class="field-sales-unassigned-toolbar"><input type="search" value="${escapeHtml(fieldSalesUnassignedSearch)}" placeholder="${lang === 'zh' ? '搜索客户、地址或联系人' : 'Search customer, address, or contact'}" onchange="setFieldSalesUnassignedFilter('search',this.value)"><p>${lang === 'zh' ? `找到 ${filtered.length} 位，已勾选 ${fieldSalesUnassignedSelected.size} 位` : `${filtered.length} found; ${fieldSalesUnassignedSelected.size} selected`}</p><label><input type="checkbox" ${visible.length && selectedVisibleCount === visible.length ? 'checked' : ''} onchange='selectVisibleFieldSalesUnassigned(${JSON.stringify(visible.map(item => item.id))},this.checked)'> ${lang === 'zh' ? '全选当前显示' : 'Select visible'}</label></div>
+    <div class="field-sales-unassigned-list">${visible.map(account => `<label class="field-sales-unassigned-customer ${fieldSalesUnassignedSelected.has(account.id) ? 'selected' : ''}"><input type="checkbox" ${fieldSalesUnassignedSelected.has(account.id) ? 'checked' : ''} onchange="toggleFieldSalesUnassignedCustomer('${account.id}',this.checked)"><span><b>${escapeHtml(account.businessName || '')}</b><small>${escapeHtml([account.city, account.customerType, account.visitRegion || account.visitBatch].filter(Boolean).join(' · '))}</small><small>${escapeHtml(account.address || '')}</small></span><span class="field-sales-unassigned-view" onclick="event.preventDefault();event.stopPropagation();openFieldSalesAccount('${account.id}')">${lang === 'zh' ? '查看' : 'View'}</span></label>`).join('') || `<p class="field-sales-lane-empty">${lang === 'zh' ? '没有符合条件的客户。' : 'No matching customers.'}</p>`}</div>
+    <div class="field-sales-unassigned-assign"><label><span>${lang === 'zh' ? '分配给业务员' : 'Assign to salesperson'}</span><select onchange="fieldSalesUnassignedAssignee=this.value">${people.map(person => `<option value="${escapeHtml(person.id)}" ${person.id === fieldSalesUnassignedAssignee ? 'selected' : ''}>${escapeHtml(person.name || person.email)}</option>`).join('')}</select></label><button id="fieldSalesBulkAssign" type="button" class="btn primary" ${!fieldSalesUnassignedSelected.size || !people.length ? 'disabled' : ''} onclick="assignSelectedFieldSalesAccounts()">${lang === 'zh' ? `确认分配${fieldSalesUnassignedSelected.size ? `（${fieldSalesUnassignedSelected.size}）` : ''}` : `Assign selected${fieldSalesUnassignedSelected.size ? ` (${fieldSalesUnassignedSelected.size})` : ''}`}</button></div>
+    ${filtered.length > 12 ? `<footer><button type="button" class="btn" onclick="fieldSalesUnassignedExpanded=!fieldSalesUnassignedExpanded;render()">${fieldSalesUnassignedExpanded ? (lang === 'zh' ? '只显示前 12 位' : 'Show first 12') : (lang === 'zh' ? `查看全部 ${filtered.length} 位` : `View all ${filtered.length}`)}</button></footer>` : ''}
+  </section>`;
 }
 
 function fieldSalesManagementView() {
@@ -5159,6 +5304,7 @@ function fieldSalesManagementView() {
   return `<div class="field-sales-management">
     <section class="field-sales-hero"><div><span>QUaD FIELD SALES</span><h2>${lang === 'zh' ? '业务员管理中心' : 'Field Sales Management Center'}</h2><p>${lang === 'zh' ? '每位业务员独立一栏，统一管理行动轨迹、名下客户、拜访计划、沟通总结、AI 建议和录音回放。' : 'One lane per salesperson for routes, assigned customers, visit plans, conversations, AI insights, and recordings.'}</p></div><div class="field-sales-hero-actions"><button class="btn" onclick="openFieldSalesPlan()">${lang === 'zh' ? '+ 安排拜访' : '+ Schedule visits'}</button><button class="btn primary" onclick="openFieldSalesAccount()">${lang === 'zh' ? '+ 新增 / 分配客户' : '+ Add / Assign customer'}</button></div></section>
     ${fieldSalesUnassignedAccounts(unassignedAccounts)}
+    ${fieldSalesRosterManager()}
     <section class="field-sales-employee-board"><header><div><h3>${lang === 'zh' ? '业务员拜访总览' : 'Salesperson visit overview'}</h3><p>${lang === 'zh' ? '打开业务员后默认显示全部历史拜访；可切换当天拜访、当天新增，并查看从上班到下班的完整路线。' : 'Open a salesperson to see all visits by default, switch to day visits or newly added customers, and review the complete clock-in-to-clock-out route.'}</p></div></header>${fieldSalesEmployeeLanes(people, data)}</section>
     ${fieldSalesExpandedEmployeeId ? '' : `<div class="field-sales-toolbar"><label>${lang === 'zh' ? '查看业务员' : 'Salesperson'}<select onchange="setFieldSalesUserFilter(this.value)"><option value="all">${lang === 'zh' ? '全部业务员' : 'All salespeople'}</option>${people.map(item => `<option value="${escapeHtml(item.id)}" ${fieldSalesUserFilter === item.id ? 'selected' : ''}>${escapeHtml(item.name || item.email)}</option>`).join('')}</select></label><small>${lang === 'zh' ? '手机端数据会自动同步到这里' : 'Mobile activity syncs here automatically'}</small></div>
     <div class="grid stats field-sales-stats"><div class="stat"><span>${lang === 'zh' ? '负责客户' : 'Accounts'}</span><strong>${accounts.length}</strong></div><div class="stat"><span>${lang === 'zh' ? '今日拜访' : 'Visits today'}</span><strong>${todayVisits}</strong></div><div class="stat"><span>${lang === 'zh' ? '逾期回访' : 'Overdue'}</span><strong class="${overdue ? 'field-sales-danger' : ''}">${overdue}</strong></div><div class="stat"><span>${lang === 'zh' ? '进行中' : 'In progress'}</span><strong>${activeVisits}</strong></div><div class="stat"><span>${lang === 'zh' ? '位置差异' : 'Location differences'}</span><strong>${locationIssues}</strong></div></div>
