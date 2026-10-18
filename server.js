@@ -4392,8 +4392,9 @@ async function createInternalMessageAnalysis(db, user, rows, targetDate) {
   };
 }
 
-async function createFieldSalesAnalysis(visit, requestedProvider = '') {
-  const provider = requestedProvider === 'deepseek' ? 'deepseek' : requestedProvider === 'openai' ? 'openai' : (process.env.OPENAI_API_KEY ? 'openai' : 'deepseek');
+async function createFieldSalesAnalysis(db, visit, requestedProvider = '') {
+  const openAiKey = openAiCustomerReplyKey(db);
+  const provider = requestedProvider === 'deepseek' ? 'deepseek' : requestedProvider === 'openai' ? 'openai' : (openAiKey ? 'openai' : 'deepseek');
   const prompt = `You are QUaD Film's bilingual field-sales coach. Analyze this visit report and return JSON only.
 Customer: ${visit.businessName}
 Person met: ${visit.contactMet || ''}
@@ -4412,10 +4413,10 @@ Location verification: ${JSON.stringify({
 Return exactly these fields: contactMetZh, contactMetEn, contactMetDetailsZh, contactMetDetailsEn, currentProductsZh, currentProductsEn, reportTextZh, reportTextEn, nextActionZh, nextActionEn, summaryZh, summaryEn, customerNeedsZh, customerNeedsEn, objectionsZh, objectionsEn, nextActionsZh, nextActionsEn, riskLevel, managerAdviceZh, managerAdviceEn. For every paired field, preserve the exact factual meaning and produce both natural Chinese and natural English, regardless of the source language. riskLevel must be low, medium, or high. Be concise and factual.`;
   let content = '';
   if (provider === 'openai') {
-    if (!process.env.OPENAI_API_KEY) throw new Error('OpenAI API Key 尚未配置');
+    if (!openAiKey) throw new Error('OpenAI API Key 尚未配置');
     const value = await fetchAiJson(`${String(process.env.OPENAI_API_BASE_URL || 'https://api.openai.com/v1').replace(/\/+$/, '')}/chat/completions`, {
-      method:'POST', headers:{ 'Content-Type':'application/json', Authorization:`Bearer ${process.env.OPENAI_API_KEY}` },
-      body:JSON.stringify({ model:process.env.OPENAI_TASK_MODEL || 'gpt-5.6', messages:[{ role:'user', content:prompt }], response_format:{ type:'json_object' } })
+      method:'POST', headers:{ 'Content-Type':'application/json', Authorization:`Bearer ${openAiKey}` },
+      body:JSON.stringify({ model:process.env.OPENAI_TASK_MODEL || customerAiReplyModel(db), messages:[{ role:'user', content:prompt }], response_format:{ type:'json_object' } })
     });
     content = value?.choices?.[0]?.message?.content || '';
   } else {
@@ -4429,8 +4430,9 @@ Return exactly these fields: contactMetZh, contactMetEn, contactMetDetailsZh, co
   return { provider, analysis: parseAiBossDraft(content) };
 }
 
-async function createFieldSalesDailyAnalysis(report, visits, checkInAttempts = [], requestedProvider = '') {
-  const provider = requestedProvider === 'deepseek' ? 'deepseek' : requestedProvider === 'openai' ? 'openai' : (process.env.OPENAI_API_KEY ? 'openai' : 'deepseek');
+async function createFieldSalesDailyAnalysis(db, report, visits, checkInAttempts = [], requestedProvider = '') {
+  const openAiKey = openAiCustomerReplyKey(db);
+  const provider = requestedProvider === 'deepseek' ? 'deepseek' : requestedProvider === 'openai' ? 'openai' : (openAiKey ? 'openai' : 'deepseek');
   const visitDigest = visits.map(item => ({
     customer: item.businessName, outcome: item.outcome, report: item.reportText,
     nextAction: item.nextAction, completedAt: item.completedAt,
@@ -4458,10 +4460,10 @@ Historical location differences: ${JSON.stringify(locationIncidents)}
 Return exactly these fields: performanceSummaryZh, performanceSummaryEn, customerPatternsZh, customerPatternsEn, coachingZh, coachingEn, followUpsZh, followUpsEn, riskLevel. riskLevel must be low, medium, or high. Be concise, factual, and do not invent visits.`;
   let content = '';
   if (provider === 'openai') {
-    if (!process.env.OPENAI_API_KEY) throw new Error('OpenAI API Key 尚未配置');
-    const value = await fetchAiJson('https://api.openai.com/v1/chat/completions', {
-      method:'POST', headers:{ 'Content-Type':'application/json', Authorization:`Bearer ${process.env.OPENAI_API_KEY}` },
-      body:JSON.stringify({ model:process.env.OPENAI_TASK_MODEL || 'gpt-5.6', messages:[{ role:'user', content:prompt }], response_format:{ type:'json_object' } })
+    if (!openAiKey) throw new Error('OpenAI API Key 尚未配置');
+    const value = await fetchAiJson(`${String(process.env.OPENAI_API_BASE_URL || 'https://api.openai.com/v1').replace(/\/+$/, '')}/chat/completions`, {
+      method:'POST', headers:{ 'Content-Type':'application/json', Authorization:`Bearer ${openAiKey}` },
+      body:JSON.stringify({ model:process.env.OPENAI_TASK_MODEL || customerAiReplyModel(db), messages:[{ role:'user', content:prompt }], response_format:{ type:'json_object' } })
     });
     content = value?.choices?.[0]?.message?.content || '';
   } else {
@@ -10536,7 +10538,7 @@ async function api(req, res) {
     if (!account) return send(res, 404, { error:'找不到这个业务客户' });
     if (!canAccessBranch(db, user, account.branchId)) return send(res, 403, { error:'你没有这个业务客户所属分店的数据权限' });
     try {
-      const result = await createFieldSalesAnalysis({
+      const result = await createFieldSalesAnalysis(db, {
         businessName:account.businessName,
         contactMet:account.lastContactMet || '',
         contactMetDetails:account.lastContactDetails || '',
@@ -10711,8 +10713,8 @@ async function api(req, res) {
       nextVisitAt,
       evidencePhotoUrls: (Array.isArray(body.evidencePhotoUrls) ? body.evidencePhotoUrls : []).filter(value => String(value).includes('/customer-media/')).slice(0, 12),
       ownerPhotoUrl: String(body.ownerPhotoUrl || '').includes('/customer-media/') ? String(body.ownerPhotoUrl) : '',
-      aiStatus: (process.env.OPENAI_API_KEY || process.env.DEEPSEEK_API_KEY) ? '待分析' : '未配置',
-      aiProvider: process.env.OPENAI_API_KEY ? 'openai' : process.env.DEEPSEEK_API_KEY ? 'deepseek' : ''
+      aiStatus: (openAiCustomerReplyKey(db) || process.env.DEEPSEEK_API_KEY) ? '待分析' : '未配置',
+      aiProvider: openAiCustomerReplyKey(db) ? 'openai' : process.env.DEEPSEEK_API_KEY ? 'deepseek' : ''
     };
     if (body.trialDelivered === true) {
       const trialNumber = (value, fallback, minimum) => {
@@ -10848,7 +10850,7 @@ async function api(req, res) {
     if (!canAccessBranch(db, user, visit.branchId)) return send(res, 403, { error: '你没有这次拜访所属分店的数据权限' });
     try {
       const body = await readBody(req);
-      const result = await createFieldSalesAnalysis(visit, String(body.provider || ''));
+      const result = await createFieldSalesAnalysis(db, visit, String(body.provider || ''));
       visit.aiStatus = '已完成';
       visit.aiProvider = result.provider;
       visit.aiAnalysis = result.analysis;
@@ -10887,7 +10889,7 @@ async function api(req, res) {
     report.checkInAttemptIds = (db.salesCheckInAttempts || [])
       .filter(item => item.userId === user.id && String(item.branchId || '') === branchId && instantDateInTimezone(item.attemptedAt, db.settings?.timezone || 'America/Los_Angeles') === date)
       .map(item => item.id);
-    report.aiStatus = (process.env.OPENAI_API_KEY || process.env.DEEPSEEK_API_KEY) ? '待分析' : '未配置';
+    report.aiStatus = (openAiCustomerReplyKey(db) || process.env.DEEPSEEK_API_KEY) ? '待分析' : '未配置';
     report.updatedAt = new Date().toISOString();
     audit(db, user, 'submit-field-sales-daily-report', { collection: 'salesDailyReports', recordId: report.id, recordLabel: `${report.userName} ${date}`, after: report, detail: `${report.userName} 提交业务日报` });
     writeDb(db);
@@ -10908,7 +10910,7 @@ async function api(req, res) {
         item.userId === report.userId
         && instantDateInTimezone(item.attemptedAt, db.settings?.timezone || 'America/Los_Angeles') === report.date
       );
-      const result = await createFieldSalesDailyAnalysis(report, visits, checkInAttempts, String(body.provider || ''));
+      const result = await createFieldSalesDailyAnalysis(db, report, visits, checkInAttempts, String(body.provider || ''));
       report.aiStatus = '已完成';
       report.aiProvider = result.provider;
       report.aiAnalysis = result.analysis;
