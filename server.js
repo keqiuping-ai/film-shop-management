@@ -10508,6 +10508,26 @@ async function api(req, res) {
     return send(res, 200, mobileSnapshot(db, user));
   }
 
+  const fieldSalesRosterMatch = url.pathname.match(/^\/api\/field-sales\/roster\/([^/]+)$/);
+  if (req.method === 'PUT' && fieldSalesRosterMatch) {
+    if (!canManageFieldSales(user)) return send(res, 403, { error:'当前账号没有管理业务员名单的权限' });
+    const personId = decodeURIComponent(fieldSalesRosterMatch[1]);
+    const person = (db.users || []).find(item => item.id === personId && item.active !== false && item.role !== 'owner');
+    if (!person) return send(res, 404, { error:'找不到这个员工账号' });
+    const body = await readBody(req);
+    const enabled = body.enabled === true;
+    const before = { fieldSalesRosterEnabled:person.fieldSalesRosterEnabled, permissions:{ ...(person.permissions || {}) } };
+    person.fieldSalesRosterEnabled = enabled;
+    person.permissions = { ...defaultPermissions(person.role), ...(person.permissions || {}), fieldSalesView:enabled, fieldSalesEdit:enabled };
+    audit(db, user, enabled ? 'add-field-sales-roster-member' : 'remove-field-sales-roster-member', {
+      collection:'users', recordId:person.id, recordLabel:person.name || person.email, before, after:{ fieldSalesRosterEnabled:enabled, permissions:{ ...person.permissions } },
+      detail:enabled ? `将 ${person.name || person.email} 加入业务员管理中心` : `将 ${person.name || person.email} 从业务员管理中心移除；历史记录保留`
+    });
+    writeDb(db);
+    notifyDataChanged('field-sales-roster-updated', person.id);
+    return send(res, 200, sanitizeDbForUser(db, user));
+  }
+
   const fieldSalesAccountAnalyzeMatch = url.pathname.match(/^\/api\/field-sales\/accounts\/([^/]+)\/analyze$/);
   if (req.method === 'POST' && fieldSalesAccountAnalyzeMatch) {
     if (!canUseFieldSales(user)) return send(res, 403, { error:'当前账号没有业务员管理权限' });

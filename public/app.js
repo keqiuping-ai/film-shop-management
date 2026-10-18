@@ -78,6 +78,12 @@ let fieldSalesUserFilter = 'all';
 let fieldSalesEmployeeDates = {};
 let fieldSalesExpandedEmployeeId = '';
 let fieldSalesEmployeeViewModes = {};
+let fieldSalesUnassignedSearch = '';
+let fieldSalesUnassignedCity = 'all';
+let fieldSalesUnassignedType = 'all';
+let fieldSalesUnassignedRegion = 'all';
+let fieldSalesUnassignedExpanded = false;
+let fieldSalesRosterExpanded = false;
 let activityHeartbeatTimer = null;
 let lastEmployeeInteractionAt = Date.now();
 let deferredInstall = null;
@@ -4656,7 +4662,7 @@ function fieldSalesDateTimeInput(value) {
 }
 
 function fieldSalesPeopleOptions(selected = '') {
-  return (state.users || []).filter(item => item.active !== false).map(item =>
+  return fieldSalesPeople().map(item =>
     `<option value="${escapeHtml(item.id)}" ${item.id === selected ? 'selected' : ''}>${escapeHtml(item.name || item.email)}</option>`
   ).join('');
 }
@@ -4807,17 +4813,44 @@ function fieldSalesAttachmentCards(rows) {
 }
 
 function fieldSalesPeople(data = state.fieldSales || {}) {
-  const assignedIds = new Set([
-    ...(data.accounts || []).map(item => item.assignedUserId),
-    ...(data.visitPlans || []).map(item => item.assignedUserId || item.userId),
-    ...(data.visits || []).map(item => item.userId),
-    ...(data.dailyReports || []).map(item => item.userId)
-  ].filter(Boolean));
   return (state.users || []).filter(item => item.active !== false && (
-    item.role === 'sales' ||
-    assignedIds.has(item.id) ||
-    (!['owner', 'manager'].includes(item.role) && (item.permissions?.fieldSalesView || item.permissions?.fieldSalesEdit))
+    item.fieldSalesRosterEnabled === true ||
+    (item.fieldSalesRosterEnabled !== false && (
+      item.role === 'sales' ||
+      (!['owner', 'manager'].includes(item.role) && (item.permissions?.fieldSalesView || item.permissions?.fieldSalesEdit))
+    ))
   ));
+}
+
+function fieldSalesRosterIsEnabled(person) {
+  if (person.fieldSalesRosterEnabled === true) return true;
+  if (person.fieldSalesRosterEnabled === false) return false;
+  return person.role === 'sales' || (!['owner', 'manager'].includes(person.role) && (person.permissions?.fieldSalesView || person.permissions?.fieldSalesEdit));
+}
+
+async function setFieldSalesRosterMember(personId, enabled) {
+  try {
+    state = await api(`/api/field-sales/roster/${encodeURIComponent(personId)}`, { method:'PUT', body:JSON.stringify({ enabled }) });
+    user = state.user;
+    render();
+  } catch (error) {
+    alert(error.message || (lang === 'zh' ? '业务员名单更新失败' : 'Could not update the salesperson roster'));
+  }
+}
+
+function fieldSalesRosterManager() {
+  const people = (state.users || []).filter(item => item.active !== false && item.role !== 'owner');
+  const enabledCount = people.filter(fieldSalesRosterIsEnabled).length;
+  return `<section class="field-sales-roster ${fieldSalesRosterExpanded ? 'expanded' : ''}">
+    <button type="button" class="field-sales-roster-toggle" onclick="fieldSalesRosterExpanded=!fieldSalesRosterExpanded;render()" aria-expanded="${fieldSalesRosterExpanded}">
+      <span><strong>${lang === 'zh' ? `业务员名单（${enabledCount} 人）` : `Salesperson roster (${enabledCount})`}</strong><small>${lang === 'zh' ? '只在这里加入或移除业务员，不会删除员工账号和历史记录。' : 'Add or remove people from this board without deleting accounts or history.'}</small></span>
+      <b>${fieldSalesRosterExpanded ? '−' : '+'}</b>
+    </button>
+    ${fieldSalesRosterExpanded ? `<div class="field-sales-roster-grid">${people.map(person => {
+      const enabled = fieldSalesRosterIsEnabled(person);
+      return `<article><span>${userAvatarHtml(person)}<span><b>${escapeHtml(person.name || person.email)}</b><small>${escapeHtml(roleNames[person.role] || person.role || '')}</small></span></span><button type="button" class="btn ${enabled ? '' : 'primary'}" onclick="setFieldSalesRosterMember('${person.id}',${enabled ? 'false' : 'true'})">${enabled ? (lang === 'zh' ? '从业务员中心移除' : 'Remove from board') : (lang === 'zh' ? '加入业务员中心' : 'Add to board')}</button></article>`;
+    }).join('')}</div>` : ''}
+  </section>`;
 }
 
 function fieldSalesEmployeeMiniRows(rows, emptyText, renderRow) {
@@ -5127,9 +5160,46 @@ function fieldSalesEmployeeLanes(people, data) {
   return `<div class="field-sales-employee-lanes ${expandedPerson ? 'has-expanded' : ''}">${visiblePeople.map(person => fieldSalesEmployeeLane(person, data)).join('')}</div>`;
 }
 
+function setFieldSalesUnassignedFilter(key, value) {
+  if (key === 'search') fieldSalesUnassignedSearch = String(value || '');
+  if (key === 'city') fieldSalesUnassignedCity = value || 'all';
+  if (key === 'type') fieldSalesUnassignedType = value || 'all';
+  if (key === 'region') fieldSalesUnassignedRegion = value || 'all';
+  fieldSalesUnassignedExpanded = false;
+  render();
+}
+
+function fieldSalesAccountTypeGroup(account) {
+  const text = `${account.customerType || ''} ${account.currentProducts || ''}`.toLowerCase();
+  return /建筑|architect|commercial|residential|flat glass/.test(text) ? 'architectural' : 'automotive';
+}
+
 function fieldSalesUnassignedAccounts(accounts) {
   if (!accounts.length) return '';
-  return `<section class="field-sales-unassigned"><header><div><strong>${lang === 'zh' ? `待分配客户（${accounts.length}）` : `Unassigned customers (${accounts.length})`}</strong><small>${lang === 'zh' ? '请指定负责业务员，分配后会自动进入该员工栏。' : 'Assign an owner to move each customer into that employee’s lane.'}</small></div></header><div>${accounts.map(account => `<button class="field-sales-lane-row action" onclick="openFieldSalesAccount('${account.id}')"><span><b>${escapeHtml(account.businessName || '')}</b><small>${escapeHtml(account.address || '')}</small></span><span class="btn">${lang === 'zh' ? '立即分配' : 'Assign'}</span></button>`).join('')}</div></section>`;
+  const unique = values => [...new Set(values.map(value => String(value || '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+  const cities = unique(accounts.map(item => item.city));
+  const regions = unique(accounts.map(item => item.visitRegion || item.visitBatch));
+  const needle = fieldSalesUnassignedSearch.trim().toLowerCase();
+  const filtered = accounts.filter(account => {
+    const haystack = [account.businessName, account.address, account.phone, account.contactName, account.city, account.visitRegion, account.visitBatch].join(' ').toLowerCase();
+    return (!needle || haystack.includes(needle))
+      && (fieldSalesUnassignedCity === 'all' || account.city === fieldSalesUnassignedCity)
+      && (fieldSalesUnassignedType === 'all' || fieldSalesAccountTypeGroup(account) === fieldSalesUnassignedType)
+      && (fieldSalesUnassignedRegion === 'all' || (account.visitRegion || account.visitBatch) === fieldSalesUnassignedRegion);
+  });
+  const visible = fieldSalesUnassignedExpanded ? filtered : filtered.slice(0, 12);
+  const options = (values, selected) => values.map(value => `<option value="${escapeHtml(value)}" ${selected === value ? 'selected' : ''}>${escapeHtml(value)}</option>`).join('');
+  return `<section class="field-sales-unassigned"><header><div><strong>${lang === 'zh' ? `待分配客户（${accounts.length}）` : `Unassigned customers (${accounts.length})`}</strong><small>${lang === 'zh' ? '按城市、汽车膜／建筑膜和拜访区域查找，默认只显示前 12 位。' : 'Filter by city, automotive/architectural film, and visit region. Only 12 are shown by default.'}</small></div><button type="button" class="btn" onclick="fieldSalesUnassignedExpanded=!fieldSalesUnassignedExpanded;render()">${fieldSalesUnassignedExpanded ? (lang === 'zh' ? '收起列表' : 'Collapse') : (lang === 'zh' ? '展开列表' : 'Expand')}</button></header>
+    <div class="field-sales-unassigned-filters">
+      <input type="search" value="${escapeHtml(fieldSalesUnassignedSearch)}" placeholder="${lang === 'zh' ? '搜索客户、地址或联系人' : 'Search customer, address, or contact'}" onchange="setFieldSalesUnassignedFilter('search',this.value)">
+      <select onchange="setFieldSalesUnassignedFilter('city',this.value)"><option value="all">${lang === 'zh' ? '全部城市' : 'All cities'}</option>${options(cities, fieldSalesUnassignedCity)}</select>
+      <select onchange="setFieldSalesUnassignedFilter('type',this.value)"><option value="all">${lang === 'zh' ? '全部客户类型' : 'All customer types'}</option><option value="automotive" ${fieldSalesUnassignedType === 'automotive' ? 'selected' : ''}>${lang === 'zh' ? '汽车膜' : 'Automotive film'}</option><option value="architectural" ${fieldSalesUnassignedType === 'architectural' ? 'selected' : ''}>${lang === 'zh' ? '建筑膜' : 'Architectural film'}</option></select>
+      <select onchange="setFieldSalesUnassignedFilter('region',this.value)"><option value="all">${lang === 'zh' ? '全部拜访区域' : 'All visit regions'}</option>${options(regions, fieldSalesUnassignedRegion)}</select>
+    </div>
+    <p class="field-sales-unassigned-result">${lang === 'zh' ? `筛选结果 ${filtered.length} 位，当前显示 ${visible.length} 位` : `${filtered.length} results; showing ${visible.length}`}</p>
+    <div>${visible.map(account => `<button class="field-sales-lane-row action" onclick="openFieldSalesAccount('${account.id}')"><span><b>${escapeHtml(account.businessName || '')}</b><small>${escapeHtml([account.city, account.customerType, account.visitRegion || account.visitBatch].filter(Boolean).join(' · '))}</small><small>${escapeHtml(account.address || '')}</small></span><span class="btn">${lang === 'zh' ? '立即分配' : 'Assign'}</span></button>`).join('') || `<p class="field-sales-lane-empty">${lang === 'zh' ? '没有符合条件的客户。' : 'No matching customers.'}</p>`}</div>
+    ${filtered.length > 12 ? `<footer><button type="button" class="btn" onclick="fieldSalesUnassignedExpanded=!fieldSalesUnassignedExpanded;render()">${fieldSalesUnassignedExpanded ? (lang === 'zh' ? '只显示前 12 位' : 'Show first 12') : (lang === 'zh' ? `查看全部 ${filtered.length} 位` : `View all ${filtered.length}`)}</button></footer>` : ''}
+  </section>`;
 }
 
 function fieldSalesManagementView() {
@@ -5158,6 +5228,7 @@ function fieldSalesManagementView() {
   return `<div class="field-sales-management">
     <section class="field-sales-hero"><div><span>QUaD FIELD SALES</span><h2>${lang === 'zh' ? '业务员管理中心' : 'Field Sales Management Center'}</h2><p>${lang === 'zh' ? '每位业务员独立一栏，统一管理行动轨迹、名下客户、拜访计划、沟通总结、AI 建议和录音回放。' : 'One lane per salesperson for routes, assigned customers, visit plans, conversations, AI insights, and recordings.'}</p></div><div class="field-sales-hero-actions"><button class="btn" onclick="openFieldSalesPlan()">${lang === 'zh' ? '+ 安排拜访' : '+ Schedule visits'}</button><button class="btn primary" onclick="openFieldSalesAccount()">${lang === 'zh' ? '+ 新增 / 分配客户' : '+ Add / Assign customer'}</button></div></section>
     ${fieldSalesUnassignedAccounts(unassignedAccounts)}
+    ${fieldSalesRosterManager()}
     <section class="field-sales-employee-board"><header><div><h3>${lang === 'zh' ? '业务员拜访总览' : 'Salesperson visit overview'}</h3><p>${lang === 'zh' ? '打开业务员后默认显示全部历史拜访；可切换当天拜访、当天新增，并查看从上班到下班的完整路线。' : 'Open a salesperson to see all visits by default, switch to day visits or newly added customers, and review the complete clock-in-to-clock-out route.'}</p></div></header>${fieldSalesEmployeeLanes(people, data)}</section>
     ${fieldSalesExpandedEmployeeId ? '' : `<div class="field-sales-toolbar"><label>${lang === 'zh' ? '查看业务员' : 'Salesperson'}<select onchange="setFieldSalesUserFilter(this.value)"><option value="all">${lang === 'zh' ? '全部业务员' : 'All salespeople'}</option>${people.map(item => `<option value="${escapeHtml(item.id)}" ${fieldSalesUserFilter === item.id ? 'selected' : ''}>${escapeHtml(item.name || item.email)}</option>`).join('')}</select></label><small>${lang === 'zh' ? '手机端数据会自动同步到这里' : 'Mobile activity syncs here automatically'}</small></div>
     <div class="grid stats field-sales-stats"><div class="stat"><span>${lang === 'zh' ? '负责客户' : 'Accounts'}</span><strong>${accounts.length}</strong></div><div class="stat"><span>${lang === 'zh' ? '今日拜访' : 'Visits today'}</span><strong>${todayVisits}</strong></div><div class="stat"><span>${lang === 'zh' ? '逾期回访' : 'Overdue'}</span><strong class="${overdue ? 'field-sales-danger' : ''}">${overdue}</strong></div><div class="stat"><span>${lang === 'zh' ? '进行中' : 'In progress'}</span><strong>${activeVisits}</strong></div><div class="stat"><span>${lang === 'zh' ? '位置差异' : 'Location differences'}</span><strong>${locationIssues}</strong></div></div>
