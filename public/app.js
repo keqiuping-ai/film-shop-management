@@ -113,6 +113,7 @@ let activeProspectWorkspaceId = '';
 let prospectWorkspaceReadOnly = false;
 let prospectWorkspaceSyncTimer = null;
 let prospectPendingAttachment = null;
+const customerAiMediaSelections = new Map();
 const prospectReplyChannels = new Map();
 let replyTemplatePendingAttachment = null;
 let replyTemplateLibraryType = 'text';
@@ -9137,18 +9138,53 @@ function customerAgentDraftHtml(item) {
     const factMismatch = customerAiDraftHasFactMismatch(draft);
     const missingChinese = lang === 'zh' ? '旧草稿没有中文，请点击“AI 生成回复”重新生成。' : 'This older draft has no Chinese version; generate a new AI reply.';
     const mismatchWarning = factMismatch ? `<div class="customer-agent-parity-warning">${lang === 'zh' ? '⚠️ 中英文关键数字或地址不一致，这条旧草稿不能直接使用，请重新生成。' : '⚠️ Key facts differ between Chinese and English. Regenerate before sending.'}</div>` : '';
-    const selectedMedia = (Array.isArray(draft.attachments) ? draft.attachments : []).filter(media => media?.attachment?.url);
-    const mediaHtml = selectedMedia.length ? `<div class="customer-agent-media"><strong>${lang === 'zh' ? `AI 已选 ${selectedMedia.length} 张图片` : `AI selected ${selectedMedia.length} image(s)`}</strong>${selectedMedia.map(media => `<button type="button" onclick="useCustomerAiSuggestedAttachment('${escapeHtml(media.id || '')}')" title="${lang === 'zh' ? '人工发送时点此放入待发送区' : 'Stage this image for manual sending'}"><img src="${escapeHtml(media.attachment.url)}" alt=""><small>${escapeHtml(media.title || media.attachment.name || '')}</small></button>`).join('')}</div>` : '';
+    const suggestedMedia = customerAiSuggestedMedia(item);
+    const selectedMedia = customerAiSelectedMedia(item);
+    const mediaHtml = suggestedMedia.length ? `<div class="customer-agent-media"><strong>${lang === 'zh' ? `AI 建议图片 · 已勾选 ${selectedMedia.length}/${suggestedMedia.length} 张` : `AI suggested images · ${selectedMedia.length}/${suggestedMedia.length} selected`}</strong><span>${lang === 'zh' ? '发送短信时会逐张发送；可点击图片取消或重新勾选。' : 'Selected images are sent one by one with SMS. Click to toggle.'}</span>${suggestedMedia.map((media, index) => {
+      const selected = selectedMedia.includes(media);
+      return `<button type="button" class="${selected ? 'selected' : ''}" aria-pressed="${selected}" onclick="toggleCustomerAiSuggestedAttachment(${index})" title="${selected ? (lang === 'zh' ? '取消发送这张图片' : 'Exclude this image') : (lang === 'zh' ? '勾选发送这张图片' : 'Include this image')}"><img src="${escapeHtml(media.attachment.url)}" alt=""><small>${selected ? '✓ ' : ''}${escapeHtml(media.title || media.attachment.name || '')}</small></button>`;
+    }).join('')}</div>` : '';
     return `<div class="customer-agent-draft ${factMismatch ? 'customer-agent-draft-mismatch' : ''}"><strong>${lang === 'zh' ? 'AI 建议（发送前请确认）' : 'AI draft (review before sending)'}</strong><span>${escapeHtml(draft.createdBy || '')} · ${escapeHtml(formatAppDateTime(draft.createdAt || ''))}</span>${mismatchWarning}<div class="customer-agent-language"><b>中文</b><p class="${chineseText ? '' : 'customer-agent-missing'}">${escapeHtml(chineseText || missingChinese)}</p></div><div class="customer-agent-language"><b>English</b><p>${escapeHtml(englishText)}</p></div>${mediaHtml}</div>`;
   }
   return `<div class="customer-agent-draft customer-agent-draft-empty"><strong>${lang === 'zh' ? 'AI 建议' : 'AI draft'}</strong><span>${lang === 'zh' ? '点击下方“AI 生成”，中文会显示在上，英文显示在下。' : 'Choose AI draft below to generate Chinese first and English below.'}</span></div>`;
 }
 
-function useCustomerAiSuggestedAttachment(templateId) {
+function customerAiMediaSelectionKey(item) {
+  return `${activeProspectWorkspaceId}:${String(item?.agentReplyDraft?.createdAt || '')}`;
+}
+
+function customerAiSuggestedMedia(item) {
+  return (Array.isArray(item?.agentReplyDraft?.attachments) ? item.agentReplyDraft.attachments : [])
+    .filter(media => media?.attachment?.url)
+    .slice(0, 3);
+}
+
+function customerAiMediaIdentity(media, index = 0) {
+  return String(media?.id || media?.attachment?.url || index);
+}
+
+function customerAiSelectedMedia(item) {
+  const media = customerAiSuggestedMedia(item);
+  if (!media.length) return [];
+  const key = customerAiMediaSelectionKey(item);
+  if (!customerAiMediaSelections.has(key)) {
+    customerAiMediaSelections.set(key, new Set(media.map(customerAiMediaIdentity)));
+  }
+  const selected = customerAiMediaSelections.get(key);
+  return media.filter((row, index) => selected.has(customerAiMediaIdentity(row, index)));
+}
+
+function toggleCustomerAiSuggestedAttachment(index) {
   const { item } = activeCustomerWorkspaceItem();
-  const media = (item?.agentReplyDraft?.attachments || []).find(row => row.id === templateId);
-  if (!media?.attachment?.url) return alert(lang === 'zh' ? '找不到这张已选图片。' : 'The selected image is unavailable.');
-  prospectPendingAttachment = { ...media.attachment };
+  const media = customerAiSuggestedMedia(item);
+  const row = media[index];
+  if (!row?.attachment?.url) return alert(lang === 'zh' ? '找不到这张已选图片。' : 'The selected image is unavailable.');
+  const key = customerAiMediaSelectionKey(item);
+  customerAiSelectedMedia(item);
+  const selected = customerAiMediaSelections.get(key);
+  const identity = customerAiMediaIdentity(row, index);
+  if (selected.has(identity)) selected.delete(identity);
+  else selected.add(identity);
   renderProspectWorkspace();
 }
 
@@ -9601,6 +9637,8 @@ function updateProspectReplyChannel() {
       : (lang === 'zh' ? '通过 Twilio 发送和接收短信 · 发送号码：+1 725-241-2586' : 'Send and receive SMS through Twilio · Sender: +1 725-241-2586'));
   attachmentButtons.forEach(control => { control.disabled = false; });
   if (button && !prospectPendingAttachment && (wrapReplyQueues.get(wrapReplyKey()) || []).length) button.textContent += ' · 发送下一张';
+  const aiMediaCount = channel === 'sms' && !prospectPendingAttachment ? customerAiSelectedMedia(item).length : 0;
+  if (button && aiMediaCount) button.textContent += lang === 'zh' ? ` · ${aiMediaCount} 张图片` : ` · ${aiMediaCount} images`;
   updateCustomerReplyLanguageGuard();
 }
 
@@ -9634,13 +9672,19 @@ async function sendProspectMessageCore() {
     sourceMessageAt: (item.conversationMessages || []).at(-1)?.timestamp || '',
     sourceType: 'edited_ai_draft'
   } : null;
-  if (!item || (!text && !prospectPendingAttachment)) return;
+  const selectedAiMedia = channel === 'sms' && !prospectPendingAttachment
+    ? customerAiSelectedMedia(item)
+    : [];
+  const wasManualAttachment = Boolean(prospectPendingAttachment);
+  const localAttachments = prospectPendingAttachment
+    ? [{ ...prospectPendingAttachment }]
+    : selectedAiMedia.map(media => ({ ...media.attachment }));
+  if (!item || (!text && !localAttachments.length)) return;
   if (channel === 'meta' && prospectPendingAttachment && !String(prospectPendingAttachment.type || '').startsWith('image/')) return alert('Meta 此处只支持图片附件，视频和文件请使用短信。');
   const workspaceKey = activeProspectWorkspaceId;
-  const localMessageId = `local-send-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  const clientRequestId = `customer-send-${Date.now()}-${Math.random().toString(36).slice(2)}`;
   const localChannel = channel === 'yelp' ? 'yelp' : channel === 'meta' ? 'meta' : 'sms';
-  const localAttachment = prospectPendingAttachment ? { ...prospectPendingAttachment } : null;
-  const localText = text || (localAttachment ? (lang === 'zh' ? '正在发送附件...' : 'Sending attachment...') : '');
+  const localAttachment = localAttachments[0] || null;
   if (button) {
     button.disabled = true;
     button.textContent = lang === 'zh' ? '发送中…' : 'Sending…';
@@ -9648,37 +9692,69 @@ async function sendProspectMessageCore() {
   if (input) input.value = '';
   prospectPendingAttachment = null;
   prospectReplyRevision += 1;
-  prospectPendingLocalMessages.set(workspaceKey, [
-    ...(prospectPendingLocalMessages.get(workspaceKey) || []),
-    {
-      id: localMessageId,
+  const optimisticMessages = localAttachments.length
+    ? localAttachments.map((attachment, index) => ({
+      id: `${clientRequestId}-${index}`,
       speaker: 'shop',
       speakerName: user?.name || user?.email || '',
       direction: 'outbound',
       channel: localChannel,
-      text: localText,
-      attachment: localAttachment,
+      text: index === 0 ? (text || (lang === 'zh' ? '正在发送附件...' : 'Sending attachment...')) : (lang === 'zh' ? `正在发送第 ${index + 1} 张图片...` : `Sending image ${index + 1}...`),
+      attachment,
+      timestamp: new Date(Date.now() + index).toISOString(),
+      status: lang === 'zh' ? '发送中' : 'sending'
+    }))
+    : [{
+      id: clientRequestId,
+      speaker: 'shop',
+      speakerName: user?.name || user?.email || '',
+      direction: 'outbound',
+      channel: localChannel,
+      text,
+      attachment: null,
       timestamp: new Date().toISOString(),
       status: lang === 'zh' ? '发送中' : 'sending'
-    }
+    }];
+  prospectPendingLocalMessages.set(workspaceKey, [
+    ...(prospectPendingLocalMessages.get(workspaceKey) || []),
+    ...optimisticMessages
   ]);
   renderProspectWorkspace();
   try {
     const result = await api(channel === 'yelp' ? '/api/yelp/send' : channel === 'meta' ? '/api/meta/send' : '/api/twilio/send', {
       method: 'POST',
-      body: JSON.stringify({ collection, id: item.id, text, attachment: localAttachment })
+      body: JSON.stringify({
+        collection,
+        id: item.id,
+        text,
+        attachment: localAttachments.length === 1 ? localAttachment : null,
+        attachments: channel === 'sms' && localAttachments.length > 1 ? localAttachments : undefined,
+        clientRequestId
+      })
     });
     prospectPendingLocalMessages.delete(workspaceKey);
     state = result.data;
     lastDataRevision = String(result.revision || lastDataRevision || '');
     broadcastDataChange();
+    const mediaSelectionKey = customerAiMediaSelectionKey(item);
+    if (selectedAiMedia.length) {
+      if (result.complete === false) {
+        const failedIndexes = new Set((result.deliveries || []).filter(delivery => !delivery.ok).map(delivery => Number(delivery.index)));
+        customerAiMediaSelections.set(mediaSelectionKey, new Set(selectedAiMedia
+          .filter((media, index) => failedIndexes.has(index))
+          .map(customerAiMediaIdentity)));
+      } else customerAiMediaSelections.delete(mediaSelectionKey);
+    }
     if (result.fallbackMessage) alert(result.fallbackMessage);
+    if (result.complete === false) alert(lang === 'zh'
+      ? `有 ${Number(result.failedCount || 0)} 张图片未发送成功，已保留勾选，可直接重试。`
+      : `${Number(result.failedCount || 0)} image(s) failed and remain selected for retry.`);
     if (editedAiDraftExperience) {
       api('/api/customer-ai/experiences', { method:'POST', body:JSON.stringify(editedAiDraftExperience) }).catch(() => {});
     }
     preserveProspectWorkspaceRender = false;
     render();
-    return true;
+    return result.complete !== false;
   } catch (err) {
     const metaReplyWindowExpired = channel === 'meta'
       && /(\(#?10\)|outside (?:the )?messaging window|消息发送时间窗|24[- ]?hour)/i.test(String(err.message || ''));
@@ -9691,7 +9767,7 @@ async function sendProspectMessageCore() {
       : err.message);
     prospectPendingLocalMessages.delete(workspaceKey);
     if (activeProspectWorkspaceId !== workspaceKey) return false;
-    prospectPendingAttachment = localAttachment;
+    prospectPendingAttachment = wasManualAttachment ? localAttachment : null;
     renderProspectWorkspace();
     const nextInput = document.getElementById('prospectReplyInput');
     if (nextInput) nextInput.value = text;

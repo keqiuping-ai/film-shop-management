@@ -11884,92 +11884,194 @@ async function api(req, res) {
     const body = await readBody(req);
     const collection = String(body.collection || '').trim();
     const recordId = String(body.id || '').trim();
-    let text = String(body.text || '').trim();
-    const attachment = body.attachment && typeof body.attachment === 'object' ? body.attachment : null;
+    const text = String(body.text || '').trim();
+    const clientRequestId = String(body.clientRequestId || '').trim().slice(0, 160) || `customer-send-${id()}`;
+    const rawAttachments = Array.isArray(body.attachments)
+      ? body.attachments
+      : body.attachment && typeof body.attachment === 'object'
+        ? [body.attachment]
+        : [];
+    if (rawAttachments.length > 3) return send(res, 400, { error: '每次最多发送 3 张图片，请分批发送' });
+    const attachments = [];
+    for (const raw of rawAttachments) {
+      if (!raw || typeof raw !== 'object' || !raw.url) continue;
+      const attachmentUrl = String(raw.url);
+      if (!attachmentUrl.startsWith(`${requestPublicBaseUrl(req)}/customer-media/`)) {
+        return send(res, 400, { error: '附件链接不正确，请重新选择文件' });
+      }
+      if (attachments.some(row => row.url === attachmentUrl)) continue;
+      const attachmentType = String(raw.type || '').slice(0, 120);
+      attachments.push({
+        name: String(raw.name || '附件').slice(0, 160),
+        type: attachmentType,
+        url: attachmentUrl,
+        kind: attachmentType.startsWith('video/') ? 'video' : attachmentType.startsWith('image/') ? 'image' : 'file',
+        size: Number(raw.size || 0)
+      });
+    }
     if (!['customerConversations', 'prospects'].includes(collection)) return send(res, 400, { error: '客户类型不正确' });
     const item = (db[collection] || []).find(row => row.id === recordId);
     if (!item) return send(res, 404, { error: '找不到客户记录' });
     const phoneDigits = normalizedPhone(item.phone);
     if (phoneDigits.length !== 10) return send(res, 400, { error: '客户电话格式不正确，请先填写美国 10 位手机号码' });
-    if (!text && !attachment?.url) return send(res, 400, { error: '短信内容或附件不能为空' });
+    if (!text && !attachments.length) return send(res, 400, { error: '短信内容或附件不能为空' });
     const languageError = customerOutboundLanguageError(text);
     if (languageError) return send(res, 400, { error: languageError });
-    if (attachment?.url && !String(attachment.url).startsWith(`${requestPublicBaseUrl(req)}/customer-media/`)) {
-      return send(res, 400, { error: '附件链接不正确，请重新选择文件' });
-    }
-    const attachmentType = String(attachment?.type || '');
-    const attachmentKind = attachmentType.startsWith('video/') ? 'video' : attachmentType.startsWith('image/') ? 'image' : 'file';
-    const twilioMedia = attachment?.url ? await twilioMediaForAttachment(attachment, requestPublicBaseUrl(req)) : { mediaUrl: '', linkText: '' };
-    if (twilioMedia.linkText) text = [text, twilioMedia.linkText].filter(Boolean).join('\n');
-    const deliveryLanguageError = customerOutboundLanguageError(text);
-    if (deliveryLanguageError) return send(res, 400, { error: deliveryLanguageError });
     if (text.length > 1600) return send(res, 400, { error: '短信内容不能超过 1600 个字符' });
     const to = `+1${phoneDigits}`;
-    let sent;
-    let mmsFallback = false;
-    let mmsErrorCode = '';
-    try {
-      sent = await sendTwilioSms({
+    const existingBatch = (item.conversationMessages || []).filter(message => message.clientRequestId === clientRequestId);
+    if (existingBatch.length) {
+      const expectedBatchSize = Math.max(1, ...existingBatch.map(message => Number(message.batchSize || 1)));
+      const primaryBatch = existingBatch.filter(message => Number(message.batchIndex || 0) < expectedBatchSize);
+      const deliveries = primaryBatch.map(message => ({
+        ok: !['failed', 'undelivered'].includes(String(message.status || '').toLowerCase()),
+        index: Number(message.batchIndex || 0),
+        sid: String(message.providerSid || ''),
+        status: String(message.status || ''),
+        deliveryMode: String(message.deliveryMode || 'sms')
+      }));
+      const complete = primaryBatch.length >= expectedBatchSize && deliveries.every(delivery => delivery.ok);
+      return send(res, 200, {
+        ok: complete,
+        complete,
+        duplicate: true,
+        deliveries,
+        failedCount: deliveries.filter(delivery => !delivery.ok).length,
         to,
-        body: text,
-        mediaUrl: twilioMedia.mediaUrl,
-        statusCallback: `${requestPublicBaseUrl(req)}/api/twilio/status`
+        data: sanitizeDbForUser(db, user)
       });
-    } catch (err) {
-      console.warn('Twilio outbound message rejected', {
-        kind: twilioMedia.mediaUrl ? 'mms' : 'sms',
-        httpStatus: Number(err.twilioHttpStatus || 0),
-        code: String(err.twilioCode || ''),
-        transportError: Boolean(err.twilioTransportError)
-      });
-      if (!twilioMedia.mediaUrl || !attachment?.url || err.twilioTransportError) throw err;
-      mmsErrorCode = String(err.twilioCode || '');
-      const fallbackText = [text, `${attachmentKind === 'image' ? 'Image' : 'Attachment'}: ${String(attachment.name || 'View attachment')} ${String(attachment.url)}`].filter(Boolean).join('\n');
-      if (fallbackText.length > 1600) throw err;
+    }
+
+    const units = attachments.length ? attachments : [null];
+    const deliveries = [];
+    let pendingText = text;
+    let firstSuccessful = null;
+    for (let index = 0; index < units.length; index += 1) {
+      const attachment = units[index];
+      const twilioMedia = attachment ? await twilioMediaForAttachment(attachment, requestPublicBaseUrl(req)) : { mediaUrl: '', linkText: '' };
+      let outgoingText = pendingText;
+      if (twilioMedia.linkText) outgoingText = [outgoingText, twilioMedia.linkText].filter(Boolean).join('\n');
+      if (outgoingText.length > 1600) {
+        const sendError = '短信和图片链接合计不能超过 1600 个字符';
+        appendSmsMessage(item, {
+          id: `twilio-${id()}`,
+          speaker: 'shop', speakerName: user.name || user.email, direction: 'outbound', channel: 'sms',
+          text: '', attachment, timestamp: new Date(Date.now() + index).toISOString(), provider: 'twilio',
+          providerSid: '', status: 'failed', deliveryMode: 'sms', sendError,
+          from: twilioConfig().fromNumber, to, clientRequestId, batchIndex: index, batchSize: units.length,
+          aiExperienceIds: Array.isArray(item.agentReplyDraft?.experienceIds) ? item.agentReplyDraft.experienceIds : []
+        });
+        deliveries.push({ ok: false, index, status: 'failed', deliveryMode: 'sms', error: sendError });
+        continue;
+      }
+      let sent = null;
+      let mmsFallback = false;
+      let mmsErrorCode = '';
+      let sendError = '';
       try {
         sent = await sendTwilioSms({
           to,
-          body: fallbackText,
+          body: outgoingText,
+          mediaUrl: twilioMedia.mediaUrl,
           statusCallback: `${requestPublicBaseUrl(req)}/api/twilio/status`
         });
-        text = fallbackText;
-        mmsFallback = true;
-      } catch (fallbackError) {
-        console.warn('Twilio MMS link fallback rejected', {
-          httpStatus: Number(fallbackError.twilioHttpStatus || 0),
-          code: String(fallbackError.twilioCode || ''),
-          transportError: Boolean(fallbackError.twilioTransportError)
+      } catch (err) {
+        console.warn('Twilio outbound message rejected', {
+          kind: twilioMedia.mediaUrl ? 'mms' : 'sms',
+          httpStatus: Number(err.twilioHttpStatus || 0),
+          code: String(err.twilioCode || ''),
+          transportError: Boolean(err.twilioTransportError),
+          batchIndex: index
         });
-        throw fallbackError;
+        if (twilioMedia.mediaUrl && attachment?.url && !err.twilioTransportError) {
+          mmsErrorCode = String(err.twilioCode || '');
+          const fallbackText = [pendingText, `${attachment.kind === 'image' ? 'Image' : 'Attachment'}: ${attachment.name || 'View attachment'} ${attachment.url}`].filter(Boolean).join('\n');
+          if (fallbackText.length <= 1600) {
+            try {
+              sent = await sendTwilioSms({
+                to,
+                body: fallbackText,
+                statusCallback: `${requestPublicBaseUrl(req)}/api/twilio/status`
+              });
+              outgoingText = fallbackText;
+              mmsFallback = true;
+            } catch (fallbackError) {
+              sendError = fallbackError.message;
+            }
+          } else sendError = '短信和图片链接合计不能超过 1600 个字符';
+        } else sendError = err.message;
+      }
+
+      const now = new Date(Date.now() + index).toISOString();
+      const ok = Boolean(sent);
+      const deliveryMode = mmsFallback ? 'link-fallback' : twilioMedia.mediaUrl ? 'mms' : 'sms';
+      const storedMessage = {
+        id: `twilio-${sent?.sid || id()}`,
+        speaker: 'shop',
+        speakerName: user.name || user.email,
+        direction: 'outbound',
+        channel: 'sms',
+        text: ok ? outgoingText : '',
+        attachment,
+        timestamp: now,
+        provider: 'twilio',
+        providerSid: String(sent?.sid || ''),
+        status: ok ? String(sent.status || 'queued') : 'failed',
+        deliveryMode,
+        mmsFallback,
+        mmsErrorCode,
+        sendError: ok ? '' : String(sendError || 'Twilio 发送失败'),
+        from: String(sent?.from || twilioConfig().fromNumber),
+        to,
+        clientRequestId,
+        batchIndex: index,
+        batchSize: units.length,
+        aiExperienceIds: Array.isArray(item.agentReplyDraft?.experienceIds) ? item.agentReplyDraft.experienceIds : []
+      };
+      appendSmsMessage(item, storedMessage);
+      const delivery = {
+        ok,
+        index,
+        sid: String(sent?.sid || ''),
+        status: storedMessage.status,
+        deliveryMode,
+        fallback: mmsFallback,
+        error: storedMessage.sendError
+      };
+      deliveries.push(delivery);
+      if (ok) {
+        pendingText = '';
+        if (!firstSuccessful) firstSuccessful = delivery;
       }
     }
+
+    // If every image transport failed, still deliver the approved reply text once.
+    if (pendingText && attachments.length) {
+      try {
+        const textSent = await sendTwilioSms({
+          to,
+          body: pendingText,
+          statusCallback: `${requestPublicBaseUrl(req)}/api/twilio/status`
+        });
+        appendSmsMessage(item, {
+          id: `twilio-${textSent.sid || id()}`,
+          speaker: 'shop', speakerName: user.name || user.email, direction: 'outbound', channel: 'sms',
+          text: pendingText, attachment: null, timestamp: new Date().toISOString(), provider: 'twilio',
+          providerSid: String(textSent.sid || ''), status: String(textSent.status || 'queued'), deliveryMode: 'sms',
+          from: String(textSent.from || twilioConfig().fromNumber), to, clientRequestId,
+          batchIndex: units.length, batchSize: units.length,
+          aiExperienceIds: Array.isArray(item.agentReplyDraft?.experienceIds) ? item.agentReplyDraft.experienceIds : []
+        });
+        pendingText = '';
+      } catch (err) {
+        console.warn('Twilio text recovery failed', { transportError: Boolean(err.twilioTransportError), code: String(err.twilioCode || '') });
+      }
+    }
+
+    const failedCount = deliveries.filter(delivery => !delivery.ok).length;
+    const complete = failedCount === 0 && !pendingText;
     const now = new Date().toISOString();
-    appendSmsMessage(item, {
-      id: `twilio-${sent.sid || id()}`,
-      speaker: 'shop',
-      speakerName: user.name || user.email,
-      direction: 'outbound',
-      channel: 'sms',
-      text,
-      attachment: attachment?.url ? {
-        name: String(attachment.name || '附件').slice(0, 160),
-        type: attachmentType.slice(0, 120),
-        url: String(attachment.url),
-        kind: attachmentKind,
-        size: Number(attachment.size || 0)
-      } : null,
-      timestamp: now,
-      provider: 'twilio',
-      providerSid: String(sent.sid || ''),
-      status: String(sent.status || 'queued'),
-      deliveryMode: mmsFallback ? 'link-fallback' : twilioMedia.mediaUrl ? 'mms' : 'sms',
-      mmsFallback,
-      mmsErrorCode,
-      from: String(sent.from || twilioConfig().fromNumber),
-      to,
-      aiExperienceIds: Array.isArray(item.agentReplyDraft?.experienceIds) ? item.agentReplyDraft.experienceIds : []
-    });
-    if (item.followUpDate) {
+    if (complete && item.followUpDate) {
       item.lastFollowUpCompletedAt = now;
       item.lastFollowUpReason = item.followUpReason || '';
       delete item.followUpDate;
@@ -11977,26 +12079,33 @@ async function api(req, res) {
       delete item.followUpReason;
       delete item.followUpCompletedAt;
     }
-    delete item.agentReplyDraft;
-    delete item.taskClaimedByUserId;
-    delete item.taskClaimedByName;
-    delete item.taskClaimedAt;
+    if (complete) {
+      delete item.agentReplyDraft;
+      delete item.taskClaimedByUserId;
+      delete item.taskClaimedByName;
+      delete item.taskClaimedAt;
+    }
     audit(db, user, 'send-customer-sms', {
       collection,
       recordId: item.id,
       recordLabel: item.customer || item.phone,
-      detail: mmsFallback
-        ? `Twilio MMS 被拒绝后已自动补发图片链接，错误码 ${mmsErrorCode || '未知'}，状态 ${sent.status || 'queued'}`
-        : `通过 Twilio 向 ${to} 发送${twilioMedia.mediaUrl ? ' MMS' : '短信'}，状态 ${sent.status || 'queued'}`
+      detail: attachments.length
+        ? `通过 Twilio 批次发送 ${attachments.length} 张图片：成功 ${attachments.length - failedCount}，失败 ${failedCount}`
+        : `通过 Twilio 向 ${to} 发送短信，状态 ${firstSuccessful?.status || deliveries[0]?.status || 'failed'}`
     });
     writeDb(db);
     notifyDataChanged('send-customer-sms', item.id);
+    const fallbackCount = deliveries.filter(delivery => delivery.fallback).length;
     return send(res, 200, {
-      ok: true,
-      sid: String(sent.sid || ''),
-      status: String(sent.status || 'queued'),
-      deliveryMode: mmsFallback ? 'link-fallback' : twilioMedia.mediaUrl ? 'mms' : 'sms',
-      fallbackMessage: mmsFallback ? 'Twilio 未接受这张图片的 MMS，系统已自动改为可点击图片链接发送。' : '',
+      ok: complete,
+      complete,
+      sid: String(firstSuccessful?.sid || ''),
+      status: String(firstSuccessful?.status || deliveries[0]?.status || 'failed'),
+      deliveryMode: String(firstSuccessful?.deliveryMode || deliveries[0]?.deliveryMode || 'sms'),
+      deliveries,
+      failedCount,
+      fallbackCount,
+      fallbackMessage: fallbackCount ? `${fallbackCount} 张图片的 MMS 未被 Twilio 接受，系统已自动改为可点击图片链接发送。` : '',
       to,
       data: sanitizeDbForUser(db, user)
     });
