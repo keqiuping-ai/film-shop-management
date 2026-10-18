@@ -6030,6 +6030,163 @@ function metaMessageText(message = {}) {
   return text || (attachmentSummary ? `Meta attachment: ${attachmentSummary}` : '');
 }
 
+function metaAttachmentCandidates(message = {}) {
+  return (Array.isArray(message.attachments) ? message.attachments : [])
+    .map((attachment, index) => ({
+      index,
+      type: String(attachment?.type || '').trim().toLowerCase(),
+      url: String(attachment?.payload?.url || attachment?.url || '').trim()
+    }))
+    .filter(attachment => attachment.url && ['image', 'video', 'file'].includes(attachment.type))
+    .slice(0, 6);
+}
+
+function metaMediaAllowedHost(hostname, config = {}) {
+  const host = String(hostname || '').trim().toLowerCase();
+  const configured = String(process.env.META_MEDIA_ALLOWED_HOSTS || '')
+    .split(',')
+    .map(value => value.trim().toLowerCase())
+    .filter(Boolean);
+  let graphHost = '';
+  try { graphHost = new URL(config.graphBaseUrl || 'https://graph.facebook.com').hostname.toLowerCase(); } catch {}
+  return ['facebook.com', 'fbcdn.net', 'fbsbx.com', 'instagram.com', 'cdninstagram.com']
+    .some(domain => host === domain || host.endsWith(`.${domain}`))
+    || (graphHost && host === graphHost)
+    || configured.includes(host);
+}
+
+function assertMetaMediaUrl(rawUrl, config = {}) {
+  const url = new URL(String(rawUrl || ''));
+  const allowHttp = String(process.env.META_MEDIA_ALLOW_HTTP || '').toLowerCase() === 'true';
+  if (url.protocol !== 'https:' && !(allowHttp && url.protocol === 'http:')) {
+    throw new Error('Meta attachment URL must use HTTPS');
+  }
+  if (!metaMediaAllowedHost(url.hostname, config)) throw new Error('Meta attachment host is not allowed');
+  return url;
+}
+
+async function fetchMetaMediaResponse(rawUrl, config, accessToken = '') {
+  let current = assertMetaMediaUrl(rawUrl, config);
+  for (let redirects = 0; redirects <= 4; redirects += 1) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 12_000);
+    let response;
+    try {
+      response = await fetch(current, {
+        redirect: 'manual',
+        signal: controller.signal,
+        headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : {}
+      });
+    } finally {
+      clearTimeout(timer);
+    }
+    if (![301, 302, 303, 307, 308].includes(response.status)) return response;
+    const location = response.headers.get('location');
+    if (!location) throw new Error('Meta attachment redirect is missing a destination');
+    current = assertMetaMediaUrl(new URL(location, current).toString(), config);
+  }
+  throw new Error('Meta attachment has too many redirects');
+}
+
+async function readMetaMediaBody(response, limit = MAX_MESSAGE_ATTACHMENT_BYTES) {
+  const declaredSize = Number(response.headers.get('content-length') || 0);
+  if (declaredSize > limit) throw new Error('Meta attachment exceeds the 20MB limit');
+  if (!response.body?.getReader) {
+    const data = Buffer.from(await response.arrayBuffer());
+    if (!data.length || data.length > limit) throw new Error('Meta attachment is empty or too large');
+    return data;
+  }
+  const reader = response.body.getReader();
+  const chunks = [];
+  let size = 0;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    size += value.byteLength;
+    if (size > limit) {
+      await reader.cancel().catch(() => {});
+      throw new Error('Meta attachment exceeds the 20MB limit');
+    }
+    chunks.push(Buffer.from(value));
+  }
+  if (!size) throw new Error('Meta attachment is empty');
+  return Buffer.concat(chunks, size);
+}
+
+function sniffMetaMediaType(data) {
+  if (!Buffer.isBuffer(data) || data.length < 4) return '';
+  if (data.subarray(0, 3).equals(Buffer.from([0xff, 0xd8, 0xff]))) return 'image/jpeg';
+  if (data.length >= 8 && data.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) return 'image/png';
+  if (data.subarray(0, 4).toString('ascii') === 'GIF8') return 'image/gif';
+  if (data.length >= 12 && data.subarray(0, 4).toString('ascii') === 'RIFF' && data.subarray(8, 12).toString('ascii') === 'WEBP') return 'image/webp';
+  if (data.length >= 12 && data.subarray(4, 8).toString('ascii') === 'ftyp') {
+    const brand = data.subarray(8, 12).toString('ascii').toLowerCase();
+    if (['heic', 'heix', 'hevc', 'hevx', 'mif1', 'msf1'].includes(brand)) return 'image/heic';
+    return 'video/mp4';
+  }
+  if (data.subarray(0, 4).toString('ascii') === '%PDF') return 'application/pdf';
+  return '';
+}
+
+function allowedMetaMediaType(contentType, attachmentType, data) {
+  const declared = String(contentType || '').split(';')[0].trim().toLowerCase();
+  const sniffed = sniffMetaMediaType(data);
+  if (attachmentType === 'image' && ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/heic'].includes(sniffed)) return sniffed;
+  if (attachmentType === 'video' && ['video/mp4'].includes(sniffed)) return declared === 'video/quicktime' ? declared : sniffed;
+  if (attachmentType === 'file' && sniffed === 'application/pdf') return sniffed;
+  if (attachmentType === 'file' && declared === 'text/plain') return declared;
+  return '';
+}
+
+async function saveMetaInboundAttachment(candidate, config, publicBaseUrl, accessToken = '') {
+  if (!candidate?.url || !publicBaseUrl) return null;
+  let response = await fetchMetaMediaResponse(candidate.url, config);
+  if ([401, 403].includes(response.status) && accessToken) {
+    response = await fetchMetaMediaResponse(candidate.url, config, accessToken);
+  }
+  if (!response.ok) throw new Error(`Meta attachment download failed (${response.status})`);
+  const data = await readMetaMediaBody(response);
+  const contentType = allowedMetaMediaType(response.headers.get('content-type'), candidate.type, data);
+  if (!contentType) throw new Error('Meta attachment content type is not supported');
+  fs.mkdirSync(CUSTOMER_MEDIA_DIR, { recursive: true });
+  const extension = safeCustomerMediaExtension('', contentType);
+  if (extension === '.bin') throw new Error('Meta attachment extension is not supported');
+  const fileName = `${crypto.randomBytes(6).toString('hex')}${extension}`;
+  fs.writeFileSync(path.join(CUSTOMER_MEDIA_DIR, fileName), data);
+  const kind = candidate.type === 'image' ? 'image' : candidate.type === 'video' ? 'video' : 'file';
+  return {
+    name: `Meta customer ${kind}`,
+    type: contentType,
+    size: data.length,
+    url: `${String(publicBaseUrl).replace(/\/$/, '')}/customer-media/${fileName}`,
+    kind
+  };
+}
+
+function metaMessageAlreadyStored(item, message = {}) {
+  const mid = String(message.mid || message.message_id || message.id || '').trim();
+  if (!mid) return false;
+  return (Array.isArray(item?.conversationMessages) ? item.conversationMessages : [])
+    .some(row => String(row?.providerSid || '').replace(/-attachment-\d+$/, '') === mid
+      || String(row?.externalEventId || '') === `meta-${mid}`);
+}
+
+async function downloadMetaInboundAttachments(message, config, publicBaseUrl, accessToken = '') {
+  const saved = [];
+  for (const candidate of metaAttachmentCandidates(message)) {
+    try {
+      const attachment = await saveMetaInboundAttachment(candidate, config, publicBaseUrl, accessToken);
+      if (attachment) saved.push(attachment);
+    } catch (error) {
+      console.warn('Meta inbound attachment was not stored', {
+        type: candidate.type,
+        error: String(error?.message || error || '').slice(0, 200)
+      });
+    }
+  }
+  return saved;
+}
+
 function metaMessagingEventMessage(event = {}) {
   if (event.message) return event.message.timestamp || !event.timestamp
     ? event.message
@@ -6056,18 +6213,17 @@ function appendMetaMessengerMessage(item, message, pageId, psid, direction = 'in
   const timestamp = message.timestamp
     ? new Date(Number(message.timestamp)).toISOString()
     : new Date().toISOString();
-  const text = metaMessageText(message);
-  if (!text) return false;
-  const row = {
-    id: mid ? `meta-${mid}` : `meta-${id()}`,
-    externalEventId: mid ? `meta-${mid}` : '',
+  const attachments = Array.isArray(message.localAttachments) ? message.localAttachments.filter(attachment => attachment?.url) : [];
+  const fallbackText = metaMessageText(message);
+  const text = attachments.length ? String(message.text || '').trim() : fallbackText;
+  if (!text && !attachments.length) return false;
+  const baseRow = {
     speaker: direction === 'outbound' ? 'shop' : 'customer',
     speakerName: speakerName || (direction === 'outbound' ? 'Meta Page' : 'Meta Customer'),
     direction,
     channel: 'meta',
     provider,
     providerSid: mid,
-    text,
     timestamp,
     status: direction === 'outbound' ? 'sent' : 'received',
     from: direction === 'outbound' ? pageId : psid,
@@ -6075,7 +6231,20 @@ function appendMetaMessengerMessage(item, message, pageId, psid, direction = 'in
     attachment: null
   };
   const before = Array.isArray(item.conversationMessages) ? item.conversationMessages : [];
-  const after = mergeProspectMessages(before, [row]);
+  const rows = attachments.length ? attachments.map((attachment, index) => ({
+    ...baseRow,
+    id: mid ? `meta-${mid}${index ? `-attachment-${index}` : ''}` : `meta-${id()}`,
+    externalEventId: mid ? `meta-${mid}${index ? `-attachment-${index}` : ''}` : '',
+    providerSid: mid ? `${mid}${index ? `-attachment-${index}` : ''}` : '',
+    text: index === 0 ? text : '',
+    attachment
+  })) : [{
+    ...baseRow,
+    id: mid ? `meta-${mid}` : `meta-${id()}`,
+    externalEventId: mid ? `meta-${mid}` : '',
+    text
+  }];
+  const after = mergeProspectMessages(before, rows);
   const changed = after.length !== before.length;
   item.conversationMessages = after;
   item.customerChannelIdentities = customerIdentity.identities(item);
@@ -6158,7 +6327,16 @@ async function processMetaMessagingPayload(db, payload, config) {
         match = { collection: 'customerConversations', item };
         imported += 1;
       }
-      if (appendMetaMessengerMessage(match.item, message, recipientId || pageId, psid, 'inbound', match.item.customer || 'Meta Customer', platform)) {
+      if (metaMessageAlreadyStored(match.item, message)) {
+        skipped += 1;
+        continue;
+      }
+      let localAttachments = [];
+      if (metaAttachmentCandidates(message).length) {
+        const target = await resolveMetaMessageTarget(config, match.item);
+        localAttachments = await downloadMetaInboundAttachments(message, config, config.publicBaseUrl, target.accessToken || config.pageAccessToken);
+      }
+      if (appendMetaMessengerMessage(match.item, { ...message, localAttachments }, recipientId || pageId, psid, 'inbound', match.item.customer || 'Meta Customer', platform)) {
         creditCustomerAiExperienceReply(db, match.item, (match.item.conversationMessages || []).at(-1));
         enrichCustomerIdentity(db, match.item);
         customerNurtureMarkInbound(db, match.collection, match.item, text, new Date().toISOString(), 'meta');
@@ -6286,7 +6464,7 @@ async function handleMetaLeadWebhook(req, res, db, url) {
 }
 
 async function handleMetaWebhook(req, res, db, url) {
-  const config = metaMessengerConfig(db);
+  const config = { ...metaMessengerConfig(db), publicBaseUrl: requestPublicBaseUrl(req) };
   if (req.method === 'GET') {
     const mode = String(url.searchParams.get('hub.mode') || '');
     const token = String(url.searchParams.get('hub.verify_token') || '');
@@ -7295,7 +7473,7 @@ function safeCustomerMediaExtension(name, contentType) {
   const allowed = new Set(['.jpg', '.jpeg', '.png', '.gif', '.webp', '.heic', '.mp4', '.mov', '.webm', '.pdf', '.txt', '.doc', '.docx', '.xls', '.xlsx', '.zip']);
   if (allowed.has(fromName)) return fromName;
   const byType = {
-    'image/jpeg': '.jpg', 'image/png': '.png', 'image/gif': '.gif', 'image/webp': '.webp',
+    'image/jpeg': '.jpg', 'image/png': '.png', 'image/gif': '.gif', 'image/webp': '.webp', 'image/heic': '.heic',
     'video/mp4': '.mp4', 'video/quicktime': '.mov', 'video/webm': '.webm',
     'application/pdf': '.pdf', 'text/plain': '.txt'
   };

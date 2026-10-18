@@ -1,6 +1,7 @@
 const assert = require('assert');
 const crypto = require('crypto');
 const fs = require('fs');
+const http = require('http');
 const os = require('os');
 const path = require('path');
 const { spawn } = require('child_process');
@@ -11,6 +12,9 @@ const port = 45000 + Math.floor(Math.random() * 1000);
 const baseUrl = `http://127.0.0.1:${port}`;
 const verifyToken = 'quad-meta-test-token';
 const appSecret = 'quad-meta-test-secret';
+const mediaPort = port + 1000;
+const mediaUrl = `http://127.0.0.1:${mediaPort}/customer-photo.png`;
+const testPng = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M/wHwAF/gL+XwX9WQAAAABJRU5ErkJggg==', 'base64');
 let output = '';
 
 async function waitForServer() {
@@ -42,6 +46,15 @@ function readDb() {
 }
 
 async function run() {
+  const mediaServer = http.createServer((req, res) => {
+    if (req.url !== '/customer-photo.png') {
+      res.writeHead(404).end();
+      return;
+    }
+    res.writeHead(200, { 'Content-Type': 'image/png', 'Content-Length': testPng.length });
+    res.end(testPng);
+  });
+  await new Promise((resolve, reject) => mediaServer.listen(mediaPort, '127.0.0.1', error => error ? reject(error) : resolve()));
   const child = spawn(process.execPath, ['server.js'], {
     cwd: root,
     env: {
@@ -53,7 +66,10 @@ async function run() {
       META_WEBHOOK_VERIFY_TOKEN: verifyToken,
       META_PAGE_ACCESS_TOKEN: '',
       FACEBOOK_PAGE_ACCESS_TOKEN: '',
-      META_APP_SECRET: appSecret
+      META_APP_SECRET: appSecret,
+      TWILIO_WEBHOOK_BASE_URL: baseUrl,
+      META_MEDIA_ALLOWED_HOSTS: '127.0.0.1',
+      META_MEDIA_ALLOW_HTTP: 'true'
     },
     stdio: ['ignore', 'pipe', 'pipe']
   });
@@ -95,6 +111,49 @@ async function run() {
     assert.equal(instagram.response.status, 200, JSON.stringify(instagram.body));
     assert.equal(instagram.body.messaging.imported, 1);
     assert.equal(instagram.body.messaging.platform, 'instagram');
+
+    const instagramImage = await postWebhook('/api/meta/webhook', {
+      object: 'instagram',
+      entry: [{
+        id: 'instagram-business-1',
+        messaging: [{
+          sender: { id: 'instagram-user-1' },
+          recipient: { id: 'instagram-business-1' },
+          timestamp: Date.now(),
+          message: { mid: 'ig-image-1', attachments: [{ type: 'image', payload: { url: mediaUrl } }] }
+        }]
+      }]
+    });
+    assert.equal(instagramImage.response.status, 200, JSON.stringify(instagramImage.body));
+    assert.equal(instagramImage.body.messaging.updated, 1, 'Inbound Instagram image must update the existing conversation');
+
+    let imageDb = readDb();
+    let imageRow = imageDb.customerConversations.find(row => row.externalId === 'meta-instagram:instagram-user-1');
+    let imageMessage = imageRow.conversationMessages.find(message => message.providerSid === 'ig-image-1');
+    assert(imageMessage?.attachment?.url, 'Inbound Instagram image must be stored as a real attachment');
+    assert.equal(imageMessage.attachment.kind, 'image');
+    assert.equal(imageMessage.attachment.type, 'image/png');
+    assert(!/^Meta attachment:/i.test(imageMessage.text), 'Downloaded images must not remain placeholder-only messages');
+    const storedImage = await fetch(imageMessage.attachment.url);
+    assert.equal(storedImage.status, 200);
+    assert.deepEqual(Buffer.from(await storedImage.arrayBuffer()), testPng);
+    const mediaFilesBeforeDuplicate = fs.readdirSync(path.join(dataDir, 'customer-media')).length;
+
+    const duplicateImage = await postWebhook('/api/meta/webhook', {
+      object: 'instagram',
+      entry: [{
+        id: 'instagram-business-1',
+        messaging: [{
+          sender: { id: 'instagram-user-1' },
+          recipient: { id: 'instagram-business-1' },
+          timestamp: Date.now(),
+          message: { mid: 'ig-image-1', attachments: [{ type: 'image', payload: { url: mediaUrl } }] }
+        }]
+      }]
+    });
+    assert.equal(duplicateImage.response.status, 200, JSON.stringify(duplicateImage.body));
+    assert.equal(duplicateImage.body.messaging.updated, 0);
+    assert.equal(fs.readdirSync(path.join(dataDir, 'customer-media')).length, mediaFilesBeforeDuplicate, 'Duplicate webhooks must not create orphaned files');
 
     const postback = await postWebhook('/api/meta/lead-ads/webhook', {
       object: 'page',
@@ -139,6 +198,7 @@ async function run() {
   } finally {
     child.kill('SIGTERM');
     if (child.exitCode === null) await new Promise(resolve => child.once('exit', resolve));
+    await new Promise(resolve => mediaServer.close(resolve));
     fs.rmSync(dataDir, { recursive: true, force: true });
   }
 }
