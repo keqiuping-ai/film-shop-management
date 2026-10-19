@@ -1488,6 +1488,9 @@ body.modal-lock .prospect-workspace { pointer-events: none; }
 .prospect-manual-translation strong { color:#14768c; font-size:13px; }
 .prospect-manual-translation p { margin:4px 0 0; white-space:pre-wrap; overflow-wrap:anywhere; font-size:14px; line-height:1.45; }
 .prospect-manual-translation > button { position:absolute; top:4px; right:5px; width:24px; height:24px; padding:0; border:0; background:transparent; font-size:20px; }
+.prospect-manual-translation.is-error { grid-template-columns:1fr; border-color:#e6a0a7; background:#fff1f2; }
+.prospect-manual-translation.is-error > div { padding-right:32px; }
+.prospect-manual-translation.is-error strong { color:#a61b29; }
 @media (max-width:760px) { .prospect-manual-translation { grid-template-columns:1fr; } }
 .prospect-compose-row { min-height:104px; display:grid; grid-template-columns:minmax(0,1fr) auto; gap:8px; align-items:stretch; }
 .prospect-compose-row textarea { width:100%; min-height:104px; max-height:none; box-sizing:border-box; padding:11px 13px; font-size:15px; line-height:1.45; resize:vertical; }

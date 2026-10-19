@@ -3871,7 +3871,11 @@ async function translateCustomerReplyChineseToEnglish(db, chineseText) {
       role: 'user',
       content: `Translate the Chinese message below into natural, concise, professional American English that can be sent directly to a customer. Preserve the exact meaning, questions, names, numbers, prices, dates, phone numbers, addresses, links, promises, and uncertainty. Do not add any new business fact, offer, address, appointment, guarantee, or sales claim. Return JSON only with one field: englishText.\n\nChinese message:\n${sourceText}`
     }],
-    maxCompletionTokens: 700
+    maxCompletionTokens: 700,
+    // Reply translation is an interactive action. Fail over quickly instead of
+    // making the employee wait through the longer draft-generation timeout for
+    // every configured provider.
+    requestTimeoutMs: customerAiTranslationTimeoutMs()
   });
   const englishText = String(parseAiBossDraft(completion.content)?.englishText || '').trim().slice(0, 3000);
   if (!englishText) throw new Error('AI 没有生成英文，请稍后重试');
@@ -4033,7 +4037,16 @@ function customerAiRequestTimeoutMs() {
   return Math.max(5_000, Math.min(60_000, Number(process.env.CUSTOMER_AI_REQUEST_TIMEOUT_MS || 35_000)));
 }
 
-async function fetchCustomerAiCompletion(db, { feature = 'customer-ai', messages = [], maxCompletionTokens = 700 } = {}) {
+function customerAiTranslationTimeoutMs() {
+  return Math.max(3_000, Math.min(15_000, Number(process.env.CUSTOMER_AI_TRANSLATION_TIMEOUT_MS || 8_000)));
+}
+
+async function fetchCustomerAiCompletion(db, {
+  feature = 'customer-ai',
+  messages = [],
+  maxCompletionTokens = 700,
+  requestTimeoutMs = customerAiRequestTimeoutMs()
+} = {}) {
   const providers = [];
   const openAiKey = openAiCustomerReplyKey(db);
   if (openAiKey) {
@@ -4074,12 +4087,14 @@ async function fetchCustomerAiCompletion(db, { feature = 'customer-ai', messages
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${candidate.key}` },
         body: JSON.stringify(requestBody)
-      }, customerAiRequestTimeoutMs());
+      }, requestTimeoutMs);
       const content = String(value?.choices?.[0]?.message?.content || '').trim();
       if (!content) throw new Error('AI 没有返回内容');
       return { content, provider: candidate.provider, model: candidate.model };
     } catch (error) {
-      const message = String(error?.message || error || 'unknown error').slice(0, 300);
+      const causeCode = String(error?.cause?.code || '').trim().slice(0, 80);
+      const baseMessage = String(error?.message || error || 'unknown error').slice(0, 260);
+      const message = causeCode ? `${baseMessage} (${causeCode})` : baseMessage;
       failures.push(`${candidate.provider}: ${message}`);
       console.warn('Customer AI provider failed', JSON.stringify({ feature, provider: candidate.provider, model: candidate.model, error: message }));
     }

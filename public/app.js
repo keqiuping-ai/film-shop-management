@@ -9084,18 +9084,25 @@ async function translateCustomerReplyChineseToEnglish() {
     const result = await api('/api/customer-ai/translate-reply', {
       method: 'POST',
       body: JSON.stringify({ text: sourceText }),
-      timeoutMs: 80_000
+      timeoutMs: 22_000
     });
     const preview = document.getElementById('prospectManualTranslation');
     if (preview) {
       preview.classList.remove('hidden');
+      preview.classList.remove('is-error');
       preview.innerHTML = `<div><strong>${lang === 'zh' ? '中文原文' : 'Chinese original'}</strong><p>${escapeHtml(result.chineseText || sourceText)}</p></div><div><strong>${lang === 'zh' ? '英文发送内容' : 'English to send'}</strong><p>${escapeHtml(result.englishText || '')}</p></div><button type="button" onclick="clearCustomerReplyTranslation()" aria-label="${lang === 'zh' ? '关闭中英文对照' : 'Close translation preview'}">×</button>`;
     }
     input.value = result.englishText || '';
     input.dispatchEvent(new Event('input', { bubbles: true }));
     input.focus();
   } catch (error) {
-    alert(error.message);
+    const preview = document.getElementById('prospectManualTranslation');
+    if (preview) {
+      preview.classList.remove('hidden');
+      preview.classList.add('is-error');
+      preview.innerHTML = `<div><strong>${lang === 'zh' ? '翻译没有完成' : 'Translation did not finish'}</strong><p>${escapeHtml(error.message || (lang === 'zh' ? 'AI 服务暂时不可用，请重试。' : 'AI is temporarily unavailable. Please retry.'))}</p></div><button type="button" onclick="clearCustomerReplyTranslation()" aria-label="${lang === 'zh' ? '关闭提示' : 'Close message'}">×</button>`;
+    }
+    input.focus();
   } finally {
     setCustomerReplyAiBusy(false);
   }
@@ -9105,6 +9112,7 @@ function clearCustomerReplyTranslation() {
   const preview = document.getElementById('prospectManualTranslation');
   if (!preview) return;
   preview.classList.add('hidden');
+  preview.classList.remove('is-error');
   preview.innerHTML = '';
 }
 
