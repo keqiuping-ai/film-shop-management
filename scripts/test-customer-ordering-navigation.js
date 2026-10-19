@@ -12,6 +12,9 @@ assert(customer.includes("const customerScreenIds=['landing','login','app','cust
 assert(customer.includes("function showOnlyCustomerScreen(screenId)"));
 assert(customer.includes("function showLogin(){if(token&&state)return openCustomerArea('orders');showOnlyCustomerScreen('login')"));
 assert(customer.includes("function showHome(){showOnlyCustomerScreen('landing')}"));
+assert(customer.includes("function openRequestedCustomerView(){const view=new URLSearchParams(location.search).get('view');if(view==='order')showOrderCenter();else if(view==='login')showLogin()}"), 'QR links need stable direct routes to ordering and dealer login');
+assert(customer.includes("if(!result){await sync();openRequestedCustomerView();return}"), 'signed-in dealer QR links must return to the requested destination after bootstrap');
+assert(customer.includes("if(token)handleCheckoutReturn();else openRequestedCustomerView();"), 'signed-out QR links must open their requested public destination immediately');
 assert(customer.includes("function openProductCategory(category)"), 'homepage categories need a public browsing route');
 assert(customer.includes("if(category==='ppf')return window.showPpfCatalog?.()"), 'PPF exploration must open without dealer login');
 assert(customer.includes("if(category==='color-wrap')return window.showColorWrapCatalog?.()"), 'color-wrap exploration must open without dealer login');
@@ -42,7 +45,7 @@ assert(html.includes("onclick=\"openProductCategory('ppf')\""));
 assert(html.includes("onclick=\"openProductCategory('color-wrap')\""));
 assert(html.includes("onclick=\"openProductCategory('window-film')\""));
 assert(html.includes("onclick=\"openProductCategory('yacht-film')\""));
-assert(html.includes('/customer.js?v=24'));
+assert(html.includes('/customer.js?v=25'));
 assert(html.includes('/customer-ordering.js?v=63'));
 assert(ordering.includes("fetch('/retail/wrap-examples.json')"), 'Color-wrap cards must load the vehicle preview library');
 assert(ordering.includes('color.vehicleImage'), 'Color-wrap cards must render vehicle previews instead of plain swatch photos');
