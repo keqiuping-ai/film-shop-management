@@ -31,6 +31,7 @@ let state = null;
 let user = null;
 let current = 'modules';
 let portalCustomerTab = 'customers';
+let imagePreviewHistoryPushed = false;
 // Monotonically tracks user-visible navigation. A bootstrap response may arrive
 // after the operator has moved to another module, conversation, or workspace;
 // that older response may update data, but must never repaint the old screen.
@@ -6222,6 +6223,8 @@ function openPanelZoom(panelEl) {
   const clone = panelEl.cloneNode(true);
   clone.querySelectorAll('[id]').forEach(el => el.removeAttribute('id'));
   document.getElementById('panelZoomTitle').textContent = title;
+  const closeButton = document.querySelector('#panelZoom .zoom-dialog > header .btn');
+  if (closeButton) closeButton.textContent = lang === 'zh' ? '返回' : 'Back';
   const body = document.getElementById('panelZoomBody');
   body.innerHTML = '';
   body.appendChild(clone);
@@ -6231,18 +6234,47 @@ function openPanelZoom(panelEl) {
 
 function openImagePreview(src, title = '') {
   uiNavigationRevision += 1;
+  const modal = document.getElementById('panelZoom');
+  if (!modal || !src) return;
   document.getElementById('panelZoomTitle').textContent = title || (lang === 'zh' ? '查看图片' : 'Image');
+  const closeButton = modal.querySelector('.zoom-dialog > header .btn');
+  if (closeButton) {
+    closeButton.textContent = lang === 'zh' ? '✕ 关闭图片' : '✕ Close image';
+    closeButton.setAttribute('aria-label', lang === 'zh' ? '关闭图片预览' : 'Close image preview');
+  }
   const body = document.getElementById('panelZoomBody');
-  body.innerHTML = `<div class="image-preview-wrap"><img src="${src}" alt="${escapeHtml(title || 'image')}" /></div>`;
-  document.getElementById('panelZoom').classList.add('open', 'image-preview-open');
+  body.innerHTML = '';
+  const wrap = document.createElement('div');
+  wrap.className = 'image-preview-wrap';
+  const image = document.createElement('img');
+  image.src = String(src);
+  image.alt = String(title || 'image');
+  wrap.appendChild(image);
+  wrap.addEventListener('click', event => {
+    if (event.target === wrap) closePanelZoom();
+  });
+  body.appendChild(wrap);
+  if (!modal.classList.contains('image-preview-open')) {
+    const previousState = history.state && typeof history.state === 'object' ? history.state : {};
+    history.pushState({ ...previousState, quadImagePreview: true }, document.title, location.href);
+    imagePreviewHistoryPushed = true;
+  }
+  modal.classList.add('open', 'image-preview-open');
+  document.body.classList.add('image-preview-active');
+  requestAnimationFrame(() => closeButton?.focus());
 }
 
 function closePanelZoom() {
   uiNavigationRevision += 1;
   const modal = document.getElementById('panelZoom');
   if (!modal) return;
+  const wasImagePreview = modal.classList.contains('image-preview-open');
+  const shouldRestoreHistory = wasImagePreview && imagePreviewHistoryPushed && Boolean(history.state?.quadImagePreview);
   modal.classList.remove('open', 'image-preview-open');
+  document.body.classList.remove('image-preview-active');
   document.getElementById('panelZoomBody').innerHTML = '';
+  imagePreviewHistoryPushed = false;
+  if (shouldRestoreHistory) history.back();
 }
 
 function jobFilterControls() {
@@ -8857,12 +8889,24 @@ function prospectAttachmentHtml(attachment) {
   const url = escapeHtml(attachment.url);
   const name = escapeHtml(attachment.name || '附件');
   if (attachment.kind === 'image' || String(attachment.type || '').startsWith('image/')) {
-    return `<a href="${url}" target="_blank" rel="noopener"><img class="prospect-chat-media" src="${url}" alt="${name}"></a>`;
+    return `<button class="prospect-chat-image-button" type="button" data-image-url="${url}" data-image-name="${name}" onclick="openProspectImagePreview(this)" aria-label="${lang === 'zh' ? '查看并可关闭此图片' : 'Preview this image'}"><img class="prospect-chat-media" src="${url}" alt="${name}"><span>${lang === 'zh' ? '点击查看大图' : 'Tap to enlarge'}</span></button>`;
   }
   if (attachment.kind === 'video' || String(attachment.type || '').startsWith('video/')) {
     return `<button class="prospect-chat-video-placeholder" type="button" onclick="playProspectVideo(this, '${encodeURIComponent(attachment.url)}')" aria-label="${lang === 'zh' ? '点击播放视频' : 'Play video'}"><span>▶</span><strong>${lang === 'zh' ? '点击播放视频' : 'Play video'}</strong></button>`;
   }
   return `<a class="prospect-chat-file" href="${url}" target="_blank" rel="noopener">📎 ${name}</a>`;
+}
+
+function openProspectImagePreview(button) {
+  const rawUrl = String(button?.dataset?.imageUrl || '').trim();
+  if (!rawUrl) return;
+  try {
+    const url = new URL(rawUrl, location.origin);
+    if (!['http:', 'https:'].includes(url.protocol)) throw new Error('Unsupported image URL');
+    openImagePreview(url.href, String(button?.dataset?.imageName || ''));
+  } catch {
+    alert(lang === 'zh' ? '这张图片暂时无法打开。' : 'This image cannot be opened right now.');
+  }
 }
 
 function playProspectVideo(button, encodedUrl) {
@@ -13323,5 +13367,11 @@ applyStaticTranslations();
 startSidebarTimeZones();
 document.addEventListener('keydown', event => {
   if (event.key === 'Escape') closePanelZoom();
+});
+window.addEventListener('popstate', () => {
+  const modal = document.getElementById('panelZoom');
+  if (!modal?.classList.contains('image-preview-open')) return;
+  imagePreviewHistoryPushed = false;
+  closePanelZoom();
 });
 if (token) sync(); else renderAuth();

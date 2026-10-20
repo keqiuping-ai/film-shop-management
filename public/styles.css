@@ -2663,3 +2663,12 @@ body.modal-lock .prospect-workspace { pointer-events: none; }
 
 .prospect-chat-message.shop .customer-message-translation { color: #e2f2f7; border-top-color: rgba(255,255,255,.3); }
 .prospect-chat-message.shop .customer-message-translation span { color: #c7edf7; }
+
+/* Keep customer photos inside the app so locked-down iPad browsers always have a clear exit. */
+body.image-preview-active { overflow: hidden; }
+.image-preview-open .zoom-dialog > header { position:relative; z-index:2; background:#101820; color:white; }
+.image-preview-open .zoom-dialog > header .btn { display:inline-flex !important; min-height:44px; align-items:center; border-color:rgba(255,255,255,.7); background:white; color:#111827; font-weight:800; }
+.prospect-chat-image-button { display:block; max-width:min(420px, 100%); margin-top:8px; padding:0; border:0; border-radius:12px; overflow:hidden; background:rgba(0,0,0,.08); color:inherit; cursor:zoom-in; text-align:left; }
+.prospect-chat-image-button .prospect-chat-media { margin-top:0; border-radius:0; }
+.prospect-chat-image-button > span { display:block; padding:6px 10px; background:rgba(15,23,42,.78); color:white; font-size:11px; font-weight:750; text-align:center; }
+.prospect-chat-image-button:focus-visible { outline:3px solid #38bdf8; outline-offset:3px; }
