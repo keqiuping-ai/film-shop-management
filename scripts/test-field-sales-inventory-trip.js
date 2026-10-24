@@ -174,6 +174,7 @@ async function seedIsolatedFixture() {
     { id:'inventory-account', businessName:'Inventory Test Shop', address:'400 Inventory St', assignedUserId:'sales-inventory', stage:'待拜访' },
     { id:'account-a', businessName:'Sales A Customer', address:'500 A St', assignedUserId:'sales-a', assignedUserName:'sales-a', createdByUserId:'sales-b', stage:'待拜访' },
     { id:'account-b', businessName:'Sales B Customer', address:'600 B St', assignedUserId:'sales-b', assignedUserName:'sales-b', createdByUserId:'sales-a', stage:'待拜访' },
+    { id:'shared-lead', businessName:'Shared Customer Until Sale', address:'650 Shared St', assignedUserId:'', assignedUserName:'', leadPool:true, stage:'待拜访' },
     { id:'legacy-unassigned', businessName:'Needs Manager Assignment', address:'700 Unassigned St', createdByUserId:'sales-a', stage:'待拜访' }
   ];
   db.salesTrips = [{
@@ -222,14 +223,14 @@ async function run() {
   // reassignment. Managers retain the categorized all-salesperson view.
   const salesABootstrap = await request('/api/mobile/bootstrap', { token:salesAToken });
   assert.equal(salesABootstrap.status, 200);
-  assert.deepEqual(salesABootstrap.body.fieldSales.accounts.map(item => item.id), ['account-a']);
+  assert.deepEqual(salesABootstrap.body.fieldSales.accounts.map(item => item.id), ['account-a','shared-lead']);
   assert.deepEqual(salesABootstrap.body.fieldSales.visitPlans.map(item => item.id), ['plan-a']);
   assert.deepEqual(salesABootstrap.body.fieldSales.visits.map(item => item.id), ['visit-a']);
   assert.deepEqual(salesABootstrap.body.fieldSales.followUps.map(item => item.id), ['follow-a']);
 
   const salesBBootstrap = await request('/api/mobile/bootstrap', { token:salesBToken });
   assert.equal(salesBBootstrap.status, 200);
-  assert.deepEqual(salesBBootstrap.body.fieldSales.accounts.map(item => item.id), ['account-b']);
+  assert.deepEqual(salesBBootstrap.body.fieldSales.accounts.map(item => item.id), ['account-b','shared-lead']);
   assert.deepEqual(salesBBootstrap.body.fieldSales.visitPlans.map(item => item.id), ['plan-b']);
   assert.deepEqual(salesBBootstrap.body.fieldSales.visits.map(item => item.id), ['visit-b']);
   assert.deepEqual(salesBBootstrap.body.fieldSales.followUps.map(item => item.id), ['follow-b']);
@@ -261,6 +262,42 @@ async function run() {
   assert(!salesBAfterPrivateCreate.body.fieldSales.accounts.some(item => item.id === privateLead.id));
   const managerAfterPrivateCreate = await request('/api/mobile/bootstrap', { token:managerToken });
   assert(managerAfterPrivateCreate.body.fieldSales.accounts.some(item => item.id === privateLead.id));
+
+  // A shared prospect stays in the public pool while a visit is only in
+  // progress. When the visit is closed as a sale, the backend moves the
+  // customer into the winning salesperson's private customer list.
+  const sharedVisit = await request('/api/field-sales/visits/start', {
+    token:salesAToken,
+    method:'POST',
+    body:{ accountId:'shared-lead', locationConsent:true, lat:34.05, lng:-118.25, accuracy:5, photoUrl:'/customer-media/shared-sale.jpg' }
+  });
+  assert.equal(sharedVisit.status, 201);
+  const salesBDuringSharedVisit = await request('/api/mobile/bootstrap', { token:salesBToken });
+  assert(salesBDuringSharedVisit.body.fieldSales.accounts.some(item => item.id === 'shared-lead'));
+  const blockedDuplicateVisit = await request('/api/field-sales/visits/start', {
+    token:salesBToken,
+    method:'POST',
+    body:{ accountId:'shared-lead', locationConsent:true, lat:34.05, lng:-118.25, accuracy:5, photoUrl:'/customer-media/duplicate.jpg' }
+  });
+  assert.equal(blockedDuplicateVisit.status, 409);
+  assert.equal(blockedDuplicateVisit.body.code, 'CUSTOMER_VISIT_IN_PROGRESS');
+
+  const closedWonSharedVisit = await request(`/api/field-sales/visits/${sharedVisit.body.visit.id}/complete`, {
+    token:salesAToken,
+    method:'PUT',
+    body:{ reportText:'Customer purchased the first order.', outcome:'已成交', soldItems:[{ product:'QD15', quantity:1, unitPrice:320 }] }
+  });
+  assert.equal(closedWonSharedVisit.status, 200);
+  const privateWonAccount = closedWonSharedVisit.body.fieldSales.accounts.find(item => item.id === 'shared-lead');
+  assert.equal(privateWonAccount.assignedUserId, 'sales-a');
+  assert.equal(privateWonAccount.leadPool, false);
+  assert.equal(privateWonAccount.stage, '已成交');
+  assert.equal(privateWonAccount.privateCustomer, true);
+  assert.equal(privateWonAccount.ownershipSource, 'closed-won');
+  const salesBAfterSale = await request('/api/mobile/bootstrap', { token:salesBToken });
+  assert(!salesBAfterSale.body.fieldSales.accounts.some(item => item.id === 'shared-lead'));
+  const managerAfterSale = await request('/api/mobile/bootstrap', { token:managerToken });
+  assert.equal(managerAfterSale.body.fieldSales.accounts.find(item => item.id === 'shared-lead').assignedUserId, 'sales-a');
 
   const chineseMeetingSummary = await request('/api/field-sales/organize-visit', {
     token:salesAToken,

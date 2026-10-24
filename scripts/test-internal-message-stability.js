@@ -70,7 +70,7 @@ async function run() {
   assert.match(mobileSource, /mobileMessageSendQueue\.set\(pendingId/, 'Mobile text must render optimistically');
   assert.match(mobileSource, /正在发送…/, 'Mobile pending text must show sending status');
   assert.match(mobileSource, /preserveMobileMessageSnapshot/, 'Mobile refreshes must preserve a visible non-empty thread');
-  assert(mobileHtml.includes('/mobile.js?v=84'), 'Mobile app asset marker must be bumped');
+  assert(mobileHtml.includes('/mobile.js?v=85'), 'Mobile app asset marker must be bumped');
   assert(serviceWorker.includes('film-shop-field-sales-roster-filters-20261017'), 'Service worker cache must be bumped');
   assert.match(appSource, /function capturePageContinuityState\(\)/, 'Desktop refreshes must capture page and nested-scroll positions');
   assert.match(appSource, /function restorePageContinuityState\(snapshot\)/, 'Desktop refreshes must restore page and nested-scroll positions');

@@ -27,7 +27,7 @@ assert.match(mobileCss, /\.mobile-dialog\.sales-review-dialog[^}]*1180px[^}]*94d
 assert.match(mobileCss, /@media \(max-width:620px\)[\s\S]*\.mobile-dialog\.sales-review-dialog[^}]*100vw[^}]*100dvh/,
   'phone review must use the full screen');
 assert.ok(mobileHtml.includes('/mobile.css?v=70'));
-assert.ok(mobileHtml.includes('/mobile.js?v=84'));
+assert.ok(mobileHtml.includes('/mobile.js?v=85'));
 assert.ok(serviceWorker.includes('film-shop-field-sales-roster-filters-20261017'));
 
 console.log('Field sales customer review detail tests passed.');

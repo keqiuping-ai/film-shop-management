@@ -2790,6 +2790,26 @@ function fieldSalesVisible(item, user) {
   return fieldSalesAssignedUserId(item) === String(user?.id || '');
 }
 
+function fieldSalesVisitIsClosedWon(visit) {
+  return String(visit?.outcome || '').trim() === '已成交'
+    || (Array.isArray(visit?.soldItems) && visit.soldItems.some(item => Number(item?.quantity || 0) > 0));
+}
+
+function makeFieldSalesCustomerPrivateAfterSale(db, account, visit, now) {
+  if (!account || !visit || !fieldSalesVisitIsClosedWon(visit)) return false;
+  const owner = (db.users || []).find(item => item.id === visit.userId);
+  account.assignedUserId = visit.userId;
+  account.assignedUserName = owner?.name || owner?.email || visit.userName || '';
+  account.leadPool = false;
+  account.stage = '已成交';
+  account.privateCustomer = true;
+  account.ownershipSource = 'closed-won';
+  account.closedWonAt = account.closedWonAt || now;
+  account.closedWonVisitId = visit.id;
+  account.updatedAt = now;
+  return true;
+}
+
 function newestRowsPerUser(rows, perUserLimit, timestampKey) {
   const counts = new Map();
   return [...rows]
@@ -10784,12 +10804,10 @@ async function api(req, res) {
     const body = await readBody(req);
     const account = (db.salesAccounts || []).find(item => item.id === body.accountId && fieldSalesVisible(item, user) && canAccessBranch(db, user, item.branchId));
     if (!account) return send(res, 404, { error: '找不到这个业务客户' });
-    if (account.leadPool === true && !fieldSalesAssignedUserId(account)) {
-      account.assignedUserId = user.id;
-      account.assignedUserName = user.name || user.email;
-      account.leadPool = false;
-      account.claimedAt = new Date().toISOString();
-      account.updatedAt = account.claimedAt;
+    const activeAccountVisit = (db.salesVisits || []).find(item => item.accountId === account.id && item.status === '进行中');
+    if (activeAccountVisit) {
+      if (activeAccountVisit.userId === user.id) return send(res, 200, { visit:activeAccountVisit, ...mobileSnapshot(db, user) });
+      return send(res, 409, { error:'该客户正在由其他业务员拜访，请稍后再试', code:'CUSTOMER_VISIT_IN_PROGRESS' });
     }
     if (body.locationConsent !== true) return send(res, 400, { error: '请先同意本次拜访使用手机定位' });
     const lat = Number(body.lat); const lng = Number(body.lng); const accuracy = Number(body.accuracy || 0);
@@ -10805,8 +10823,6 @@ async function api(req, res) {
         return send(res, 400, { error: '现场照片不是刚刚拍摄的，请重新打开相机拍照' });
       }
     }
-    const existing = (db.salesVisits || []).find(item => item.accountId === account.id && item.userId === user.id && item.status === '进行中');
-    if (existing) return send(res, 200, { visit: existing, ...mobileSnapshot(db, user) });
     let activeTrip = (db.salesTrips || []).find(item => item.accountId === account.id && item.userId === user.id && item.status === '前往中');
     // The simplified workflow checks in directly from the regional customer
     // list. A lightweight trip keeps route and reporting data compatible
@@ -11000,6 +11016,9 @@ async function api(req, res) {
       account.discussionSummary = next.reportText || account.discussionSummary || '';
       account.nextAction = next.nextAction || account.nextAction || '';
       account.updatedAt = now;
+      if (makeFieldSalesCustomerPrivateAfterSale(db, account, next, now)) {
+        audit(db, user, 'lock-field-sales-account-after-sale', { collection:'salesAccounts', recordId:account.id, recordLabel:account.businessName, after:{ ...account }, detail:`成交客户归属 ${account.assignedUserName || visit.userName}，退出公共客户池` });
+      }
     }
     const daily = (db.salesDailyReports || []).find(item => item.userId === visit.userId && item.date === dateInTimezone(db.settings?.timezone || 'America/Los_Angeles', 0) && String(item.branchId || '') === String(visit.branchId || ''));
     if (daily) {
@@ -11047,6 +11066,9 @@ async function api(req, res) {
       account.discussionSummary = next.reportText || account.discussionSummary || '';
       account.nextAction = next.nextAction || account.nextAction || '';
       account.updatedAt = next.updatedAt;
+      if (makeFieldSalesCustomerPrivateAfterSale(db, account, next, next.updatedAt)) {
+        audit(db, user, 'lock-field-sales-account-after-sale', { collection:'salesAccounts', recordId:account.id, recordLabel:account.businessName, after:{ ...account }, detail:`成交客户归属 ${account.assignedUserName || next.userName}，退出公共客户池` });
+      }
     }
     audit(db, user, 'update-field-sales-visit', { collection:'salesVisits', recordId:next.id, recordLabel:next.businessName, before, after:next, detail:`修改拜访记录 ${next.businessName}` });
     writeDb(db);

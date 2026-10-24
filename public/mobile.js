@@ -1707,7 +1707,8 @@ function salesLocalizedHtml(html) {
     '设置回访、收款或测试提醒':'Set visit, payment, or trial reminders','自动汇总工作日报':'Generate the daily report',
     '用正式业务记录形成当日总结':'Summarize the day from verified records','常用功能':'Quick Actions','点击进入独立页面':'Open a dedicated page',
     '新增客户':'Add Customer','录入新客户资料':'Create a customer profile','客户列表':'Customers','查看全部共享客户':'View all shared customers',
-    '我新增的客户':'My Added Customers','仅你和管理人员可见':'Visible only to you and managers','查看我的客户':'View My Customers',
+    '我的私有客户':'My Private Customers','我新增的客户':'My Added Customers','仅你和管理人员可见':'Visible only to you and managers','查看我的客户':'View My Customers',
+    '我新增和已成交的客户':'Customers you added or closed','成交后自动退出公共客户池':'Closed customers automatically leave the shared lead pool',
     '返回区域客户':'Back to Area Customers','这里集中显示你自己建立并负责的全部客户':'All customers created and owned by you are shown here',
     '还没有自己新增的客户。':'You have not added any customers yet.','新增时间：':'Added: ',
     '谷歌已确认':'Google Verified','待谷歌核验':'Pending Google Verification','现场新增客户':'Add Customer On Site','仅归当前业务员，待谷歌核验':'Assigned only to you · Pending Google verification',
@@ -1851,10 +1852,10 @@ async function searchSalesInventoryPricing(event) {
 function salesHomeHtml() {
   const sales = state.fieldSales || {};
   const accounts = sales.accounts || [];
-  const myAddedAccounts = accounts
+  const myPrivateAccounts = accounts
     .filter(account => account.active !== false
       && account.googleVerificationStatus !== 'rejected'
-      && String(account.createdByUserId || '') === String(user?.id || '')
+      && account.leadPool !== true
       && String(account.assignedUserId || '') === String(user?.id || ''))
     .sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')));
   const cityOrder = ['los-angeles', 'las-vegas', 'san-francisco', 'seattle', 'phoenix', 'vancouver'];
@@ -1893,12 +1894,12 @@ function salesHomeHtml() {
     canViewSalesInventoryPricing() ? `<button onclick="openSalesScreen('inventory-pricing')">▦ 库存与报价</button>` : '',
     `<button onclick="openSalesScreen('report')">▤ 工作日报</button>`
   ].filter(Boolean).join('');
-  const myCustomersPanel = `<section class="sales-my-customers-summary"><div><small>仅你和管理人员可见</small><b>我新增的客户</b><span>${myAddedAccounts.length} ${lang === 'en' ? 'customers' : '位客户'}</span></div><div><button onclick="openSalesMyCustomers()">查看我的客户</button><button class="primary" onclick="openSalesScreen('add')">＋ 新增客户</button></div></section>`;
+  const myCustomersPanel = `<section class="sales-my-customers-summary"><div><small>仅你和管理人员可见</small><b>我的私有客户</b><span>${myPrivateAccounts.length} ${lang === 'en' ? 'customers' : '位客户'} · 成交后自动退出公共客户池</span></div><div><button onclick="openSalesMyCustomers()">查看我的客户</button><button class="primary" onclick="openSalesScreen('add')">＋ 新增客户</button></div></section>`;
   if (salesCustomerView === 'mine') {
     return salesLocalizedHtml(`<div class="sales-design-home sales-simple-home">
-      <section class="sales-design-hero"><small>QUaD FIELD SALES</small><h2>我新增的客户</h2><p>这里集中显示你自己建立并负责的全部客户</p></section>
+      <section class="sales-design-hero"><small>QUaD FIELD SALES</small><h2>我的私有客户</h2><p>我新增和已成交的客户</p></section>
       <nav class="sales-my-customers-toolbar"><button onclick="openSalesAreaCustomers()">‹ 返回区域客户</button><button class="primary" onclick="openSalesScreen('add')">＋ 新增客户</button></nav>
-      <section class="sales-simple-step sales-my-customers-list"><header><i>${myAddedAccounts.length}</i><div><b>我新增的客户</b><span>仅你和管理人员可见</span></div></header><label class="sales-search">⌕<input placeholder="搜索客户、地址或联系人" oninput="filterSalesCards(this.value)"></label><div id="salesCustomerCards" class="sales-simple-customers">${myAddedAccounts.map(account => salesSimpleCustomerCard(account, true)).join('') || '<p class="hint">还没有自己新增的客户。</p>'}</div></section>
+      <section class="sales-simple-step sales-my-customers-list"><header><i>${myPrivateAccounts.length}</i><div><b>我的私有客户</b><span>仅你和管理人员可见</span></div></header><label class="sales-search">⌕<input placeholder="搜索客户、地址或联系人" oninput="filterSalesCards(this.value)"></label><div id="salesCustomerCards" class="sales-simple-customers">${myPrivateAccounts.map(account => salesSimpleCustomerCard(account, true)).join('') || '<p class="hint">还没有自己新增的客户。</p>'}</div></section>
     </div>`);
   }
   return salesLocalizedHtml(`<div class="sales-design-home sales-simple-home">
