@@ -56,6 +56,7 @@ let salesActiveAccountId = '';
 let salesSelectedRegion = '';
 let salesSelectedCity = '';
 let salesSelectedCustomerCategory = 'automotive';
+let salesCustomerView = 'browse';
 let salesInventoryPricingQuery = '';
 let salesInventoryPricingResults = [];
 let salesInventoryPricingLoading = false;
@@ -1706,6 +1707,9 @@ function salesLocalizedHtml(html) {
     '设置回访、收款或测试提醒':'Set visit, payment, or trial reminders','自动汇总工作日报':'Generate the daily report',
     '用正式业务记录形成当日总结':'Summarize the day from verified records','常用功能':'Quick Actions','点击进入独立页面':'Open a dedicated page',
     '新增客户':'Add Customer','录入新客户资料':'Create a customer profile','客户列表':'Customers','查看全部共享客户':'View all shared customers',
+    '我新增的客户':'My Added Customers','仅你和管理人员可见':'Visible only to you and managers','查看我的客户':'View My Customers',
+    '返回区域客户':'Back to Area Customers','这里集中显示你自己建立并负责的全部客户':'All customers created and owned by you are shown here',
+    '还没有自己新增的客户。':'You have not added any customers yet.','新增时间：':'Added: ',
     '谷歌已确认':'Google Verified','待谷歌核验':'Pending Google Verification','现场新增客户':'Add Customer On Site','仅归当前业务员，待谷歌核验':'Assigned only to you · Pending Google verification',
     '拍摄门店照片 *':'Take Storefront Photo *','请在客户门口直接拍摄，保存现场定位':'Take the photo at the storefront; the current location will be saved',
     '现场门店照片':'On-site Storefront Photo','保存时自动取得当前 GPS 位置。':'Current GPS location will be captured when you save.',
@@ -1847,6 +1851,12 @@ async function searchSalesInventoryPricing(event) {
 function salesHomeHtml() {
   const sales = state.fieldSales || {};
   const accounts = sales.accounts || [];
+  const myAddedAccounts = accounts
+    .filter(account => account.active !== false
+      && account.googleVerificationStatus !== 'rejected'
+      && String(account.createdByUserId || '') === String(user?.id || '')
+      && String(account.assignedUserId || '') === String(user?.id || ''))
+    .sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')));
   const cityOrder = ['los-angeles', 'las-vegas', 'san-francisco', 'seattle', 'phoenix', 'vancouver'];
   const cityGroups = cityOrder.reduce((groups, city) => ({ ...groups, [city]:[] }), {});
   accounts.forEach(account => (cityGroups[salesAccountMarket(account)] ||= []).push(account));
@@ -1883,9 +1893,18 @@ function salesHomeHtml() {
     canViewSalesInventoryPricing() ? `<button onclick="openSalesScreen('inventory-pricing')">▦ 库存与报价</button>` : '',
     `<button onclick="openSalesScreen('report')">▤ 工作日报</button>`
   ].filter(Boolean).join('');
+  const myCustomersPanel = `<section class="sales-my-customers-summary"><div><small>仅你和管理人员可见</small><b>我新增的客户</b><span>${myAddedAccounts.length} ${lang === 'en' ? 'customers' : '位客户'}</span></div><div><button onclick="openSalesMyCustomers()">查看我的客户</button><button class="primary" onclick="openSalesScreen('add')">＋ 新增客户</button></div></section>`;
+  if (salesCustomerView === 'mine') {
+    return salesLocalizedHtml(`<div class="sales-design-home sales-simple-home">
+      <section class="sales-design-hero"><small>QUaD FIELD SALES</small><h2>我新增的客户</h2><p>这里集中显示你自己建立并负责的全部客户</p></section>
+      <nav class="sales-my-customers-toolbar"><button onclick="openSalesAreaCustomers()">‹ 返回区域客户</button><button class="primary" onclick="openSalesScreen('add')">＋ 新增客户</button></nav>
+      <section class="sales-simple-step sales-my-customers-list"><header><i>${myAddedAccounts.length}</i><div><b>我新增的客户</b><span>仅你和管理人员可见</span></div></header><label class="sales-search">⌕<input placeholder="搜索客户、地址或联系人" oninput="filterSalesCards(this.value)"></label><div id="salesCustomerCards" class="sales-simple-customers">${myAddedAccounts.map(account => salesSimpleCustomerCard(account, true)).join('') || '<p class="hint">还没有自己新增的客户。</p>'}</div></section>
+    </div>`);
+  }
   return salesLocalizedHtml(`<div class="sales-design-home sales-simple-home">
     <section class="sales-design-hero"><small>QUaD FIELD SALES</small><h2>客户拜访</h2><p>选择区域和客户，拍照定位，填写结果</p></section>
     <nav class="sales-simple-secondary sales-simple-secondary-top" aria-label="${lang === 'en' ? 'Quick actions' : '常用功能'}">${secondary}</nav>
+    ${myCustomersPanel}
     <section class="sales-simple-step"><header><i>1</i><div><b>选择城市</b><span>各城市客资、方向和路线独立显示</span></div></header><div class="sales-city-grid">${cityOrder.map(city => `<button class="${city === salesSelectedCity ? 'active' : ''}" onclick="selectSalesCity('${city}')"><b>${escapeHtml(salesCityLabel(city))}</b><span>${cityGroups[city]?.length || 0} ${lang === 'en' ? 'customers' : '位客户'}</span></button>`).join('')}</div></section>
     <section class="sales-simple-step"><header><i>2</i><div><b>选择客户类型</b><span>汽车膜与建筑膜客户分开显示</span></div></header><div class="sales-category-grid">${['automotive','architectural'].map(category => `<button class="${category === salesSelectedCustomerCategory ? 'active' : ''}" onclick="selectSalesCustomerCategory('${category}')"><b>${escapeHtml(salesCategoryLabel(category))}</b><span>${categoryGroups[category].length} ${lang === 'en' ? 'customers' : '位客户'}</span></button>`).join('')}</div></section>
     <section class="sales-simple-step"><header><i>3</i><div><b>选择拜访区域</b><span>${lang === 'en' ? `Only show ${escapeHtml(salesCategoryLabel(salesSelectedCustomerCategory).toLowerCase())} customers in ${escapeHtml(salesCityLabel(salesSelectedCity))}` : `只显示${escapeHtml(salesCityLabel(salesSelectedCity))}的${escapeHtml(salesCategoryLabel(salesSelectedCustomerCategory))}客户`}</span></div></header><div class="sales-region-grid">${regions.map(region => `<button class="${region === salesSelectedRegion ? 'active' : ''}" onclick="selectSalesRegion('${region}')"><b>${escapeHtml(salesRegionLabel(region))}</b><span>${regionGroups[region].length} ${lang === 'en' ? 'customers' : '位客户'}</span></button>`).join('') || '<p class="hint">这个类型还没有客户资料。</p>'}</div></section>
@@ -1916,24 +1935,39 @@ function salesAccountRegion(account) {
 }
 
 function selectSalesRegion(region) {
+  salesCustomerView = 'browse';
   salesSelectedRegion = region;
   render();
 }
 
 function selectSalesCustomerCategory(category) {
+  salesCustomerView = 'browse';
   salesSelectedCustomerCategory = category === 'architectural' ? 'architectural' : 'automotive';
   salesSelectedRegion = '';
   render();
 }
 
 function selectSalesCity(city) {
+  salesCustomerView = 'browse';
   salesSelectedCity = city;
   salesSelectedCustomerCategory = 'automotive';
   salesSelectedRegion = '';
   render();
 }
 
-function salesSimpleCustomerCard(account) {
+function openSalesMyCustomers() {
+  salesCustomerView = 'mine';
+  render();
+  requestAnimationFrame(() => window.scrollTo({ top:0, behavior:'smooth' }));
+}
+
+function openSalesAreaCustomers() {
+  salesCustomerView = 'browse';
+  render();
+  requestAnimationFrame(() => window.scrollTo({ top:0, behavior:'smooth' }));
+}
+
+function salesSimpleCustomerCard(account, showCreatedAt = false) {
   const contact = [account.contactName, account.phone].filter(Boolean).map(escapeHtml).join(' · ');
   const photo = (account.referencePhotoUrls || [])[0];
   const route = [account.visitBatch, account.visitStop ? salesRouteStopLabel(account.visitStop) : ''].filter(Boolean).join(' · ');
@@ -1959,7 +1993,8 @@ function salesSimpleCustomerCard(account) {
     : '';
   const intent = ['高意向','普通','低意向'].includes(account.intentLevel) ? account.intentLevel : '普通';
   const intentLabel = value => lang === 'en' ? ({'高意向':'High intent','普通':'Medium intent','低意向':'Low intent'}[value]) : value;
-  return `<article class="sales-simple-customer"><div class="sales-simple-customer-photo-column">${photo ? `<div class="sales-simple-customer-photo"><img src="${escapeHtml(photo)}" alt="${escapeHtml(account.businessName)}"></div>` : `<div class="sales-simple-customer-photo empty">${lang === 'en' ? 'No reference photo' : '暂无资料照片'}</div>`}<div class="sales-card-statuses">${verification}${visitStatus}${nextVisit}</div></div><div class="sales-simple-customer-main"><b>${escapeHtml(account.businessName)}</b><p>${escapeHtml(account.address || '')}</p>${contact ? `<small>${contact}</small>` : ''}${route ? `<small>${escapeHtml(route)}</small>` : ''}${account.leadPool ? `<em>${lang === 'en' ? 'Shared lead' : '公共待认领客户'}</em>` : ''}</div><div class="sales-simple-customer-actions"><button class="primary-inline" onclick="openSalesReviewDialog('${account.id}')">${lang === 'en' ? 'Profile & Visit' : '资料与拜访'}</button><select class="sales-intent-quick ${intent === '高意向' ? 'high' : intent === '低意向' ? 'low' : ''}" aria-label="${lang === 'en' ? 'Customer intent' : '客户意向'}" onchange="saveSalesCustomerIntent(this,'${account.id}')">${['高意向','普通','低意向'].map(value => `<option value="${value}" ${intent === value ? 'selected' : ''}>${intentLabel(value)}</option>`).join('')}</select></div></article>`;
+  const createdAt = showCreatedAt && account.createdAt ? `<small class="sales-created-at">${lang === 'en' ? 'Added: ' : '新增时间：'}${escapeHtml(formatMobileDateTime(account.createdAt))}</small>` : '';
+  return `<article class="sales-simple-customer"><div class="sales-simple-customer-photo-column">${photo ? `<div class="sales-simple-customer-photo"><img src="${escapeHtml(photo)}" alt="${escapeHtml(account.businessName)}"></div>` : `<div class="sales-simple-customer-photo empty">${lang === 'en' ? 'No reference photo' : '暂无资料照片'}</div>`}<div class="sales-card-statuses">${verification}${visitStatus}${nextVisit}</div></div><div class="sales-simple-customer-main"><b>${escapeHtml(account.businessName)}</b><p>${escapeHtml(account.address || '')}</p>${contact ? `<small>${contact}</small>` : ''}${route ? `<small>${escapeHtml(route)}</small>` : ''}${createdAt}${account.leadPool ? `<em>${lang === 'en' ? 'Shared lead' : '公共待认领客户'}</em>` : ''}</div><div class="sales-simple-customer-actions"><button class="primary-inline" onclick="openSalesReviewDialog('${account.id}')">${lang === 'en' ? 'Profile & Visit' : '资料与拜访'}</button><select class="sales-intent-quick ${intent === '高意向' ? 'high' : intent === '低意向' ? 'low' : ''}" aria-label="${lang === 'en' ? 'Customer intent' : '客户意向'}" onchange="saveSalesCustomerIntent(this,'${account.id}')">${['高意向','普通','低意向'].map(value => `<option value="${value}" ${intent === value ? 'selected' : ''}>${intentLabel(value)}</option>`).join('')}</select></div></article>`;
 }
 
 async function saveSalesCustomerIntent(select, accountId) {

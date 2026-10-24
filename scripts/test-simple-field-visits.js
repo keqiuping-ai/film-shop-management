@@ -15,6 +15,8 @@ assert(mobile.includes('选择城市'), 'home must separate customers by city be
 assert(mobile.includes("'los-angeles', 'las-vegas', 'san-francisco', 'seattle', 'phoenix', 'vancouver'"), 'city selector must include every imported city market');
 assert(mobile.includes('salesAccountMarket'), 'city grouping must use the customer branch and address');
 assert(mobile.includes('visibleAccounts.map(salesSimpleCustomerCard)'), 'home must list only customers in the selected region');
+assert(mobile.includes('myAddedAccounts') && mobile.includes('openSalesMyCustomers'), 'employee client must have a separate private list of self-created customers');
+assert(mobile.includes("String(account.createdByUserId || '') === String(user?.id || '')") && mobile.includes("String(account.assignedUserId || '') === String(user?.id || '')"), 'private customer list must require creator and current owner to be the signed-in salesperson');
 const salesHome = mobile.slice(mobile.indexOf('function salesHomeHtml()'), mobile.indexOf('function salesAccountRegion'));
 assert(salesHome.indexOf('sales-simple-secondary-top') < salesHome.indexOf('<b>选择城市</b>'), 'new customer, inventory and report shortcuts must be placed above city and customer selection');
 assert(mobile.includes("String(a.visitBatch || '').localeCompare"), 'customers must follow batch and stop order inside each direction');
@@ -66,7 +68,7 @@ assert(server.includes("body.onsiteCapture === true && (!storefrontPhotoUrl || !
 assert(server.includes("account.active = source.active === true && account.googleVerificationStatus === 'confirmed'"), 'only Google-confirmed imported Los Angeles records may remain active');
 assert(css.includes('.sales-region-grid'), 'region selector must have mobile styling');
 assert(css.includes('.sales-simple-customer-photo'), 'imported storefront photos must have mobile styling');
-assert(html.includes('/mobile.js?v=83') && html.includes('/mobile.css?v=69'), 'mobile asset cache keys must be updated');
+assert(html.includes('/mobile.js?v=84') && html.includes('/mobile.css?v=70'), 'mobile asset cache keys must be updated');
 assert(mobile.includes('sales-visit-status visited') && mobile.includes('sales-google-status confirmed'), 'customer cards must show Google and visit status badges');
 assert(mobile.includes('正在生成中英文对照') && mobile.includes('salesReviewBilingualField'), 'completed visits must generate and display bilingual fields');
 assert(mobile.includes("/api/field-sales/accounts/${accountId}/analyze") && server.includes('fieldSalesAccountAnalyzeMatch'), 'saved customer profiles must generate bilingual fields');

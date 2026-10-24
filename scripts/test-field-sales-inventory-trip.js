@@ -241,6 +241,27 @@ async function run() {
   assert(managerBootstrap.body.fieldSales.accounts.some(item => item.id === 'account-b'));
   assert(managerBootstrap.body.fieldSales.accounts.some(item => item.id === 'legacy-unassigned'));
 
+  // A salesperson-created customer is immediately assigned to its creator.
+  // It must appear for that salesperson and managers, but never for another
+  // salesperson. This is the data contract used by the mobile “My Added
+  // Customers” view.
+  const createdBySalesA = await request('/api/field-sales/accounts', {
+    token:salesAToken,
+    method:'POST',
+    body:{ businessName:'Sales A Private Lead', address:'800 Private Lead St, Los Angeles, CA', city:'Los Angeles' }
+  });
+  assert.equal(createdBySalesA.status, 201);
+  const privateLead = createdBySalesA.body.fieldSales.accounts.find(item => item.businessName === 'Sales A Private Lead');
+  assert(privateLead);
+  assert.equal(privateLead.createdByUserId, 'sales-a');
+  assert.equal(privateLead.assignedUserId, 'sales-a');
+  assert.equal(privateLead.leadPool, false);
+
+  const salesBAfterPrivateCreate = await request('/api/mobile/bootstrap', { token:salesBToken });
+  assert(!salesBAfterPrivateCreate.body.fieldSales.accounts.some(item => item.id === privateLead.id));
+  const managerAfterPrivateCreate = await request('/api/mobile/bootstrap', { token:managerToken });
+  assert(managerAfterPrivateCreate.body.fieldSales.accounts.some(item => item.id === privateLead.id));
+
   const chineseMeetingSummary = await request('/api/field-sales/organize-visit', {
     token:salesAToken,
     method:'POST',
