@@ -1,4 +1,4 @@
-const CACHE_NAME = 'film-shop-field-sales-roster-filters-20261017';
+const CACHE_NAME = 'film-shop-nurture-image-picker-20261025';
 const ASSETS = [
     '/mobile.html',
     '/warranty.html',

@@ -126,6 +126,7 @@ const prospectReplyChannels = new Map();
 let replyTemplatePendingAttachment = null;
 let replyTemplateLibraryType = 'text';
 let replyTemplateCategoryFilter = 'all';
+let replyTemplatePickerContext = 'prospect';
 let preserveProspectWorkspaceRender = false;
 let prospectReplyRevision = 0;
 let customerReplyAiBusy = false;
@@ -5629,6 +5630,41 @@ function updateCustomerNurtureService(value, checked) {
   customerNurtureDraft.services = [...next];
 }
 
+function selectCustomerNurtureImage(id) {
+  const item = (state.replyTemplates || []).find(row => row.id === id && row.type === 'image' && row.attachment?.url);
+  if (!item) return alert(lang === 'zh' ? '找不到这张云端图片，请刷新后重试。' : 'This cloud image is unavailable. Refresh and try again.');
+  customerNurtureDraft.replyTemplateId = item.id;
+  closeModal();
+  render();
+}
+
+function clearCustomerNurtureImage() {
+  customerNurtureDraft.replyTemplateId = '';
+  render();
+}
+
+function openCustomerNurtureImagePicker(type = 'image', category = replyTemplateCategoryFilter) {
+  replyTemplatePickerContext = 'nurture';
+  replyTemplateLibraryType = 'image';
+  replyTemplateCategoryFilter = category === 'all' ? 'all' : normalizeReplyTemplateCategory(category);
+  openModal(lang === 'zh' ? '选择云端回复图片' : 'Choose cloud reply image', `
+    <div class="reply-library-picker">
+      <div class="reply-library-tabs"><button class="btn primary" type="button">🖼 ${replyTypeLabel('image')}</button></div>
+      ${replyTemplateCategoryFilters(replyTemplateCategoryFilter, 'openCustomerNurtureImagePicker')}
+      <p class="reply-library-help">${lang === 'zh' ? '点击“选用”后，这张图片会加入当前未成交客户经营批次；创建批次不会立即发送，启动前仍可检查。' : 'Choose one image for this nurture batch. Creating the batch will not send it until you start the batch.'}</p>
+      ${replyTemplateCards('image', true, replyTemplateCategoryFilter, { handler:'selectCustomerNurtureImage', selectedId:customerNurtureDraft.replyTemplateId })}
+    </div>`, closeModal);
+  document.getElementById('modal').classList.add('reply-library-open');
+  const save = document.getElementById('modalSave');
+  if (save) save.textContent = lang === 'zh' ? '关闭' : 'Close';
+  const action = document.getElementById('modalHeaderAction');
+  if (action && hasPerm('prospectsEdit')) {
+    action.hidden = false;
+    action.textContent = lang === 'zh' ? '＋ 新增素材' : '+ New item';
+    action.onclick = () => openReplyTemplateEditor('image', '', true);
+  }
+}
+
 async function previewCustomerNurture() {
   try {
     const result = await api('/api/customer-nurture/preview', { method: 'POST', body: JSON.stringify({ filters: customerNurtureFiltersFromForm() }) });
@@ -5664,7 +5700,7 @@ async function createCustomerNurtureCampaign() {
         name: document.getElementById('nurtureCampaignName')?.value,
         message,
         dailyLimit: Number(document.getElementById('nurtureDailyLimit')?.value || 40),
-        replyTemplateId: document.getElementById('nurtureImageTemplate')?.value || '',
+        replyTemplateId: customerNurtureDraft.replyTemplateId || '',
         filters: customerNurtureFiltersFromForm(),
         selected: [...customerNurtureSelected]
       })
@@ -5719,6 +5755,7 @@ function customerNurtureCampaignTable() {
 function customerNurtureView() {
   const serviceOptions = [['tint','窗膜'],['wrap','TPU改色'],['vinyl','Vinyl改色'],['ppf','PPF']];
   const imageTemplates = (state.replyTemplates || []).filter(item => item.type === 'image' && item.attachment?.url);
+  const selectedImage = imageTemplates.find(item => item.id === customerNurtureDraft.replyTemplateId);
   return `<div class="panel"><div class="panel-head"><div><h3>${t('customerNurture')}</h3><p class="note">${lang === 'zh' ? '仅筛选长期未成交客户。客户回复或发送 STOP 后会立即停止后续经营；回复客户自动回到客户交流中心。' : 'Only older unconverted leads are included. Replies and STOP immediately suppress future sends.'}</p></div></div>
   <div class="nurture-filter-grid">
     <label class="nurture-filter-inactive">${lang === 'zh' ? '多久没有成交/联系' : 'Inactive period'}<select id="nurtureInactiveDays" onchange="updateCustomerNurtureDraftField('inactiveDays',Number(this.value))">${[7,14,30,60,90,180].map(days => `<option value="${days}" ${Number(customerNurtureDraft.inactiveDays) === days ? 'selected' : ''}>${days}天以上</option>`).join('')}</select></label>
@@ -5731,7 +5768,7 @@ function customerNurtureView() {
   <div class="panel" style="margin-top:14px"><div class="panel-head"><h3>${lang === 'zh' ? '建立待发送批次' : 'Create draft batch'}</h3></div><div class="nurture-compose-grid">
     <label>${lang === 'zh' ? '批次名称' : 'Batch name'}<input id="nurtureCampaignName" value="${escapeHtml(customerNurtureDraft.campaignName)}" oninput="updateCustomerNurtureDraftField('campaignName',this.value)" placeholder="例如：60天未成交 Tesla 改色客户"></label>
     <label>${lang === 'zh' ? '每天最多发送' : 'Daily limit'}<input id="nurtureDailyLimit" type="number" min="1" max="40" value="${Number(customerNurtureDraft.dailyLimit || 40)}" oninput="updateCustomerNurtureDraftField('dailyLimit',Number(this.value))"></label>
-    <label>${lang === 'zh' ? '配套案例图片（可选）' : 'Case image'}<select id="nurtureImageTemplate" onchange="updateCustomerNurtureDraftField('replyTemplateId',this.value)"><option value="">不发送图片</option>${imageTemplates.map(item => `<option value="${escapeHtml(item.id)}" ${customerNurtureDraft.replyTemplateId === item.id ? 'selected' : ''}>${escapeHtml(item.title || '图片素材')}</option>`).join('')}</select></label>
+    <div class="nurture-image-field"><span>${lang === 'zh' ? '配套案例图片（可选）' : 'Case image (optional)'}</span>${selectedImage ? `<div class="nurture-image-selection"><img src="${escapeHtml(selectedImage.attachment.url)}" alt="${escapeHtml(selectedImage.title || '')}"><div><strong>${escapeHtml(selectedImage.title || (lang === 'zh' ? '图片素材' : 'Image'))}</strong><small>${escapeHtml(replyTemplateCategoryLabel(normalizeReplyTemplateCategory(selectedImage.category)))}</small></div><button class="btn danger" type="button" onclick="clearCustomerNurtureImage()">${lang === 'zh' ? '移除' : 'Remove'}</button></div>` : `<div class="nurture-image-empty">${lang === 'zh' ? '尚未选择图片' : 'No image selected'}</div>`}<button class="btn ${selectedImage ? '' : 'primary'}" type="button" onclick="openCustomerNurtureImagePicker()">🖼 ${selectedImage ? (lang === 'zh' ? '更换云端图片' : 'Change cloud image') : (lang === 'zh' ? '选择云端图片' : 'Choose cloud image')}</button></div>
     <label class="full">${lang === 'zh' ? '统一话术' : 'Message'}<textarea id="nurtureMessage" rows="5" oninput="updateCustomerNurtureDraftField('message',this.value)" placeholder="填写本次跟进文案。短信会自动附加 Reply STOP to opt out.">${escapeHtml(customerNurtureDraft.message)}</textarea></label>
     <div class="full safety-note">短信优先；没有有效电话才尝试 Meta。Yelp 只接收客户回复，不主动群发。Meta 对超出允许联系窗口的营销私信可能拒绝，系统会保留失败原因，不会绕过平台限制。建立批次后不会立即发送，必须再次点击“启动”。</div>
     <button class="btn primary" onclick="createCustomerNurtureCampaign()">${lang === 'zh' ? '创建待发送批次' : 'Create draft batch'}</button>
@@ -9386,20 +9423,21 @@ function replyTemplateCategoryFilters(activeCategory, handler) {
   </div>`;
 }
 
-function replyTemplateCards(type, selectable = false, category = replyTemplateCategoryFilter) {
+function replyTemplateCards(type, selectable = false, category = replyTemplateCategoryFilter, options = {}) {
   const rows = [...(state.replyTemplates || [])]
     .filter(item => item.type === type)
     .filter(item => category === 'all' || normalizeReplyTemplateCategory(item.category) === category)
     .sort((a, b) => String(b.updatedAt || b.createdAt || '').localeCompare(String(a.updatedAt || a.createdAt || '')));
   if (!rows.length) return `<div class="reply-library-empty">${lang === 'zh' ? '这个分类还没有素材，请点击“新增素材”上传。' : 'No items yet. Use “New item” to add one.'}</div>`;
   return `<div class="reply-library-grid">${rows.map(item => {
-    const action = selectable ? `useReplyTemplate('${escapeHtml(item.id)}')` : `openReplyTemplateEditor('${escapeHtml(type)}','${escapeHtml(item.id)}')`;
+    const selectHandler = String(options.handler || 'useReplyTemplate');
+    const action = selectable ? `${selectHandler}('${escapeHtml(item.id)}')` : `openReplyTemplateEditor('${escapeHtml(type)}','${escapeHtml(item.id)}')`;
     const preview = type === 'text'
       ? `<p>${escapeHtml(item.content || '')}</p>`
       : type === 'image'
         ? `<img src="${escapeHtml(item.attachment?.url || '')}" alt="${escapeHtml(item.title || '')}">`
         : `<button class="reply-template-video reply-template-video-preview" type="button" onclick="event.stopPropagation();previewReplyTemplateVideo('${escapeHtml(item.id)}')" title="${lang === 'zh' ? '点击预览视频' : 'Preview video'}"><span>▶</span><small>${lang === 'zh' ? '点击预览视频' : 'Preview video'}</small></button>`;
-    return `<article class="reply-library-card" onclick="${action}">
+    return `<article class="reply-library-card ${String(options.selectedId || '') === String(item.id) ? 'selected' : ''}" onclick="${action}">
       <div class="reply-library-card-preview">${preview}</div>
       <div class="reply-library-card-info"><strong>${escapeHtml(item.title || replyTypeLabel(type))}</strong><small>${escapeHtml(item.createdBy || '')}</small></div>
       <div class="reply-library-card-meta"><span>${escapeHtml(replyTemplateCategoryLabel(normalizeReplyTemplateCategory(item.category)))}</span></div>
@@ -9546,6 +9584,7 @@ async function sendProspectMessage() {
 }
 
 function openReplyReferenceLibrary(type = 'text', category = replyTemplateCategoryFilter) {
+  replyTemplatePickerContext = 'prospect';
   replyTemplateLibraryType = ['text', 'image', 'video'].includes(type) ? type : 'text';
   replyTemplateCategoryFilter = category === 'all' ? 'all' : normalizeReplyTemplateCategory(category);
   openModal(lang === 'zh' ? '选择云端回复素材' : 'Choose cloud reply', `
@@ -9647,7 +9686,7 @@ function openReplyTemplateEditor(type = 'text', id = '', returnToPicker = false)
   replyTemplatePendingAttachment = item?.attachment ? { ...item.attachment } : null;
   openModal(item ? (lang === 'zh' ? '编辑云端回复素材' : 'Edit cloud reply') : (lang === 'zh' ? '新增云端回复素材' : 'New cloud reply'), `
     <div class="reply-template-editor" data-return-picker="${returnToPicker ? '1' : '0'}">
-      <label><span>${lang === 'zh' ? '素材类型' : 'Type'}</span><select id="replyTemplateType" ${item ? 'disabled' : ''} onchange="openReplyTemplateEditor(this.value,'',${returnToPicker})">
+      <label><span>${lang === 'zh' ? '素材类型' : 'Type'}</span><select id="replyTemplateType" ${item || (returnToPicker && replyTemplatePickerContext === 'nurture') ? 'disabled' : ''} onchange="openReplyTemplateEditor(this.value,'',${returnToPicker})">
         ${['text','image','video'].map(value => `<option value="${value}" ${value === type ? 'selected' : ''}>${replyTypeLabel(value)}</option>`).join('')}
       </select></label>
       <label><span>${lang === 'zh' ? '业务分类' : 'Business category'}</span><select id="replyTemplateCategory">
@@ -9699,7 +9738,10 @@ async function saveReplyTemplate(id, type, returnToPicker = false) {
     broadcastDataChange();
     replyTemplatePendingAttachment = null;
     replyTemplateCategoryFilter = category;
-    if (returnToPicker) openReplyReferenceLibrary(type);
+    if (returnToPicker) {
+      if (replyTemplatePickerContext === 'nurture') openCustomerNurtureImagePicker('image', category);
+      else openReplyReferenceLibrary(type);
+    }
     else { closeModal(); replyTemplateLibraryType = type; render(); }
   } catch (err) { alert(err.message); }
 }
@@ -9709,7 +9751,12 @@ async function deleteReplyTemplate(id, type, returnToPicker = false) {
   try {
     state = await api(`/api/replyTemplates/${encodeURIComponent(id)}`, { method: 'DELETE' });
     broadcastDataChange();
-    if (returnToPicker) openReplyReferenceLibrary(type);
+    if (returnToPicker) {
+      if (replyTemplatePickerContext === 'nurture') {
+        if (customerNurtureDraft.replyTemplateId === id) customerNurtureDraft.replyTemplateId = '';
+        openCustomerNurtureImagePicker('image', replyTemplateCategoryFilter);
+      } else openReplyReferenceLibrary(type);
+    }
     else { closeModal(); replyTemplateLibraryType = type; render(); }
   } catch (err) { alert(err.message); }
 }
