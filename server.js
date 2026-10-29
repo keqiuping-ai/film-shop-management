@@ -2160,7 +2160,7 @@ function sanitizeDbForUser(db, user, options = {}) {
     products: p.inventoryView || p.ordersEdit || p.portalCustomersView || p.portalCustomersEdit || p.portalPricingEdit ? productsForUser(db, user, canSeeCosts) : [],
     priceRules: p.pricingView ? db.priceRules.map(rule => canSeeCosts ? rule : { ...rule, materialCost: 0 }) : [],
     jobs: p.jobsView || p.jobsEdit || p.jobsDelete ? branchVisibleRecords(db, user, db.jobs).map(job => sanitizeJob(job, p, canSeeCosts)) : [],
-    salesOrders: p.ordersView ? branchVisibleRecords(db, user, db.salesOrders).map(order => sanitizeSalesOrder(order, p)) : [],
+    salesOrders: p.ordersView ? salesOrdersForUser(db, user).map(order => sanitizeSalesOrder(order, p)) : [],
     portalCustomers: p.portalCustomersView || p.portalCustomersEdit || p.portalPricingEdit ? (db.portalCustomers || []).map(customer => ({ ...safePortalCustomer(customer), tierProgress: portalCustomerTierProgress(db, customer) })) : [],
     portalPriceTiers: p.portalCustomersView || p.portalCustomersEdit || p.portalPricingEdit ? (db.portalPriceTiers || defaultPortalPriceTiers()) : [],
     warranties: p.jobsView || p.jobsCreate || p.jobsEdit || p.jobsDelete ? (db.warranties || []) : [],
@@ -3276,6 +3276,34 @@ function branchVisibleRecords(db, user, rows = []) {
     const branchIds = Array.isArray(row?.fulfillmentBranchIds) ? row.fulfillmentBranchIds : [];
     return scope.includes(String(row?.branchId || '').trim()) || branchIds.some(branchId => scope.includes(String(branchId || '').trim()));
   });
+}
+
+function normalizedSalesOrderOwner(value) {
+  return String(value || '').trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+function salesOrderOwnedByUser(order, user) {
+  if (!order || !user || user.role !== 'sales') return true;
+  if (String(order.preparedByUserId || '').trim() === String(user.id || '').trim()) return true;
+  // Older orders predate preparedByUserId. Preserve access only on an exact
+  // identity match; never use partial-name matching for authorization.
+  const identities = new Set([user.name, user.email]
+    .map(normalizedSalesOrderOwner)
+    .filter(Boolean));
+  return [order.preparedBy, order.createdBy, order.salesRep]
+    .map(normalizedSalesOrderOwner)
+    .some(value => value && identities.has(value));
+}
+
+function salesOrdersForUser(db, user) {
+  return branchVisibleRecords(db, user, db.salesOrders || [])
+    .filter(order => salesOrderOwnedByUser(order, user));
+}
+
+function canAccessSalesOrderRecord(db, user, order) {
+  return Boolean(order)
+    && canAccessCollectionBranch(db, user, 'salesOrders', order.branchId)
+    && salesOrderOwnedByUser(order, user);
 }
 
 function canAccessCollectionBranch(db, user, collection, branchId) {
@@ -9995,6 +10023,7 @@ async function api(req, res) {
   if (req.method === 'POST' && portalOrderReadMatch) {
     if (!canAccess(user, 'ordersView')) return send(res, 403, { error: '没有订单权限' });
     const order = db.salesOrders.find(item => item.id === portalOrderReadMatch[1]); if (!order) return send(res, 404, { error: '找不到订单' });
+    if (!canAccessSalesOrderRecord(db, user, order)) return send(res, 403, { error: '业务员只能查看自己的销售单' });
     const readAt = new Date().toISOString();
     (order.portalMessages || []).forEach(message => {
       if (message.sender === 'customer' && message.readState !== 'read') {
@@ -10009,6 +10038,7 @@ async function api(req, res) {
   if (req.method === 'POST' && portalStaffMessageMatch) {
     if (!canAccess(user, 'ordersEdit')) return send(res, 403, { error: '没有订单编辑权限' });
     const order = db.salesOrders.find(item => item.id === portalStaffMessageMatch[1]); if (!order?.portalCustomerId) return send(res, 404, { error: '找不到客户订单' });
+    if (!canAccessSalesOrderRecord(db, user, order)) return send(res, 403, { error: '业务员只能查看和修改自己的销售单' });
     const body = await readBody(req); const text = String(body.text || '').trim().slice(0, 4000); const clientMessageId = String(body.clientMessageId || '').trim().slice(0, 120); if (!text) return send(res, 400, { error: '请输入回复内容' });
     if (clientMessageId && (order.portalMessages || []).some(message => message.clientMessageId === clientMessageId)) return send(res, 200, sanitizeDbForUser(db, user));
     order.portalMessages = [...(order.portalMessages || []), { id: id(), clientMessageId, sender: 'staff', senderName: user.name || user.email, text, readState: 'unread', readAt: '', createdAt: new Date().toISOString() }]; order.portalStaffUnread = true; order.updatedAt = new Date().toISOString(); writeDb(db); notifyDataChanged('portal-staff-message', order.id);
@@ -10020,6 +10050,7 @@ async function api(req, res) {
     if (!canAccess(user, 'ordersEdit')) return send(res, 403, { error: '没有订单编辑权限' });
     const order = db.salesOrders.find(item => item.id === portalStaffMessageDeleteMatch[1]);
     if (!order?.portalCustomerId) return send(res, 404, { error: '找不到客户订单' });
+    if (!canAccessSalesOrderRecord(db, user, order)) return send(res, 403, { error: '业务员只能查看和修改自己的销售单' });
     const message = (order.portalMessages || []).find(item => item.id === portalStaffMessageDeleteMatch[2]);
     if (!message) return send(res, 404, { error: '找不到消息' });
     if (message.sender !== 'staff') return send(res, 403, { error: '只能删除客服发出的消息' });
@@ -13286,6 +13317,7 @@ async function api(req, res) {
     const order = (db.salesOrders || []).find(row => row.id === shipSalesOrderMatch[1]);
     if (!order) return send(res, 404, { error: '找不到这张销售单' });
     if (!canAccessCollectionBranch(db, user, 'salesOrders', order.branchId)) return send(res, 403, { error: '你没有这张销售单所属分店的数据权限' });
+    if (!salesOrderOwnedByUser(order, user)) return send(res, 403, { error: '业务员只能处理自己的销售单' });
     if (salesOrderHasCompleteShipment(db, order)) return send(res, 200, sanitizeDbForUser(db, user));
     if (!salesOrderCanShip(db, order)) return send(res, 400, { error: '只有已经付清并且尚未出库的销售单才能确认出库' });
 
@@ -13906,6 +13938,7 @@ async function api(req, res) {
     if (idx < 0) return send(res, 404, { error: 'Record not found' });
     const canEditAcrossBranches = canEditCustomerRecordAcrossBranches(user, collection);
     if (!canAccessCollectionBranch(db, user, collection, db[collection][idx]?.branchId)) return send(res, 403, { error: '你没有这条记录所属分店的数据权限' });
+    if (collection === 'salesOrders' && !salesOrderOwnedByUser(db[collection][idx], user)) return send(res, 403, { error: '业务员只能查看和修改自己的销售单' });
     if (collection === 'shipments' && db[collection][idx].receivedAt) {
       return send(res, 400, { error: '已经收货入库的在途单不能直接修改，避免库存与入库单不一致' });
     }
@@ -14157,6 +14190,7 @@ async function api(req, res) {
   if (req.method === 'DELETE' && recordId) {
     const branchProtectedRecord = (db[collection] || []).find(row => row.id === recordId);
     if (branchProtectedRecord && !canAccessCollectionBranch(db, user, collection, branchProtectedRecord.branchId)) return send(res, 403, { error: '你没有这条记录所属分店的数据权限' });
+    if (collection === 'salesOrders' && branchProtectedRecord && !salesOrderOwnedByUser(branchProtectedRecord, user)) return send(res, 403, { error: '业务员只能查看和修改自己的销售单' });
     if (collection === 'workshopMovements') {
       return send(res, 400, { error: '贴膜间库存流水不能删除。请用反向流水修正，保证库存台账完整。' });
     }

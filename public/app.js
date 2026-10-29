@@ -1682,6 +1682,10 @@ function jobMatchesPerson(job) {
 
 function branchScopedRows(rows = []) {
   if (isCompanyScopePage()) return rows || [];
+  // The server has already applied each employee's branch and role scope.
+  // ownerBranchFilter is an owner-only control and must not hide accessible
+  // branches from managers or salespeople.
+  if (user?.role !== 'owner') return rows || [];
   if (ownerBranchFilter === 'all') return rows || [];
   return (rows || []).filter(row => String(row?.branchId || '') === ownerBranchFilter);
 }
