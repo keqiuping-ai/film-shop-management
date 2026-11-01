@@ -70,3 +70,23 @@ AI生成在后台执行，语音 webhook 立即返回短 Pause/Redirect 轮询�
 - https://www.twilio.com/docs/voice/twiml/say
 - https://www.twilio.com/docs/voice/api/call-resource
 - https://docs.cloud.google.com/speech-to-text/docs/speech-to-text-supported-languages
+
+
+## 自然语音修订（首次电话反馈之后）
+
+首版已获授权并发布（33db638、e8f3b0c），只向指定手机实际拨打一次，最终 completed，146 秒，4 轮中文问答。用户反馈“机械感太强”，对话中也明确反馈响应和播报慢。识别文字出现“改增膜”，疑似行业词误识别。首版仅证明中文双向流程可运行，体验未验收。
+
+后续修订新增 lib/phone-realtime.js，生产新会话默认改为实时音频：Twilio bidirectional Media Streams ↔ OpenAI Realtime，保留原来电转接。复用服务器内部的既有 OpenAI 密钥；默认实时模型 gpt-realtime，可由 OPENAI_PHONE_REALTIME_MODEL 指定。语音 marin，speed=1.1；普通话、短句、单次只问一件事，不反复自报身份。音频使用 PCMU/8000 Hz，免转码；电话线路仍是窄带音质，不能等同于网页耳机试听音质。
+
+- 每次说话直接由实时模型听音频并输出音频，不必等待完整转写后再请求文本模型。独立字幕仅供记录，可能与模型实际理解不完全一致。
+- VAD 450ms 停顿后自动响应；支持插话自动停止生成，Twilio clear 清除积压，并 conversation.item.truncate 同步估算的已播放时长。被打断的AI字幕会标注，生成字幕不证明全部已被听到。
+- WebSocket 入口只接受 Twilio 固定 wss 地址签名、已授权/已按1同意的会话、匹配 AccountSid/CallSid、一次性 token、PCMU 8kHz 单声道；浏览器不能直接连接。身份失败不会连接AI。
+- 准备期输入缓冲最多100帧；音频发送积压会结束测试。挂断、按9、结束测试、取消和服务错误均清理两端连接。
+- 新增 POST /api/phone-assistant/realtime-check：只验证已有密钥能建立实时会话并接受声音与音频配置，不发起电话、不发送音频、不创建AI回复。页面自动执行该检查；检查未通过不允许拨号。结果短期缓存。
+- 最长180秒、最多8轮、仅指定测试手机号、老板权限、不会自动重拨等限制保留。不保存原始音频文件，应用文字保留约一小时。
+
+自然语音版本的本机测试：22项电话/实时集成测试通过，含实际本地WebSocket升级与签名、假AI音频双向传输、插话清音和截断、身份失败、字幕重放和结束清理；原有7项语音翻译测试通过；13项Chromium界面检查通过（明确标记提供商测试桩）。HTTP测试同时阻断fetch和WebSocket对外连接。
+
+尚需实机验收：真实Twilio媒体流升级、用户听到的自然度、响应时延、真实插话效果和行业词准确性。仅连接检查通过不能算真实语音质量通过。首版通话授权已使用，本次修订不自动再次拨号，等待用户另行要求试听。
+
+参考：https://developers.openai.com/api/docs/guides/realtime-conversations 、https://developers.openai.com/api/docs/guides/voice-websockets 、https://www.twilio.com/docs/voice/media-streams/websocket-messages 。

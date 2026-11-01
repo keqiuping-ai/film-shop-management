@@ -8783,6 +8783,7 @@ function confirmCustomerCheckout(db, session, eventRecord) {
 const retailService = require('./lib/retail')({readDb,writeDb,send,currentUser,canAccess,canAccessCollectionBranch,publicBaseUrl:customerCheckoutBaseUrl,notify:notifyDataChanged});
 
 const phoneAssistant = createPhoneAssistant({
+  realtimeConfig: () => { const db = readDb(); return { apiKey:openAiCustomerReplyKey(db), ...twilioConfig(), model:process.env.OPENAI_PHONE_REALTIME_MODEL || 'gpt-realtime' }; },
   readRawBody, readBody, send, validateSignature: validateTwilioSignature,
   getConfig: () => { const db = readDb(); const c = twilioConfig(); return { ...c, aiConfigured: Boolean(openAiCustomerReplyKey(db)), baseUrl: c.webhookBaseUrl || config.publicUrl || '' }; },
   aiReply: async ({task, messages}) => {
@@ -14646,7 +14647,7 @@ if (fs.existsSync(path.join(DATA_DIR, 'gelianghao', 'chat.sqlite'))) {
   try { getPrivateChat(); } catch { console.warn('Private chat cleanup unavailable; check Node.js and storage permissions.'); }
 }
 
-http.createServer((req, res) => {
+const mainHttpServer = http.createServer((req, res) => {
   // Keep the request available to the shared responder so every sufficiently
   // large JSON/text response can honor Accept-Encoding.  Previously only a
   // handful of endpoints passed req explicitly, leaving large snapshots
@@ -14678,3 +14679,5 @@ http.createServer((req, res) => {
   setInterval(expireInternalMessageVideos, 6 * 60 * 60 * 1000);
   setInterval(cleanupStaleMediaUploadParts, 6 * 60 * 60 * 1000);
 });
+
+phoneAssistant.attach(mainHttpServer);
