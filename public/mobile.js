@@ -1523,16 +1523,23 @@ function mobileNoteDetailHtml(item) {
   const completed = item.status === 'completed';
   const canEdit = item.canEdit !== false && (!item.ownerUserId || item.ownerUserId === user?.id);
   const share = item.shareScope === 'all' ? (lang === 'zh' ? '👥 全体员工' : '👥 All staff') : item.shareScope === 'users' ? (lang === 'zh' ? '↗ 指定员工' : '↗ Selected staff') : (lang === 'zh' ? '🔒 仅自己' : '🔒 Private');
-  return `<article class="mobile-note-detail ${completed ? 'completed' : ''}">
+  return `<article class="mobile-note-detail ${completed ? 'completed' : ''} ${(item.attachments || []).length ? 'has-photos' : ''}">
     <header><button type="button" class="mobile-note-detail-back" onclick="showMobileNoteList()">‹ ${lang === 'zh' ? '记事本' : 'Notes'}</button><div>${canEdit ? `${item.type === 'task' && !completed ? `<button onclick="finishNote('${item.id}')">${t('finish')}</button>` : ''}<button onclick="openNoteEditor('${item.id}')">✎</button><button class="danger-text" onclick="deleteNote('${item.id}')">×</button>` : `<span>${lang === 'zh' ? '只读' : 'Read only'}</span>`}</div></header>
     <div class="mobile-note-paper">
       <small>${fmtDateTime(item.updatedAt || item.createdAt || item.remindAt)}</small>
       <h2>${escapeHtml(item.title || (lang === 'zh' ? '未命名' : 'Untitled'))}</h2>
       ${item.type === 'task' ? `<time>${completed ? '✓ ' + t('completed') : '⏰ ' + t('due') + ' ' + fmtDateTime(item.snoozedUntil || item.remindAt)}</time>` : ''}
       <div class="mobile-note-content">${item.content ? escapeHtml(item.content).replace(/\n/g, '<br>') : `<span>${lang === 'zh' ? '没有更多内容' : 'No additional details'}</span>`}</div>
+      ${mobileNotePhotosHtml(item.attachments)}
       <footer>${canEdit ? '' : `${lang === 'zh' ? '来自' : 'From'} ${escapeHtml(item.ownerName || '')} · `}${share}</footer>
     </div>
   </article>`;
+}
+
+function mobileNotePhotosHtml(attachments = []) {
+  const photos = Array.isArray(attachments) ? attachments.filter(item => String(item?.type || '').startsWith('image/') && item.url) : [];
+  if (!photos.length) return '';
+  return `<div class="mobile-note-photos">${photos.map(photo => `<button type="button" onclick="openImagePreview(this.dataset.url,this.dataset.name)" data-url="${escapeHtml(photo.url)}" data-name="${escapeHtml(photo.name || '')}"><img src="${escapeHtml(photo.url)}" alt="${escapeHtml(photo.name || '')}" loading="lazy"></button>`).join('')}</div>`;
 }
 
 function selectMobileNote(noteId) {

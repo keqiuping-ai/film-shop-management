@@ -2100,11 +2100,30 @@ function personalNoteForUser(db, item, user) {
     : null;
   return {
     ...item,
+    attachments: Array.isArray(item.attachments) ? item.attachments : [],
     shareScope: ['all', 'users'].includes(item.shareScope) ? item.shareScope : 'private',
     sharedUserIds: Array.isArray(item.sharedUserIds) ? item.sharedUserIds : [],
     ownerName: item.ownerName || owner?.name || owner?.email || creationLog?.userName || '已停用员工',
     canEdit: item.ownerUserId === user.id
   };
+}
+
+function normalizePersonalNoteAttachments(value) {
+  if (value === undefined) return [];
+  if (!Array.isArray(value)) throw new Error('记事照片格式不正确');
+  if (value.length > 10) throw new Error('每条记事最多保存 10 张照片');
+  return value.map((attachment, index) => {
+    const name = String(attachment?.name || `照片 ${index + 1}`).trim().slice(0, 160) || `照片 ${index + 1}`;
+    const type = String(attachment?.type || '').trim().toLowerCase().slice(0, 120);
+    const size = Math.max(0, Number(attachment?.size || 0));
+    const url = String(attachment?.url || '').trim().slice(0, 2000);
+    let pathname = '';
+    try { pathname = new URL(url, 'https://quad.local').pathname; } catch {}
+    if (!type.startsWith('image/') || !/^\/customer-media\/[a-f0-9]{12,32}\.[a-z0-9]{1,8}$/i.test(pathname)) {
+      throw new Error('记事照片来源无效，请重新粘贴或选择照片');
+    }
+    return { name, type, size: Number.isFinite(size) ? size : 0, url };
+  });
 }
 
 function normalizePersonalNoteSharing(db, user, body, existing = {}) {
@@ -11206,13 +11225,15 @@ async function api(req, res) {
       const content = String(body.content || '').trim().slice(0, 20000);
       const remindAt = type === 'task' ? String(body.remindAt || '').trim() : '';
       const requestId = String(body.requestId || '').trim().slice(0, 120);
+      let attachments;
+      try { attachments = normalizePersonalNoteAttachments(body.attachments); } catch (error) { return send(res, 400, { error: error.message }); }
       if (!title) return send(res, 400, { error: '请填写记事标题' });
       if (type === 'task' && (!remindAt || Number.isNaN(new Date(remindAt).getTime()))) return send(res, 400, { error: '请选择正确的提醒日期和时间' });
       const duplicate = requestId ? (db.personalNotes || []).find(item => item.ownerUserId === user.id && item.requestId === requestId) : null;
       if (duplicate) return send(res, 200, { item: personalNoteForUser(db, duplicate, user) });
       const now = new Date().toISOString();
       const sharing = normalizePersonalNoteSharing(db, user, body);
-      const item = { id: id(), ownerUserId: user.id, ownerName: user.name || user.email || '员工', requestId, type, title, content, remindAt, snoozedUntil: '', status: 'pending', createdAt: now, updatedAt: now, completedAt: '', ...sharing };
+      const item = { id: id(), ownerUserId: user.id, ownerName: user.name || user.email || '员工', requestId, type, title, content, attachments, remindAt, snoozedUntil: '', status: 'pending', createdAt: now, updatedAt: now, completedAt: '', ...sharing };
       db.personalNotes.push(item);
       audit(db, user, 'create-personal-note', { collection: 'personalNotes', recordId: item.id, recordLabel: '个人记事', detail: sharing.shareScope === 'private' ? '新增私人记事' : '新增并分享记事' });
       writeDb(db);
@@ -11230,11 +11251,13 @@ async function api(req, res) {
       const remindAt = type === 'task' ? String(body.remindAt || '').trim() : '';
       const snoozedUntil = type === 'task' ? String(body.snoozedUntil || '').trim() : '';
       const status = body.status === 'completed' ? 'completed' : 'pending';
+      let attachments;
+      try { attachments = normalizePersonalNoteAttachments(body.attachments === undefined ? existing.attachments : body.attachments); } catch (error) { return send(res, 400, { error: error.message }); }
       if (!title) return send(res, 400, { error: '请填写记事标题' });
       if (type === 'task' && (!remindAt || Number.isNaN(new Date(remindAt).getTime()))) return send(res, 400, { error: '请选择正确的提醒日期和时间' });
       if (snoozedUntil && Number.isNaN(new Date(snoozedUntil).getTime())) return send(res, 400, { error: '稍后提醒时间不正确' });
       const sharing = normalizePersonalNoteSharing(db, user, body, existing);
-      const item = { ...existing, type, title, content, remindAt, snoozedUntil, status, ...sharing, updatedAt: new Date().toISOString(), completedAt: status === 'completed' ? (existing.completedAt || new Date().toISOString()) : '' };
+      const item = { ...existing, type, title, content, attachments, remindAt, snoozedUntil, status, ...sharing, updatedAt: new Date().toISOString(), completedAt: status === 'completed' ? (existing.completedAt || new Date().toISOString()) : '' };
       db.personalNotes[index] = item;
       audit(db, user, 'update-personal-note', { collection: 'personalNotes', recordId: item.id, recordLabel: '个人记事', detail: status === 'completed' ? '完成个人待办' : '修改个人记事或分享范围' });
       writeDb(db);
@@ -11814,12 +11837,14 @@ async function api(req, res) {
     });
   }
 
-  if (req.method === 'POST' && ['/api/customer-media/upload', '/api/message-media/upload', '/api/job-media/upload', '/api/warranty-media/upload', '/api/reimbursement-media/upload'].includes(url.pathname)) {
+  if (req.method === 'POST' && ['/api/customer-media/upload', '/api/message-media/upload', '/api/job-media/upload', '/api/warranty-media/upload', '/api/reimbursement-media/upload', '/api/personal-note-media/upload'].includes(url.pathname)) {
     if (url.pathname === '/api/customer-media/upload' && !canAccess(user, 'prospectsEdit')) return send(res, 403, { error: '没有发送客户附件的权限' });
     if (url.pathname === '/api/job-media/upload' && !canAccess(user, 'jobsEdit') && !canAccess(user, 'jobsCreate')) return send(res, 403, { error: '没有修改施工单的权限' });
     if (url.pathname === '/api/warranty-media/upload' && !canAccess(user, 'jobsEdit') && !canAccess(user, 'jobsCreate')) return send(res, 403, { error: '没有修改客户质保的权限' });
     if (url.pathname === '/api/reimbursement-media/upload' && !canAccess(user, 'reimbursementsCreate')) return send(res, 403, { error: '没有提交报销凭证的权限' });
     const requestType = String(req.headers['content-type'] || 'application/octet-stream').split(';')[0].trim().toLowerCase();
+    const personalNoteImageUpload = url.pathname === '/api/personal-note-media/upload';
+    if (personalNoteImageUpload && requestType !== 'application/json' && !requestType.startsWith('image/')) return send(res, 400, { error: '记事本只能上传照片' });
     const uploadId = String(req.headers['x-upload-id'] || '').trim();
     if (uploadId) {
       if (!/^[a-zA-Z0-9-]{10,80}$/.test(uploadId)) return send(res, 400, { error: '分片上传编号不正确' });
@@ -11893,6 +11918,7 @@ async function api(req, res) {
       try { data = await readBinaryBody(req, limit); } catch { return send(res, 413, { error: contentType.startsWith('video/') ? '视频不能超过 200MB' : '附件不能超过 20MB' }); }
     }
     if (!data.length) return send(res, 400, { error: '附件为空' });
+    if (personalNoteImageUpload && !contentType.startsWith('image/')) return send(res, 400, { error: '记事本只能上传照片' });
     if (contentType.startsWith('video/')) {
       if (data.length > MAX_CUSTOMER_VIDEO_SOURCE_BYTES) return send(res, 400, { error: '视频不能超过 200MB' });
     } else if (contentType.startsWith('image/') ? data.length > MAX_CLOUD_IMAGE_BYTES : data.length > MAX_CLOUD_FILE_BYTES) {

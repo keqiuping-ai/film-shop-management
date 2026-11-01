@@ -2260,6 +2260,20 @@ body.modal-lock .prospect-workspace { pointer-events: none; }
 .personal-note-modal-open .dialog { width:min(1180px, calc(100vw - 36px)); }
 .personal-note-editor-grid .personal-note-content-field { grid-column:1 / -1; margin-bottom:0; font-size:14px; font-weight:700; }
 .personal-note-editor-grid #personalNoteContent { width:100%; min-height:390px; box-sizing:border-box; padding:16px 18px; color:var(--text); font-size:18px; line-height:1.65; font-weight:500; }
+.personal-note-photo-editor { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:10px 14px; align-items:center; padding:14px; border:1px dashed #9cc5d2; border-radius:14px; background:#f4fafc; }
+.personal-note-photo-editor>div:first-child { display:grid; gap:4px; }
+.personal-note-photo-editor>div:first-child span { color:var(--muted); font-size:13px; font-weight:500; }
+.personal-note-photo-picker { position:relative; cursor:pointer; }
+.personal-note-photo-picker input { position:absolute; width:1px; height:1px; opacity:0; pointer-events:none; }
+.personal-note-photo-preview,.personal-note-photo-gallery { grid-column:1/-1; display:grid; grid-template-columns:repeat(auto-fill,minmax(145px,1fr)); gap:11px; }
+.personal-note-photo-preview.empty { display:none; }
+.personal-note-photo-draft { position:relative; min-width:0; padding:7px; border:1px solid var(--line); border-radius:12px; background:#fff; }
+.personal-note-photo-draft img { width:100%; height:118px; object-fit:cover; border-radius:8px; background:#eef3f6; }
+.personal-note-photo-draft>.icon-btn { position:absolute; top:10px; right:10px; background:rgba(255,255,255,.95); }
+.personal-note-photo-draft span { display:block; margin-top:5px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--muted); font-size:12px; }
+.personal-note-photo-gallery { margin-top:16px; }
+.personal-note-photo-gallery button { padding:0; overflow:hidden; border:1px solid var(--line); border-radius:12px; background:#eef3f6; cursor:zoom-in; }
+.personal-note-photo-gallery img { display:block; width:100%; height:180px; object-fit:cover; }
 .reimbursement-stats { grid-template-columns:repeat(4,minmax(0,1fr)); margin-bottom:14px; }
 .reimbursement-table .reimbursement-purpose { max-width:230px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .reimbursement-form { display:flex; flex-direction:column; gap:14px; }
@@ -2303,6 +2317,7 @@ body.modal-lock .prospect-workspace { pointer-events: none; }
 .personal-note-detail.completed h2,.personal-note-detail.completed .personal-note-content { text-decoration:line-through; opacity:.68; }
 .personal-note-remind-at { display:block; margin:0 0 20px; color:#b4640d; font-weight:700; }
 .personal-note-content { min-height:300px; color:#344250; font-size:17px; line-height:1.75; overflow-wrap:anywhere; }
+.personal-note-detail.has-photos .personal-note-content { min-height:auto; margin-bottom:16px; }
 .personal-note-content>span { color:var(--muted); }
 .personal-note-detail-empty { display:grid; min-height:450px; place-items:center; color:var(--muted); }
 .personal-note-kind { font-size:13px; font-weight:700; color:#0f7388; }

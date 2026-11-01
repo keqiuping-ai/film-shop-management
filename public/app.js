@@ -166,6 +166,7 @@ let activePersistentAlertIds = [];
 let persistentAlertTimer = null;
 let activePersonalNoteId = '';
 let personalNoteSaving = false;
+let personalNoteDraftAttachments = [];
 const personalNoteUpdatingIds = new Set();
 // SSE plus the lightweight revision check keep normal sessions current.  The
 // full bootstrap is only a long-stop recovery path because it can be large on
@@ -3727,7 +3728,8 @@ function personalNotesView() {
   if (!rows.some(item => item.id === activePersonalNoteId)) activePersonalNoteId = rows[0]?.id || '';
   const selected = rows.find(item => item.id === activePersonalNoteId);
   const list = rows.map(item => {
-    const preview = String(item.content || '').replace(/\s+/g, ' ').trim();
+    const photoCount = Array.isArray(item.attachments) ? item.attachments.length : 0;
+    const preview = String(item.content || '').replace(/\s+/g, ' ').trim() || (photoCount ? (lang === 'zh' ? `📷 ${photoCount} 张照片` : `📷 ${photoCount} photos`) : '');
     const search = [item.title, item.content, item.ownerName, personalNoteStatus(item)].filter(Boolean).join(' ');
     return `<button type="button" class="personal-note-list-item ${item.id === activePersonalNoteId ? 'active' : ''} ${item.status === 'completed' ? 'completed' : ''}" data-search="${escapeHtml(search)}" onclick="selectPersonalNote('${item.id}')">
       <strong>${escapeHtml(item.title || (lang === 'zh' ? '未命名' : 'Untitled'))}</strong>
@@ -3735,7 +3737,7 @@ function personalNotesView() {
       <small>${escapeHtml(personalNoteStatus(item))} · ${formatAppDateTime(item.updatedAt || item.createdAt || item.remindAt)}</small>
     </button>`;
   }).join('');
-  const detail = selected ? `<article class="personal-note-detail ${selected.type === 'task' ? 'task' : 'memo'} ${selected.status === 'completed' ? 'completed' : ''}">
+  const detail = selected ? `<article class="personal-note-detail ${selected.type === 'task' ? 'task' : 'memo'} ${selected.status === 'completed' ? 'completed' : ''} ${(selected.attachments || []).length ? 'has-photos' : ''}">
     <div class="personal-note-detail-head">
       <div><span class="personal-note-kind">${escapeHtml(personalNoteStatus(selected))}</span><time>${formatAppDateTime(selected.updatedAt || selected.createdAt || selected.remindAt)}</time></div>
       <div class="personal-note-actions">${personalNoteCanEdit(selected) ? `
@@ -3746,7 +3748,8 @@ function personalNotesView() {
     </div>
     <h2>${escapeHtml(selected.title || (lang === 'zh' ? '未命名' : 'Untitled'))}</h2>
     ${selected.type === 'task' && selected.remindAt ? `<time class="personal-note-remind-at">⏰ ${formatAppDateTime(selected.snoozedUntil || selected.remindAt)}${selected.snoozedUntil ? (lang === 'zh' ? '（稍后提醒）' : ' (snoozed)') : ''}</time>` : ''}
-    <div class="personal-note-content">${selected.content ? escapeHtml(selected.content).replace(/\n/g, '<br>') : `<span>${lang === 'zh' ? '没有更多内容' : 'No additional details'}</span>`}</div>
+    <div class="personal-note-content">${selected.content ? escapeHtml(selected.content).replace(/\n/g, '<br>') : `<span>${lang === 'zh' ? '没有文字内容' : 'No text details'}</span>`}</div>
+    ${personalNoteAttachmentsHtml(selected.attachments)}
     <div class="personal-note-share">${!personalNoteCanEdit(selected) ? `${lang === 'zh' ? '来自' : 'From'} ${escapeHtml(selected.ownerName || '')} · ` : ''}${escapeHtml(personalNoteShareText(selected))}</div>
   </article>` : `<div class="personal-note-detail-empty">${lang === 'zh' ? '从左侧选择一条记事查看内容' : 'Select a note to view its details'}</div>`;
   return panel(t('personalNotes'), `
@@ -3770,6 +3773,8 @@ function openPersonalNote(noteId = '', forcedType = '') {
   const staff = (state.messageUsers || []).filter(row => row.active !== false && row.id !== user?.id);
   const staffOptions = staff.map(row => `<label class="personal-note-share-user"><input type="checkbox" name="personalNoteSharedUser" value="${escapeHtml(row.id)}" ${(item.sharedUserIds || []).includes(row.id) ? 'checked' : ''}><span>${escapeHtml(row.name || row.email)}</span></label>`).join('');
   const localDateTime = item.remindAt ? new Date(new Date(item.remindAt).getTime() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16) : '';
+  clearPersonalNoteDraftAttachments();
+  personalNoteDraftAttachments = (item.attachments || []).map(attachment => ({ ...attachment, persisted: true }));
   openModal(noteId ? (lang === 'zh' ? '编辑记事' : 'Edit note') : (lang === 'zh' ? '新建记事' : 'New note'), `
     <div class="form-grid personal-note-editor-grid">
       <label>${lang === 'zh' ? '类型' : 'Type'}<select id="personalNoteType" onchange="togglePersonalReminderField()"><option value="memo" ${type === 'memo' ? 'selected' : ''}>${lang === 'zh' ? '普通备忘录（不提醒）' : 'Memo (no reminder)'}</option><option value="task" ${type === 'task' ? 'selected' : ''}>${lang === 'zh' ? '待办事项（定时提醒）' : 'Task (scheduled reminder)'}</option></select></label>
@@ -3778,8 +3783,67 @@ function openPersonalNote(noteId = '', forcedType = '') {
       <label>${lang === 'zh' ? '分享范围' : 'Sharing'}<select id="personalNoteShareScope" onchange="togglePersonalNoteShareUsers()"><option value="private" ${shareScope === 'private' ? 'selected' : ''}>${lang === 'zh' ? '🔒 仅自己可见' : '🔒 Private'}</option><option value="all" ${shareScope === 'all' ? 'selected' : ''}>${lang === 'zh' ? '👥 分享给全体员工' : '👥 All staff'}</option><option value="users" ${shareScope === 'users' ? 'selected' : ''}>${lang === 'zh' ? '↗ 分享给指定员工' : '↗ Selected staff'}</option></select></label>
       <div id="personalNoteShareUsers" class="span-2 personal-note-share-users ${shareScope === 'users' ? '' : 'hidden'}"><strong>${lang === 'zh' ? '选择接收人' : 'Choose recipients'}</strong><div>${staffOptions || `<span>${lang === 'zh' ? '暂无其他员工账号' : 'No other staff accounts'}</span>`}</div></div>
       <label class="personal-note-content-field">${lang === 'zh' ? '内容' : 'Details'}<textarea id="personalNoteContent" rows="14" placeholder="${lang === 'zh' ? '记录详细内容、电话、地址或要办的事情……' : 'Write details...'}">${escapeHtml(item.content || '')}</textarea></label>
+      <section class="personal-note-photo-editor span-2">
+        <div><strong>${lang === 'zh' ? '照片' : 'Photos'}</strong><span>${lang === 'zh' ? '可在上面的内容框直接按 ⌘V 粘贴截图，也可选择照片；最多 10 张。' : 'Paste screenshots in the details box with ⌘V, or choose photos. Up to 10.'}</span></div>
+        <label class="btn personal-note-photo-picker">＋ ${lang === 'zh' ? '选择照片' : 'Choose photos'}<input id="personalNotePhotoInput" type="file" accept="image/*" multiple onchange="addPersonalNotePhotoFiles(this.files);this.value=''" /></label>
+        <div id="personalNotePhotoPreview" class="personal-note-photo-preview"></div>
+      </section>
     </div>`, () => savePersonalNote(noteId));
   document.getElementById('modal').classList.add('personal-note-modal-open');
+  document.getElementById('personalNoteContent')?.addEventListener('paste', handlePersonalNotePhotoPaste);
+  renderPersonalNotePhotoDrafts();
+}
+
+function personalNoteAttachmentsHtml(attachments = []) {
+  const photos = Array.isArray(attachments) ? attachments.filter(item => String(item?.type || '').startsWith('image/') && item.url) : [];
+  if (!photos.length) return '';
+  return `<div class="personal-note-photo-gallery">${photos.map(photo => `<button type="button" onclick="openImagePreview(this.dataset.url,this.dataset.name)" data-url="${escapeHtml(photo.url)}" data-name="${escapeHtml(photo.name || '')}"><img src="${escapeHtml(photo.url)}" alt="${escapeHtml(photo.name || (lang === 'zh' ? '记事照片' : 'Note photo'))}" loading="lazy"></button>`).join('')}</div>`;
+}
+
+function clearPersonalNoteDraftAttachments() {
+  personalNoteDraftAttachments.forEach(item => { if (item.previewUrl) URL.revokeObjectURL(item.previewUrl); });
+  personalNoteDraftAttachments = [];
+}
+
+function renderPersonalNotePhotoDrafts() {
+  const container = document.getElementById('personalNotePhotoPreview');
+  if (!container) return;
+  container.innerHTML = personalNoteDraftAttachments.map((item, index) => `<div class="personal-note-photo-draft"><img src="${escapeHtml(item.previewUrl || item.url)}" alt="${escapeHtml(item.name || '')}"><button type="button" class="icon-btn danger" onclick="removePersonalNotePhoto(${index})" aria-label="${lang === 'zh' ? '移除照片' : 'Remove photo'}">×</button><span>${escapeHtml(item.name || (lang === 'zh' ? '粘贴的照片' : 'Pasted photo'))}</span></div>`).join('');
+  container.classList.toggle('empty', !personalNoteDraftAttachments.length);
+}
+
+function removePersonalNotePhoto(index) {
+  const [removed] = personalNoteDraftAttachments.splice(index, 1);
+  if (removed?.previewUrl) URL.revokeObjectURL(removed.previewUrl);
+  renderPersonalNotePhotoDrafts();
+}
+
+function addPersonalNotePhotoFiles(files) {
+  const incoming = [...(files || [])].filter(file => String(file.type || '').startsWith('image/'));
+  if (!incoming.length) return alert(lang === 'zh' ? '请选择照片文件。' : 'Choose image files.');
+  const available = Math.max(0, 10 - personalNoteDraftAttachments.length);
+  if (!available) return alert(lang === 'zh' ? '每条记事最多 10 张照片。' : 'Each note can contain up to 10 photos.');
+  incoming.slice(0, available).forEach(file => personalNoteDraftAttachments.push({ file, previewUrl: URL.createObjectURL(file), name: file.name || `粘贴照片-${Date.now()}.png`, type: file.type, size: file.size }));
+  if (incoming.length > available) alert(lang === 'zh' ? '已达到 10 张上限，多余照片没有加入。' : 'The 10-photo limit was reached; extra photos were not added.');
+  renderPersonalNotePhotoDrafts();
+}
+
+function handlePersonalNotePhotoPaste(event) {
+  const files = [...(event.clipboardData?.items || [])].filter(item => item.kind === 'file' && String(item.type || '').startsWith('image/')).map(item => item.getAsFile()).filter(Boolean);
+  if (!files.length) return;
+  event.preventDefault();
+  addPersonalNotePhotoFiles(files);
+}
+
+async function uploadPersonalNoteDraftPhotos() {
+  return Promise.all(personalNoteDraftAttachments.map(async item => {
+    if (!item.file) return { name: item.name, type: item.type, size: item.size || 0, url: item.url };
+    if (item.file.size > MAX_CLOUD_IMAGE_BYTES) throw new Error(lang === 'zh' ? '单张原图不能超过 20MB。' : 'Each source image must be 20MB or smaller.');
+    const optimized = await optimizeProspectImage(item.file);
+    const uploaded = await uploadCloudMedia('/api/personal-note-media/upload', optimized);
+    const mediaUrl = new URL(uploaded.url, location.origin);
+    return { name: uploaded.name || optimized.name, type: uploaded.type || optimized.type, size: uploaded.size || optimized.size, url: `${mediaUrl.pathname}${mediaUrl.search}` };
+  }));
 }
 
 function togglePersonalReminderField() {
@@ -3791,19 +3855,27 @@ function togglePersonalNoteShareUsers() {
 }
 
 async function savePersonalNote(noteId) {
-  if (personalNoteSaving) return;
+  if (personalNoteSaving) return { saved: false };
   const type = document.getElementById('personalNoteType').value;
   const title = document.getElementById('personalNoteTitle').value.trim();
   const content = document.getElementById('personalNoteContent').value.trim();
   const localReminder = document.getElementById('personalNoteRemindAt').value;
   const shareScope = document.getElementById('personalNoteShareScope').value;
   const sharedUserIds = [...document.querySelectorAll('input[name="personalNoteSharedUser"]:checked')].map(input => input.value);
-  if (!title) return alert(lang === 'zh' ? '请填写标题' : 'Please enter a title');
-  if (type === 'task' && !localReminder) return alert(lang === 'zh' ? '待办事项需要选择提醒时间' : 'Choose a reminder time');
-  if (shareScope === 'users' && !sharedUserIds.length) return alert(lang === 'zh' ? '请至少选择一名接收员工' : 'Choose at least one recipient');
+  if (!title) { alert(lang === 'zh' ? '请填写标题' : 'Please enter a title'); return { saved: false }; }
+  if (type === 'task' && !localReminder) { alert(lang === 'zh' ? '待办事项需要选择提醒时间' : 'Choose a reminder time'); return { saved: false }; }
+  if (shareScope === 'users' && !sharedUserIds.length) { alert(lang === 'zh' ? '请至少选择一名接收员工' : 'Choose at least one recipient'); return { saved: false }; }
   const requestId = globalThis.crypto?.randomUUID?.() || `note-${Date.now()}-${Math.random().toString(36).slice(2)}`;
   const now = new Date().toISOString();
-  const body = { type, title, content, remindAt: type === 'task' ? new Date(localReminder).toISOString() : '', status: itemStatusForSave(noteId, type), requestId, shareScope, sharedUserIds };
+  personalNoteSaving = true;
+  let attachments;
+  try {
+    attachments = await uploadPersonalNoteDraftPhotos();
+  } catch (error) {
+    personalNoteSaving = false;
+    throw error;
+  }
+  const body = { type, title, content, attachments, remindAt: type === 'task' ? new Date(localReminder).toISOString() : '', status: itemStatusForSave(noteId, type), requestId, shareScope, sharedUserIds };
   const previousNotes = [...(state.personalNotes || [])];
   const existing = previousNotes.find(item => item.id === noteId);
   const optimistic = {
@@ -3812,6 +3884,7 @@ async function savePersonalNote(noteId) {
     type,
     title,
     content,
+    attachments,
     remindAt: body.remindAt,
     status: body.status,
     shareScope,
@@ -3823,24 +3896,24 @@ async function savePersonalNote(noteId) {
     updatedAt: now,
     _pending: true
   };
-  personalNoteSaving = true;
   state.personalNotes = noteId
     ? previousNotes.map(item => item.id === noteId ? optimistic : item)
     : [...previousNotes, optimistic];
-  closeModal();
-  render();
   try {
     const result = await api(`/api/personal-notes${noteId ? `/${noteId}` : ''}`, { method: noteId ? 'PUT' : 'POST', body: JSON.stringify(body), timeoutMs: 30000 });
     state.personalNotes = noteId
       ? state.personalNotes.map(item => item.id === noteId ? result.item : item)
       : state.personalNotes.map(item => item.id === optimistic.id ? result.item : item);
+    activePersonalNoteId = result.item.id;
+    closeModal();
     render();
     startPersonalReminderChecks();
     broadcastDataChange();
+    return { saved: true };
   } catch (err) {
     state.personalNotes = previousNotes;
     render();
-    alert(`${lang === 'zh' ? '保存失败，已恢复原内容：' : 'Save failed. Changes were restored: '}${err.message}`);
+    throw new Error(`${lang === 'zh' ? '保存失败，已恢复原内容：' : 'Save failed. Changes were restored: '}${err.message}`);
   } finally {
     personalNoteSaving = false;
   }
@@ -13095,6 +13168,7 @@ function closeModal() {
   uiNavigationRevision += 1;
   stopMessageTimeZones();
   closeReplyTemplateVideoPreview();
+  if (document.getElementById('modal')?.classList.contains('personal-note-modal-open')) clearPersonalNoteDraftAttachments();
   if (messageRecorder && messageRecorder.state === 'recording') {
     messageVoiceDiscard = true;
     messageVoiceHeld = false;

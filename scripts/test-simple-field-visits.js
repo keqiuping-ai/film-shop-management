@@ -70,7 +70,7 @@ assert(server.includes("body.onsiteCapture === true && (!storefrontPhotoUrl || !
 assert(server.includes("account.active = source.active === true && account.googleVerificationStatus === 'confirmed'"), 'only Google-confirmed imported Los Angeles records may remain active');
 assert(css.includes('.sales-region-grid'), 'region selector must have mobile styling');
 assert(css.includes('.sales-simple-customer-photo'), 'imported storefront photos must have mobile styling');
-assert(html.includes('/mobile.js?v=85') && html.includes('/mobile.css?v=70'), 'mobile asset cache keys must be updated');
+assert(html.includes('/mobile.js?v=86') && html.includes('/mobile.css?v=71'), 'mobile asset cache keys must be updated');
 assert(mobile.includes('sales-visit-status visited') && mobile.includes('sales-google-status confirmed'), 'customer cards must show Google and visit status badges');
 assert(mobile.includes('正在生成中英文对照') && mobile.includes('salesReviewBilingualField'), 'completed visits must generate and display bilingual fields');
 assert(mobile.includes("/api/field-sales/accounts/${accountId}/analyze") && server.includes('fieldSalesAccountAnalyzeMatch'), 'saved customer profiles must generate bilingual fields');

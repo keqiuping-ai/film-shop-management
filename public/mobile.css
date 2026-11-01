@@ -812,7 +812,11 @@ button {
 .mobile-note-paper h2 { margin:0 0 14px; font-size:25px; line-height:1.25; }
 .mobile-note-paper time { display:block; margin-bottom:15px; color:#9b6500; font-weight:800; }
 .mobile-note-content { min-height:260px; color:#25282d; font-size:17px; line-height:1.65; overflow-wrap:anywhere; }
+.mobile-note-detail.has-photos .mobile-note-content { min-height:auto; }
 .mobile-note-content > span { color:#999da3; }
+.mobile-note-photos { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:9px; margin-top:16px; }
+.mobile-note-photos button { padding:0; overflow:hidden; border:1px solid #dfe3e7; border-radius:11px; background:#eef2f4; }
+.mobile-note-photos img { display:block; width:100%; height:150px; object-fit:cover; }
 .mobile-note-paper footer { margin-top:24px; padding-top:14px; border-top:1px solid #ececef; color:#757a82; font-size:12px; }
 .mobile-note-detail.completed .mobile-note-paper { opacity:.68; }
 .mobile-modal { position: fixed; inset: 0; z-index: 60; display: grid; align-items: end; background: rgba(9,16,23,.55); }
