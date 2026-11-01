@@ -6037,6 +6037,7 @@ const views = {
         <label>${t('monthlyCost')}<input id="monthlyFixedCost" type="number" value="${state.settings.monthlyFixedCost}" /></label>
         <div class="wide" style="border:1px solid var(--border);border-radius:14px;padding:16px;background:var(--soft)">
           <h3 style="margin:0 0 10px">${lang === 'zh' ? '客户来电转接' : 'Customer Call Forwarding'}</h3>
+          ${user.role === 'owner' ? `<p><a class="btn" href="/phone-assistant.html" target="_blank" rel="noopener">${lang === 'zh' ? '打开中文 AI 电话测试' : 'Open Chinese AI phone test'}</a></p>` : ''}
           <label class="check-row" style="margin-bottom:10px"><input id="callForwardEnabled" type="checkbox" ${state.settings.callForwardEnabled ? 'checked' : ''} /><span>${lang === 'zh' ? '启用电话转接' : 'Enable call forwarding'}</span></label>
           <label>${lang === 'zh' ? '转接到的电话号码' : 'Forward calls to'}<input id="callForwardNumber" type="tel" value="${escapeHtml(state.settings.callForwardNumber || '')}" placeholder="例如 +1 702-354-8143" /></label>
           <p class="note" style="margin:8px 0 0">${lang === 'zh' ? '客户拨打 QUAD Twilio 号码 +1 725-241-2586 时，会转接到这里填写的号码。您可以随时更换或关闭。电话转接会产生 Twilio 通话费用。' : 'Calls to the QUAD Twilio number +1 725-241-2586 will be forwarded here. You can change or disable it at any time. Twilio voice charges apply.'}</p>
