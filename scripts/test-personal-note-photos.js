@@ -33,7 +33,8 @@ async function run() {
   const html = fs.readFileSync(path.join(root, 'public/index.html'), 'utf8');
   assert(appSource.includes("addEventListener('paste', handlePersonalNotePhotoPaste)"), 'Desktop note editor must handle pasted images');
   assert(appSource.includes("uploadCloudMedia('/api/personal-note-media/upload'"), 'Desktop note editor must upload note photos');
-  assert(html.includes('/app.js?v=171'), 'Desktop asset marker must include the note-photo release');
+  assert(html.includes('/app.js?v=172'), 'Desktop asset marker must include the note-photo release');
+  assert(appSource.indexOf('personal-note-photo-editor span-2') < appSource.indexOf('personal-note-content-field'), 'Photo controls must appear above the note details field');
 
   const child = spawn(process.execPath, ['server.js'], {
     cwd: root,

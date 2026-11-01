@@ -64,14 +64,14 @@ async function run() {
   assert.match(appSource, /const deletedInternalMessageIds = new Set\(\)/, 'Deleted messages must retain a local tombstone against stale refresh responses');
   assert.match(appSource, /applyInternalMessageTombstones/, 'Every message snapshot must remove locally deleted ids');
   assert.match(serverSource, /DELETE is intentionally idempotent/, 'Repeated deletes must return current state without a false not-found error');
-  assert(indexSource.includes('/app.js?v=171'), 'Desktop app asset marker must match the current release');
-  assert(indexSource.includes('/styles.css?v=115'), 'Desktop stylesheet marker must match the current release');
+  assert(indexSource.includes('/app.js?v=172'), 'Desktop app asset marker must match the current release');
+  assert(indexSource.includes('/styles.css?v=116'), 'Desktop stylesheet marker must match the current release');
   assert.match(mobileSource, /const mobileMessageSendQueue = new Map\(\)/, 'Mobile text sends must survive bootstrap replacement');
   assert.match(mobileSource, /mobileMessageSendQueue\.set\(pendingId/, 'Mobile text must render optimistically');
   assert.match(mobileSource, /正在发送…/, 'Mobile pending text must show sending status');
   assert.match(mobileSource, /preserveMobileMessageSnapshot/, 'Mobile refreshes must preserve a visible non-empty thread');
   assert(mobileHtml.includes('/mobile.js?v=86'), 'Mobile app asset marker must be bumped');
-  assert(serviceWorker.includes('film-shop-personal-note-photos-20261031'), 'Service worker cache must be bumped');
+  assert(serviceWorker.includes('film-shop-personal-note-photo-position-20261031'), 'Service worker cache must be bumped');
   assert.match(appSource, /function capturePageContinuityState\(\)/, 'Desktop refreshes must capture page and nested-scroll positions');
   assert.match(appSource, /function restorePageContinuityState\(snapshot\)/, 'Desktop refreshes must restore page and nested-scroll positions');
   assert.match(appSource, /const unchangedBackgroundRefresh = Boolean\(/, 'Unchanged background refreshes must not rebuild the current page');

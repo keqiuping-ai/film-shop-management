@@ -2260,7 +2260,7 @@ body.modal-lock .prospect-workspace { pointer-events: none; }
 .personal-note-modal-open .dialog { width:min(1180px, calc(100vw - 36px)); }
 .personal-note-editor-grid .personal-note-content-field { grid-column:1 / -1; margin-bottom:0; font-size:14px; font-weight:700; }
 .personal-note-editor-grid #personalNoteContent { width:100%; min-height:390px; box-sizing:border-box; padding:16px 18px; color:var(--text); font-size:18px; line-height:1.65; font-weight:500; }
-.personal-note-photo-editor { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:10px 14px; align-items:center; padding:14px; border:1px dashed #9cc5d2; border-radius:14px; background:#f4fafc; }
+.personal-note-photo-editor { grid-column:1/-1; display:grid; grid-template-columns:minmax(0,1fr) auto; gap:10px 14px; align-items:center; padding:14px; border:1px dashed #78b5c7; border-radius:14px; background:#f4fafc; }
 .personal-note-photo-editor>div:first-child { display:grid; gap:4px; }
 .personal-note-photo-editor>div:first-child span { color:var(--muted); font-size:13px; font-weight:500; }
 .personal-note-photo-picker { position:relative; cursor:pointer; }

@@ -3782,12 +3782,12 @@ function openPersonalNote(noteId = '', forcedType = '') {
       <label id="personalReminderField" class="${type === 'task' ? '' : 'hidden'}">${lang === 'zh' ? '提醒日期和时间' : 'Reminder date and time'}<input id="personalNoteRemindAt" type="datetime-local" value="${localDateTime}"></label>
       <label>${lang === 'zh' ? '分享范围' : 'Sharing'}<select id="personalNoteShareScope" onchange="togglePersonalNoteShareUsers()"><option value="private" ${shareScope === 'private' ? 'selected' : ''}>${lang === 'zh' ? '🔒 仅自己可见' : '🔒 Private'}</option><option value="all" ${shareScope === 'all' ? 'selected' : ''}>${lang === 'zh' ? '👥 分享给全体员工' : '👥 All staff'}</option><option value="users" ${shareScope === 'users' ? 'selected' : ''}>${lang === 'zh' ? '↗ 分享给指定员工' : '↗ Selected staff'}</option></select></label>
       <div id="personalNoteShareUsers" class="span-2 personal-note-share-users ${shareScope === 'users' ? '' : 'hidden'}"><strong>${lang === 'zh' ? '选择接收人' : 'Choose recipients'}</strong><div>${staffOptions || `<span>${lang === 'zh' ? '暂无其他员工账号' : 'No other staff accounts'}</span>`}</div></div>
-      <label class="personal-note-content-field">${lang === 'zh' ? '内容' : 'Details'}<textarea id="personalNoteContent" rows="14" placeholder="${lang === 'zh' ? '记录详细内容、电话、地址或要办的事情……' : 'Write details...'}">${escapeHtml(item.content || '')}</textarea></label>
       <section class="personal-note-photo-editor span-2">
-        <div><strong>${lang === 'zh' ? '照片' : 'Photos'}</strong><span>${lang === 'zh' ? '可在上面的内容框直接按 ⌘V 粘贴截图，也可选择照片；最多 10 张。' : 'Paste screenshots in the details box with ⌘V, or choose photos. Up to 10.'}</span></div>
+        <div><strong>${lang === 'zh' ? '添加照片' : 'Add photos'}</strong><span>${lang === 'zh' ? '点击右侧选择照片，也可在下方内容框按 ⌘V 粘贴截图；最多 10 张。' : 'Choose photos here, or paste screenshots in the details box below with ⌘V. Up to 10.'}</span></div>
         <label class="btn personal-note-photo-picker">＋ ${lang === 'zh' ? '选择照片' : 'Choose photos'}<input id="personalNotePhotoInput" type="file" accept="image/*" multiple onchange="addPersonalNotePhotoFiles(this.files);this.value=''" /></label>
         <div id="personalNotePhotoPreview" class="personal-note-photo-preview"></div>
       </section>
+      <label class="personal-note-content-field">${lang === 'zh' ? '内容' : 'Details'}<textarea id="personalNoteContent" rows="14" placeholder="${lang === 'zh' ? '记录详细内容、电话、地址或要办的事情……' : 'Write details...'}">${escapeHtml(item.content || '')}</textarea></label>
     </div>`, () => savePersonalNote(noteId));
   document.getElementById('modal').classList.add('personal-note-modal-open');
   document.getElementById('personalNoteContent')?.addEventListener('paste', handlePersonalNotePhotoPaste);
