@@ -2311,6 +2311,7 @@ function messageModalHtml(users) {
   const mentionedMe = currentUserHasUnreadMention();
   return `<div class="message-layout">
     <div class="message-people">
+      <button class="message-person" onclick="WebsiteStaff.open()">🌐 <span>网站客户留言 / Website messages</span><strong data-website-count></strong></button>
       <button class="message-person message-group-person ${activeMessageUserId === GROUP_CHAT_ID ? 'active' : ''}" onclick="selectMessageUser('${GROUP_CHAT_ID}')">
         <span class="message-person-identity"><span class="message-group-avatar">群</span><span>${lang === 'zh' ? '全体员工群聊' : 'All Staff Group'}</span></span>
         ${mentionedMe ? `<strong class="message-mention-me">${lang === 'zh' ? '@我' : '@me'}</strong>` : (groupUnread ? `<strong>${groupUnread > 99 ? '99+' : groupUnread}</strong>` : '')}

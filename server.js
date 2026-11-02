@@ -1,3 +1,4 @@
+const websiteMessages = require('./lib/website-messages')({ readDb, writeDb, readBody, send, notifyDataChanged });
 const { createPhoneAssistant } = require('./lib/phone-assistant');
 const customerIdentity = require('./lib/customer-identity');
 const http = require('http');
@@ -9743,6 +9744,8 @@ async function api(req, res) {
 
   if (await recruitingVideoService.handlePublic(req, res, url)) return;
 
+  if (url.pathname === '/api/website-chat' && await websiteMessages(req, res, url, null)) return;
+
   let user = currentUser(req, db);
   if (!user && req.method === 'POST' && url.pathname === '/api/import/prospects') {
     user = prospectImportUser(req);
@@ -9756,6 +9759,8 @@ async function api(req, res) {
     return openEventStream(req, res, eventUser);
   }
   if (!user) return send(res, 401, { error: '请先登录' });
+
+  if (url.pathname === '/api/website-messages' && await websiteMessages(req, res, url, user)) return;
 
   if (await phoneAssistant.adminRoute(req, res, url, user)) return;
 
