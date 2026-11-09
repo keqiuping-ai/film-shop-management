@@ -44,6 +44,8 @@ async function run() {
 
   try {
     await waitForServer();
+    const health = await request('/api/health');
+    assert.equal(health.body.rfidStocktakeApiRevision, '2026-11-08-v1-safe-stocktake');
     const login = await request('/api/login', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email: 'admin@filmshop.local', password: 'admin123' })

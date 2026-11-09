@@ -9684,6 +9684,7 @@ async function api(req, res) {
       ok: true,
       service: 'film-shop-cloud-app',
       customerIdentityRevision: '2026-10-06-v2',
+      rfidStocktakeApiRevision: '2026-11-08-v1-safe-stocktake',
       version: version.version,
       build: version.build,
       port: PORT,
