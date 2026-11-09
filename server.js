@@ -608,6 +608,10 @@ function seedDb() {
     stripeWebhookEvents: [],
     customerCheckoutEvents: [],
     inventoryReservations: [],
+    rfidCatalogItems: [],
+    rfidCatalogImportBatches: [],
+    rfidStocktakeSessions: [],
+    rfidDevices: [],
     salesOrders: [
       { id: id(), date: new Date().toISOString().slice(0, 10), type: 'wholesale-us', customer: 'LA Dealer', salesRep: '', preparedBy: 'System', item: 'CW-TC8870', qty: 200, unitPrice: 3, status: '待出库', shipping: 'UPS Freight', paid: 300 }
     ],
@@ -1172,6 +1176,10 @@ function readDb() {
   if (!Array.isArray(db.stripeWebhookEvents)) db.stripeWebhookEvents = [];
   if (!Array.isArray(db.customerCheckoutEvents)) db.customerCheckoutEvents = [];
   if (!Array.isArray(db.inventoryReservations)) db.inventoryReservations = [];
+  if (!Array.isArray(db.rfidCatalogItems)) db.rfidCatalogItems = [];
+  if (!Array.isArray(db.rfidCatalogImportBatches)) db.rfidCatalogImportBatches = [];
+  if (!Array.isArray(db.rfidStocktakeSessions)) db.rfidStocktakeSessions = [];
+  if (!Array.isArray(db.rfidDevices)) db.rfidDevices = [];
   (db.products || []).forEach(product => {
     product.model = String(product.model || product.sku || '').trim().slice(0, 160);
     product.specification = String(product.specification || product.spec || '').trim().slice(0, 240);
@@ -7736,6 +7744,130 @@ function secureEqualString(a, b) {
   return crypto.timingSafeEqual(left, right);
 }
 
+function isRfidApiPath(pathname) {
+  return pathname === '/api/inventory/rfid-catalog/items'
+    || pathname === '/api/inventory/rfid-catalog/preview'
+    || pathname === '/api/inventory/rfid-catalog/apply'
+    || pathname === '/api/inventory/rfid-receipts'
+    || pathname === '/api/inventory/rfid-receipts/capabilities';
+}
+
+function configuredRfidDevices() {
+  const rows = [];
+  const add = (deviceId, key, branchId = 'los-angeles') => {
+    deviceId = String(deviceId || '').trim().slice(0, 100);
+    key = String(key || '').trim();
+    branchId = String(branchId || 'los-angeles').trim().slice(0, 100);
+    if (deviceId && key && branchId) rows.push({ deviceId, key, branchId });
+  };
+  const raw = String(process.env.RFID_DEVICE_KEYS || '').trim();
+  if (raw) {
+    try {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) parsed.forEach(row => add(row?.deviceId || row?.id, row?.key, row?.branchId));
+      else if (parsed && typeof parsed === 'object') Object.entries(parsed).forEach(([deviceId, value]) => {
+        if (typeof value === 'string') add(deviceId, value);
+        else add(deviceId, value?.key, value?.branchId);
+      });
+    } catch {
+      raw.split(/[\n,;]+/).forEach(entry => {
+        const [deviceId, key, branchId] = entry.split(':');
+        add(deviceId, key, branchId);
+      });
+    }
+  }
+  add(process.env.RFID_DEVICE_ID || 'PDA3109-01', process.env.RFID_DEVICE_KEY, process.env.RFID_DEVICE_BRANCH_ID || 'los-angeles');
+  return rows;
+}
+
+function rfidDeviceUser(req, db, pathname) {
+  if (!isRfidApiPath(pathname)) return null;
+  const providedKey = String(req.headers['x-qeos-device-key'] || req.headers['x-quad-rfid-device-key'] || '').trim();
+  if (!providedKey) return null;
+  const requestedDeviceId = String(req.headers['x-qeos-device-id'] || req.headers['x-quad-rfid-device-id'] || '').trim();
+  let device = configuredRfidDevices().find(row =>
+    (!requestedDeviceId || row.deviceId === requestedDeviceId) && secureEqualString(providedKey, row.key)
+  );
+  if (!device) {
+    const providedHash = crypto.createHash('sha256').update(providedKey).digest('hex');
+    const stored = (db.rfidDevices || []).find(row => row.active !== false
+      && (!requestedDeviceId || row.deviceId === requestedDeviceId)
+      && secureEqualString(providedHash, row.keyHash));
+    if (stored) device = { deviceId: stored.deviceId, branchId: stored.branchId };
+  }
+  if (!device) return null;
+  return {
+    id: `rfid-device:${device.deviceId}`,
+    name: `RFID扫码枪 ${device.deviceId}`,
+    email: '', role: 'rfid-device', active: true, rfidDevice: true,
+    rfidDeviceId: device.deviceId, defaultBranchId: device.branchId, branchIds: [device.branchId]
+  };
+}
+
+function normalizedEpc(value) {
+  return String(value || '').replace(/\s+/g, '').toUpperCase();
+}
+
+function rfidCatalogPlan(db, payload = {}) {
+  const requestId = String(payload.requestId || '').trim().slice(0, 160);
+  const source = String(payload.source || '').trim().slice(0, 500);
+  const sourceSha256 = String(payload.sourceSha256 || '').trim().slice(0, 128);
+  const items = Array.isArray(payload.items) ? payload.items : [];
+  const errors = [];
+  const rows = [];
+  if (!requestId) errors.push('缺少映射批次编号 requestId');
+  if (!items.length) errors.push('映射清单为空');
+  if (items.length > 5000) errors.push('单次最多导入 5000 个标签');
+  const productsBySku = new Map((db.products || []).map(product => [String(product.sku || '').trim(), product]));
+  const branches = new Set((db.settings?.clockLocations || []).map(branch => String(branch.id || '')));
+  const existingByEpc = new Map((db.rfidCatalogItems || []).map(item => [normalizedEpc(item.epc), item]));
+  const seen = new Set();
+  items.slice(0, 5000).forEach((input, index) => {
+    const epc = normalizedEpc(input?.epc || input?.epcCode || input?.code);
+    const sku = String(input?.sku || '').trim();
+    const branchId = String(input?.branchId || payload.branchId || 'los-angeles').trim();
+    const rowErrors = [];
+    if (!/^[0-9A-F]{24}$/.test(epc)) rowErrors.push('EPC 必须是 24 位十六进制');
+    if (seen.has(epc)) rowErrors.push('本批次 EPC 重复');
+    if (epc) seen.add(epc);
+    const product = productsBySku.get(sku);
+    if (!product) rowErrors.push('SKU 不存在于美国商品目录');
+    if (!branches.has(branchId)) rowErrors.push('门店不存在');
+    const existing = existingByEpc.get(epc);
+    let action = 'create';
+    if (existing) {
+      action = existing.sku === sku && existing.branchId === branchId ? 'unchanged' : 'conflict';
+      if (action === 'conflict') rowErrors.push(`EPC 已绑定 ${existing.sku} / ${existing.branchId}`);
+    }
+    rows.push({
+      rowNumber: index + 1, epc, sku, branchId,
+      productId: product?.id || '', productName: product?.name || '', category: product?.category || '',
+      labelName: String(input?.labelName || input?.name || '').trim().slice(0, 300),
+      action, errors: rowErrors
+    });
+  });
+  const invalidRows = rows.filter(row => row.errors.length);
+  if (invalidRows.length) errors.push(`${invalidRows.length} 个标签未通过校验`);
+  const payloadSha256 = crypto.createHash('sha256').update(JSON.stringify(rows.map(row => ({
+    epc: row.epc, sku: row.sku, branchId: row.branchId, labelName: row.labelName
+  })))).digest('hex');
+  return {
+    ok: errors.length === 0, requestId, source, sourceSha256, payloadSha256, rows, errors,
+    totals: {
+      input: rows.length,
+      create: rows.filter(row => row.action === 'create' && !row.errors.length).length,
+      unchanged: rows.filter(row => row.action === 'unchanged' && !row.errors.length).length,
+      conflict: rows.filter(row => row.action === 'conflict').length,
+      invalid: invalidRows.length
+    }
+  };
+}
+
+function rfidScanInputs(body = {}) {
+  const source = Array.isArray(body.scans) ? body.scans : Array.isArray(body.items) ? body.items : Array.isArray(body.epcs) ? body.epcs : [];
+  return source.map(scan => typeof scan === 'string' ? { epc: scan } : (scan || {}));
+}
+
 function prospectImportTokens() {
   return [
     process.env.PROSPECT_IMPORT_TOKEN,
@@ -9747,6 +9879,7 @@ async function api(req, res) {
   if (url.pathname === '/api/website-chat' && await websiteMessages(req, res, url, null)) return;
 
   let user = currentUser(req, db);
+  if (!user) user = rfidDeviceUser(req, db, url.pathname);
   if (!user && req.method === 'POST' && url.pathname === '/api/import/prospects') {
     user = prospectImportUser(req);
   }
@@ -9763,6 +9896,191 @@ async function api(req, res) {
   if (url.pathname === '/api/website-messages' && await websiteMessages(req, res, url, user)) return;
 
   if (await phoneAssistant.adminRoute(req, res, url, user)) return;
+  if (url.pathname === '/api/inventory/rfid-devices' && ['GET', 'POST'].includes(req.method)) {
+    if (user.role !== 'owner' || !canAccess(user, 'inventoryEdit')) return send(res, 403, { error: '只有老板账号可以管理 RFID 扫码枪' });
+    if (req.method === 'GET') {
+      return send(res, 200, {
+        ok: true,
+        devices: (db.rfidDevices || []).map(device => ({
+          id: device.id, deviceId: device.deviceId, name: device.name || '', branchId: device.branchId,
+          active: device.active !== false, createdAt: device.createdAt, updatedAt: device.updatedAt,
+          lastUsedAt: device.lastUsedAt || ''
+        }))
+      });
+    }
+    const body = await readBody(req);
+    const deviceId = String(body.deviceId || '').trim().slice(0, 100);
+    const name = String(body.name || deviceId).trim().slice(0, 160);
+    const branchId = String(body.branchId || 'los-angeles').trim().slice(0, 100);
+    if (!/^[A-Za-z0-9._-]{3,100}$/.test(deviceId)) return send(res, 400, { error: '扫码枪编号只能使用字母、数字、点、横线或下划线' });
+    if (!(db.settings?.clockLocations || []).some(branch => branch.id === branchId)) return send(res, 400, { error: '扫码枪绑定门店不存在' });
+    const existing = (db.rfidDevices || []).find(device => device.deviceId === deviceId);
+    if (existing && body.rotate !== true) return send(res, 409, { error: '扫码枪编号已存在；如需换钥匙请明确提交 rotate=true' });
+    const deviceKey = crypto.randomBytes(32).toString('base64url');
+    const now = new Date().toISOString();
+    const record = existing || { id: id(), deviceId, createdAt: now, createdByUserId: user.id };
+    Object.assign(record, {
+      deviceId, name, branchId, active: true,
+      keyHash: crypto.createHash('sha256').update(deviceKey).digest('hex'),
+      updatedAt: now, updatedByUserId: user.id
+    });
+    if (!existing) db.rfidDevices.push(record);
+    audit(db, user, existing ? 'rotate-rfid-device-key' : 'create-rfid-device', {
+      collection: 'rfidDevices', recordId: record.id, recordLabel: deviceId,
+      detail: `${existing ? '更换' : '创建'} RFID 扫码枪钥匙并绑定 ${branchId}`
+    });
+    writeDb(db);
+    return send(res, 200, {
+      ok: true,
+      device: { id: record.id, deviceId, name, branchId, active: true, updatedAt: now },
+      deviceKey,
+      warning: '此钥匙只显示一次，请立即安全写入扫码 App；系统仅保存哈希值。'
+    });
+  }
+
+  if (req.method === 'GET' && url.pathname === '/api/inventory/rfid-receipts/capabilities') {
+    if (!user.rfidDevice && user.role !== 'owner') return send(res, 403, { error: '没有 RFID 盘点权限' });
+    return send(res, 200, {
+      ok: true,
+      deviceId: user.rfidDeviceId || '',
+      branchId: user.rfidDevice ? user.defaultBranchId : String(url.searchParams.get('branchId') || user.defaultBranchId || 'los-angeles'),
+      modes: ['stocktake'],
+      inventoryMutationEnabled: false,
+      supportsIdempotency: true,
+      supportsCatalogMapping: true,
+      maxScansPerRequest: 5000,
+      message: '第一阶段仅记录盘点，不自动增减库存'
+    });
+  }
+
+  if (req.method === 'GET' && url.pathname === '/api/inventory/rfid-catalog/items') {
+    if (!user.rfidDevice && user.role !== 'owner') return send(res, 403, { error: '没有 RFID 标签目录权限' });
+    const branchId = user.rfidDevice
+      ? user.defaultBranchId
+      : String(url.searchParams.get('branchId') || user.defaultBranchId || 'los-angeles').trim();
+    const items = (db.rfidCatalogItems || [])
+      .filter(item => item.branchId === branchId && item.active !== false)
+      .map(item => ({
+        id: item.id, epc: item.epc, sku: item.sku, productId: item.productId,
+        productName: item.productName, labelName: item.labelName || '', category: item.category || '',
+        branchId: item.branchId, status: item.status || 'mapped', updatedAt: item.updatedAt
+      }));
+    return send(res, 200, { ok: true, branchId, count: items.length, items, catalogItems: items });
+  }
+
+  if (req.method === 'POST' && ['/api/inventory/rfid-catalog/preview', '/api/inventory/rfid-catalog/apply'].includes(url.pathname)) {
+    if (user.role !== 'owner' || !canAccess(user, 'inventoryEdit')) return send(res, 403, { error: '只有老板账号可以导入 RFID 标签映射' });
+    const body = await readBody(req);
+    const plan = rfidCatalogPlan(db, body);
+    if (url.pathname.endsWith('/preview')) return send(res, 200, plan);
+    const existingBatch = (db.rfidCatalogImportBatches || []).find(batch => batch.requestId === plan.requestId);
+    if (existingBatch) {
+      if (existingBatch.payloadSha256 && existingBatch.payloadSha256 !== plan.payloadSha256) {
+        return send(res, 409, { error: '同一 RFID 映射批次编号已用于不同内容，系统拒绝覆盖', requestId: plan.requestId });
+      }
+      return send(res, 200, { ok: true, alreadyApplied: true, inventoryChanged: false, batch: existingBatch });
+    }
+    if (!plan.ok) return send(res, 400, { error: 'RFID 映射预检未通过，系统未保存', ...plan });
+    const workingDb = JSON.parse(JSON.stringify(db));
+    const now = new Date().toISOString();
+    const batchId = id();
+    plan.rows.filter(row => row.action === 'create').forEach(row => {
+      workingDb.rfidCatalogItems.push({
+        id: id(), epc: row.epc, sku: row.sku, productId: row.productId,
+        productName: row.productName, labelName: row.labelName, category: row.category,
+        branchId: row.branchId, status: 'mapped', active: true,
+        source: plan.source, importBatchId: batchId, createdAt: now, updatedAt: now,
+        createdBy: user.name || user.email, createdByUserId: user.id
+      });
+    });
+    fs.mkdirSync(BACKUP_DIR, { recursive: true });
+    const backupFileName = `db-before-rfid-catalog-${now.replace(/[:.]/g, '-')}.json`;
+    fs.copyFileSync(DB_FILE, path.join(BACKUP_DIR, backupFileName));
+    const batch = {
+      id: batchId, requestId: plan.requestId, source: plan.source, sourceSha256: plan.sourceSha256,
+      payloadSha256: plan.payloadSha256,
+      branchIds: [...new Set(plan.rows.map(row => row.branchId))], totals: plan.totals,
+      inventoryChanged: false, backupFileName, appliedAt: now,
+      appliedBy: user.name || user.email, appliedByUserId: user.id
+    };
+    workingDb.rfidCatalogImportBatches.push(batch);
+    audit(workingDb, user, 'import-rfid-catalog-mapping', {
+      collection: 'rfidCatalogItems', recordId: batchId, recordLabel: plan.requestId,
+      detail: `导入 RFID 标签映射 ${plan.totals.create} 条；未增减库存`, snapshot: plan.totals
+    });
+    writeDb(workingDb);
+    notifyDataChanged('import-rfid-catalog-mapping', batchId);
+    return send(res, 200, { ok: true, alreadyApplied: false, inventoryChanged: false, batch });
+  }
+
+  if (req.method === 'POST' && url.pathname === '/api/inventory/rfid-receipts') {
+    if (!user.rfidDevice && user.role !== 'owner') return send(res, 403, { error: '没有 RFID 盘点权限' });
+    const body = await readBody(req);
+    const requestId = String(body.requestId || body.sessionId || body.receiptId || body.clientRequestId || '').trim().slice(0, 160);
+    if (!requestId) return send(res, 400, { error: '缺少 requestId，无法防止扫码结果重复入账' });
+    const scans = rfidScanInputs(body);
+    const payloadSha256 = crypto.createHash('sha256').update(JSON.stringify(scans.map(scan => ({
+      epc: normalizedEpc(scan.epc || scan.epcCode || scan.code || scan.tagId),
+      readCount: Math.max(1, Number(scan.readCount || scan.count || 1)),
+      rssi: Number.isFinite(Number(scan.rssi)) ? Number(scan.rssi) : null
+    })))).digest('hex');
+    const existing = (db.rfidStocktakeSessions || []).find(session => session.requestId === requestId);
+    if (existing) {
+      if (existing.payloadSha256 && existing.payloadSha256 !== payloadSha256) {
+        return send(res, 409, { error: '同一盘点批次编号已用于不同扫描内容，系统拒绝覆盖', requestId });
+      }
+      return send(res, 200, { ok: true, alreadyRecorded: true, inventoryChanged: false, session: existing });
+    }
+    if (!scans.length) return send(res, 400, { error: '没有收到 EPC 扫描数据' });
+    if (scans.length > 5000) return send(res, 400, { error: '单次最多上传 5000 条扫描数据' });
+    const branchId = user.rfidDevice ? user.defaultBranchId : String(body.branchId || user.defaultBranchId || 'los-angeles').trim();
+    const branchExists = (db.settings?.clockLocations || []).some(branch => branch.id === branchId);
+    if (!branchExists) return send(res, 400, { error: '盘点门店不存在' });
+    const catalogByEpc = new Map((db.rfidCatalogItems || []).filter(item => item.active !== false).map(item => [normalizedEpc(item.epc), item]));
+    const seen = new Set();
+    const results = scans.map((scan, index) => {
+      const epc = normalizedEpc(scan.epc || scan.epcCode || scan.code || scan.tagId);
+      const catalogItem = catalogByEpc.get(epc);
+      const duplicate = seen.has(epc);
+      if (epc) seen.add(epc);
+      let status = 'known';
+      if (!/^[0-9A-F]{24}$/.test(epc)) status = 'invalid';
+      else if (duplicate) status = 'duplicate';
+      else if (!catalogItem) status = 'unknown';
+      else if (catalogItem.branchId !== branchId) status = 'wrong-branch';
+      return {
+        index: index + 1, epc, status,
+        sku: catalogItem?.sku || '', productName: catalogItem?.productName || '',
+        expectedBranchId: catalogItem?.branchId || '',
+        readCount: Math.max(1, Number(scan.readCount || scan.count || 1)),
+        rssi: Number.isFinite(Number(scan.rssi)) ? Number(scan.rssi) : null,
+        observedAt: String(scan.observedAt || scan.scannedAt || body.observedAt || new Date().toISOString()).slice(0, 80)
+      };
+    });
+    const totals = {
+      input: results.length,
+      unique: seen.size,
+      known: results.filter(row => row.status === 'known').length,
+      unknown: results.filter(row => row.status === 'unknown').length,
+      wrongBranch: results.filter(row => row.status === 'wrong-branch').length,
+      duplicate: results.filter(row => row.status === 'duplicate').length,
+      invalid: results.filter(row => row.status === 'invalid').length
+    };
+    const now = new Date().toISOString();
+    const session = {
+      id: id(), requestId, payloadSha256, deviceId: user.rfidDeviceId || String(body.deviceId || 'manual-owner'),
+      branchId, mode: 'stocktake', inventoryChanged: false, totals, scans: results,
+      recordedAt: now, recordedBy: user.name || user.email, recordedByUserId: user.id
+    };
+    db.rfidStocktakeSessions.push(session);
+    audit(db, user, 'record-rfid-stocktake', {
+      collection: 'rfidStocktakeSessions', recordId: session.id, recordLabel: requestId,
+      detail: `记录 ${branchId} RFID 盘点：识别 ${totals.known}，未知 ${totals.unknown}；未增减库存`, snapshot: totals
+    });
+    writeDb(db);
+    notifyDataChanged('record-rfid-stocktake', session.id);
+    return send(res, 200, { ok: true, alreadyRecorded: false, inventoryChanged: false, session });
+  }
 
   if (await recruitingVideoService.handleAdmin(req, res, url, user)) return;
   if (await recruitingService.handle(req, res, url, user)) return;
