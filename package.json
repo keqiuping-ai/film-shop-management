@@ -35,6 +35,7 @@
     "test:sales-order-visibility": "node scripts/test-sales-order-role-visibility.js",
     "test:rfid-stocktake": "node scripts/test-rfid-stocktake-api.js",
     "test:rfid-android": "node scripts/test-rfid-android-source.js",
+    "test:rfid-owner-ui": "node scripts/test-rfid-owner-ui-source.js",
     "test:personal-note-photos": "node scripts/test-personal-note-photos.js",
     "test:santa-monica-field-sales-seed": "node scripts/test-santa-monica-field-sales-seed.js",
     "test:clickable-rows": "node scripts/test-clickable-table-rows.js",

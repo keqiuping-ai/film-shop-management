@@ -41,6 +41,9 @@ let pendingStockOutSearch = '';
 let stockOutDocumentSearch = '';
 let stockInDocumentSearch = '';
 let inventoryBranchFilter = localStorage.getItem('filmShopCloud.inventoryBranch') || 'las-vegas';
+let rfidCatalogImportDraft = null;
+let rfidCatalogPreview = null;
+let rfidDeviceRows = [];
 let ownerBranchFilter = localStorage.getItem('filmShopCloud.ownerBranch') || 'las-vegas';
 if (!localStorage.getItem('filmShopCloud.branchScopeDefaultV2')) {
   ownerBranchFilter = 'las-vegas';
@@ -5908,7 +5911,7 @@ const views = {
   },
   inventory() {
     const adjustmentAction = user?.role === 'owner' && hasPerm('inventoryEdit')
-      ? `<button class="btn" onclick="openInventoryAdjustmentImport()">${lang === 'zh' ? '导入盘点调整' : 'Import count adjustment'}</button>`
+      ? `<button class="btn" onclick="openRfidManagement()">${lang === 'zh' ? 'RFID扫码枪与标签' : 'RFID scanners & tags'}</button><button class="btn" onclick="openInventoryAdjustmentImport()">${lang === 'zh' ? '导入盘点调整' : 'Import count adjustment'}</button>`
       : '';
     return `${panel(lang === 'zh' ? '分店库存范围' : 'Inventory Scope', adjustmentAction, `${inventoryBranchControls()}<p class="note">${lang === 'zh' ? '公司总库存是控制总账；各分店是明细账；无法可靠判断的历史库存只进入“待确认分店”。' : 'Company inventory is the control total. Unknown historical allocations remain pending.'}</p>`)}
     <div class="panel inventory-document-panel"><div class="panel-head"><div><h3>${lang === 'zh' ? '库存单' : 'Inventory List'}</h3><p class="note">${lang === 'zh' ? '当前库存总表；默认显示约 5 条，更多商品请搜索或在表内滚动。' : 'Current stock. About five rows are visible; search or scroll inside the table for more.'}</p></div>${hasPerm('inventoryEdit') ? `<button class="btn primary" onclick="openProduct()">${t('addNew')}</button>` : ''}</div>${inventorySearchBox()}<div id="inventorySearchResults">${productTable(searchedProducts(), true, 'inventory-stock-table-scroll')}</div></div>
@@ -6901,6 +6904,106 @@ function openInventoryAdjustmentImport() {
     }
   };
   input.click();
+}
+
+function rfidManagementHtml() {
+  const preview = rfidCatalogPreview;
+  const totals = preview?.totals || {};
+  const devices = rfidDeviceRows.map(device => `<tr><td>${escapeHtml(device.deviceId)}</td><td>${escapeHtml(device.name || '—')}</td><td>${escapeHtml(device.branchId || '—')}</td><td>${device.active === false ? (lang === 'zh' ? '已停用' : 'Inactive') : (lang === 'zh' ? '启用' : 'Active')}</td><td>${escapeHtml(formatAppDateTime(device.lastUsedAt) || (lang === 'zh' ? '尚未连接' : 'Never connected'))}</td></tr>`).join('');
+  const previewRows = Array.isArray(preview?.rows) ? preview.rows : [];
+  const errors = previewRows.filter(row => Array.isArray(row.errors) && row.errors.length);
+  return `<div class="inventory-document-detail">
+    <section class="inventory-document-section"><h3>${lang === 'zh' ? '洛杉矶 RFID 标签目录' : 'Los Angeles RFID tag catalog'}</h3>
+      <p class="note">${lang === 'zh' ? '先选择系统生成的 JSON 对应表并预检；正式导入只保存 EPC 与 SKU 的对应关系，不会增加、扣减或调整任何库存数量。' : 'Choose the generated JSON mapping and preview it first. Applying the mapping only saves EPC-to-SKU links and never changes inventory quantities.'}</p>
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><input id="rfidCatalogFile" type="file" accept="application/json,.json" onchange="previewRfidCatalogFile(this)"><button id="rfidCatalogApplyButton" class="btn primary" type="button" onclick="applyRfidCatalogImport()" ${preview?.ok ? '' : 'disabled'}>${lang === 'zh' ? '确认导入标签对应关系' : 'Apply tag mapping'}</button></div>
+      ${preview ? `<div class="inventory-document-summary" style="margin-top:12px"><div><span>${lang === 'zh' ? '批次' : 'Batch'}</span><strong>${escapeHtml(preview.requestId || '—')}</strong></div><div><span>${lang === 'zh' ? '总标签' : 'Total tags'}</span><strong>${Number(totals.input || previewRows.length || 0)}</strong></div><div><span>${lang === 'zh' ? '新增' : 'Create'}</span><strong>${Number(totals.create || 0)}</strong></div><div><span>${lang === 'zh' ? '已存在' : 'Existing'}</span><strong>${Number(totals.unchanged || 0)}</strong></div><div><span>${lang === 'zh' ? '错误' : 'Errors'}</span><strong class="${errors.length ? 'bad-text' : 'good-text'}">${errors.length}</strong></div><div><span>${lang === 'zh' ? '库存变化' : 'Inventory change'}</span><strong class="good-text">0</strong></div></div>${errors.length ? `<p class="bad-text">${escapeHtml(errors.slice(0, 5).map(row => `${row.epc || row.sku || '#'}: ${(row.errors || []).join('、')}`).join('；'))}</p>` : `<p class="good-text">${lang === 'zh' ? '预检通过，可以安全导入。库存数量不会变化。' : 'Preview passed. Safe to apply; inventory quantities will not change.'}</p>`}` : ''}
+    </section>
+    <section class="inventory-document-section"><h3>${lang === 'zh' ? '扫码枪设备' : 'Scanner devices'}</h3>
+      <p class="note">${lang === 'zh' ? '设备密钥只显示一次。生成后请立即在扫码枪 App 的“设备密钥”中录入。' : 'A device key is shown only once. Enter it immediately in the scanner app.'}</p>
+      <div style="display:grid;grid-template-columns:minmax(180px,1fr) minmax(220px,2fr) auto;gap:10px;align-items:end"><label>${lang === 'zh' ? '设备编号' : 'Device ID'}<input id="rfidDeviceId" value="PDA3109-01"></label><label>${lang === 'zh' ? '设备名称' : 'Device name'}<input id="rfidDeviceName" value="洛杉矶扫码枪 PDA3109-01"></label><button class="btn primary" type="button" onclick="createRfidDeviceKey()">${lang === 'zh' ? '生成一次性设备密钥' : 'Generate one-time key'}</button></div>
+      <div id="rfidOneTimeKey" style="margin-top:12px"></div>
+      <div class="table-wrap" style="margin-top:12px"><table><thead><tr><th>${lang === 'zh' ? '设备编号' : 'Device ID'}</th><th>${lang === 'zh' ? '名称' : 'Name'}</th><th>${lang === 'zh' ? '分店' : 'Branch'}</th><th>${lang === 'zh' ? '状态' : 'Status'}</th><th>${lang === 'zh' ? '最后连接' : 'Last used'}</th></tr></thead><tbody>${devices || `<tr><td colspan="5" class="note">${lang === 'zh' ? '尚未建立扫码枪设备。' : 'No scanner device has been enrolled.'}</td></tr>`}</tbody></table></div>
+    </section>
+  </div>`;
+}
+
+async function openRfidManagement() {
+  rfidCatalogImportDraft = null;
+  rfidCatalogPreview = null;
+  try {
+    const result = await api('/api/inventory/rfid-devices');
+    rfidDeviceRows = Array.isArray(result.devices) ? result.devices : [];
+    openModal(lang === 'zh' ? 'RFID扫码枪与标签' : 'RFID scanners & tags', rfidManagementHtml(), closeModal);
+    const save = document.getElementById('modalSave');
+    if (save) save.textContent = lang === 'zh' ? '关闭' : 'Close';
+  } catch (error) { alert(error.message); }
+}
+
+function refreshRfidManagementModal() {
+  const body = document.getElementById('modalBody');
+  if (body) body.innerHTML = rfidManagementHtml();
+}
+
+async function previewRfidCatalogFile(input) {
+  const file = input?.files?.[0];
+  if (!file) return;
+  try {
+    const payload = JSON.parse(await file.text());
+    const preview = await api('/api/inventory/rfid-catalog/preview', { method:'POST', timeoutMs:120000, body:JSON.stringify(payload) });
+    rfidCatalogImportDraft = payload;
+    rfidCatalogPreview = preview;
+    refreshRfidManagementModal();
+  } catch (error) {
+    rfidCatalogImportDraft = null;
+    rfidCatalogPreview = null;
+    alert(`${lang === 'zh' ? 'RFID 对应表读取失败' : 'Could not read RFID mapping'}：${error.message}`);
+  }
+}
+
+async function applyRfidCatalogImport() {
+  if (!rfidCatalogImportDraft || !rfidCatalogPreview?.ok) return alert(lang === 'zh' ? '请先选择并通过预检。' : 'Choose a mapping file and pass preview first.');
+  const button = document.getElementById('rfidCatalogApplyButton');
+  if (button) button.disabled = true;
+  try {
+    const result = await api('/api/inventory/rfid-catalog/apply', { method:'POST', timeoutMs:120000, body:JSON.stringify(rfidCatalogImportDraft) });
+    showActionFeedback(result.alreadyApplied
+      ? (lang === 'zh' ? '这个标签批次已经导入过，系统没有重复写入，也没有改变库存。' : 'This tag batch was already imported; nothing was duplicated and inventory was unchanged.')
+      : (lang === 'zh' ? `已导入 ${Number(result.batch?.totals?.create || 0)} 个标签对应关系；库存数量未改变。` : `Imported ${Number(result.batch?.totals?.create || 0)} tag mappings; inventory quantities were unchanged.`));
+    rfidCatalogPreview = await api('/api/inventory/rfid-catalog/preview', { method:'POST', timeoutMs:120000, body:JSON.stringify(rfidCatalogImportDraft) });
+    refreshRfidManagementModal();
+  } catch (error) {
+    if (button) button.disabled = false;
+    alert(error.message);
+  }
+}
+
+async function createRfidDeviceKey() {
+  const deviceId = String(document.getElementById('rfidDeviceId')?.value || '').trim();
+  const name = String(document.getElementById('rfidDeviceName')?.value || deviceId).trim();
+  if (!deviceId) return alert(lang === 'zh' ? '请输入设备编号。' : 'Enter a device ID.');
+  const existing = rfidDeviceRows.find(row => row.deviceId === deviceId);
+  const rotate = Boolean(existing);
+  if (rotate && !confirm(lang === 'zh' ? '这个设备编号已经存在。继续会更换密钥，旧密钥立即失效。是否继续？' : 'This device already exists. Continuing rotates its key and immediately invalidates the old key. Continue?')) return;
+  try {
+    const result = await api('/api/inventory/rfid-devices', { method:'POST', body:JSON.stringify({ deviceId, name, branchId:'los-angeles', rotate }) });
+    const keyBox = document.getElementById('rfidOneTimeKey');
+    if (keyBox) keyBox.innerHTML = `<div class="safety-note"><strong>${lang === 'zh' ? '一次性设备密钥（只显示这一次）' : 'One-time device key (shown once)'}</strong><textarea id="rfidGeneratedDeviceKey" rows="3" readonly>${escapeHtml(result.deviceKey || '')}</textarea><button class="btn" type="button" onclick="copyRfidDeviceKey()">${lang === 'zh' ? '复制密钥' : 'Copy key'}</button></div>`;
+    const devices = await api('/api/inventory/rfid-devices');
+    rfidDeviceRows = Array.isArray(devices.devices) ? devices.devices : [];
+    showActionFeedback(lang === 'zh' ? '设备密钥已生成，请立即写入扫码枪。' : 'Device key generated. Enter it in the scanner now.');
+  } catch (error) { alert(error.message); }
+}
+
+async function copyRfidDeviceKey() {
+  const value = String(document.getElementById('rfidGeneratedDeviceKey')?.value || '');
+  if (!value) return;
+  try {
+    await navigator.clipboard.writeText(value);
+    showActionFeedback(lang === 'zh' ? '设备密钥已复制。' : 'Device key copied.');
+  } catch {
+    document.getElementById('rfidGeneratedDeviceKey')?.select();
+    alert(lang === 'zh' ? '请按 Command+C 复制设备密钥。' : 'Press Command+C to copy the device key.');
+  }
 }
 
 function branchTransferTable() {
