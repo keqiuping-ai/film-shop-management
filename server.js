@@ -7744,6 +7744,17 @@ function secureEqualString(a, b) {
   return crypto.timingSafeEqual(left, right);
 }
 
+function rfidPairingHash(code, salt) {
+  return crypto.scryptSync(String(code || ''), String(salt || ''), 32).toString('hex');
+}
+
+function clearRfidPairing(record) {
+  delete record.pairingCodeHash;
+  delete record.pairingCodeSalt;
+  delete record.pairingCodeExpiresAt;
+  delete record.pairingCodeAttempts;
+}
+
 function isRfidApiPath(pathname) {
   return pathname === '/api/inventory/rfid-catalog/items'
     || pathname === '/api/inventory/rfid-catalog/preview'
@@ -9684,7 +9695,7 @@ async function api(req, res) {
       ok: true,
       service: 'film-shop-cloud-app',
       customerIdentityRevision: '2026-10-06-v2',
-      rfidStocktakeApiRevision: '2026-11-08-v1-safe-stocktake',
+      rfidStocktakeApiRevision: '2026-11-10-v2-short-code-pairing',
       version: version.version,
       build: version.build,
       port: PORT,
@@ -9879,6 +9890,46 @@ async function api(req, res) {
 
   if (url.pathname === '/api/website-chat' && await websiteMessages(req, res, url, null)) return;
 
+  if (req.method === 'POST' && url.pathname === '/api/inventory/rfid-devices/activate') {
+    const body = await readBody(req);
+    const deviceId = String(body.deviceId || '').trim().slice(0, 100);
+    const activationCode = String(body.activationCode || body.code || '').trim();
+    const record = (db.rfidDevices || []).find(device => device.active !== false && device.deviceId === deviceId);
+    const invalid = () => send(res, 401, { error: '激活码无效、已使用或已过期，请在老板端重新生成' });
+    if (!record || !/^\d{6}$/.test(activationCode) || !record.pairingCodeHash || !record.pairingCodeSalt) return invalid();
+    if (!record.pairingCodeExpiresAt || Date.parse(record.pairingCodeExpiresAt) <= Date.now()) {
+      clearRfidPairing(record);
+      writeDb(db);
+      return invalid();
+    }
+    record.pairingCodeAttempts = Number(record.pairingCodeAttempts || 0) + 1;
+    if (record.pairingCodeAttempts > 10) {
+      clearRfidPairing(record);
+      writeDb(db);
+      return send(res, 429, { error: '激活尝试次数过多，请在老板端重新生成激活码' });
+    }
+    const candidateHash = rfidPairingHash(activationCode, record.pairingCodeSalt);
+    if (!secureEqualString(candidateHash, record.pairingCodeHash)) {
+      writeDb(db);
+      return invalid();
+    }
+    const deviceKey = crypto.randomBytes(32).toString('base64url');
+    const now = new Date().toISOString();
+    record.keyHash = crypto.createHash('sha256').update(deviceKey).digest('hex');
+    record.activatedAt = now;
+    record.updatedAt = now;
+    clearRfidPairing(record);
+    audit(db, { id: `rfid-device:${deviceId}`, name: `RFID扫码枪 ${deviceId}` }, 'activate-rfid-device', {
+      collection: 'rfidDevices', recordId: record.id, recordLabel: deviceId,
+      detail: `RFID 扫码枪使用一次性短码完成激活并绑定 ${record.branchId}`
+    });
+    writeDb(db);
+    return send(res, 200, {
+      ok: true, deviceId, branchId: record.branchId, deviceKey,
+      warning: '激活码已作废；设备密钥仅返回本次，请立即安全保存在扫码枪。'
+    });
+  }
+
   let user = currentUser(req, db);
   if (!user) user = rfidDeviceUser(req, db, url.pathname);
   if (!user && req.method === 'POST' && url.pathname === '/api/import/prospects') {
@@ -9936,6 +9987,42 @@ async function api(req, res) {
       device: { id: record.id, deviceId, name, branchId, active: true, updatedAt: now },
       deviceKey,
       warning: '此钥匙只显示一次，请立即安全写入扫码 App；系统仅保存哈希值。'
+    });
+  }
+
+  if (req.method === 'POST' && url.pathname === '/api/inventory/rfid-devices/pairing-code') {
+    if (user.role !== 'owner' || !canAccess(user, 'inventoryEdit')) return send(res, 403, { error: '只有老板账号可以生成 RFID 激活码' });
+    const body = await readBody(req);
+    const deviceId = String(body.deviceId || '').trim().slice(0, 100);
+    const name = String(body.name || deviceId).trim().slice(0, 160);
+    const branchId = String(body.branchId || 'los-angeles').trim().slice(0, 100);
+    if (!/^[A-Za-z0-9._-]{3,100}$/.test(deviceId)) return send(res, 400, { error: '扫码枪编号只能使用字母、数字、点、横线或下划线' });
+    if (!(db.settings?.clockLocations || []).some(branch => branch.id === branchId)) return send(res, 400, { error: '扫码枪绑定门店不存在' });
+    const now = new Date();
+    const activationCode = String(crypto.randomInt(0, 1000000)).padStart(6, '0');
+    const pairingCodeSalt = crypto.randomBytes(16).toString('hex');
+    const existing = (db.rfidDevices || []).find(device => device.deviceId === deviceId);
+    const record = existing || { id: id(), deviceId, createdAt: now.toISOString(), createdByUserId: user.id };
+    Object.assign(record, {
+      deviceId, name, branchId, active: true,
+      pairingCodeHash: rfidPairingHash(activationCode, pairingCodeSalt),
+      pairingCodeSalt,
+      pairingCodeExpiresAt: new Date(now.getTime() + 10 * 60 * 1000).toISOString(),
+      pairingCodeAttempts: 0,
+      updatedAt: now.toISOString(), updatedByUserId: user.id
+    });
+    if (!existing) db.rfidDevices.push(record);
+    audit(db, user, 'create-rfid-pairing-code', {
+      collection: 'rfidDevices', recordId: record.id, recordLabel: deviceId,
+      detail: `为 RFID 扫码枪生成 10 分钟一次性激活码并绑定 ${branchId}`
+    });
+    writeDb(db);
+    return send(res, 200, {
+      ok: true,
+      device: { id: record.id, deviceId, name, branchId, active: true, updatedAt: record.updatedAt },
+      activationCode,
+      expiresAt: record.pairingCodeExpiresAt,
+      warning: '激活码 10 分钟内有效，只能成功使用一次，最多尝试 10 次。'
     });
   }
 

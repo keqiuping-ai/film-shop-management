@@ -44,8 +44,19 @@ public final class RfidApiClient {
         return request("POST", "/api/inventory/rfid-receipts", body);
     }
 
+    public JSONObject activate(String activationCode) throws Exception {
+        JSONObject body = new JSONObject();
+        body.put("deviceId", deviceId);
+        body.put("activationCode", activationCode);
+        return request("POST", "/api/inventory/rfid-devices/activate", body, false);
+    }
+
     private JSONObject request(String method, String pathname, JSONObject body) throws Exception {
-        if (!deviceKey.matches("[A-Za-z0-9_-]{40,128}")) {
+        return request(method, pathname, body, true);
+    }
+
+    private JSONObject request(String method, String pathname, JSONObject body, boolean authenticated) throws Exception {
+        if (authenticated && !deviceKey.matches("[A-Za-z0-9_-]{40,128}")) {
             throw new IllegalStateException("设备密钥未设置或格式不正确");
         }
         HttpsURLConnection connection = (HttpsURLConnection) new URL(BASE_URL + pathname).openConnection();
@@ -54,8 +65,10 @@ public final class RfidApiClient {
         connection.setReadTimeout(20000);
         connection.setRequestMethod(method);
         connection.setRequestProperty("Accept", "application/json");
-        connection.setRequestProperty("X-QEOS-Device-Key", deviceKey);
-        connection.setRequestProperty("X-QEOS-Device-Id", deviceId);
+        if (authenticated) {
+            connection.setRequestProperty("X-QEOS-Device-Key", deviceKey);
+            connection.setRequestProperty("X-QEOS-Device-Id", deviceId);
+        }
         if (body != null) {
             byte[] bytes = body.toString().getBytes(StandardCharsets.UTF_8);
             connection.setRequestProperty("Content-Type", "application/json; charset=utf-8");

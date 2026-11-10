@@ -45,7 +45,7 @@ async function run() {
   try {
     await waitForServer();
     const health = await request('/api/health');
-    assert.equal(health.body.rfidStocktakeApiRevision, '2026-11-08-v1-safe-stocktake');
+    assert.equal(health.body.rfidStocktakeApiRevision, '2026-11-10-v2-short-code-pairing');
     const login = await request('/api/login', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email: 'admin@filmshop.local', password: 'admin123' })
@@ -63,6 +63,28 @@ async function run() {
       body: JSON.stringify({ deviceId: 'PDA3109-01', branchId: 'los-angeles' })
     });
     assert.equal(duplicateEnrollment.response.status, 409, 'Existing device id must not silently rotate its key');
+    const pairing = await request('/api/inventory/rfid-devices/pairing-code', {
+      method: 'POST', headers: ownerHeaders,
+      body: JSON.stringify({ deviceId: 'PDA3109-01', name: 'Los Angeles PDA3109', branchId: 'los-angeles' })
+    });
+    assert.equal(pairing.response.status, 200, JSON.stringify(pairing.body));
+    assert.match(pairing.body.activationCode || '', /^\d{6}$/, 'Pairing must generate a six-digit activation code');
+    const wrongActivation = await request('/api/inventory/rfid-devices/activate', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ deviceId: 'PDA3109-01', activationCode: pairing.body.activationCode === '000000' ? '000001' : '000000' })
+    });
+    assert.equal(wrongActivation.response.status, 401, 'Wrong activation code must be rejected');
+    const activated = await request('/api/inventory/rfid-devices/activate', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ deviceId: 'PDA3109-01', activationCode: pairing.body.activationCode })
+    });
+    assert.equal(activated.response.status, 200, JSON.stringify(activated.body));
+    assert.match(activated.body.deviceKey || '', /^[A-Za-z0-9_-]{40,}$/, 'Activation must return a device key once');
+    const replayActivation = await request('/api/inventory/rfid-devices/activate', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ deviceId: 'PDA3109-01', activationCode: pairing.body.activationCode })
+    });
+    assert.equal(replayActivation.response.status, 401, 'Activation code must be single-use');
     const before = JSON.parse(fs.readFileSync(path.join(dataDir, 'db.json'), 'utf8'));
     const sku = before.products[0].sku;
     const requestId = `rfid-map-${Date.now()}`;
@@ -99,7 +121,7 @@ async function run() {
     assert.equal(unauthorized.response.status, 401);
     const deviceHeaders = {
       'Content-Type': 'application/json',
-      'X-QEOS-Device-Key': enrolled.body.deviceKey,
+      'X-QEOS-Device-Key': activated.body.deviceKey,
       'X-QEOS-Device-Id': 'PDA3109-01'
     };
     const capabilities = await request('/api/inventory/rfid-receipts/capabilities', { headers: deviceHeaders });
@@ -148,6 +170,8 @@ async function run() {
     assert.equal(after.rfidStocktakeSessions.length, 1);
     assert.equal(after.rfidDevices.length, 1);
     assert(!JSON.stringify(after.rfidDevices).includes(enrolled.body.deviceKey), 'Plaintext device key must never be stored');
+    assert(!JSON.stringify(after.rfidDevices).includes(activated.body.deviceKey), 'Activated plaintext device key must never be stored');
+    assert(!JSON.stringify(after.rfidDevices).includes(pairing.body.activationCode), 'Plaintext activation code must never be stored');
     assert(fs.readdirSync(path.join(dataDir, 'backups')).some(name => name.startsWith('db-before-rfid-catalog-')),
       'RFID catalog apply must create a database backup');
 

@@ -17,10 +17,10 @@ hardware vendor's official UHF-G SDK project and uses the QUAD production API.
 
 1. The owner imports the reviewed 299 EPC-to-SKU mappings through the server's
    preview and apply endpoints.
-2. The owner creates device `PDA3109-01`, bound to branch `los-angeles`, and
-   copies the one-time device key.
+2. The owner creates a 6-digit activation code for device `PDA3109-01`, bound
+   to branch `los-angeles`. The code expires in 10 minutes and works once.
 3. Install the pilot APK on the handheld reader.
-4. Open **盘点**, tap **设备密钥**, paste the key, and save it.
+4. Open **盘点**, tap **设备密钥**, enter the 6-digit code, and activate it.
 5. Tap **同步299个标签**. Do not scan until the status shows 299 mappings.
 6. Clear the scan list, scan one physical area, then tap **上传盘点**.
 7. Review the saved stocktake in the management system before making any

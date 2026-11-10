@@ -6919,8 +6919,9 @@ function rfidManagementHtml() {
       ${preview ? `<div class="inventory-document-summary" style="margin-top:12px"><div><span>${lang === 'zh' ? '批次' : 'Batch'}</span><strong>${escapeHtml(preview.requestId || '—')}</strong></div><div><span>${lang === 'zh' ? '总标签' : 'Total tags'}</span><strong>${Number(totals.input || previewRows.length || 0)}</strong></div><div><span>${lang === 'zh' ? '新增' : 'Create'}</span><strong>${Number(totals.create || 0)}</strong></div><div><span>${lang === 'zh' ? '已存在' : 'Existing'}</span><strong>${Number(totals.unchanged || 0)}</strong></div><div><span>${lang === 'zh' ? '错误' : 'Errors'}</span><strong class="${errors.length ? 'bad-text' : 'good-text'}">${errors.length}</strong></div><div><span>${lang === 'zh' ? '库存变化' : 'Inventory change'}</span><strong class="good-text">0</strong></div></div>${errors.length ? `<p class="bad-text">${escapeHtml(errors.slice(0, 5).map(row => `${row.epc || row.sku || '#'}: ${(row.errors || []).join('、')}`).join('；'))}</p>` : `<p class="good-text">${lang === 'zh' ? '预检通过，可以安全导入。库存数量不会变化。' : 'Preview passed. Safe to apply; inventory quantities will not change.'}</p>`}` : ''}
     </section>
     <section class="inventory-document-section"><h3>${lang === 'zh' ? '扫码枪设备' : 'Scanner devices'}</h3>
-      <p class="note">${lang === 'zh' ? '设备密钥只显示一次。生成后请立即在扫码枪 App 的“设备密钥”中录入。' : 'A device key is shown only once. Enter it immediately in the scanner app.'}</p>
-      <div style="display:grid;grid-template-columns:minmax(180px,1fr) minmax(220px,2fr) auto;gap:10px;align-items:end"><label>${lang === 'zh' ? '设备编号' : 'Device ID'}<input id="rfidDeviceId" value="PDA3109-01"></label><label>${lang === 'zh' ? '设备名称' : 'Device name'}<input id="rfidDeviceName" value="洛杉矶扫码枪 PDA3109-01"></label><button class="btn primary" type="button" onclick="createRfidDeviceKey()">${lang === 'zh' ? '生成一次性设备密钥' : 'Generate one-time key'}</button></div>
+      <p class="note">${lang === 'zh' ? '生成6位激活码后，在扫码枪 App 的“设备密钥”窗口直接输入。激活码10分钟内有效、只能成功使用一次。' : 'Generate a 6-digit activation code and enter it in the scanner app. The code expires in 10 minutes and can be used successfully only once.'}</p>
+      <div style="display:grid;grid-template-columns:minmax(180px,1fr) minmax(220px,2fr) auto;gap:10px;align-items:end"><label>${lang === 'zh' ? '设备编号' : 'Device ID'}<input id="rfidDeviceId" value="PDA3109-01"></label><label>${lang === 'zh' ? '设备名称' : 'Device name'}<input id="rfidDeviceName" value="洛杉矶扫码枪 PDA3109-01"></label><button class="btn primary" type="button" onclick="createRfidPairingCode()">${lang === 'zh' ? '生成6位激活码' : 'Generate 6-digit code'}</button></div>
+      <p style="margin:12px 0 0"><a class="btn" href="/downloads/quad-rfid-stocktake-v1.0.1.apk" target="_blank" rel="noopener">${lang === 'zh' ? '下载扫码枪 App v1.0.1' : 'Download scanner app v1.0.1'}</a></p>
       <div id="rfidOneTimeKey" style="margin-top:12px"></div>
       <div class="table-wrap" style="margin-top:12px"><table><thead><tr><th>${lang === 'zh' ? '设备编号' : 'Device ID'}</th><th>${lang === 'zh' ? '名称' : 'Name'}</th><th>${lang === 'zh' ? '分店' : 'Branch'}</th><th>${lang === 'zh' ? '状态' : 'Status'}</th><th>${lang === 'zh' ? '最后连接' : 'Last used'}</th></tr></thead><tbody>${devices || `<tr><td colspan="5" class="note">${lang === 'zh' ? '尚未建立扫码枪设备。' : 'No scanner device has been enrolled.'}</td></tr>`}</tbody></table></div>
     </section>
@@ -6977,33 +6978,18 @@ async function applyRfidCatalogImport() {
   }
 }
 
-async function createRfidDeviceKey() {
+async function createRfidPairingCode() {
   const deviceId = String(document.getElementById('rfidDeviceId')?.value || '').trim();
   const name = String(document.getElementById('rfidDeviceName')?.value || deviceId).trim();
   if (!deviceId) return alert(lang === 'zh' ? '请输入设备编号。' : 'Enter a device ID.');
-  const existing = rfidDeviceRows.find(row => row.deviceId === deviceId);
-  const rotate = Boolean(existing);
-  if (rotate && !confirm(lang === 'zh' ? '这个设备编号已经存在。继续会更换密钥，旧密钥立即失效。是否继续？' : 'This device already exists. Continuing rotates its key and immediately invalidates the old key. Continue?')) return;
   try {
-    const result = await api('/api/inventory/rfid-devices', { method:'POST', body:JSON.stringify({ deviceId, name, branchId:'los-angeles', rotate }) });
+    const result = await api('/api/inventory/rfid-devices/pairing-code', { method:'POST', body:JSON.stringify({ deviceId, name, branchId:'los-angeles' }) });
     const keyBox = document.getElementById('rfidOneTimeKey');
-    if (keyBox) keyBox.innerHTML = `<div class="safety-note"><strong>${lang === 'zh' ? '一次性设备密钥（只显示这一次）' : 'One-time device key (shown once)'}</strong><textarea id="rfidGeneratedDeviceKey" rows="3" readonly>${escapeHtml(result.deviceKey || '')}</textarea><button class="btn" type="button" onclick="copyRfidDeviceKey()">${lang === 'zh' ? '复制密钥' : 'Copy key'}</button></div>`;
+    if (keyBox) keyBox.innerHTML = `<div class="safety-note"><strong>${lang === 'zh' ? '扫码枪6位激活码' : '6-digit scanner activation code'}</strong><div style="font-size:42px;font-weight:800;letter-spacing:10px;margin:12px 0">${escapeHtml(result.activationCode || '')}</div><span>${lang === 'zh' ? '请在10分钟内输入扫码枪；成功后立即作废。' : 'Enter this on the scanner within 10 minutes. It expires immediately after successful use.'}</span></div>`;
     const devices = await api('/api/inventory/rfid-devices');
     rfidDeviceRows = Array.isArray(devices.devices) ? devices.devices : [];
-    showActionFeedback(lang === 'zh' ? '设备密钥已生成，请立即写入扫码枪。' : 'Device key generated. Enter it in the scanner now.');
+    showActionFeedback(lang === 'zh' ? '6位激活码已生成，请在10分钟内输入扫码枪。' : '6-digit code generated. Enter it on the scanner within 10 minutes.');
   } catch (error) { alert(error.message); }
-}
-
-async function copyRfidDeviceKey() {
-  const value = String(document.getElementById('rfidGeneratedDeviceKey')?.value || '');
-  if (!value) return;
-  try {
-    await navigator.clipboard.writeText(value);
-    showActionFeedback(lang === 'zh' ? '设备密钥已复制。' : 'Device key copied.');
-  } catch {
-    document.getElementById('rfidGeneratedDeviceKey')?.select();
-    alert(lang === 'zh' ? '请按 Command+C 复制设备密钥。' : 'Press Command+C to copy the device key.');
-  }
 }
 
 function branchTransferTable() {

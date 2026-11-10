@@ -376,18 +376,46 @@ public class InventoryFragment extends BaseFragment {
         final EditText input = new EditText(mainActivity);
         input.setSingleLine(true);
         input.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
-        input.setHint("粘贴老板端生成的一次性设备密钥");
-        input.setText(mainActivity.mSharedPreferences.getString("quad_rfid_device_key", ""));
+        input.setHint("输入老板端生成的6位激活码");
         new AlertDialog.Builder(mainActivity)
-                .setTitle("洛杉矶扫码枪设备密钥")
-                .setMessage("设备编号固定为 PDA3109-01。密钥只用于 QUAD 美国系统。")
+                .setTitle("激活洛杉矶扫码枪")
+                .setMessage("设备编号固定为 PDA3109-01。请输入老板端生成的6位激活码；也兼容原来的长密钥。")
                 .setView(input)
                 .setNegativeButton("取消", null)
-                .setPositiveButton("保存", (dialog, which) -> {
+                .setPositiveButton("激活/保存", (dialog, which) -> {
                     String key = input.getText().toString().trim();
-                    mainActivity.mSharedPreferences.edit().putString("quad_rfid_device_key", key).apply();
-                    updateRfidStatus(key.matches("[A-Za-z0-9_-]{40,128}") ? "设备密钥已保存" : "设备密钥格式不正确");
+                    if (key.matches("\\d{6}")) {
+                        activateWithCode(key);
+                    } else if (key.matches("[A-Za-z0-9_-]{40,128}")) {
+                        mainActivity.mSharedPreferences.edit().putString("quad_rfid_device_key", key).apply();
+                        updateRfidStatus("设备密钥已保存");
+                    } else {
+                        updateRfidStatus("请输入6位激活码");
+                    }
                 }).show();
+    }
+
+    private void activateWithCode(String activationCode) {
+        setNetworkButtons(false);
+        updateRfidStatus("正在使用6位激活码连接 QUAD 美国系统…");
+        networkExecutor.execute(() -> {
+            try {
+                JSONObject response = new RfidApiClient("PDA3109-01", "").activate(activationCode);
+                String deviceKey = response.optString("deviceKey", "").trim();
+                if (!deviceKey.matches("[A-Za-z0-9_-]{40,128}")) throw new IllegalStateException("服务器没有返回有效设备密钥");
+                mainActivity.mSharedPreferences.edit().putString("quad_rfid_device_key", deviceKey).apply();
+                new RfidApiClient("PDA3109-01", deviceKey).capabilities();
+                runOnUiThread(() -> {
+                    setNetworkButtons(true);
+                    updateRfidStatus("设备激活成功；请点击同步299个标签");
+                });
+            } catch (Exception error) {
+                runOnUiThread(() -> {
+                    setNetworkButtons(true);
+                    updateRfidStatus("激活失败：" + error.getMessage());
+                });
+            }
+        });
     }
 
     @OnClick(R.id.button_sync_catalog)
