@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="utf-8"?>
+<navigation xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/mobile_navigation"
+    app:startDestination="@+id/nav_inventory">
+
+    <fragment
+        android:id="@+id/nav_inventory"
+        android:name="com.pda.uhf_g.ui.fragment.InventoryFragment"
+        android:label="@string/invenroty"
+        tools:layout="@layout/fragment_inventory" />
+
+
+    <fragment
+        android:id="@+id/nav_inventory_led"
+        android:name="com.pda.uhf_g.ui.fragment.InventoryLedFragment"
+        android:label="@string/led_inventory"
+        tools:layout="@layout/fragment_inventory" />
+    <fragment
+        android:id="@+id/nav_read_write_tag"
+        android:name="com.pda.uhf_g.ui.fragment.ReadWriteTag"
+        android:label="@string/read_write_tag"
+        tools:layout="@layout/fragment_read_write_tag" />
+    <!--
+    <fragment
+        android:id="@+id/nav_modify_epc"
+        android:name="com.pda.uhf_g.ui.fragment.ModifyEPCFragment"
+        android:label="@string/modify_epc"
+        tools:layout="@layout/fragment_modify_epc" />
+
+    <fragment
+        android:id="@+id/nav_frequency_setting"
+        android:name="com.pda.uhf_g.ui.fragment.FrequencySettingsFragment"
+        android:label="@string/frequency_settings"
+        tools:layout="@layout/fragment_frequency_settings" />
+        -->
+    <fragment
+        android:id="@+id/nav_setting"
+        android:name="com.pda.uhf_g.ui.fragment.SettingsFragment"
+        android:label="@string/settings"
+        tools:layout="@layout/fragment_settings" />
+<!---->
+    <fragment
+        android:id="@+id/nav_temp"
+        android:name="com.pda.uhf_g.ui.fragment.TemperatureTagFragment"
+        android:label="@string/temperature"
+        tools:layout="@layout/fragment_temperature_tag" />
+
+    <fragment
+        android:id="@+id/nav_help"
+        android:name="com.pda.uhf_g.ui.fragment.HelpFragment"
+        android:label="@string/help"
+        tools:layout="@layout/fragment_help" />
+
+    <fragment
+        android:id="@+id/nav_about"
+        android:name="com.pda.uhf_g.ui.fragment.AboutFragment"
+        android:label="@string/about"
+        tools:layout="@layout/fragment_about" />
+</navigation>

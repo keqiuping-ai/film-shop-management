@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="utf-8"?>
+<menu xmlns:android="http://schemas.android.com/apk/res/android"
+>
+    <group android:id="@+id/primary">
+        <item
+            android:id="@+id/nav_inventory"
+            android:icon="@drawable/ic_inventory_selected"
+            android:title="@string/invenroty" />
+
+        <item
+            android:id="@+id/nav_inventory_led"
+            android:icon="@drawable/ic_inventory_selected"
+            android:title="@string/led_inventory" />
+        <item
+            android:id="@+id/nav_read_write_tag"
+            android:icon="@drawable/ic_read_write_tag"
+            android:title="@string/read_write_tag" />
+    <!--
+        <item
+            android:id="@+id/nav_modify_epc"
+            android:icon="@drawable/ic_modify_epc"
+            android:title="@string/modify_epc" />
+
+        <item
+            android:id="@+id/nav_frequency_setting"
+            android:icon="@drawable/ic_freq_settings"
+            android:title="@string/frequency_settings" />
+             -->
+        <item
+            android:id="@+id/nav_setting"
+            android:icon="@drawable/ic_settings"
+            android:title="@string/settings" />
+        <!---->
+        <item
+            android:id="@+id/nav_temp"
+            android:icon="@drawable/ic_tag"
+            android:title="@string/temp_tag" />
+        <item
+            android:id="@+id/nav_help"
+            android:icon="@drawable/ic_freq_settings"
+            android:title="@string/help" />
+        <item
+            android:id="@+id/nav_about"
+            android:icon="@drawable/ic_help"
+            android:title="@string/about" />
+    </group>
+</menu>

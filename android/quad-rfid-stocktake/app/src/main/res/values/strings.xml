@@ -1,0 +1,278 @@
+<resources xmlns:tools="http://schemas.android.com/tools">
+    <string name="app_name">QUAD RFID Stocktake</string>
+    <string name="rfid_catalog_sync">Sync 299 Tags</string>
+    <string name="rfid_upload_stocktake">Upload Stocktake</string>
+    <string name="rfid_device_key">Device Key</string>
+    <string name="rfid_not_configured">Device key is not configured</string>
+    <string name="rfid_status_ready">Safe stocktake mode: inventory will not be changed</string>
+    <string name="navigation_drawer_open">Open navigation drawer</string>
+    <string name="navigation_drawer_close">Close navigation drawer</string>
+    <string name="nav_header_title">Android Studio</string>
+    <string name="nav_header_subtitle">android.studio@android.com</string>
+    <string name="nav_header_desc">Navigation header</string>
+    <string name="action_settings">Settings</string>
+
+    <string name="menu_home">Home</string>
+    <string name="menu_gallery">Gallery</string>
+    <string name="menu_slideshow">Slideshow</string>
+    <!-- TODO: Remove or change this placeholder text -->
+    <string name="hello_blank_fragment">Hello blank fragment</string>
+
+
+    <string name="invenroty">Inventory</string>
+    <string name="frequency_settings">Frequency Settings</string>
+    <string name="settings">Settings</string>
+
+    <string name="sn">SN</string>
+    <string name="tag_type">type</string>
+    <string name="epc">EPC</string>
+    <string name="password">PASSWORD</string>
+    <string name="user">USER</string>
+    <string name="tag_count">Count</string>
+    <string name="rssi">rssi</string>
+    <string name="multi_tag">Multi tag</string>
+    <string name="tid">TID</string>
+    <string name="loop">loop</string>
+    <string name="type_6c">6C</string>
+    <string name="type_6b">6B</string>
+    <string name="type_gb">GB</string>
+    <string name="type_gjb">GJB</string>
+    <string name="all_tags">Tag:</string>
+    <string name="speed">Speed:</string>
+    <string name="time">Time:</string>
+    <string name="start_inventory">Start</string>
+    <string name="stop_inventory">Stop</string>
+    <string name="cus_read">Cus read</string>
+    <string name="excel_export">Excel export</string>
+    <string name="clean">Clean</string>
+    <string name="exit_app">Press again exit app</string>
+    <string name="module_init_success">Module init success</string>
+    <string name="module_init_fail">Module init fail</string>
+
+    <string name="communication_timeout">timeout</string>
+    <string name="unknown">unknown</string>
+    <string name="read_write_tag">Read Write tag</string>
+    <string name="modify_epc">modify EPC</string>
+    <string name="tag_select">Select tag:</string>
+    <string name="start_addr">Addr(word):</string>
+    <string name="length">length(word):</string>
+    <string name="access_password">Access password(hex):</string>
+    <string name="data">write data(hex):</string>
+    <string name="read_data">read data(hex):</string>
+    <string name="read">Read</string>
+    <string name="write">Write</string>
+    <string name="new_epc">New EPC(hex):</string>
+    <string name="please_input_hex_string">please input hex EPC data</string>
+
+    <string name="select_epc">select epc:</string>
+    <string name="led_inventory">Led inventory</string>
+
+    <string name="lock_tag">Lock tag</string>
+    <string name="lock_data">lock data:</string>
+    <string name="lock_type">lock type:</string>
+
+    <string name="lock_tips">Tips:Please change the password before locking tag</string>
+    <string name="kill_tag">Kill tag</string>
+    <string name="kill_password">Kill password(hex):</string>
+    <string name="please_inventory">Please inventory tag before reading and writing</string>
+
+    <string name="start_address_not_null">Starting address cannot be empty</string>
+    <string name="len_not_null">Length cannot be empty</string>
+    <string name="access_password_not_null">Access password cannot be empty</string>
+    <string name="read_fail">Read fail</string>
+    <string name="write_fail">Write fail</string>
+    <string name="write_success">Write success</string>
+    <string name="filter">Filter</string>
+    <string name="please_input_right_access_password">Please enter a hex password of 4 bytes in length</string>
+    <string name="please_input_right_write_data">Please enter hex data with double byte digit length</string>
+    <string name="please_input_right_epc">Please enter hex EPC data with double byte digit length</string>
+
+    <string name="modify_success">The new EPC has been modified successfully. Please re inventory</string>
+    <string name="modify_fail">modify fail</string>
+    <string name="lock_success">lock success</string>
+    <string name="lock_fail">lock fail</string>
+
+    <string name="kill_success">kill success</string>
+    <string name="kill_fail">kill fail</string>
+
+    <string name="base_settings">Base settings</string>
+    <string name="work_freq">Region:</string>
+    <string name="power">Power:</string>
+    <string name="temperature">temperature:</string>
+    <string name="temp">temp</string>
+    <string name="inventory_settings">Inventory setting</string>
+
+    <string name="query">query</string>
+    <string name="q_value">Q value:</string>
+    <string name="inventory_type">target:</string>
+    <string name="fastid">FastID</string>
+
+    <string name="query_success">query success</string>
+    <string name="query_fail">query fail</string>
+
+    <string name="query_region_fail">query region fail</string>
+    <string name="set_success">set success</string>
+    <string name="set_fail">set fail</string>
+
+    <string name="help">help</string>
+    <string name="store">store</string>
+    <string name="export_excel_need_permission">Permissions required for exporting Excel</string>
+    <string name="firmware">Firmware version:%s</string>
+    <string name="soft_version">Soft version:%s</string>
+    <string name="version_date">Date:%s</string>
+    <string name="about">About</string>
+    <string name="help_tips">
+
+
+
+    </string>
+    <string name="manufacturer">Manufacturer:</string>
+    <string name="temp_tag">Temperature tag</string>
+    <string name="stop_read">Stop read</string>
+
+    <string name="timeInterval">Interval:</string>
+    <string name="dwelltime">DwellTime:</string>
+    <string name="strrb1">Performance preferred</string>
+    <string name="strrb2">Balanced</string>
+    <string name="strrb3">Energy saving</string>
+    <string name="strrb4">Custom</string>
+    <string name="getstr">Get</string>
+    <string name="setstr">Set</string>
+
+    <string-array name="temp_manufacturer">
+        <item>Yuehe tag</item>
+        <item>Yilian tag</item>
+    </string-array>
+
+    <!---->
+    <string-array name="work_freq">
+        <item>China1_920_925</item>
+        <item>FCC_902_928</item>
+        <item>EU_865_867</item>
+        <item>ALL_840_960</item>
+    </string-array>
+
+    <!---->
+    <string-array name="lock_data">
+        <item>Access</item>
+        <item>Kill password</item>
+        <item>EPC</item>
+        <item>TID</item>
+        <item>USER</item>
+    </string-array>
+
+    <!--session-->
+    <string-array name="lock_type">
+        <item>Open</item>
+        <item>Lock</item>
+        <item>Permanent lock</item>
+    </string-array>
+
+    <!---->
+    <string-array name="session_arrays">
+        <item>S0</item>
+        <item>S1</item>
+        <item>S2-Multi_tag</item>
+        <item>S3</item>
+    </string-array>
+
+    <!---->
+    <string-array name="inventory_type_arrays">
+        <item>A</item>
+        <item>B</item>
+        <item>A|B</item>
+    </string-array>
+
+    <!---->
+    <string-array name="q_value_arrays">
+        <item>0</item>
+        <item>1</item>
+        <item>2</item>
+        <item>3</item>
+        <item>4-Multi_tag</item>
+        <item>5</item>
+        <item>6</item>
+        <item>7</item>
+        <item>8</item>
+        <item>9</item>
+        <item>10</item>
+        <item>11</item>
+        <item>12</item>
+        <item>13</item>
+        <item>14</item>
+        <item>15</item>
+
+    </string-array>
+
+
+    <!---->
+    <string-array name="power_arrays">
+        <item>0</item>
+        <item>1</item>
+        <item>2</item>
+        <item>3</item>
+        <item>4</item>
+        <item>5</item>
+        <item>6</item>
+        <item>7</item>
+        <item>8</item>
+        <item>9</item>
+        <item>10</item>
+        <item>11</item>
+        <item>12</item>
+        <item>13</item>
+        <item>14</item>
+        <item>15</item>
+        <item>16</item>
+        <item>17</item>
+        <item>18</item>
+        <item>19</item>
+        <item>20</item>
+        <item>21</item>
+        <item>22</item>
+        <item>23</item>
+        <item>24</item>
+        <item>25</item>
+        <item>26</item>
+        <item>27</item>
+        <item>28</item>
+        <item>29</item>
+        <item>30</item>
+        <item>31</item>
+        <item>32</item>
+        <item>33</item>
+    </string-array>
+
+    <!---->
+    <string-array name="gb_membank">
+        <item></item>
+        <item></item>
+        <item>User0</item>
+        <item>User1</item>
+        <item>User2</item>
+        <item>User3</item>
+        <item>User4</item>
+        <item>User5</item>
+        <item>User6</item>
+        <item>User7</item>
+        <item>User8</item>
+        <item>User9</item>
+        <item>User10</item>
+        <item>User11</item>
+        <item>User12</item>
+        <item>User13</item>
+        <item>User14</item>
+        <item>User15</item>
+    </string-array>
+
+
+    <string-array name="gb_lock_type">
+        <item>1</item>
+        <item></item>
+        <item></item>
+        <item></item>
+        <item></item>
+        <item></item>
+        <item></item>
+    </string-array>
+</resources>
