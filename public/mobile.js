@@ -128,6 +128,8 @@ const I18N = {
     messagePlaceholder: '输入留言内容...',
     read: '已读',
     unread: '未读',
+    sent: '已发送',
+    imageSent: '图片已发送并显示在聊天中',
     self: '我',
     play: '播放',
     pause: '暂停',
@@ -258,6 +260,8 @@ const I18N = {
     messagePlaceholder: 'Type a message...',
     read: 'Read',
     unread: 'Unread',
+    sent: 'Sent',
+    imageSent: 'Image sent and shown in the chat',
     self: 'Me',
     play: 'Play',
     pause: 'Pause',
@@ -1046,7 +1050,7 @@ window.setQuadCallState = value => { state = value; };
 
 function messageHtml(message) {
   const mine = message.fromUserId === user?.id;
-  const read = mine && message.scope !== 'group' ? ` · ${message.readAt ? t('read') : t('unread')}` : '';
+  const read = mine ? ` · ${message.scope === 'group' ? t('sent') : (message.readAt ? t('read') : t('unread'))}` : '';
   const sender = (state.messageUsers || state.users || []).find(item => item.id === message.fromUserId) || { name: message.fromName || '' };
   const aiTranslation = String(message.aiTranslation?.text || '').trim();
   const translationLanguage = message.aiTranslation?.targetLanguage === 'en' ? 'en' : 'zh-CN';
@@ -1173,7 +1177,26 @@ function preserveMobileMessageSnapshot(nextState, threadId = activeUserId) {
   if (!state || !nextState || !threadId) return nextState;
   const visibleBefore = mobileMessagesForState(state, threadId);
   const visibleAfter = mobileMessagesForState(nextState, threadId);
-  if (!visibleBefore.length || visibleAfter.length) return nextState;
+  if (!visibleBefore.length) return nextState;
+  // Upload and background refresh requests can overlap on mobile networks. A
+  // refresh that started before the upload was saved must not replace the
+  // confirmed image with an older, otherwise non-empty thread snapshot.
+  const nextMessages = Array.isArray(nextState.messages) ? nextState.messages : [];
+  const nextKeys = new Set(nextMessages.flatMap(message => [message.id, message.clientRequestId].map(String).filter(Boolean)));
+  const recentConfirmedOutgoing = visibleBefore.filter(message => {
+    if (message.fromUserId !== user?.id || message.pending || !message.clientRequestId) return false;
+    const createdAt = Date.parse(message.createdAt || '');
+    if (!Number.isFinite(createdAt) || Date.now() - createdAt > 5 * 60 * 1000) return false;
+    return ![message.id, message.clientRequestId].map(String).filter(Boolean).some(key => nextKeys.has(key));
+  });
+  if (visibleAfter.length && !recentConfirmedOutgoing.length) return nextState;
+  if (visibleAfter.length && recentConfirmedOutgoing.length) {
+    return {
+      ...nextState,
+      messages: [...nextMessages, ...recentConfirmedOutgoing]
+        .sort((a, b) => String(a.createdAt || '').localeCompare(String(b.createdAt || '')))
+    };
+  }
   return {
     ...nextState,
     messages: state.messages,
@@ -1212,11 +1235,15 @@ async function runMobileMessageSend(pendingId) {
         ? { groupId: queued.groupId, text: queued.text, clientRequestId: pendingId }
         : { toUserId: queued.toUserId, text: queued.text, clientRequestId: pendingId })
     });
-    state = { ...state, ...result };
+    const threadId = queued.scope === 'group'
+      ? (queued.groupId === CUSTOMER_CODEX_GROUP_ID ? CUSTOMER_CODEX_ID : GROUP_CHAT_ID)
+      : queued.toUserId;
+    state = preserveMobileMessageSnapshot({ ...state, ...result }, threadId);
     mobileMessageSendQueue.delete(pendingId);
-    chatDrafts.delete(queued.scope === 'group' ? (queued.groupId === CUSTOMER_CODEX_GROUP_ID ? CUSTOMER_CODEX_ID : GROUP_CHAT_ID) : queued.toUserId);
+    chatDrafts.delete(threadId);
     renderAuth();
     if (tab === 'chat' && !messageRecorder && !messageVoiceStarting) render({ preserveActiveInput: false });
+    showMobileVoiceFeedback(t('sent'));
   } catch (err) {
     queued.failed = true;
     queued.error = String(err?.message || err || '');
@@ -1300,7 +1327,10 @@ function queueMobileMessageUpload(file, kind, targetUserId) {
     attachment: { kind, name: file.name || kind, type: file.type || 'application/octet-stream', size: file.size, url: localUrl },
     createdAt: new Date().toISOString(), readAt: '', readByUserIds: isGroup ? [user?.id] : []
   });
-  render({ preserveActiveInput: true });
+  // The file input's change event counts as active editing. Clear that guard
+  // so the optimistic image and its confirmed replacement render immediately.
+  lastUserInputAt = 0;
+  render({ preserveActiveInput: false });
   void runMobileMessageUpload(pendingId);
 }
 
@@ -1323,17 +1353,21 @@ async function runMobileMessageUpload(pendingId) {
       type: uploaded.type || queued.file.type || 'application/octet-stream',
       size: uploaded.size || queued.file.size, url: uploaded.url
     };
-    await api('/api/messages', {
+    const sentState = await api('/api/messages', {
       method: 'POST',
       body: JSON.stringify(queued.scope === 'group'
         ? { groupId: queued.groupId, attachment, clientRequestId: pendingId }
         : { toUserId: queued.toUserId, attachment, clientRequestId: pendingId })
     });
+    const threadId = queued.scope === 'group'
+      ? (queued.groupId === CUSTOMER_CODEX_GROUP_ID ? CUSTOMER_CODEX_ID : GROUP_CHAT_ID)
+      : queued.toUserId;
+    state = preserveMobileMessageSnapshot({ ...state, ...sentState }, threadId);
     URL.revokeObjectURL(queued.localUrl);
     mobileMessageUploadQueue.delete(pendingId);
-    state = preserveMobileMessageSnapshot(await api('/api/mobile/bootstrap'), activeUserId);
     renderAuth();
-    if (tab === 'chat' && !messageRecorder && !messageVoiceStarting) render({ preserveActiveInput: true });
+    if (tab === 'chat' && !messageRecorder && !messageVoiceStarting) render({ preserveActiveInput: false });
+    showMobileVoiceFeedback(queued.kind === 'image' ? t('imageSent') : t('sent'));
   } catch (err) {
     queued.failed = true;
     queued.error = String(err?.message || err || '');

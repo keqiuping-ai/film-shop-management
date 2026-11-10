@@ -69,8 +69,11 @@ async function run() {
   assert.match(mobileSource, /const mobileMessageSendQueue = new Map\(\)/, 'Mobile text sends must survive bootstrap replacement');
   assert.match(mobileSource, /mobileMessageSendQueue\.set\(pendingId/, 'Mobile text must render optimistically');
   assert.match(mobileSource, /正在发送…/, 'Mobile pending text must show sending status');
-  assert.match(mobileSource, /preserveMobileMessageSnapshot/, 'Mobile refreshes must preserve a visible non-empty thread');
-  assert(mobileHtml.includes('/mobile.js?v=86'), 'Mobile app asset marker must be bumped');
+  assert.match(mobileSource, /recentConfirmedOutgoing/, 'Mobile refreshes must preserve a newly confirmed image even when a stale snapshot still has older messages');
+  assert.match(mobileSource, /const sentState = await api\('\/api\/messages'/, 'Mobile attachment sends must render the durable POST response instead of replacing it with another bootstrap request');
+  assert.match(mobileSource, /showMobileVoiceFeedback\(queued\.kind === 'image' \? t\('imageSent'\)/, 'Mobile image sends must show a visible success confirmation');
+  assert.match(mobileSource, /file input's change event counts as active editing[\s\S]*lastUserInputAt = 0;[\s\S]*render\(\{ preserveActiveInput: false \}\)/, 'Selecting a file must not suppress the optimistic or confirmed image render');
+  assert(mobileHtml.includes('/mobile.js?v=87'), 'Mobile app asset marker must be bumped');
   assert(serviceWorker.includes('film-shop-personal-note-photo-position-20261031'), 'Service worker cache must be bumped');
   assert.match(appSource, /function capturePageContinuityState\(\)/, 'Desktop refreshes must capture page and nested-scroll positions');
   assert.match(appSource, /function restorePageContinuityState\(snapshot\)/, 'Desktop refreshes must restore page and nested-scroll positions');
@@ -133,10 +136,33 @@ async function run() {
     assert.equal(sent.response.status, 200, JSON.stringify(sent.body));
   }
 
+  const tinyPng = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9Z0T8AAAAASUVORK5CYII=', 'base64');
+  const uploaded = await request('/api/message-media/upload', token, {
+    method: 'POST',
+    headers: { 'Content-Type':'image/png', 'X-File-Name':encodeURIComponent('mobile-image-feedback.png') },
+    body: tinyPng
+  });
+  assert.equal(uploaded.response.status, 200, JSON.stringify(uploaded.body));
+  const imageRequestId = 'mobile-image-confirmed-fixture';
+  const imageSent = await request('/api/messages', token, {
+    method: 'POST',
+    body: JSON.stringify({
+      groupId:'all-staff',
+      clientRequestId:imageRequestId,
+      attachment:{ kind:'image', name:uploaded.body.name, type:uploaded.body.type, size:uploaded.body.size, url:uploaded.body.url }
+    })
+  });
+  assert.equal(imageSent.response.status, 200, JSON.stringify(imageSent.body));
+  const returnedImage = imageSent.body.messages.find(message => message.clientRequestId === imageRequestId);
+  assert(returnedImage?.attachment?.url, 'The send response must immediately include the durable image message for mobile rendering');
+  const imageRefresh = await request('/api/messages', token);
+  assert.equal(imageRefresh.response.status, 200);
+  assert.equal(imageRefresh.body.messages.find(message => message.clientRequestId === imageRequestId)?.attachment?.url, returnedImage.attachment.url, 'The image must remain visible after a dedicated message refresh');
+
   const beforeRead = await request('/api/messages', token);
   assert.equal(beforeRead.response.status, 200);
   const idsBeforeRead = beforeRead.body.messages.map(message => message.id);
-  assert.deepEqual(beforeRead.body.messages.slice(-2).map(message => message.text), ['第一条稳定性测试消息', '第二条稳定性测试消息']);
+  assert.deepEqual(beforeRead.body.messages.filter(message => message.text).slice(-2).map(message => message.text), ['第一条稳定性测试消息', '第二条稳定性测试消息']);
 
   const markedRead = await request('/api/messages/read', token, {
     method: 'PUT', body: JSON.stringify({ groupId: 'all-staff' })
