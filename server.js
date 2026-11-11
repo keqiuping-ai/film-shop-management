@@ -9700,7 +9700,7 @@ async function api(req, res) {
       ok: true,
       service: 'film-shop-cloud-app',
       customerIdentityRevision: '2026-10-06-v2',
-      rfidStocktakeApiRevision: '2026-11-10-v2-short-code-pairing',
+      rfidStocktakeApiRevision: '2026-11-10-v3-red-dot-barcode',
       version: version.version,
       build: version.build,
       port: PORT,
