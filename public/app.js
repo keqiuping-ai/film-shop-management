@@ -6921,7 +6921,7 @@ function rfidManagementHtml() {
     <section class="inventory-document-section"><h3>${lang === 'zh' ? '扫码枪设备' : 'Scanner devices'}</h3>
       <p class="note">${lang === 'zh' ? '生成6位激活码后，在扫码枪 App 的“设备密钥”窗口直接输入。激活码10分钟内有效、只能成功使用一次。' : 'Generate a 6-digit activation code and enter it in the scanner app. The code expires in 10 minutes and can be used successfully only once.'}</p>
       <div style="display:grid;grid-template-columns:minmax(180px,1fr) minmax(220px,2fr) auto;gap:10px;align-items:end"><label>${lang === 'zh' ? '设备编号' : 'Device ID'}<input id="rfidDeviceId" value="PDA3109-01"></label><label>${lang === 'zh' ? '设备名称' : 'Device name'}<input id="rfidDeviceName" value="洛杉矶扫码枪 PDA3109-01"></label><button class="btn primary" type="button" onclick="createRfidPairingCode()">${lang === 'zh' ? '生成6位激活码' : 'Generate 6-digit code'}</button></div>
-      <p style="margin:12px 0 0"><a class="btn" href="/rfid.apk" target="_blank" rel="noopener">${lang === 'zh' ? '下载扫码枪 App v1.0.1' : 'Download scanner app v1.0.1'}</a></p>
+      <p style="margin:12px 0 0"><a class="btn" href="/rfid.apk" target="_blank" rel="noopener">${lang === 'zh' ? '下载扫码枪 App v1.0.2（红点条码）' : 'Download scanner app v1.0.2 (red-dot barcode)'}</a></p>
       <div id="rfidOneTimeKey" style="margin-top:12px"></div>
       <div class="table-wrap" style="margin-top:12px"><table><thead><tr><th>${lang === 'zh' ? '设备编号' : 'Device ID'}</th><th>${lang === 'zh' ? '名称' : 'Name'}</th><th>${lang === 'zh' ? '分店' : 'Branch'}</th><th>${lang === 'zh' ? '状态' : 'Status'}</th><th>${lang === 'zh' ? '最后连接' : 'Last used'}</th></tr></thead><tbody>${devices || `<tr><td colspan="5" class="note">${lang === 'zh' ? '尚未建立扫码枪设备。' : 'No scanner device has been enrolled.'}</td></tr>`}</tbody></table></div>
     </section>

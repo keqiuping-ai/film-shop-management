@@ -91,7 +91,7 @@ async function run() {
     const mapping = {
       requestId, branchId: 'los-angeles', source: 'Automated RFID API test',
       items: [
-        { epc: 'E28068940000501111223344', sku, branchId: 'los-angeles', labelName: 'LA test roll' },
+        { epc: 'E28068940000501111223344', sku, branchId: 'los-angeles', labelName: 'LA test roll', barcode: 'LA-ROLL-0001' },
         { epc: 'E28068940000501111223355', sku, branchId: 'las-vegas', labelName: 'LV test roll' }
       ]
     };
@@ -133,6 +133,7 @@ async function run() {
     assert.equal(catalog.response.status, 200, JSON.stringify(catalog.body));
     assert.equal(catalog.body.branchId, 'los-angeles');
     assert.equal(catalog.body.count, 1, 'LA device must not receive the Las Vegas mapping');
+    assert.equal(catalog.body.items[0].barcode, 'LA-ROLL-0001', 'Printed barcode must round-trip to the scanner catalog');
 
     const stocktakeRequestId = `stocktake-${Date.now()}`;
     const stocktakePayload = {

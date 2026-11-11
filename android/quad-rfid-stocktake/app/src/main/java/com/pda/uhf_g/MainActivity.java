@@ -103,7 +103,7 @@ public class MainActivity extends AppCompatActivity implements NavigationView. O
         closeModule() ;
     }
 
-    private void setScanKeyDisable() {
+    public void setScanKeyDisable() {
         int currentApiVersion = Build.VERSION.SDK_INT;
         if (currentApiVersion > Build.VERSION_CODES.N) {
             // For Android10.0 module
@@ -128,6 +128,40 @@ public class MainActivity extends AppCompatActivity implements NavigationView. O
         } catch (InterruptedException e) {
             e.printStackTrace();
         }
+    }
+
+    /**
+     * Switch the handheld trigger to the built-in red-dot barcode engine.
+     * Barcode results are inserted into the currently focused input field.
+     */
+    public void enableBarcodeScanner() {
+        if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.N) return;
+        scanUtil = ScanUtil.getInstance(this);
+        scanUtil.initReader();
+        scanUtil.setBarcodeSendMode(1);
+        scanUtil.setDecodeTimeout("5000");
+        scanUtil.setScanContinu(false);
+        scanUtil.setScanFilterBlank(true);
+        scanUtil.setScanFilterInvisibleChars(true);
+        scanUtil.setScanPrefix("");
+        scanUtil.setScanSuffix("");
+        scanUtil.setScanEndChar("ENTER");
+        scanUtil.enableScanKey("134", "137");
+    }
+
+    /** Stop the red-dot scanner and return the trigger to UHF inventory mode. */
+    public void disableBarcodeScanner() {
+        if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.N) return;
+        scanUtil = ScanUtil.getInstance(this);
+        scanUtil.stopScan();
+        scanUtil.uninitReader();
+        scanUtil.disableScanKey("134", "137");
+    }
+
+    public void startBarcodeScan() {
+        if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.N) return;
+        scanUtil = ScanUtil.getInstance(this);
+        scanUtil.startScan();
     }
 
 

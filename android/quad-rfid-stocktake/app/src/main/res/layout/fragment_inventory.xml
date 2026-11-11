@@ -25,6 +25,47 @@
                     android:textSize="16sp"
                     android:textStyle="bold" />
 
+                <RadioGroup
+                    android:id="@+id/radioGroup_scan_mode"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:paddingLeft="8dp"
+                    android:paddingRight="8dp">
+
+                    <RadioButton
+                        android:id="@+id/radio_mode_uhf"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:checked="true"
+                        android:text="@string/rfid_mode_uhf"
+                        android:textStyle="bold" />
+
+                    <RadioButton
+                        android:id="@+id/radio_mode_barcode"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="@string/rfid_mode_barcode"
+                        android:textStyle="bold" />
+                </RadioGroup>
+
+                <EditText
+                    android:id="@+id/editText_barcode"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginLeft="8dp"
+                    android:layout_marginRight="8dp"
+                    android:background="@android:drawable/edit_text"
+                    android:hint="@string/rfid_barcode_hint"
+                    android:imeOptions="actionDone"
+                    android:inputType="text"
+                    android:maxLines="1"
+                    android:padding="10dp"
+                    android:singleLine="true"
+                    android:visibility="gone" />
+
                 <LinearLayout
                     android:id="@+id/tabHead"
                     android:layout_width="match_parent"

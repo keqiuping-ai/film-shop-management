@@ -25,6 +25,8 @@ import android.os.Handler;
 import android.os.Message;
 import android.text.TextUtils;
 import android.text.InputType;
+import android.text.Editable;
+import android.text.TextWatcher;
 import android.util.Log;
 import android.view.KeyEvent;
 import android.view.LayoutInflater;
@@ -63,10 +65,12 @@ import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.Hashtable;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.TimeZone;
 import java.util.Timer;
 import java.util.TimerTask;
@@ -102,6 +106,14 @@ public class InventoryFragment extends BaseFragment {
     Button btnDeviceKey;
     @BindView(R.id.textView_rfid_status)
     TextView tvRfidStatus;
+    @BindView(R.id.radioGroup_scan_mode)
+    RadioGroup scanModeGroup;
+    @BindView(R.id.radio_mode_uhf)
+    RadioButton radioModeUhf;
+    @BindView(R.id.radio_mode_barcode)
+    RadioButton radioModeBarcode;
+    @BindView(R.id.editText_barcode)
+    EditText barcodeInput;
 
     @BindView(R.id.checkbox_multi_tag)
     CheckBox checkBoxMultiTag ;
@@ -129,8 +141,13 @@ public class InventoryFragment extends BaseFragment {
     private SimpleDateFormat formatter = new SimpleDateFormat("HH:mm:ss");
     private KeyReceiver keyReceiver;
     private final Map<String, String> catalogSkus = new LinkedHashMap<>();
+    private final Map<String, String> catalogEpcsByCode = new LinkedHashMap<>();
+    private final Map<String, String> catalogLabelsByEpc = new LinkedHashMap<>();
+    private final Set<String> ambiguousCatalogCodes = new HashSet<>();
     private final ExecutorService networkExecutor = Executors.newSingleThreadExecutor();
     private String stocktakeRequestId = "stocktake-" + UUID.randomUUID();
+    private boolean barcodeMode = false;
+    private final Runnable barcodeDebounce = () -> processBarcodeInput();
 
     SharedUtil sharedUtil ;
     private boolean isMulti = false;// multi mode flag
@@ -224,6 +241,7 @@ public class InventoryFragment extends BaseFragment {
         }
         //
         registerKeyCodeReceiver();
+        applyScanMode(barcodeMode);
         //getModuleInfo() ;
         // FastId功能开启时，不允许开启附加TID数据功能，两者有冲突
         if (sharedUtil.getFastId()) {
@@ -237,6 +255,7 @@ public class InventoryFragment extends BaseFragment {
         super.onPause();
         Log.e("pang", "onPause()");
         stopInventory();
+        if (barcodeMode) mainActivity.disableBarcodeScanner();
         //
         mainActivity.unregisterReceiver(keyReceiver);
     }
@@ -509,13 +528,111 @@ public class InventoryFragment extends BaseFragment {
 
     private void loadCachedCatalog() {
         catalogSkus.clear();
+        catalogEpcsByCode.clear();
+        catalogLabelsByEpc.clear();
+        ambiguousCatalogCodes.clear();
         try {
             JSONArray items = new JSONArray(mainActivity.mSharedPreferences.getString("quad_rfid_catalog", "[]"));
             for (int i = 0; i < items.length(); i++) {
                 JSONObject item = items.getJSONObject(i);
-                catalogSkus.put(item.optString("epc").trim().toUpperCase(Locale.ROOT), item.optString("sku"));
+                String epc = normalizeScanCode(item.optString("epc"));
+                String sku = item.optString("sku").trim();
+                String labelName = item.optString("labelName").trim();
+                catalogSkus.put(epc, sku);
+                catalogLabelsByEpc.put(epc, labelName);
+                addCatalogCode(epc, epc);
+                addCatalogCode(sku, epc);
+                addCatalogCode(labelName, epc);
+                addCatalogCode(item.optString("barcode"), epc);
+                addCatalogCode(item.optString("qrCode"), epc);
             }
         } catch (Exception ignored) {}
+    }
+
+    private void addCatalogCode(String code, String epc) {
+        String normalized = normalizeScanCode(code);
+        if (normalized.isEmpty() || ambiguousCatalogCodes.contains(normalized)) return;
+        String existing = catalogEpcsByCode.get(normalized);
+        if (existing == null) {
+            catalogEpcsByCode.put(normalized, epc);
+        } else if (!existing.equals(epc)) {
+            catalogEpcsByCode.remove(normalized);
+            ambiguousCatalogCodes.add(normalized);
+        }
+    }
+
+    private String normalizeScanCode(String value) {
+        return String.valueOf(value == null ? "" : value)
+                .replace("\r", "").replace("\n", "").trim().toUpperCase(Locale.ROOT);
+    }
+
+    private void applyScanMode(boolean useBarcode) {
+        barcodeMode = useBarcode;
+        if (barcodeInput == null || mainActivity == null) return;
+        if (useBarcode) {
+            if (isReader) stopInventory();
+            mainActivity.enableBarcodeScanner();
+            barcodeInput.setVisibility(View.VISIBLE);
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.LOLLIPOP) {
+                barcodeInput.setShowSoftInputOnFocus(false);
+            }
+            barcodeInput.requestFocus();
+            checkBoxMultiTag.setEnabled(false);
+            checkBoxTid.setEnabled(false);
+            btnInventory.setText(R.string.rfid_barcode_scan);
+            updateRfidStatus("红点条码模式：对准一卷货的条码，按机身红色扫描键");
+        } else {
+            mainActivity.disableBarcodeScanner();
+            barcodeInput.setText("");
+            barcodeInput.setVisibility(View.GONE);
+            setEnabled(true);
+            btnInventory.setText(R.string.start_inventory);
+            updateRfidStatus("UHF批量盘点模式");
+        }
+    }
+
+    private void processBarcodeInput() {
+        if (!barcodeMode || barcodeInput == null) return;
+        String rawCode = barcodeInput.getText().toString();
+        String code = normalizeScanCode(rawCode);
+        if (code.isEmpty()) return;
+        mHandler.removeCallbacks(barcodeDebounce);
+        barcodeInput.setText("");
+        barcodeInput.requestFocus();
+
+        if (ambiguousCatalogCodes.contains(code)) {
+            updateRfidStatus("条码对应多卷货，不能安全判断单卷：" + code + "；请扫描标签上的唯一编号");
+            return;
+        }
+        String epc = catalogEpcsByCode.get(code);
+        if (TextUtils.isEmpty(epc)) {
+            updateRfidStatus("条码未匹配：" + code + "；请先同步299个标签或确认条码内容");
+            return;
+        }
+
+        TagInfo tag = tagInfoMap.get(epc);
+        if (tag == null) {
+            tag = new TagInfo();
+            tag.setIndex(index++);
+            tag.setType("BARCODE");
+            tag.setEpc(epc);
+            tag.setCount(1L);
+            tag.setRssi("");
+            tagInfoMap.put(epc, tag);
+        } else {
+            tag.setCount(tag.getCount() + 1L);
+        }
+        tagInfoList.clear();
+        tagInfoList.addAll(tagInfoMap.values());
+        mainActivity.listEPC.clear();
+        mainActivity.listEPC.addAll(tagInfoMap.keySet());
+        epcListViewAdapter.notifyDataSetChanged();
+        tvReadCount.setText(String.valueOf(getReadCount(tagInfoList)));
+        tvAllTag.setText(String.valueOf(tagInfoList.size()));
+        UtilSound.play(1, 0);
+        String sku = catalogSkus.get(epc);
+        String label = catalogLabelsByEpc.get(epc);
+        updateRfidStatus("条码已识别：" + sku + (TextUtils.isEmpty(label) ? "" : "｜" + label));
     }
 
     private void updateRfidStatus(String prefix) {
@@ -533,6 +650,12 @@ public class InventoryFragment extends BaseFragment {
 
     @OnClick(R.id.button_inventory)
     public void invenroty() {
+        if (barcodeMode) {
+            barcodeInput.requestFocus();
+            mainActivity.startBarcodeScan();
+            updateRfidStatus("红点已开启：请对准单卷条码");
+            return;
+        }
         //操作之前判定模块是否正常初始化
         if(mainActivity.mUhfrManager == null){
             showToast(R.string.communication_timeout);
@@ -745,6 +868,29 @@ public class InventoryFragment extends BaseFragment {
             }
             // 清空列表，解决先不带TID盘存，后带TID盘存，导致的显示混乱问题
             clear();
+        });
+        scanModeGroup.setOnCheckedChangeListener((group, checkedId) ->
+                applyScanMode(checkedId == R.id.radio_mode_barcode));
+        barcodeInput.setOnEditorActionListener((v, actionId, event) -> {
+            processBarcodeInput();
+            return true;
+        });
+        barcodeInput.setOnKeyListener((v, keyCode, event) -> {
+            if (keyCode == KeyEvent.KEYCODE_ENTER && event.getAction() == KeyEvent.ACTION_UP) {
+                processBarcodeInput();
+                return true;
+            }
+            return false;
+        });
+        barcodeInput.addTextChangedListener(new TextWatcher() {
+            @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
+            @Override public void onTextChanged(CharSequence s, int start, int before, int count) {
+                mHandler.removeCallbacks(barcodeDebounce);
+                if (barcodeMode && s != null && s.toString().trim().length() > 0) {
+                    mHandler.postDelayed(barcodeDebounce, 350);
+                }
+            }
+            @Override public void afterTextChanged(Editable s) {}
         });
         loadCachedCatalog();
         updateRfidStatus(mainActivity.mSharedPreferences.getString("quad_rfid_device_key", "").isEmpty()

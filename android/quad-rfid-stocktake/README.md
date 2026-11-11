@@ -22,8 +22,10 @@ hardware vendor's official UHF-G SDK project and uses the QUAD production API.
 3. Install the pilot APK on the handheld reader.
 4. Open **盘点**, tap **设备密钥**, enter the 6-digit code, and activate it.
 5. Tap **同步299个标签**. Do not scan until the status shows 299 mappings.
-6. Clear the scan list, scan one physical area, then tap **上传盘点**.
-7. Review the saved stocktake in the management system before making any
+6. Keep **UHF批量盘点** for a shelf/area scan, or select **红点条码单卷**
+   and press the handheld red trigger to identify one printed barcode precisely.
+7. Clear the scan list, scan one physical area or one roll, then tap **上传盘点**.
+8. Review the saved stocktake in the management system before making any
    separate inventory correction.
 
 ## Build
@@ -38,4 +40,4 @@ export ANDROID_HOME=/opt/homebrew/share/android-commandlinetools
 ```
 
 The pilot APK is written to
-`app/build/outputs/apk/debug/quad-rfid-stocktake-v1.0.0.apk`.
+`app/build/outputs/apk/debug/quad-rfid-stocktake-v1.0.2.apk`.

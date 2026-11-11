@@ -5,6 +5,10 @@
     <string name="rfid_device_key">Device Key</string>
     <string name="rfid_not_configured">Device key is not configured</string>
     <string name="rfid_status_ready">Safe stocktake mode: inventory will not be changed</string>
+    <string name="rfid_mode_uhf">UHF批量盘点</string>
+    <string name="rfid_mode_barcode">红点条码单卷</string>
+    <string name="rfid_barcode_hint">条码模式：对准单卷条码，按红色扫描键</string>
+    <string name="rfid_barcode_scan">红点扫描</string>
     <string name="navigation_drawer_open">Open navigation drawer</string>
     <string name="navigation_drawer_close">Close navigation drawer</string>
     <string name="nav_header_title">Android Studio</string>

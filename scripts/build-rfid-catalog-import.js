@@ -22,7 +22,9 @@ const payload = {
     epc: String(row.epc || '').trim().toUpperCase(),
     sku: String(row.sku || '').trim(),
     branchId: 'los-angeles',
-    labelName: String(row.assetName || '').trim()
+    labelName: String(row.assetName || '').trim(),
+    barcode: String(row.barcode || '').trim(),
+    qrCode: String(row.qrCode || '').trim()
   }))
 };
 const epcs = new Set(payload.items.map(row => row.epc));

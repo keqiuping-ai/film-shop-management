@@ -7854,14 +7854,19 @@ function rfidCatalogPlan(db, payload = {}) {
       rowNumber: index + 1, epc, sku, branchId,
       productId: product?.id || '', productName: product?.name || '', category: product?.category || '',
       labelName: String(input?.labelName || input?.name || '').trim().slice(0, 300),
+      barcode: String(input?.barcode || input?.barCode || '').trim().slice(0, 300),
+      qrCode: String(input?.qrCode || input?.qrcode || '').trim().slice(0, 300),
       action, errors: rowErrors
     });
   });
   const invalidRows = rows.filter(row => row.errors.length);
   if (invalidRows.length) errors.push(`${invalidRows.length} 个标签未通过校验`);
-  const payloadSha256 = crypto.createHash('sha256').update(JSON.stringify(rows.map(row => ({
-    epc: row.epc, sku: row.sku, branchId: row.branchId, labelName: row.labelName
-  })))).digest('hex');
+  const payloadSha256 = crypto.createHash('sha256').update(JSON.stringify(rows.map(row => {
+    const hashRow = { epc: row.epc, sku: row.sku, branchId: row.branchId, labelName: row.labelName };
+    if (row.barcode) hashRow.barcode = row.barcode;
+    if (row.qrCode) hashRow.qrCode = row.qrCode;
+    return hashRow;
+  }))).digest('hex');
   return {
     ok: errors.length === 0, requestId, source, sourceSha256, payloadSha256, rows, errors,
     totals: {
@@ -10051,6 +10056,7 @@ async function api(req, res) {
       .map(item => ({
         id: item.id, epc: item.epc, sku: item.sku, productId: item.productId,
         productName: item.productName, labelName: item.labelName || '', category: item.category || '',
+        barcode: item.barcode || '', qrCode: item.qrCode || '',
         branchId: item.branchId, status: item.status || 'mapped', updatedAt: item.updatedAt
       }));
     return send(res, 200, { ok: true, branchId, count: items.length, items, catalogItems: items });
@@ -10076,6 +10082,7 @@ async function api(req, res) {
       workingDb.rfidCatalogItems.push({
         id: id(), epc: row.epc, sku: row.sku, productId: row.productId,
         productName: row.productName, labelName: row.labelName, category: row.category,
+        barcode: row.barcode, qrCode: row.qrCode,
         branchId: row.branchId, status: 'mapped', active: true,
         source: plan.source, importBatchId: batchId, createdAt: now, updatedAt: now,
         createdBy: user.name || user.email, createdByUserId: user.id
