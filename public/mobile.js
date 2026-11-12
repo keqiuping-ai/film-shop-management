@@ -768,7 +768,7 @@ function render(options = {}) {
   if (tab === 'home') view.innerHTML = homeHtml();
   if (tab === 'chat') view.innerHTML = chatHtml();
   if (tab === 'notes') view.innerHTML = moduleBar(t('notes')) + notesHtml();
-  if (tab === 'sales') view.innerHTML = (salesScreen === 'home' ? moduleBar(t('sales')) : '') + salesHtml();
+  if (tab === 'sales' && !(salesScreen === 'ai-assistant' && state?.fieldSales?.enabled && view.querySelector('iframe[data-voice-agent]'))) view.innerHTML = (salesScreen === 'home' ? moduleBar(t('sales')) : '') + salesHtml();
   if (tab === 'clock') view.innerHTML = moduleBar(t('clock')) + clockHtml();
   if (tab === 'supervision') view.innerHTML = moduleBar(t('supervision')) + supervisionHtml();
   if (tab === 'leave') view.innerHTML = moduleBar(t('leave')) + leaveHtml();
@@ -1931,6 +1931,7 @@ function salesHomeHtml() {
     .filter(account => account.active !== false && account.googleVerificationStatus !== 'rejected')
     .sort((a, b) => String(a.visitBatch || '').localeCompare(String(b.visitBatch || ''), undefined, { numeric:true }) || Number(a.visitStop || 0) - Number(b.visitStop || 0));
   const secondary = [
+    `<button onclick="openSalesScreen('ai-assistant')">✦ ${lang === 'en' ? 'AI Search & Calls' : 'AI查找与电话'}</button>`,
     `<button onclick="openSalesScreen('add')">＋ 新增客户</button>`,
     canViewSalesInventoryPricing() ? `<button onclick="openSalesScreen('inventory-pricing')">▦ 库存与报价</button>` : '',
     `<button onclick="openSalesScreen('report')">▤ 工作日报</button>`
@@ -2214,6 +2215,7 @@ function salesReportHtml(){const today=salesLocalDate();const sales=state.fieldS
 function salesHtml() {
   const sales=state.fieldSales||{};
   if(!sales.enabled)return salesLocalizedHtml(`<div class="panel"><div class="panel-body hint">当前账号没有业务员管理权限。</div></div>`);
+  if(salesScreen==='ai-assistant')return salesPage(lang==='en'?'AI Search & Calls':'AI查找与电话', '<iframe data-voice-agent title="AI查找与电话" src="/voice-agent.html?embedded=1" style="width:100%;height:calc(100dvh - 200px);min-height:500px;border:0;border-radius:12px"></iframe>');
   if(salesScreen==='add')return salesAddCustomerHtml();
   if(salesScreen==='customers')return salesCustomersHtml(false);
   if(salesScreen==='plan'){if(!salesPlanDate)salesPlanDate=salesLocalDate(1);return salesCustomersHtml(true);}

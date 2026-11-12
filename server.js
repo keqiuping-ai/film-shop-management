@@ -9018,6 +9018,18 @@ const phoneAssistant = createPhoneAssistant({
   }
 });
 
+// QUAD_VOICE_AGENT_INTEGRATION: secrets stay in the existing server process.
+const voiceAgentReady = (async () => {
+ const {Store}=require('./lib/voice-agent/store');
+ const {createService}=require('./lib/voice-agent/service');
+ const store=await new Store({file:path.join(DATA_DIR,'quad-voice-agent.json'),databaseUrl:process.env.VOICE_DATABASE_URL}).init();
+ return createService({store,
+  authorize:async req=>{const user=currentUser(req,readDb());return user&&canUseFieldSales(user)?{id:String(user.id),role:user.role}:null;},
+  getConfig:()=>{const db=readDb(),c=twilioConfig();return {...c,apiKey:openAiCustomerReplyKey(db),browserOrigin:process.env.VOICE_BROWSER_ORIGIN||config.publicUrl||c.webhookBaseUrl||'',baseUrl:c.webhookBaseUrl||config.publicUrl||'',model:process.env.OPENAI_PHONE_REALTIME_MODEL||'gpt-realtime',textModel:customerAiReplyModel(db),searchModel:process.env.OPENAI_VOICE_SEARCH_MODEL||customerAiReplyModel(db),liveEnabled:process.env.VOICE_LIVE_ENABLED!=='false',allowedNumbers:String(process.env.VOICE_ALLOWED_NUMBERS||'').split(',').map(x=>x.trim()).filter(Boolean)};}
+ });
+})();
+voiceAgentReady.catch(()=>console.warn('QUAD Voice Agent unavailable; check dedicated storage configuration.'));
+
 async function api(req, res) {
   if (req.url.startsWith('/api/retail/')) { await retailService.handle(req,res,new URL(req.url,`http://${req.headers.host}`)); return; }
   const db = readDb();
@@ -9798,6 +9810,10 @@ async function api(req, res) {
     });
   }
 
+  if (url.pathname === '/api/voice-agent' || url.pathname.startsWith('/api/voice-agent/')) {
+    try { const agent=await voiceAgentReady;if(await agent.handle(req,res))return; }
+    catch { return send(res,503,{error:'AI电话员工模块未就绪，请检查存储和服务配置'}); }
+  }
   if (await phoneAssistant.publicRoute(req, res, url)) return;
 
   if (req.method === 'POST' && url.pathname === '/api/twilio/voice') {
@@ -15175,3 +15191,4 @@ const mainHttpServer = http.createServer((req, res) => {
 });
 
 phoneAssistant.attach(mainHttpServer);
+voiceAgentReady.then(agent=>agent.attach(mainHttpServer)).catch(()=>{});
