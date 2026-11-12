@@ -4753,6 +4753,75 @@ function salesOrderItems(order) {
   })).filter(line => line.item);
 }
 
+function salesOrderQuantityBySku(order) {
+  const quantities = new Map();
+  salesOrderItems(order).filter(line => !isCustomPrintedFilmSku(line.item)).forEach(line => {
+    quantities.set(line.item, Number(quantities.get(line.item) || 0) + Number(line.qty || 0));
+  });
+  return quantities;
+}
+
+function salesOrderShippedQty(db, orderId, sku) {
+  return (db.movements || [])
+    .filter(row => !row.reversedAt && String(row.salesOrderId || '') === String(orderId || '') && String(row.sku || '') === String(sku || ''))
+    .reduce((sum, row) => sum + (row.type === 'in' ? -Number(row.qty || 0) : row.type === 'out' ? Number(row.qty || 0) : 0), 0);
+}
+
+function planShippedSalesOrderCorrection(db, previousOrder, nextOrder, user) {
+  const before = salesOrderQuantityBySku(previousOrder);
+  const after = salesOrderQuantityBySku(nextOrder);
+  const deltas = [...new Set([...before.keys(), ...after.keys()])]
+    .map(sku => ({ sku, qty: Math.round((Number(after.get(sku) || 0) - Number(before.get(sku) || 0)) * 1000) / 1000 }))
+    .filter(row => Math.abs(row.qty) > 0.0001);
+  if (!deltas.length) return { movements: [], deltas: [] };
+  if (user.role !== 'owner') return { error: '只有老板账号可以修改已出库订单的商品或数量' };
+  if (!canAccess(user, 'inventoryEdit')) return { error: '老板账号尚未开启库存修改权限' };
+
+  const shipmentMovements = (db.movements || []).filter(row =>
+    !row.reversedAt && row.type === 'out' && String(row.salesOrderId || '') === String(previousOrder.id || '')
+  );
+  const shipmentBranches = [...new Set(shipmentMovements.map(row => String(row.branchId || '')).filter(Boolean))];
+  if (shipmentBranches.length > 1) return { error: '这张订单由多个分店分别出库，不能在订单里直接改商品数量；请由库存负责人按原分店建立更正流水。' };
+  const branchId = shipmentBranches[0] || String(previousOrder.branchId || '').trim();
+  if (!branchId) return { error: '找不到原出库分店，不能自动调整库存' };
+  if (!canAccessBranch(db, user, branchId)) return { error: '老板账号没有原出库分店的库存修改权限' };
+
+  for (const delta of deltas.filter(row => row.qty > 0)) {
+    const product = (db.products || []).find(row => String(row.sku || '') === delta.sku);
+    if (!product) return { error: `找不到商品 ${delta.sku}，不能补扣库存` };
+    const companyQty = Number(product.qty || 0);
+    const branchQty = branchStockQty(db, delta.sku, branchId);
+    if (companyQty + 0.0001 < delta.qty) return { error: `${delta.sku} 公司库存不足：现有 ${companyQty}，本次需要补扣 ${delta.qty}` };
+    if (branchQty + 0.0001 < delta.qty) return { error: `${delta.sku} 原出库分店库存不足：现有 ${branchQty}，本次需要补扣 ${delta.qty}` };
+  }
+
+  const now = new Date().toISOString();
+  const movementDate = dateInTimezone(db.settings?.entryTimezone || db.settings?.timezone || 'America/Los_Angeles', 0);
+  const correctionId = id();
+  const movements = deltas.map(delta => ({
+    id: id(), date: movementDate, branchId, sku: delta.sku,
+    type: delta.qty > 0 ? 'out' : 'in', qty: Math.abs(delta.qty),
+    salesOrderId: previousOrder.id, salesOrderNo: previousOrder.orderNo || '',
+    salesOrderCorrection: true, salesOrderCorrectionId: correctionId,
+    note: `已出库销售单 ${previousOrder.orderNo || previousOrder.id} 修改商品明细，库存差额${delta.qty > 0 ? '补扣' : '补回'}`,
+    createdAt: now, createdBy: user.name || user.email || '', createdByUserId: user.id
+  }));
+  return { correctionId, branchId, movements, deltas };
+}
+
+function applyShippedSalesOrderCorrection(db, order, correction) {
+  if (!correction?.movements?.length) return;
+  correction.movements.forEach(movement => {
+    const product = (db.products || []).find(row => String(row.sku || '') === String(movement.sku || ''));
+    if (!product) return;
+    db.movements.push(movement);
+    product.qty = Number(product.qty || 0) + (movement.type === 'in' ? Number(movement.qty || 0) : -Number(movement.qty || 0));
+  });
+  order.inventoryCorrectionMovementIds = [...(Array.isArray(order.inventoryCorrectionMovementIds) ? order.inventoryCorrectionMovementIds : []), ...correction.movements.map(row => row.id)];
+  order.lastInventoryCorrectionId = correction.correctionId;
+  order.lastInventoryCorrectionAt = new Date().toISOString();
+}
+
 function snapshotSalesOrderCosts(db, order, previousOrder = null) {
   const previousBySku = new Map(salesOrderItems(previousOrder || {}).map(line => [line.item, line.unitCostSnapshot]));
   order.items = salesOrderItems(order).map(line => {
@@ -4774,8 +4843,7 @@ function salesOrderHasCompleteShipment(db, order) {
   const physicalLines = salesOrderItems(order).filter(line => !isCustomPrintedFilmSku(line.item));
   if (!physicalLines.length) return true;
   return physicalLines.every(line => {
-    const shipped = (db.movements || []).filter(row => !row.reversedAt && row.type === 'out' && row.salesOrderId === order.id && String(row.sku) === line.item);
-    return shipped.reduce((sum, row) => sum + Number(row.qty || 0), 0) === Number(line.qty || 0);
+    return Math.abs(salesOrderShippedQty(db, order.id, line.item) - Number(line.qty || 0)) < 0.0001;
   });
 }
 
@@ -9701,6 +9769,7 @@ async function api(req, res) {
       service: 'film-shop-cloud-app',
       customerIdentityRevision: '2026-10-06-v2',
       rfidStocktakeApiRevision: '2026-11-10-v3-red-dot-barcode',
+      shippedSalesOrderEditRevision: '2026-11-12-v1-owner-inventory-delta',
       version: version.version,
       build: version.build,
       port: PORT,
@@ -13803,8 +13872,7 @@ async function api(req, res) {
     for (const line of lines) {
       const product = (db.products || []).find(row => row.sku === line.item);
       if (!product) return send(res, 400, { error: `找不到商品 ${line.item}，不能确认出库` });
-      const shippedQty = (db.movements || []).filter(row => !row.reversedAt && row.type === 'out' && row.salesOrderId === order.id && String(row.sku) === line.item)
-        .reduce((sum, row) => sum + Number(row.qty || 0), 0);
+      const shippedQty = salesOrderShippedQty(db, order.id, line.item);
       const remainingQty = Math.max(0, Number(line.qty || 0) - shippedQty);
       if (!remainingQty) continue;
       const companyQty = Number(product.qty || 0);
@@ -14584,10 +14652,18 @@ async function api(req, res) {
         return send(res, 400, { error: '不能手工把订单改成已出库。请从库存模块关联订单逐项出库，系统会自动更新状态。' });
       }
       if (previousStatus === '已出库') {
-        const beforeLines = salesOrderItems(previousOrder).map(({ item, qty, unitPrice }) => ({ item, qty, unitPrice }));
-        const afterLines = salesOrderItems(next).map(({ item, qty, unitPrice }) => ({ item, qty, unitPrice }));
-        if (nextStatus !== '已出库' || JSON.stringify(beforeLines) !== JSON.stringify(afterLines) || String(next.branchId || '') !== String(previousOrder.branchId || '')) {
-          return send(res, 400, { error: '已出库订单不能改变状态或商品明细；退款和退货请使用冲销记录，不能改写原单。' });
+        if (nextStatus !== '已出库') return send(res, 400, { error: '已出库订单不能退回未出库状态；退款请保留原单并建立更正记录。' });
+        if (String(next.branchId || '') !== String(previousOrder.branchId || '')) return send(res, 400, { error: '已出库订单不能更改所属分店，避免库存流水转移到错误门店。' });
+        const correction = planShippedSalesOrderCorrection(db, previousOrder, next, user);
+        if (correction.error) return send(res, 400, { error: correction.error });
+        applyShippedSalesOrderCorrection(db, next, correction);
+        if (correction.movements.length) {
+          audit(db, user, 'correct-shipped-sales-order-inventory', {
+            collection: 'salesOrders', recordId: previousOrder.id, recordLabel: previousOrder.orderNo || previousOrder.customer,
+            correctionId: correction.correctionId, branchId: correction.branchId,
+            movementIds: correction.movements.map(row => row.id), before: salesOrderItems(previousOrder), after: salesOrderItems(next),
+            detail: correction.movements.map(row => `${row.sku} ${row.type === 'in' ? '补回' : '补扣'} ${row.qty}`).join('；')
+          });
         }
       }
       snapshotSalesOrderCosts(db, next, previousOrder);

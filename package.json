@@ -33,6 +33,7 @@
     "test:product-metadata": "node scripts/test-owner-product-metadata.js",
     "test:sales-order-save": "node scripts/test-sales-order-idempotency.js",
     "test:sales-order-visibility": "node scripts/test-sales-order-role-visibility.js",
+    "test:shipped-sales-order-edit": "node scripts/test-shipped-sales-order-owner-edit.js",
     "test:rfid-stocktake": "node scripts/test-rfid-stocktake-api.js",
     "test:rfid-android": "node scripts/test-rfid-android-source.js",
     "test:rfid-owner-ui": "node scripts/test-rfid-owner-ui-source.js",

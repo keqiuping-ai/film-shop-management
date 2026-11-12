@@ -66,7 +66,7 @@ async function run() {
   const appSource = fs.readFileSync(path.join(root, 'public/app.js'), 'utf8');
   const html = fs.readFileSync(path.join(root, 'public/index.html'), 'utf8');
   assert(appSource.includes("if (user?.role !== 'owner') return rows || [];"), 'Non-owner branch rows must rely on server scope');
-  assert(html.includes('/app.js?v=173'), 'Desktop asset marker must include the current release');
+  assert(html.includes('/app.js?v=174'), 'Desktop asset marker must include the current release');
 
   const child = spawn(process.execPath, ['server.js'], {
     cwd: root,

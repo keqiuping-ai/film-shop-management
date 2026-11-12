@@ -11576,17 +11576,21 @@ function portalCustomerOrderOptions(selectedId = '') {
 
 function openSalesOrder(id) {
   const item = state.salesOrders.find(x => x.id === id) || { date: today(), branchId: defaultBranchId(), type: 'retail-us', customer: '', customerAddress: '', customerContact: '', recipientName: '', customerPhone: '', customerEmail: '', salesRep: '', preparedBy: user?.name || '', notes: '', item: '', qty: 1, unitPrice: 0, status: '待收款', shipping: '', trackingNo: '', paid: 0, paymentMethod: '' };
+  const isShippedOrder = String(item.status || '').trim() === '已出库';
   const clientRequestId = String(item.clientRequestId || (!id ? `desktop-sales-order-${Date.now()}-${Math.random().toString(36).slice(2, 12)}` : ''));
   if (id && item.portalSource && (item.portalNew || item.portalCustomerUnread)) markPortalOrderRead(id);
   const lines = salesOrderLineItems(item);
   const editableSalesStatuses = salesStatusOptions().filter(option => {
     const value = Array.isArray(option) ? option[0] : option;
-    return value !== '已出库' || item.status === '已出库';
+    return isShippedOrder ? value === '已出库' : value !== '已出库';
   });
+  const editableBranchOptions = isShippedOrder
+    ? branchOptions().filter(option => String(Array.isArray(option) ? option[0] : option) === String(item.branchId || ''))
+    : branchOptions();
   const party = salesOrderPartyDetails(item);
   const fields = [
     ['orderNo',lang === 'zh' ? '订单号' : 'Order No.','readonly',item.orderNo || (lang === 'zh' ? '保存后自动生成' : 'Generated after saving')],
-    ['date',t('date'),'date',item.date], ['branchId',lang === 'zh' ? '所属分店' : 'Branch','select',item.branchId || '',branchOptions()], ['type',t('type'),'select',item.type, salesOrderTypeOptions()],
+    ['date',t('date'),'date',item.date], ['branchId',lang === 'zh' ? '所属分店' : 'Branch','select',item.branchId || '',editableBranchOptions], ['type',t('type'),'select',item.type, salesOrderTypeOptions()],
     ['portalCustomerId',lang === 'zh' ? '关联B端客户账号' : 'Linked dealer account','select',item.portalCustomerId || '',portalCustomerOrderOptions(item.portalCustomerId)],
     ['salesRep',t('orderSalesRep'),'text',item.salesRep || ''], ['status',t('status'),'select',item.status, editableSalesStatuses], ['paid',`${t('paid')} $`,'number',item.paid],
     ['paymentMethod',t('paymentMethod'),'select',item.paymentMethod || '', paymentMethodOptions()],
@@ -11608,9 +11612,10 @@ function openSalesOrder(id) {
     <div class="table-wrap"><table class="sales-lines-table"><thead><tr><th>${lang === 'zh' ? '型号 / SKU' : 'Model / SKU'}</th><th>${lang === 'zh' ? '单价' : 'Unit price'}</th><th>${t('qty')}</th><th>${lang === 'zh' ? '小计' : 'Subtotal'}</th><th></th></tr></thead><tbody id="salesOrderLines">${(lines.length ? lines : [{}]).map(salesOrderLineRowHtml).join('')}</tbody></table></div>
     <div class="sales-order-grand-total">${lang === 'zh' ? '订单总价' : 'Order total'}：<strong id="salesOrderGrandTotal">${currency.format(0)}</strong></div>
   </div>`;
+  const shippedEditNotice = isShippedOrder ? `<div class="wide notice warn"><strong>${lang === 'zh' ? '已出库订单安全修改' : 'Safe editing for shipped order'}</strong><br>${lang === 'zh' ? (user?.role === 'owner' ? '老板可以修改商品、数量、价格和资料。商品或数量变化时，系统会保留原出库记录，并自动生成库存差额补回或补扣流水。' : '只有老板可以修改已出库订单的商品或数量；原出库记录和库存流水会受到保护。') : (user?.role === 'owner' ? 'The owner may edit this order. Item changes retain the original shipment and create traceable inventory delta movements.' : 'Only the owner may change items or quantities on a shipped order.')}</div>` : '';
   openModal(
     id ? (lang === 'zh' ? '编辑零售/批发订单' : 'Edit Sales Order') : (lang === 'zh' ? '新增零售/批发订单' : 'New Sales Order'),
-    formHtml(fields.slice(0, 4)) + partyFields + formHtml(fields.slice(4)) + lineTable + portalOrderConversationHtml(item),
+    formHtml(fields.slice(0, 4)) + partyFields + formHtml(fields.slice(4)) + shippedEditNotice + lineTable + portalOrderConversationHtml(item),
     () => {
       const data = numeric(readForm(['date','branchId','type','portalCustomerId','customer','recipientName','customerPhone','customerEmail','customerAddress','salesRep','status','paid','paymentMethod','shipping','shippingCarrier','trackingNo','preparedBy','notes']), ['paid']);
       data.customerContact = [data.recipientName, data.customerPhone, data.customerEmail].filter(Boolean).join(' · ');
@@ -11620,6 +11625,10 @@ function openSalesOrder(id) {
       data.qty = Number(first.qty || 0);
       data.unitPrice = Number(first.unitPrice || 0);
       data.clientRequestId = clientRequestId;
+      if (isShippedOrder) {
+        data.status = '已出库';
+        data.branchId = item.branchId;
+      }
       if (!id) {
         const dateError = validateTodayEntryDate(data.date);
         if (dateError) return alert(dateError);
