@@ -9782,6 +9782,7 @@ async function api(req, res) {
       customerIdentityRevision: '2026-10-06-v2',
       rfidStocktakeApiRevision: '2026-11-10-v3-red-dot-barcode',
       shippedSalesOrderEditRevision: '2026-11-12-v1-owner-inventory-delta',
+      deploymentRevision: process.env.RAILWAY_GIT_COMMIT_SHA || process.env.GIT_COMMIT_SHA || null,
       version: version.version,
       build: version.build,
       port: PORT,
