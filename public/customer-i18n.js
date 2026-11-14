@@ -1,13 +1,18 @@
 (function () {
   'use strict';
   const STORE = 'quadCustomer.locale';
-  const supported = ['en', 'ja', 'ko', 'es-MX', 'zh-CN'];
+  const supported = ['en', 'ja', 'ko', 'es-MX', 'vi', 'pt-BR', 'th', 'ms', 'hi', 'zh-CN'];
   const localeNames = {
-    en:{en:'English',ja:'Japanese',ko:'Korean','es-MX':'Spanish','zh-CN':'Chinese'},
-    ja:{en:'英語',ja:'日本語',ko:'韓国語','es-MX':'スペイン語','zh-CN':'中国語'},
-    ko:{en:'영어',ja:'일본어',ko:'한국어','es-MX':'스페인어','zh-CN':'중국어'},
-    'es-MX':{en:'Inglés',ja:'Japonés',ko:'Coreano','es-MX':'Español','zh-CN':'Chino'},
-    'zh-CN':{en:'英语',ja:'日语',ko:'韩语','es-MX':'西班牙语','zh-CN':'中文'}
+    en:{en:'English',ja:'Japanese',ko:'Korean','es-MX':'Spanish',vi:'Vietnamese','pt-BR':'Portuguese',th:'Thai',ms:'Malay',hi:'Hindi','zh-CN':'Chinese'},
+    ja:{en:'英語',ja:'日本語',ko:'韓国語','es-MX':'スペイン語',vi:'ベトナム語','pt-BR':'ポルトガル語',th:'タイ語',ms:'マレー語',hi:'ヒンディー語','zh-CN':'中国語'},
+    ko:{en:'영어',ja:'일본어',ko:'한국어','es-MX':'스페인어',vi:'베트남어','pt-BR':'포르투갈어',th:'태국어',ms:'말레이어',hi:'힌디어','zh-CN':'중국어'},
+    'es-MX':{en:'Inglés',ja:'Japonés',ko:'Coreano','es-MX':'Español',vi:'Vietnamita','pt-BR':'Portugués',th:'Tailandés',ms:'Malayo',hi:'Hindi','zh-CN':'Chino'},
+    vi:{en:'Tiếng Anh',ja:'Tiếng Nhật',ko:'Tiếng Hàn','es-MX':'Tiếng Tây Ban Nha',vi:'Tiếng Việt','pt-BR':'Tiếng Bồ Đào Nha',th:'Tiếng Thái',ms:'Tiếng Mã Lai',hi:'Tiếng Hindi','zh-CN':'Tiếng Trung'},
+    'pt-BR':{en:'Inglês',ja:'Japonês',ko:'Coreano','es-MX':'Espanhol',vi:'Vietnamita','pt-BR':'Português',th:'Tailandês',ms:'Malaio',hi:'Hindi','zh-CN':'Chinês'},
+    th:{en:'อังกฤษ',ja:'ญี่ปุ่น',ko:'เกาหลี','es-MX':'สเปน',vi:'เวียดนาม','pt-BR':'โปรตุเกส',th:'ไทย',ms:'มาเลย์',hi:'ฮินดี','zh-CN':'จีน'},
+    ms:{en:'Bahasa Inggeris',ja:'Bahasa Jepun',ko:'Bahasa Korea','es-MX':'Bahasa Sepanyol',vi:'Bahasa Vietnam','pt-BR':'Bahasa Portugis',th:'Bahasa Thai',ms:'Bahasa Melayu',hi:'Bahasa Hindi','zh-CN':'Bahasa Cina'},
+    hi:{en:'अंग्रेज़ी',ja:'जापानी',ko:'कोरियाई','es-MX':'स्पेनिश',vi:'वियतनामी','pt-BR':'पुर्तगाली',th:'थाई',ms:'मलय',hi:'हिन्दी','zh-CN':'चीनी'},
+    'zh-CN':{en:'英语',ja:'日语',ko:'韩语','es-MX':'西班牙语',vi:'越南语','pt-BR':'葡萄牙语',th:'泰语',ms:'马来语',hi:'印地语','zh-CN':'中文'}
   };
   let locale = supported.includes(localStorage.getItem(STORE)) ? localStorage.getItem(STORE) : 'en';
 
@@ -569,20 +574,39 @@
     ,'订单商品':'ORDER ITEMS','核对订单并付款':'REVIEW & PAY','统一结账':'CHECKOUT','标准商业配送':'COMMERCIAL SHIPPING','提交发货订单（运费待确认）':'SUBMIT SHIPPING ORDER (FREIGHT PENDING)'
   }));
   const indexes = { en:0, ja:1, ko:2, 'es-MX':3, 'zh-CN':4 };
+  const additionalTranslations = {
+    vi:{'Language':'Ngôn ngữ','ADVANCED FILM TECHNOLOGY':'CÔNG NGHỆ PHIM TIÊN TIẾN','DEALER LOGIN':'ĐĂNG NHẬP ĐẠI LÝ','PROTECTION FOR EVERY JOURNEY':'BẢO VỆ TRÊN MỌI HÀNH TRÌNH','Advanced film technology for automotive, architectural, and marine applications.':'Công nghệ phim tiên tiến cho ô tô, kiến trúc và hàng hải.','Professional window film, paint protection film, color wrap, and architectural safety film solutions—supported by our U.S. team and global manufacturing capabilities.':'Giải pháp phim cách nhiệt, phim bảo vệ sơn, phim đổi màu và phim an toàn kiến trúc chuyên nghiệp, được hỗ trợ bởi đội ngũ Hoa Kỳ và năng lực sản xuất toàn cầu.','EXPLORE PRODUCTS':'KHÁM PHÁ SẢN PHẨM','DEALER ORDERING':'ĐẶT HÀNG ĐẠI LÝ','NEW PRODUCT · FEATURED RELEASE':'SẢN PHẨM MỚI · NỔI BẬT','Tesla Panoramic Roof Exterior Heat-Rejection Film':'Phim cách nhiệt ngoại thất cho nóc kính toàn cảnh Tesla','DISCOVER THE PRODUCT':'KHÁM PHÁ SẢN PHẨM','SHOP BY APPLICATION':'CHỌN THEO ỨNG DỤNG','Explore Our Film Categories':'Khám phá các dòng phim của chúng tôi','Paint Protection Film':'Phim bảo vệ sơn','Color Change Wrap':'Phim đổi màu','Window Film | Tesla Roof Film':'Phim cách nhiệt | Phim nóc Tesla','Architectural Film':'Phim kiến trúc','Interior Surface Film':'Phim bề mặt nội thất','Yacht Protection Film':'Phim bảo vệ du thuyền','ENTER DEALER ORDERING':'VÀO HỆ THỐNG ĐẶT HÀNG','Your pricing. Your products. Your orders.':'Giá của bạn. Sản phẩm của bạn. Đơn hàng của bạn.','Sign in to view contract pricing, create purchase orders, and track every delivery.':'Đăng nhập để xem giá hợp đồng, tạo đơn hàng và theo dõi giao hàng.'},
+    'pt-BR':{'Language':'Idioma','ADVANCED FILM TECHNOLOGY':'TECNOLOGIA AVANÇADA DE FILMES','DEALER LOGIN':'LOGIN DO REVENDEDOR','PROTECTION FOR EVERY JOURNEY':'PROTEÇÃO PARA CADA JORNADA','Advanced film technology for automotive, architectural, and marine applications.':'Tecnologia avançada de filmes para aplicações automotivas, arquitetônicas e marítimas.','Professional window film, paint protection film, color wrap, and architectural safety film solutions—supported by our U.S. team and global manufacturing capabilities.':'Soluções profissionais em película automotiva, PPF, envelopamento colorido e película de segurança arquitetônica, com suporte da equipe dos EUA e fabricação global.','EXPLORE PRODUCTS':'EXPLORAR PRODUTOS','DEALER ORDERING':'PEDIDOS DO REVENDEDOR','NEW PRODUCT · FEATURED RELEASE':'NOVO PRODUTO · DESTAQUE','Tesla Panoramic Roof Exterior Heat-Rejection Film':'Película externa de rejeição de calor para teto panorâmico Tesla','DISCOVER THE PRODUCT':'CONHECER O PRODUTO','SHOP BY APPLICATION':'COMPRAR POR APLICAÇÃO','Explore Our Film Categories':'Explore nossas categorias de filmes','Paint Protection Film':'Película de proteção de pintura','Color Change Wrap':'Envelopamento colorido','Window Film | Tesla Roof Film':'Película automotiva | Teto Tesla','Architectural Film':'Película arquitetônica','Interior Surface Film':'Película para interiores','Yacht Protection Film':'Película para iates','ENTER DEALER ORDERING':'ENTRAR EM PEDIDOS','Your pricing. Your products. Your orders.':'Seus preços. Seus produtos. Seus pedidos.','Sign in to view contract pricing, create purchase orders, and track every delivery.':'Entre para ver preços, criar pedidos e acompanhar entregas.'},
+    th:{'Language':'ภาษา','ADVANCED FILM TECHNOLOGY':'เทคโนโลยีฟิล์มขั้นสูง','DEALER LOGIN':'เข้าสู่ระบบตัวแทน','PROTECTION FOR EVERY JOURNEY':'ปกป้องทุกการเดินทาง','Advanced film technology for automotive, architectural, and marine applications.':'เทคโนโลยีฟิล์มขั้นสูงสำหรับยานยนต์ อาคาร และงานทางทะเล','Professional window film, paint protection film, color wrap, and architectural safety film solutions—supported by our U.S. team and global manufacturing capabilities.':'โซลูชันฟิล์มกรองแสง ฟิล์มปกป้องสี ฟิล์มเปลี่ยนสี และฟิล์มนิรภัยอาคาร พร้อมทีมสนับสนุนในสหรัฐฯ และการผลิตระดับโลก','EXPLORE PRODUCTS':'ดูผลิตภัณฑ์','DEALER ORDERING':'สั่งซื้อสำหรับตัวแทน','NEW PRODUCT · FEATURED RELEASE':'ผลิตภัณฑ์ใหม่ · แนะนำ','Tesla Panoramic Roof Exterior Heat-Rejection Film':'ฟิล์มกันความร้อนภายนอกสำหรับหลังคาพาโนรามา Tesla','DISCOVER THE PRODUCT':'ดูรายละเอียดผลิตภัณฑ์','SHOP BY APPLICATION':'เลือกตามการใช้งาน','Explore Our Film Categories':'สำรวจหมวดหมู่ฟิล์ม','Paint Protection Film':'ฟิล์มปกป้องสีรถ','Color Change Wrap':'ฟิล์มเปลี่ยนสี','Window Film | Tesla Roof Film':'ฟิล์มกรองแสง | ฟิล์มหลังคา Tesla','Architectural Film':'ฟิล์มอาคาร','Interior Surface Film':'ฟิล์มตกแต่งภายใน','Yacht Protection Film':'ฟิล์มปกป้องเรือยอชต์','ENTER DEALER ORDERING':'เข้าสู่ระบบสั่งซื้อ','Your pricing. Your products. Your orders.':'ราคาของคุณ ผลิตภัณฑ์ของคุณ คำสั่งซื้อของคุณ','Sign in to view contract pricing, create purchase orders, and track every delivery.':'เข้าสู่ระบบเพื่อดูราคา สร้างคำสั่งซื้อ และติดตามการจัดส่ง'},
+    ms:{'Language':'Bahasa','ADVANCED FILM TECHNOLOGY':'TEKNOLOGI FILEM TERMAJU','DEALER LOGIN':'LOG MASUK PENGEDAR','PROTECTION FOR EVERY JOURNEY':'PERLINDUNGAN UNTUK SETIAP PERJALANAN','Advanced film technology for automotive, architectural, and marine applications.':'Teknologi filem termaju untuk automotif, seni bina dan marin.','Professional window film, paint protection film, color wrap, and architectural safety film solutions—supported by our U.S. team and global manufacturing capabilities.':'Penyelesaian profesional filem tingkap, filem pelindung cat, balutan warna dan filem keselamatan bangunan, disokong pasukan A.S. dan keupayaan pembuatan global.','EXPLORE PRODUCTS':'TEROKAI PRODUK','DEALER ORDERING':'PESANAN PENGEDAR','NEW PRODUCT · FEATURED RELEASE':'PRODUK BAHARU · PILIHAN','Tesla Panoramic Roof Exterior Heat-Rejection Film':'Filem penolak haba luaran bumbung panoramik Tesla','DISCOVER THE PRODUCT':'LIHAT PRODUK','SHOP BY APPLICATION':'PILIH MENGIKUT APLIKASI','Explore Our Film Categories':'Terokai kategori filem kami','Paint Protection Film':'Filem pelindung cat','Color Change Wrap':'Balutan tukar warna','Window Film | Tesla Roof Film':'Filem tingkap | Filem bumbung Tesla','Architectural Film':'Filem seni bina','Interior Surface Film':'Filem permukaan dalaman','Yacht Protection Film':'Filem perlindungan kapal layar','ENTER DEALER ORDERING':'MASUK PESANAN PENGEDAR','Your pricing. Your products. Your orders.':'Harga anda. Produk anda. Pesanan anda.','Sign in to view contract pricing, create purchase orders, and track every delivery.':'Log masuk untuk melihat harga, membuat pesanan dan menjejaki penghantaran.'},
+    hi:{'Language':'भाषा','ADVANCED FILM TECHNOLOGY':'उन्नत फिल्म तकनीक','DEALER LOGIN':'डीलर लॉगिन','PROTECTION FOR EVERY JOURNEY':'हर सफर के लिए सुरक्षा','Advanced film technology for automotive, architectural, and marine applications.':'ऑटोमोटिव, आर्किटेक्चरल और समुद्री उपयोग के लिए उन्नत फिल्म तकनीक।','Professional window film, paint protection film, color wrap, and architectural safety film solutions—supported by our U.S. team and global manufacturing capabilities.':'अमेरिकी टीम और वैश्विक निर्माण क्षमता द्वारा समर्थित प्रोफेशनल विंडो फिल्म, पेंट प्रोटेक्शन फिल्म, कलर रैप और आर्किटेक्चरल सेफ्टी फिल्म समाधान।','EXPLORE PRODUCTS':'उत्पाद देखें','DEALER ORDERING':'डीलर ऑर्डरिंग','NEW PRODUCT · FEATURED RELEASE':'नया उत्पाद · विशेष','Tesla Panoramic Roof Exterior Heat-Rejection Film':'Tesla पैनोरमिक रूफ के लिए बाहरी हीट-रिजेक्शन फिल्म','DISCOVER THE PRODUCT':'उत्पाद जानें','SHOP BY APPLICATION':'उपयोग के अनुसार चुनें','Explore Our Film Categories':'हमारी फिल्म श्रेणियां देखें','Paint Protection Film':'पेंट प्रोटेक्शन फिल्म','Color Change Wrap':'कलर चेंज रैप','Window Film | Tesla Roof Film':'विंडो फिल्म | Tesla रूफ फिल्म','Architectural Film':'आर्किटेक्चरल फिल्म','Interior Surface Film':'इंटीरियर सरफेस फिल्म','Yacht Protection Film':'यॉट प्रोटेक्शन फिल्म','ENTER DEALER ORDERING':'डीलर ऑर्डरिंग खोलें','Your pricing. Your products. Your orders.':'आपकी कीमतें। आपके उत्पाद। आपके ऑर्डर।','Sign in to view contract pricing, create purchase orders, and track every delivery.':'कीमत देखने, ऑर्डर बनाने और डिलीवरी ट्रैक करने के लिए लॉगिन करें।'}
+  };
+  Object.assign(additionalTranslations.vi, {'Tesla Panoramic Roof':'Nóc kính toàn cảnh Tesla','Exterior Heat-Rejection Film':'Phim cách nhiệt ngoại thất','Engineered for large panoramic glass roofs, this exterior-applied film reflects solar energy before it enters the vehicle. Its highly conformable construction stretches into place without heat forming for a faster, cleaner installation.':'Được thiết kế cho nóc kính toàn cảnh lớn, phim dán ngoài phản xạ năng lượng mặt trời trước khi vào xe. Vật liệu co giãn cao giúp thi công nhanh và sạch mà không cần tạo hình bằng nhiệt.','EXTERIOR HEAT REJECTION':'CÁCH NHIỆT BÊN NGOÀI','NO HEAT FORMING':'KHÔNG CẦN TẠO NHIỆT','FAST STRETCH INSTALLATION':'THI CÔNG NHANH','TESLA ROOF FILM · WATCH THE VIDEO':'PHIM NÓC TESLA · XEM VIDEO'});
+  Object.assign(additionalTranslations['pt-BR'], {'Tesla Panoramic Roof':'Teto panorâmico Tesla','Exterior Heat-Rejection Film':'Película externa de rejeição de calor','Engineered for large panoramic glass roofs, this exterior-applied film reflects solar energy before it enters the vehicle. Its highly conformable construction stretches into place without heat forming for a faster, cleaner installation.':'Desenvolvida para grandes tetos panorâmicos, esta película externa reflete a energia solar antes que ela entre no veículo. Sua alta conformabilidade permite uma instalação rápida e limpa sem moldagem térmica.','EXTERIOR HEAT REJECTION':'REJEIÇÃO EXTERNA DE CALOR','NO HEAT FORMING':'SEM MOLDAGEM TÉRMICA','FAST STRETCH INSTALLATION':'INSTALAÇÃO RÁPIDA','TESLA ROOF FILM · WATCH THE VIDEO':'PELÍCULA DE TETO TESLA · ASSISTA AO VÍDEO'});
+  Object.assign(additionalTranslations.th, {'Tesla Panoramic Roof':'หลังคาพาโนรามา Tesla','Exterior Heat-Rejection Film':'ฟิล์มกันความร้อนภายนอก','Engineered for large panoramic glass roofs, this exterior-applied film reflects solar energy before it enters the vehicle. Its highly conformable construction stretches into place without heat forming for a faster, cleaner installation.':'ออกแบบสำหรับหลังคากระจกพาโนรามาขนาดใหญ่ ฟิล์มติดภายนอกช่วยสะท้อนพลังงานแสงอาทิตย์ก่อนเข้าสู่รถ วัสดุยืดหยุ่นสูงช่วยให้ติดตั้งได้รวดเร็วและสะอาดโดยไม่ต้องขึ้นรูปด้วยความร้อน','EXTERIOR HEAT REJECTION':'กันความร้อนจากภายนอก','NO HEAT FORMING':'ไม่ต้องขึ้นรูปด้วยความร้อน','FAST STRETCH INSTALLATION':'ติดตั้งได้รวดเร็ว','TESLA ROOF FILM · WATCH THE VIDEO':'ฟิล์มหลังคา TESLA · ดูวิดีโอ'});
+  Object.assign(additionalTranslations.ms, {'Tesla Panoramic Roof':'Bumbung panoramik Tesla','Exterior Heat-Rejection Film':'Filem penolak haba luaran','Engineered for large panoramic glass roofs, this exterior-applied film reflects solar energy before it enters the vehicle. Its highly conformable construction stretches into place without heat forming for a faster, cleaner installation.':'Direka untuk bumbung kaca panoramik besar, filem luaran ini memantulkan tenaga suria sebelum memasuki kenderaan. Bahan yang mudah dibentuk membolehkan pemasangan lebih cepat dan bersih tanpa pembentukan haba.','EXTERIOR HEAT REJECTION':'PENOLAKAN HABA LUARAN','NO HEAT FORMING':'TANPA PEMBENTUKAN HABA','FAST STRETCH INSTALLATION':'PEMASANGAN PANTAS','TESLA ROOF FILM · WATCH THE VIDEO':'FILEM BUMBUNG TESLA · TONTON VIDEO'});
+  Object.assign(additionalTranslations.hi, {'Tesla Panoramic Roof':'Tesla पैनोरमिक रूफ','Exterior Heat-Rejection Film':'बाहरी हीट-रिजेक्शन फिल्म','Engineered for large panoramic glass roofs, this exterior-applied film reflects solar energy before it enters the vehicle. Its highly conformable construction stretches into place without heat forming for a faster, cleaner installation.':'बड़े पैनोरमिक ग्लास रूफ के लिए बनी यह बाहरी फिल्म सौर ऊर्जा को वाहन में प्रवेश करने से पहले परावर्तित करती है। इसका लचीला निर्माण बिना हीट फॉर्मिंग के तेज़ और साफ इंस्टॉलेशन देता है।','EXTERIOR HEAT REJECTION':'बाहरी गर्मी से सुरक्षा','NO HEAT FORMING':'हीट फॉर्मिंग नहीं','FAST STRETCH INSTALLATION':'तेज़ इंस्टॉलेशन','TESLA ROOF FILM · WATCH THE VIDEO':'TESLA रूफ फिल्म · वीडियो देखें'});
   const dictionaries = Object.fromEntries(supported.map(l => [l, new Map()]));
   const missingTranslations = new Set();
   const translatedTextNodes = new WeakSet();
   rows.forEach(row => {
     const english = chineseEnglish.get(row[0]) || row[0];
     const targets = { en:english, ja:row[1], ko:row[2], 'es-MX':row[3], 'zh-CN':row[4] };
+    for (const language of supported) targets[language] ??= additionalTranslations[language]?.[english] || english;
     [...new Set([...row, english])].forEach(source => supported.forEach(l => {
       if (source) dictionaries[l].set(normalize(source), targets[l]);
     }));
   });
+  for (const [language, translations] of Object.entries(additionalTranslations)) {
+    for (const [english, translated] of Object.entries(translations)) dictionaries[language].set(normalize(english), translated);
+  }
   for (const [chinese, english] of chineseEnglish) {
     const row = rows.find(candidate => normalize(candidate[0]) === normalize(english));
     if (!row) continue;
-    supported.forEach(language => dictionaries[language].set(normalize(chinese), row[indexes[language]]));
+    supported.forEach(language => dictionaries[language].set(
+      normalize(chinese),
+      additionalTranslations[language]?.[english] || row[indexes[language]] || english
+    ));
   }
 
   function normalize(value) { return String(value || '').replace(/\s+/g,' ').trim(); }
@@ -595,7 +619,7 @@
         en:'Content is not available in English.',
         ja:'この内容の日本語訳はまだありません。',
         ko:'이 콘텐츠의 한국어 번역이 아직 없습니다.',
-        'es-MX':'Este contenido aún no está disponible en español.'
+        'es-MX':'Este contenido aún no está disponible en español.',vi:'Nội dung này hiện chưa có bằng tiếng Việt.','pt-BR':'Este conteúdo ainda não está disponível em português.',th:'เนื้อหานี้ยังไม่มีภาษาไทย',ms:'Kandungan ini belum tersedia dalam Bahasa Melayu.',hi:'यह सामग्री अभी हिन्दी में उपलब्ध नहीं है।'
       }[locale];
     }
     return value;
@@ -606,26 +630,26 @@
     const itemCount = text.match(/^(\d+)\s*(?:项|ITEMS?)$/i);
     if (itemCount) {
       const count = itemCount[1];
-      const suffix = {en:Number(count)===1?'ITEM':'ITEMS',ja:'点',ko:'개','es-MX':Number(count)===1?'ARTÍCULO':'ARTÍCULOS','zh-CN':'项'}[locale];
+      const suffix = {en:Number(count)===1?'ITEM':'ITEMS',ja:'点',ko:'개','es-MX':Number(count)===1?'ARTÍCULO':'ARTÍCULOS',vi:'MỤC','pt-BR':Number(count)===1?'ITEM':'ITENS',th:'รายการ',ms:'ITEM',hi:'आइटम','zh-CN':'项'}[locale];
       return `${count} ${suffix}`;
     }
     const rollCount = text.match(/^(\d+)\s+ROLLS?$/i);
     if (rollCount) {
       const count = rollCount[1];
-      const suffix = {en:Number(count)===1?'ROLL':'ROLLS',ja:'巻',ko:'롤','es-MX':Number(count)===1?'ROLLO':'ROLLOS','zh-CN':'卷'}[locale];
+      const suffix = {en:Number(count)===1?'ROLL':'ROLLS',ja:'巻',ko:'롤','es-MX':Number(count)===1?'ROLLO':'ROLLOS',vi:'CUỘN','pt-BR':Number(count)===1?'ROLO':'ROLOS',th:'ม้วน',ms:'GULUNG',hi:'रोल','zh-CN':'卷'}[locale];
       return `${count} ${suffix}`;
     }
     const nextTier = text.match(/^Complete another (\$[\d,.]+) in paid purchases this month to reach the next level\.$/);
-    if (nextTier) return ({en:`Complete another ${nextTier[1]} in paid purchases this month to reach the next level.`,ja:`今月あと${nextTier[1]}の支払済み購入で次のランクに到達します。`,ko:`이번 달 결제 완료 구매 ${nextTier[1]}을 추가하면 다음 등급에 도달합니다.`,'es-MX':`Complete otros ${nextTier[1]} en compras pagadas este mes para subir de nivel.`,'zh-CN':`本月再完成 ${nextTier[1]} 已付款采购即可升级。`})[locale];
+    if (nextTier) return ({en:`Complete another ${nextTier[1]} in paid purchases this month to reach the next level.`,ja:`今月あと${nextTier[1]}の支払済み購入で次のランクに到達します。`,ko:`이번 달 결제 완료 구매 ${nextTier[1]}을 추가하면 다음 등급에 도달합니다.`,'es-MX':`Complete otros ${nextTier[1]} en compras pagadas este mes para subir de nivel.`,'zh-CN':`本月再完成 ${nextTier[1]} 已付款采购即可升级。`})[locale] || text;
     const monthlyAmount = text.match(/^(This Month|Goal):\s*(\$[\d,.]+)$/);
     if (monthlyAmount) {
       const label = monthlyAmount[1] === 'Goal'
         ? {en:'Goal',ja:'目標',ko:'목표','es-MX':'Meta','zh-CN':'目标'}[locale]
         : {en:'This Month',ja:'今月',ko:'이번 달','es-MX':'Este mes','zh-CN':'本月'}[locale];
-      return `${label}: ${monthlyAmount[2]}`;
+      return `${label || monthlyAmount[1]}: ${monthlyAmount[2]}`;
     }
     const invalidSku = text.match(/^(.+?)\s+不是当前可购买的正式 SKU，请返回产品页重新选择。$/);
-    if (invalidSku) return ({en:`${invalidSku[1]} is not a currently purchasable SKU. Return to the product page and select it again.`,ja:`${invalidSku[1]} は現在購入できる正式SKUではありません。商品ページに戻って選び直してください。`,ko:`${invalidSku[1]}은(는) 현재 구매 가능한 정식 SKU가 아닙니다. 제품 페이지로 돌아가 다시 선택하세요.`,'es-MX':`${invalidSku[1]} no es un SKU disponible actualmente. Regrese a la página del producto y selecciónelo de nuevo.`,'zh-CN':text})[locale];
+    if (invalidSku) return ({en:`${invalidSku[1]} is not a currently purchasable SKU. Return to the product page and select it again.`,ja:`${invalidSku[1]} は現在購入できる正式SKUではありません。商品ページに戻って選び直してください。`,ko:`${invalidSku[1]}은(는) 현재 구매 가능한 정식 SKU가 아닙니다. 제품 페이지로 돌아가 다시 선택하세요.`,'es-MX':`${invalidSku[1]} no es un SKU disponible actualmente. Regrese a la página del producto y selecciónelo de nuevo.`,'zh-CN':text})[locale] || text;
     const direct = dictionaries[locale].get(text);
     if (direct) return String(value).replace(text, direct);
     if (locale === 'en') {
@@ -661,7 +685,7 @@
   }
   function picker() {
     const label=document.createElement('label'); label.className='quad-language-picker';
-    const caption=document.createElement('span'); caption.textContent=rows[0][indexes[locale]];
+    const caption=document.createElement('span'); caption.textContent=dictionaries[locale].get('Language') || 'Language';
     const select=document.createElement('select'); select.setAttribute('aria-label',caption.textContent);
     supported.forEach(code=>{const option=document.createElement('option');option.value=code;option.textContent=localeNames[locale][code];option.selected=code===locale;select.append(option);});
     select.addEventListener('change',()=>setLocale(select.value)); label.append(caption,select); return label;
