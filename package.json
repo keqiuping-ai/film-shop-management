@@ -22,6 +22,7 @@
     "test:customer-window-film-cart": "node scripts/test-customer-window-film-cart-flow.js",
     "test:portal-safety": "node scripts/test-portal-customer-safety.js",
     "test:portal-messages": "node scripts/test-portal-message-status.js",
+    "test:public-website-domain": "node scripts/test-public-website-domain-routing.js",
     "test:portal-links": "node scripts/test-portal-customer-link-reconciliation.js",
     "test:yelp-import": "node scripts/test-yelp-partial-import.js",
     "test:customer-address-reply": "node scripts/test-customer-address-reply.js",

@@ -14995,9 +14995,29 @@ function applyWorkshopMovement(db, movement) {
   product.qty = Number(product.qty || 0) - Number(movement.qty || 0);
 }
 
+function requestHostname(req) {
+  const forwardedHost = String(req.headers['x-forwarded-host'] || '').split(',')[0].trim();
+  const rawHost = forwardedHost || String(req.headers.host || '').trim();
+  try {
+    return new URL(`http://${rawHost}`).hostname.toLowerCase();
+  } catch {
+    return rawHost.replace(/^\[|\]$/g, '').split(':')[0].toLowerCase();
+  }
+}
+
+function isPublicWebsiteHost(req) {
+  const configuredHosts = String(process.env.PUBLIC_WEBSITE_HOSTS || 'quadfilmus.com,www.quadfilmus.com')
+    .split(',')
+    .map(host => host.trim().toLowerCase())
+    .filter(Boolean);
+  return configuredHosts.includes(requestHostname(req));
+}
+
 function staticFile(req, res) {
   const url = new URL(req.url, `http://${req.headers.host}`);
-  let filePath = path.join(PUBLIC, decodeURIComponent(url.pathname === '/' ? '/index.html' : url.pathname));
+  const publicWebsiteHome = isPublicWebsiteHost(req) && (url.pathname === '/' || url.pathname === '/index.html');
+  const pathname = publicWebsiteHome ? '/customer.html' : (url.pathname === '/' ? '/index.html' : url.pathname);
+  let filePath = path.join(PUBLIC, decodeURIComponent(pathname));
   if (!filePath.startsWith(PUBLIC)) return send(res, 403, 'Forbidden', 'text/plain; charset=utf-8');
   fs.readFile(filePath, (err, data) => {
     if (err) return send(res, 404, 'Not found', 'text/plain; charset=utf-8');
