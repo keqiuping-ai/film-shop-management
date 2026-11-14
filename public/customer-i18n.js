@@ -2,17 +2,9 @@
   'use strict';
   const STORE = 'quadCustomer.locale';
   const supported = ['en', 'ja', 'ko', 'es-MX', 'vi', 'pt-BR', 'th', 'ms', 'hi', 'zh-CN'];
-  const localeNames = {
-    en:{en:'English',ja:'Japanese',ko:'Korean','es-MX':'Spanish',vi:'Vietnamese','pt-BR':'Portuguese',th:'Thai',ms:'Malay',hi:'Hindi','zh-CN':'Chinese'},
-    ja:{en:'英語',ja:'日本語',ko:'韓国語','es-MX':'スペイン語',vi:'ベトナム語','pt-BR':'ポルトガル語',th:'タイ語',ms:'マレー語',hi:'ヒンディー語','zh-CN':'中国語'},
-    ko:{en:'영어',ja:'일본어',ko:'한국어','es-MX':'스페인어',vi:'베트남어','pt-BR':'포르투갈어',th:'태국어',ms:'말레이어',hi:'힌디어','zh-CN':'중국어'},
-    'es-MX':{en:'Inglés',ja:'Japonés',ko:'Coreano','es-MX':'Español',vi:'Vietnamita','pt-BR':'Portugués',th:'Tailandés',ms:'Malayo',hi:'Hindi','zh-CN':'Chino'},
-    vi:{en:'Tiếng Anh',ja:'Tiếng Nhật',ko:'Tiếng Hàn','es-MX':'Tiếng Tây Ban Nha',vi:'Tiếng Việt','pt-BR':'Tiếng Bồ Đào Nha',th:'Tiếng Thái',ms:'Tiếng Mã Lai',hi:'Tiếng Hindi','zh-CN':'Tiếng Trung'},
-    'pt-BR':{en:'Inglês',ja:'Japonês',ko:'Coreano','es-MX':'Espanhol',vi:'Vietnamita','pt-BR':'Português',th:'Tailandês',ms:'Malaio',hi:'Hindi','zh-CN':'Chinês'},
-    th:{en:'อังกฤษ',ja:'ญี่ปุ่น',ko:'เกาหลี','es-MX':'สเปน',vi:'เวียดนาม','pt-BR':'โปรตุเกส',th:'ไทย',ms:'มาเลย์',hi:'ฮินดี','zh-CN':'จีน'},
-    ms:{en:'Bahasa Inggeris',ja:'Bahasa Jepun',ko:'Bahasa Korea','es-MX':'Bahasa Sepanyol',vi:'Bahasa Vietnam','pt-BR':'Bahasa Portugis',th:'Bahasa Thai',ms:'Bahasa Melayu',hi:'Bahasa Hindi','zh-CN':'Bahasa Cina'},
-    hi:{en:'अंग्रेज़ी',ja:'जापानी',ko:'कोरियाई','es-MX':'स्पेनिश',vi:'वियतनामी','pt-BR':'पुर्तगाली',th:'थाई',ms:'मलय',hi:'हिन्दी','zh-CN':'चीनी'},
-    'zh-CN':{en:'英语',ja:'日语',ko:'韩语','es-MX':'西班牙语',vi:'越南语','pt-BR':'葡萄牙语',th:'泰语',ms:'马来语',hi:'印地语','zh-CN':'中文'}
+  const nativeLocaleNames = {
+    en:'English', ja:'日本語', ko:'한국어', 'es-MX':'Español', vi:'Tiếng Việt',
+    'pt-BR':'Português', th:'ไทย', ms:'Bahasa Melayu', hi:'हिन्दी', 'zh-CN':'中文'
   };
   let locale = supported.includes(localStorage.getItem(STORE)) ? localStorage.getItem(STORE) : 'en';
 
@@ -687,7 +679,7 @@
     const label=document.createElement('label'); label.className='quad-language-picker';
     const caption=document.createElement('span'); caption.textContent=dictionaries[locale].get('Language') || 'Language';
     const select=document.createElement('select'); select.setAttribute('aria-label',caption.textContent);
-    supported.forEach(code=>{const option=document.createElement('option');option.value=code;option.textContent=localeNames[locale][code];option.selected=code===locale;select.append(option);});
+    supported.forEach(code=>{const option=document.createElement('option');option.value=code;option.textContent=nativeLocaleNames[code];option.selected=code===locale;select.append(option);});
     select.addEventListener('change',()=>setLocale(select.value)); label.append(caption,select); return label;
   }
   function injectPickers() {
