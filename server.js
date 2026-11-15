@@ -15117,7 +15117,8 @@ function isPublicWebsiteHost(req) {
 function staticFile(req, res) {
   const url = new URL(req.url, `http://${req.headers.host}`);
   const publicWebsiteHome = isPublicWebsiteHost(req) && (url.pathname === '/' || url.pathname === '/index.html');
-  const pathname = publicWebsiteHome ? '/customer.html' : (url.pathname === '/' ? '/index.html' : url.pathname);
+  const requestedPathname = publicWebsiteHome ? '/customer.html' : (url.pathname === '/' ? '/index.html' : url.pathname);
+  const pathname = requestedPathname.endsWith('/') ? `${requestedPathname}index.html` : requestedPathname;
   let filePath = path.join(PUBLIC, decodeURIComponent(pathname));
   if (!filePath.startsWith(PUBLIC)) return send(res, 403, 'Forbidden', 'text/plain; charset=utf-8');
   const ext = path.extname(filePath);
