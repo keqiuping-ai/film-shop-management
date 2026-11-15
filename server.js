@@ -30,6 +30,7 @@ const SESSION_SECRET_FILE = path.join(DATA_DIR, 'session-secret');
 const CONFIG_FILE = path.join(ROOT, 'server-config.json');
 const VERSION_FILE = path.join(ROOT, 'version.json');
 const SANTA_MONICA_FIELD_SALES_SEED_FILE = path.join(ROOT, 'migrations', 'santa-monica-field-sales-2026-10-13.json');
+const LOS_ANGELES_CHINESE_SERVICE_SHOPS_SEED_FILE = path.join(ROOT, 'migrations', 'los-angeles-chinese-service-film-shops-2026-11-14.json');
 const LAS_VEGAS_FIELD_SALES_SEED_FILE = path.join(ROOT, 'migrations', 'las-vegas-field-sales-2026-10-13.json');
 const REGIONAL_FIELD_SALES_IMPORTS = [
   { marketId:'san-francisco', marketLabel:'旧金山', accountPrefix:'sf', photoPrefix:'sf', file:path.join(ROOT, 'migrations', 'san-francisco-field-sales-2026-10-14.json') },
@@ -848,6 +849,97 @@ function applySantaMonicaFieldSalesProspectImport() {
   };
   audit(db, { id:'system-import', name:'公开客户资料导入' }, 'import-santa-monica-field-sales-prospects', {
     collection:'salesAccounts', detail:`导入 ${importedAccountIds.length} 家门店与 ${db.santaMonicaFieldSalesImportSummary.photos} 张公开资料照片`
+  });
+  writeDb(db);
+}
+
+function applyLosAngelesChineseServiceShopImport() {
+  const enabled = process.env.ENABLE_LOS_ANGELES_CHINESE_SERVICE_SHOPS_IMPORT === 'true'
+    || DATA_DIR === '/app/data'
+    || Boolean(process.env.RAILWAY_PROJECT_ID || process.env.RAILWAY_ENVIRONMENT_NAME || process.env.RAILWAY_SERVICE_ID);
+  if (!enabled || !fs.existsSync(LOS_ANGELES_CHINESE_SERVICE_SHOPS_SEED_FILE)) return;
+  const seed = JSON.parse(fs.readFileSync(LOS_ANGELES_CHINESE_SERVICE_SHOPS_SEED_FILE, 'utf8'));
+  const versionKey = String(seed.version || 'los-angeles-chinese-service-film-shops-2026-11-14-v1');
+  const db = readDb();
+  if (db.losAngelesChineseServiceShopImportVersion === versionKey) return;
+  db.salesAccounts = Array.isArray(db.salesAccounts) ? db.salesAccounts : [];
+  const now = new Date().toISOString();
+  const normalizeKey = value => String(value || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+  const existingByRecord = new Map(db.salesAccounts.filter(row => row.publicRecordId).map(row => [String(row.publicRecordId), row]));
+  const existingByNameAddress = new Map(db.salesAccounts.map(row => [`${normalizeKey(row.businessName)}|${normalizeKey(row.address)}`, row]));
+  let createdAccounts = 0;
+  let updatedAccounts = 0;
+  const accountIds = [];
+  for (const source of (seed.records || [])) {
+    const recordId = String(source.publicRecordId || '').trim();
+    if (!recordId || !source.businessName || !source.address) continue;
+    const dedupeKey = `${normalizeKey(source.businessName)}|${normalizeKey(source.address)}`;
+    let account = existingByRecord.get(recordId) || existingByNameAddress.get(dedupeKey);
+    if (!account) {
+      account = {
+        id:`la-chinese-service-${recordId.toLowerCase()}`,
+        publicRecordId:recordId,
+        businessName:String(source.businessName).slice(0, 180),
+        address:String(source.address).slice(0, 300),
+        branchId:'los-angeles', marketId:'los-angeles',
+        contactName:'', phone:String(source.phone || '').slice(0, 80), email:'',
+        city:String(source.city || '').slice(0, 120),
+        customerType:'汽车贴膜门店', source:'公开中文渠道与 Google 地图核验', language:'auto',
+        assignedUserId:'', assignedUserName:'', leadPool:true,
+        cadenceDays:30, stage:'待拜访', lastVisitAt:'', nextVisitAt:'',
+        createdByUserId:'system-import', createdByName:'公开客户资料导入',
+        createdAt:String(seed.verifiedAt || now), updatedAt:now
+      };
+      db.salesAccounts.unshift(account);
+      createdAccounts += 1;
+    } else {
+      updatedAccounts += 1;
+    }
+    account.marketId = 'los-angeles';
+    account.customerSegment = 'chinese-service';
+    account.chineseServiceVerified = true;
+    account.chineseServiceDefinition = String(seed.categoryDefinition || '').slice(0, 500);
+    account.chineseServiceEvidence = String(source.serviceEvidence || '').slice(0, 1200);
+    account.chineseServiceVerifiedAt = String(seed.verifiedAt || now).slice(0, 80);
+    account.importBatchId = versionKey;
+    account.website = String(source.website || '').slice(0, 500);
+    account.googleMapsUrl = String(source.googleMapsUrl || '').slice(0, 1000);
+    account.directorySource = String(source.directorySource || '').slice(0, 1000);
+    account.socialLinks = source.socialLinks && typeof source.socialLinks === 'object' ? source.socialLinks : {};
+    account.services = String(source.services || '').slice(0, 3000);
+    account.serviceEvidence = String(source.serviceEvidence || '').slice(0, 1200);
+    account.visitRegion = String(source.visitRegion || '圣盖博谷／内陆东区').slice(0, 120);
+    account.visitRoute = String(source.route || 'CN').slice(0, 20);
+    account.visitBatch = String(source.visitBatch || 'CN-01').slice(0, 40);
+    account.visitStop = Math.max(0, Number(source.visitStop || 0));
+    account.navigationUrl = String(source.navigationUrl || '').slice(0, 1500);
+    applyGoogleFieldSalesVerification(account, source);
+    account.note = [source.services, source.serviceEvidence].filter(Boolean).join('\n').slice(0, 3000);
+    if (!account.assignedUserId) account.leadPool = true;
+    account.updatedAt = now;
+    existingByRecord.set(recordId, account);
+    existingByNameAddress.set(dedupeKey, account);
+    accountIds.push(account.id);
+  }
+  if (accountIds.length !== Number(seed.recordCount || 7)) {
+    throw new Error(`Los Angeles Chinese-service shop import expected ${seed.recordCount || 7} accounts, found ${accountIds.length}`);
+  }
+  const staleRedIslandMatch = db.salesAccounts.find(row => row.publicRecordId === 'SM117' && String(row.googleBusinessCategory || '').includes('Red Island'));
+  if (staleRedIslandMatch) {
+    staleRedIslandMatch.googleBusinessName = '';
+    staleRedIslandMatch.googleBusinessCategory = '';
+    staleRedIslandMatch.googleBusinessHours = '';
+    staleRedIslandMatch.googleVerificationReasons = ['Previous Google result belonged to a different business; record remains hidden pending re-verification'];
+    staleRedIslandMatch.updatedAt = now;
+  }
+  if (fs.existsSync(DB_FILE)) {
+    fs.mkdirSync(BACKUP_DIR, { recursive:true });
+    fs.copyFileSync(DB_FILE, path.join(BACKUP_DIR, `db-before-los-angeles-chinese-service-shops-${now.replace(/[:.]/g, '-')}.json`));
+  }
+  db.losAngelesChineseServiceShopImportVersion = versionKey;
+  db.losAngelesChineseServiceShopImportSummary = { accounts:accountIds.length, createdAccounts, updatedAccounts, verifiedAt:seed.verifiedAt || now, importedAt:now };
+  audit(db, { id:'system-import', name:'公开客户资料导入' }, 'import-los-angeles-chinese-service-shops', {
+    collection:'salesAccounts', detail:`导入并分类 ${accountIds.length} 家公开中文服务且经 Google 核验的洛杉矶贴膜门店`
   });
   writeDb(db);
 }
@@ -9754,6 +9846,7 @@ async function api(req, res) {
   }
 
   if (req.method === 'GET' && url.pathname === '/api/health') {
+    const losAngelesChineseServiceAccounts = (db.salesAccounts || []).filter(item => item.active !== false && item.marketId === 'los-angeles' && item.customerSegment === 'chinese-service' && item.googleVerificationStatus === 'confirmed').length;
     const importedAccounts = (db.salesAccounts || []).filter(item => item.active !== false && item.importBatchId === db.santaMonicaFieldSalesImportVersion).length;
     const importedArchitecturalAccounts = (db.salesAccounts || []).filter(item => item.active !== false && item.importBatchId === db.santaMonicaFieldSalesImportVersion && (item.customerType === '建筑膜客户' || String(item.architecturalServices || '').trim())).length;
     const importedPhotos = (db.salesAttachments || []).filter(item => item.referenceMaterial === true && item.id.startsWith('sm-reference-photo-')).length;
@@ -9796,6 +9889,12 @@ async function api(req, res) {
         googleConfirmed:Number(db.santaMonicaFieldSalesImportSummary?.confirmedAccounts || 0),
         googleRejected:Number(db.santaMonicaFieldSalesImportSummary?.rejectedAccounts || 0),
         googleNeedsReview:Number(db.santaMonicaFieldSalesImportSummary?.needsReviewAccounts || 0)
+      },
+      losAngelesChineseServiceShops: {
+        version:db.losAngelesChineseServiceShopImportVersion || '',
+        accounts:losAngelesChineseServiceAccounts,
+        totalAudited:Number(db.losAngelesChineseServiceShopImportSummary?.accounts || 0),
+        verifiedAt:db.losAngelesChineseServiceShopImportSummary?.verifiedAt || ''
       },
       lasVegasFieldSalesImport: {
         version:db.lasVegasFieldSalesImportVersion || '', accounts:importedLasVegasAccounts,
@@ -15184,6 +15283,7 @@ applyCustomerNumberRemoval();
 applyLasVegasLegacyBranchMigration();
 applyGmProCanonicalSkuMigration();
 applySantaMonicaFieldSalesProspectImport();
+applyLosAngelesChineseServiceShopImport();
 applyLasVegasFieldSalesProspectImport();
 applyRegionalFieldSalesProspectImports();
 expireInternalMessageVideos();

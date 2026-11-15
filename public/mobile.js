@@ -1708,6 +1708,7 @@ function salesCustomerTypeValue(type) {
   return Object.entries(SALES_CUSTOMER_TYPE_ENGLISH).find(([, label]) => label === value)?.[0] || value;
 }
 function salesAccountCategory(account) {
+  if (String(account?.customerSegment || '') === 'chinese-service' || account?.chineseServiceVerified === true) return 'chinese-service';
   const interests = Array.isArray(account?.interestedProducts) ? account.interestedProducts : [];
   const architectural = String(account?.customerType || '') === '建筑膜客户'
     || Boolean(String(account?.architecturalServices || '').trim())
@@ -1715,6 +1716,7 @@ function salesAccountCategory(account) {
   return architectural ? 'architectural' : 'automotive';
 }
 function salesCategoryLabel(category) {
+  if (category === 'chinese-service') return lang === 'en' ? 'Chinese-Speaking Film Shops' : '中文服务贴膜店';
   if (category === 'architectural') return lang === 'en' ? 'Architectural Film' : '建筑膜';
   return lang === 'en' ? 'Automotive Film' : '汽车膜';
 }
@@ -1730,8 +1732,8 @@ function salesLocalizedHtml(html) {
   const phrases = {
     '客户拜访':'Customer Visits','选择区域和客户，拍照定位，填写结果':'Choose an area and customer, take a location-tagged photo, and record the result',
     '选择城市':'Select City','各城市客资、方向和路线独立显示':'Customers, areas, and routes are organized separately by city',
-    '选择客户类型':'Select Customer Type','汽车膜与建筑膜客户分开显示':'Automotive and architectural film customers are shown separately',
-    '汽车膜':'Automotive Film','建筑膜':'Architectural Film',
+    '选择客户类型':'Select Customer Type','汽车膜、建筑膜与中文服务门店分开显示':'Automotive, architectural, and Chinese-speaking film shops are shown separately',
+    '汽车膜':'Automotive Film','建筑膜':'Architectural Film','中文服务贴膜店':'Chinese-Speaking Film Shops',
     '选择拜访区域':'Select Visit Area','点击客户即可拍照定位并开始拜访':'Select a customer to take a location-tagged photo and start the visit',
     '搜索客户、地址或联系人':'Search customer, address, or contact','这个城市还没有客户资料。':'No customers are available in this city yet.',
     '这个区域还没有客户。':'No customers are available in this area.','这个类型还没有客户资料。':'No customers are available in this category yet.','选择客户':'Select Customer','暂无资料照片':'No profile photo',
@@ -1907,9 +1909,10 @@ function salesHomeHtml() {
     salesSelectedCity = cityGroups[preferredCity]?.length ? preferredCity : (cityOrder.find(city => cityGroups[city]?.length) || 'los-angeles');
   }
   const cityAccounts = cityGroups[salesSelectedCity] || [];
-  const categoryGroups = { automotive:[], architectural:[] };
+  const categoryGroups = { automotive:[], architectural:[], 'chinese-service':[] };
   cityAccounts.forEach(account => categoryGroups[salesAccountCategory(account)].push(account));
-  if (!categoryGroups[salesSelectedCustomerCategory]) salesSelectedCustomerCategory = 'automotive';
+  const availableCategories = salesSelectedCity === 'los-angeles' ? ['automotive','architectural','chinese-service'] : ['automotive','architectural'];
+  if (!availableCategories.includes(salesSelectedCustomerCategory)) salesSelectedCustomerCategory = 'automotive';
   const categoryAccounts = categoryGroups[salesSelectedCustomerCategory] || [];
   const regionGroups = categoryAccounts.reduce((groups, account) => {
     const region = salesAccountRegion(account);
@@ -1949,7 +1952,7 @@ function salesHomeHtml() {
     <nav class="sales-simple-secondary sales-simple-secondary-top" aria-label="${lang === 'en' ? 'Quick actions' : '常用功能'}">${secondary}</nav>
     ${myCustomersPanel}
     <section class="sales-simple-step"><header><i>1</i><div><b>选择城市</b><span>各城市客资、方向和路线独立显示</span></div></header><div class="sales-city-grid">${cityOrder.map(city => `<button class="${city === salesSelectedCity ? 'active' : ''}" onclick="selectSalesCity('${city}')"><b>${escapeHtml(salesCityLabel(city))}</b><span>${cityGroups[city]?.length || 0} ${lang === 'en' ? 'customers' : '位客户'}</span></button>`).join('')}</div></section>
-    <section class="sales-simple-step"><header><i>2</i><div><b>选择客户类型</b><span>汽车膜与建筑膜客户分开显示</span></div></header><div class="sales-category-grid">${['automotive','architectural'].map(category => `<button class="${category === salesSelectedCustomerCategory ? 'active' : ''}" onclick="selectSalesCustomerCategory('${category}')"><b>${escapeHtml(salesCategoryLabel(category))}</b><span>${categoryGroups[category].length} ${lang === 'en' ? 'customers' : '位客户'}</span></button>`).join('')}</div></section>
+    <section class="sales-simple-step"><header><i>2</i><div><b>选择客户类型</b><span>汽车膜、建筑膜与中文服务门店分开显示</span></div></header><div class="sales-category-grid">${availableCategories.map(category => `<button class="${category === salesSelectedCustomerCategory ? 'active' : ''}" onclick="selectSalesCustomerCategory('${category}')"><b>${escapeHtml(salesCategoryLabel(category))}</b><span>${categoryGroups[category].length} ${lang === 'en' ? 'customers' : '位客户'}</span></button>`).join('')}</div></section>
     <section class="sales-simple-step"><header><i>3</i><div><b>选择拜访区域</b><span>${lang === 'en' ? `Only show ${escapeHtml(salesCategoryLabel(salesSelectedCustomerCategory).toLowerCase())} customers in ${escapeHtml(salesCityLabel(salesSelectedCity))}` : `只显示${escapeHtml(salesCityLabel(salesSelectedCity))}的${escapeHtml(salesCategoryLabel(salesSelectedCustomerCategory))}客户`}</span></div></header><div class="sales-region-grid">${regions.map(region => `<button class="${region === salesSelectedRegion ? 'active' : ''}" onclick="selectSalesRegion('${region}')"><b>${escapeHtml(salesRegionLabel(region))}</b><span>${regionGroups[region].length} ${lang === 'en' ? 'customers' : '位客户'}</span></button>`).join('') || '<p class="hint">这个类型还没有客户资料。</p>'}</div></section>
     <section class="sales-simple-step"><header><i>4</i><div><b>${escapeHtml(salesSelectedRegion ? salesRegionLabel(salesSelectedRegion) : (lang === 'en' ? 'Select Customer' : '选择客户'))}</b><span>点击客户即可拍照定位并开始拜访</span></div></header><label class="sales-search">⌕<input placeholder="搜索客户、地址或联系人" oninput="filterSalesCards(this.value)"></label><div id="salesCustomerCards" class="sales-simple-customers">${visibleAccounts.map(salesSimpleCustomerCard).join('') || '<p class="hint">这个区域还没有客户。</p>'}</div></section>
   </div>`);
@@ -1985,7 +1988,7 @@ function selectSalesRegion(region) {
 
 function selectSalesCustomerCategory(category) {
   salesCustomerView = 'browse';
-  salesSelectedCustomerCategory = category === 'architectural' ? 'architectural' : 'automotive';
+  salesSelectedCustomerCategory = ['automotive', 'architectural', 'chinese-service'].includes(category) ? category : 'automotive';
   salesSelectedRegion = '';
   render();
 }

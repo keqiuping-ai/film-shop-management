@@ -27,7 +27,7 @@ assert.match(mobileCss, /\.mobile-dialog\.sales-review-dialog[^}]*1180px[^}]*94d
 assert.match(mobileCss, /@media \(max-width:620px\)[\s\S]*\.mobile-dialog\.sales-review-dialog[^}]*100vw[^}]*100dvh/,
   'phone review must use the full screen');
 assert.ok(mobileHtml.includes('/mobile.css?v=71'));
-assert.ok(mobileHtml.includes('/mobile.js?v=87'));
-assert.ok(serviceWorker.includes('film-shop-personal-note-photo-position-20261031'));
+assert.ok(mobileHtml.includes('/mobile.js?v=89-chinese-service-shops'));
+assert.ok(serviceWorker.includes('film-shop-chinese-service-shops-20261114'));
 
 console.log('Field sales customer review detail tests passed.');

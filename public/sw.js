@@ -1,4 +1,4 @@
-const CACHE_NAME = 'film-shop-personal-note-photo-position-20261031';
+const CACHE_NAME = 'film-shop-chinese-service-shops-20261114';
 const ASSETS = [
     '/mobile.html',
     '/warranty.html',

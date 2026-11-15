@@ -73,8 +73,8 @@ async function run() {
   assert.match(mobileSource, /const sentState = await api\('\/api\/messages'/, 'Mobile attachment sends must render the durable POST response instead of replacing it with another bootstrap request');
   assert.match(mobileSource, /showMobileVoiceFeedback\(queued\.kind === 'image' \? t\('imageSent'\)/, 'Mobile image sends must show a visible success confirmation');
   assert.match(mobileSource, /file input's change event counts as active editing[\s\S]*lastUserInputAt = 0;[\s\S]*render\(\{ preserveActiveInput: false \}\)/, 'Selecting a file must not suppress the optimistic or confirmed image render');
-  assert(mobileHtml.includes('/mobile.js?v=87'), 'Mobile app asset marker must be bumped');
-  assert(serviceWorker.includes('film-shop-personal-note-photo-position-20261031'), 'Service worker cache must be bumped');
+  assert(mobileHtml.includes('/mobile.js?v=89-chinese-service-shops'), 'Mobile app asset marker must be bumped');
+  assert(serviceWorker.includes('film-shop-chinese-service-shops-20261114'), 'Service worker cache must be bumped');
   assert.match(appSource, /function capturePageContinuityState\(\)/, 'Desktop refreshes must capture page and nested-scroll positions');
   assert.match(appSource, /function restorePageContinuityState\(snapshot\)/, 'Desktop refreshes must restore page and nested-scroll positions');
   assert.match(appSource, /const unchangedBackgroundRefresh = Boolean\(/, 'Unchanged background refreshes must not rebuild the current page');
