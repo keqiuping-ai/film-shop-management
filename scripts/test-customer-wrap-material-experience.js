@@ -42,7 +42,7 @@ assert(!css.includes('.wrap-material-card.selected'), 'Informational cards must 
 assert(i18n.includes('Understand the materials before choosing a color'), 'Display-only guide English localization is missing');
 assert(i18n.includes('Color selection and inventory ordering below work exactly as before.'), 'Preserved workflow explanation localization is missing');
 assert(!i18n.includes('Your material choice filters the products'), 'Material filter wording must be removed');
-assert(html.includes('/customer.css?v=43'));
+assert(html.includes('/customer.css?v=44'));
 assert(html.includes('/customer-ordering.js?v=64'));
 assert(html.includes('/customer-i18n.js?v=43'));
 assert(sw.includes('film-shop-field-sales-roster-filters-20261017'));

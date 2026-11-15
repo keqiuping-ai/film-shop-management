@@ -33,7 +33,7 @@ assert(source.includes("'/retail/assets/wrap-swatches/matte-pending-thumb.png'")
 assert(css.includes('grid-template-columns:repeat(4,minmax(0,1fr))'), 'Desktop vehicle cards should use a readable four-column grid');
 assert(css.includes('grid-template-columns:repeat(2,minmax(0,1fr))'), 'Mobile vehicle cards should use a readable two-column grid');
 assert(css.includes('aspect-ratio:3/4'), 'Vehicle cards must preserve portrait preview framing');
-assert(html.includes('/customer.css?v=43'));
+assert(html.includes('/customer.css?v=44'));
 assert.strictEqual(racingExamples.length, 21, 'The custom-payment gallery should use the retained R-01 through R-21 racing references');
 racingExamples.forEach((item, index) => {
   const expectedCode = `R-${String(index + 1).padStart(2, '0')}`;

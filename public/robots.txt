@@ -1,0 +1,15 @@
+User-agent: *
+Allow: /
+Disallow: /api/
+Disallow: /uploads/
+Disallow: /downloads/
+Disallow: /mobile.html
+Disallow: /deposit.html
+Disallow: /warranty.html
+Disallow: /phone-assistant.html
+Disallow: /voice-agent.html
+Disallow: /recruiting-interview.html
+Disallow: /gelianghao/
+Disallow: /retail/
+
+Sitemap: https://quadfilmus.com/sitemap.xml

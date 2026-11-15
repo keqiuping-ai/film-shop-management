@@ -15160,6 +15160,9 @@ function staticFile(req, res) {
         ? 'no-cache'
         : (textAsset ? 'public, max-age=300' : (['.png', '.jpg', '.jpeg', '.webp', '.gif', '.avif', '.ico', '.icns'].includes(ext) ? 'public, max-age=86400' : 'no-store'))
     };
+    if (isPublicWebsiteHost(req) && ['/mobile.html', '/deposit.html', '/warranty.html', '/phone-assistant.html', '/voice-agent.html', '/recruiting-interview.html'].includes(pathname)) {
+      headers['X-Robots-Tag'] = 'noindex, nofollow';
+    }
     if (textAsset && acceptsGzip(req) && data.length > 1024) {
       const gzipped = zlib.gzipSync(data);
       headers['Content-Encoding'] = 'gzip';
