@@ -44,7 +44,7 @@ assert(i18n.includes('Color selection and inventory ordering below work exactly 
 assert(!i18n.includes('Your material choice filters the products'), 'Material filter wording must be removed');
 assert(html.includes('/customer.css?v=40'));
 assert(html.includes('/customer-ordering.js?v=63'));
-assert(html.includes('/customer-i18n.js?v=40'));
+assert(html.includes('/customer-i18n.js?v=43'));
 assert(sw.includes('film-shop-field-sales-roster-filters-20261017'));
 
 ['vinyl-swirl-detail.jpeg', 'tpu-reflection-clean.png', 'vinyl-aged-two-years.jpeg'].forEach(file => {

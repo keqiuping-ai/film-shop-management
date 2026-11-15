@@ -26,9 +26,9 @@ assert(customer.includes("title:'PAYMENT CONFIRMED'"), 'confirmed payment copy m
 assert(customer.includes("title:'PAYMENT RECEIVED · CONFIRMING'"), 'delayed webhook confirmation must be explicit');
 
 assert(html.includes('/customer.css?v=40'));
-assert(html.includes('/customer.js?v=24'));
+assert(html.includes('/customer.js?v=25'));
 assert(html.includes('/customer-ordering.js?v=63'));
-assert(html.includes('/customer-i18n.js?v=40'));
+assert(html.includes('/customer-i18n.js?v=43'));
 assert(sw.includes('film-shop-field-sales-roster-filters-20261017'));
 
 console.log('Customer window-film cart flow tests passed: click lock, row reuse, cart scroll, compact feedback, and Stripe return routing.');

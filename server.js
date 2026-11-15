@@ -15020,17 +15020,46 @@ function staticFile(req, res) {
   const pathname = publicWebsiteHome ? '/customer.html' : (url.pathname === '/' ? '/index.html' : url.pathname);
   let filePath = path.join(PUBLIC, decodeURIComponent(pathname));
   if (!filePath.startsWith(PUBLIC)) return send(res, 403, 'Forbidden', 'text/plain; charset=utf-8');
+  const ext = path.extname(filePath);
+  const type = mime[ext] || 'application/octet-stream';
+  if (['.mp4', '.webm', '.mov'].includes(ext)) {
+    return fs.stat(filePath, (statError, stat) => {
+      if (statError || !stat.isFile()) return send(res, 404, 'Not found', 'text/plain; charset=utf-8');
+      const headers = {
+        'Content-Type': type,
+        'Accept-Ranges': 'bytes',
+        'Cache-Control': 'public, max-age=604800',
+        'X-Content-Type-Options': 'nosniff'
+      };
+      const range = String(req.headers.range || '');
+      if (range) {
+        const match = range.match(/^bytes=(\d*)-(\d*)$/);
+        if (!match) {
+          res.writeHead(416, { ...headers, 'Content-Range': `bytes */${stat.size}` });
+          return res.end();
+        }
+        const start = match[1] ? Number(match[1]) : 0;
+        const end = Math.min(match[2] ? Number(match[2]) : stat.size - 1, stat.size - 1);
+        if (!Number.isFinite(start) || start < 0 || start > end || start >= stat.size) {
+          res.writeHead(416, { ...headers, 'Content-Range': `bytes */${stat.size}` });
+          return res.end();
+        }
+        res.writeHead(206, { ...headers, 'Content-Range': `bytes ${start}-${end}/${stat.size}`, 'Content-Length': end - start + 1 });
+        return fs.createReadStream(filePath, { start, end }).pipe(res);
+      }
+      res.writeHead(200, { ...headers, 'Content-Length': stat.size });
+      return fs.createReadStream(filePath).pipe(res);
+    });
+  }
   fs.readFile(filePath, (err, data) => {
     if (err) return send(res, 404, 'Not found', 'text/plain; charset=utf-8');
-    const ext = path.extname(filePath);
-    const type = mime[ext] || 'application/octet-stream';
     const fileName = path.basename(filePath);
     const textAsset = /html|json|javascript|css|svg|manifest/.test(type);
     const headers = {
       'Content-Type': type,
       'Cache-Control': fileName === 'index.html' || fileName === 'mobile.html' || fileName === 'customer.html' || fileName === 'warranty.html' || fileName === 'recruiting-interview.html'
         ? 'no-cache'
-        : (textAsset || ['.png', '.icns'].includes(ext) ? 'public, max-age=300' : 'no-store')
+        : (textAsset ? 'public, max-age=300' : (['.png', '.jpg', '.jpeg', '.webp', '.gif', '.avif', '.ico', '.icns'].includes(ext) ? 'public, max-age=86400' : 'no-store'))
     };
     if (textAsset && acceptsGzip(req) && data.length > 1024) {
       const gzipped = zlib.gzipSync(data);
