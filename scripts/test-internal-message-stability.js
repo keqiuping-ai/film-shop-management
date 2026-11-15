@@ -65,7 +65,7 @@ async function run() {
   assert.match(appSource, /applyInternalMessageTombstones/, 'Every message snapshot must remove locally deleted ids');
   assert.match(serverSource, /DELETE is intentionally idempotent/, 'Repeated deletes must return current state without a false not-found error');
   assert(indexSource.includes('/app.js?v=174'), 'Desktop app asset marker must match the current release');
-  assert(indexSource.includes('/styles.css?v=116'), 'Desktop stylesheet marker must match the current release');
+  assert(indexSource.includes('/styles.css?v=117'), 'Desktop stylesheet marker must match the current release');
   assert.match(mobileSource, /const mobileMessageSendQueue = new Map\(\)/, 'Mobile text sends must survive bootstrap replacement');
   assert.match(mobileSource, /mobileMessageSendQueue\.set\(pendingId/, 'Mobile text must render optimistically');
   assert.match(mobileSource, /正在发送…/, 'Mobile pending text must show sending status');
