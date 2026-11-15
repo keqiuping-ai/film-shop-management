@@ -25,7 +25,7 @@ assert(!customer.includes("alert('Payment confirmed. Your order has been updated
 assert(customer.includes("title:'PAYMENT CONFIRMED'"), 'confirmed payment copy must be explicit');
 assert(customer.includes("title:'PAYMENT RECEIVED · CONFIRMING'"), 'delayed webhook confirmation must be explicit');
 
-assert(html.includes('/customer.css?v=42'));
+assert(html.includes('/customer.css?v=43'));
 assert(html.includes('/customer.js?v=26'));
 assert(html.includes('/customer-ordering.js?v=64'));
 assert(html.includes('/customer-i18n.js?v=43'));
