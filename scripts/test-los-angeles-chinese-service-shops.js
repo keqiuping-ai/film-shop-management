@@ -10,7 +10,7 @@ const mobile = fs.readFileSync(path.join(root, 'public', 'mobile.js'), 'utf8');
 assert.equal(seed.marketId, 'los-angeles');
 assert.equal(seed.category, 'chinese-service');
 assert.equal(seed.records.length, seed.recordCount);
-assert.equal(seed.recordCount, 7);
+assert.equal(seed.recordCount, 14);
 assert.equal(new Set(seed.records.map(row => row.publicRecordId)).size, seed.recordCount);
 assert(seed.categoryDefinition.includes('不得据姓名、照片或外貌推断经营者族裔'));
 assert(seed.records.every(row => row.businessName && row.address && row.phone && row.googleMapsUrl && row.directorySource));
@@ -18,6 +18,13 @@ assert(seed.records.every(row => row.googleVerificationStatus === 'confirmed' &&
 assert(seed.records.every(row => row.googleHasBusinessHours && row.googleHasBusinessPhotos && row.googleAddressMatches));
 assert(seed.records.every(row => row.googleBusinessAddress && row.googleReviewCount > 0 && row.googleRating > 0));
 assert(seed.records.every(row => row.visitRegion && row.visitBatch && row.visitStop > 0 && row.navigationUrl));
+assert(seed.records.some(row => row.businessName.includes('VEERTECH')));
+assert(seed.records.some(row => row.businessName.includes('T9 Color Wrapping')));
+assert(seed.records.some(row => row.businessName.includes('DMC-AUTOCARE')));
+assert(seed.records.some(row => row.businessName.includes('Elite Wraps')));
+assert(seed.records.some(row => row.businessName.includes('Cali Auto Tint Wraps')));
+assert(seed.records.some(row => row.businessName.includes('CYBER TINT')));
+assert(seed.records.some(row => row.businessName.includes('Toyz Detail Studio')));
 
 assert(server.includes('applyLosAngelesChineseServiceShopImport();'));
 assert(server.includes("account.customerSegment = 'chinese-service'"));
