@@ -42,7 +42,7 @@ assert(html.includes("onclick=\"openProductCategory('ppf')\""));
 assert(html.includes("onclick=\"openProductCategory('color-wrap')\""));
 assert(html.includes("onclick=\"openProductCategory('window-film')\""));
 assert(html.includes("onclick=\"openProductCategory('yacht-film')\""));
-assert(html.includes('/customer.js?v=28-payment-return'));
+assert(html.includes('/customer.js?v=29-connectivity-scope'));
 assert(html.includes('data-deferred-video autoplay muted loop playsinline preload="none"'), 'homepage videos must not download before they approach the viewport');
 assert(html.includes('<source data-src="/assets/quad-tesla-roof-film-us-final.mp4"'), 'the large product video must load only when its modal opens');
 assert(customer.includes('function initializeDeferredVideos()'), 'customer media needs viewport-based deferred loading');

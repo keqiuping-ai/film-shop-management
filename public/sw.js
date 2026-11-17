@@ -1,4 +1,4 @@
-const CACHE_NAME = 'film-shop-checkout-latency-20261117';
+const CACHE_NAME = 'film-shop-connectivity-scope-20261117';
 const ASSETS = [
     '/mobile.html',
     '/offline.html',

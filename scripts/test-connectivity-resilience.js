@@ -21,7 +21,10 @@ assert(customer.includes('/connectivity.js?v=2-checkout-latency'), 'customer che
 assert(app.includes('服务器线路异常 · 点击顶部提示重试'), 'management sync must show an explicit route failure');
 const syncSource = app.slice(app.indexOf('async function sync(options = {})'), app.indexOf('function renderAuth()'));
 assert(!syncSource.includes("localStorage.removeItem('filmShopCloud.token')"), 'management sync must not erase a valid login on a network failure');
-assert(customerJs.includes('timeoutMs=Number(options.timeoutMs??30000)'), 'customer requests must have a bounded timeout');
+assert(customerJs.includes('timeoutMs=Number(requestedTimeout??30000)'), 'customer requests must have a bounded timeout');
+assert(customerJs.includes("api('/api/customer/bootstrap',{reportConnectivity:false})"), 'background customer refresh must not display a global connectivity failure');
+assert(customerJs.includes("body:'{}',reportConnectivity:false"), 'background read receipts must not display a global connectivity failure');
+assert(customer.includes('/customer.js?v=29-connectivity-scope'), 'customer entry must bypass the previous cached request wrapper');
 assert(serviceWorker.includes("'/offline.html'"), 'service worker must cache the offline route page');
 assert(serviceWorker.includes("caches.match('/offline.html')"), 'navigation failures must render the offline route page');
 

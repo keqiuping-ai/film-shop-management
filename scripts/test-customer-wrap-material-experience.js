@@ -45,7 +45,7 @@ assert(!i18n.includes('Your material choice filters the products'), 'Material fi
 assert(html.includes('/customer.css?v=46-payment-return'));
 assert(html.includes('/customer-ordering.js?v=66-checkout-latency'));
 assert(html.includes('/customer-i18n.js?v=43'));
-assert(sw.includes('film-shop-checkout-latency-20261117'));
+assert(sw.includes('film-shop-connectivity-scope-20261117'));
 
 ['vinyl-swirl-detail.jpeg', 'tpu-reflection-clean.png', 'vinyl-aged-two-years.jpeg'].forEach(file => {
   assert(fs.existsSync(path.join(root, 'public/retail/assets/wrap-comparison', file)), `Missing comparison asset: ${file}`);
