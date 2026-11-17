@@ -160,7 +160,11 @@ async function run() {
 
     const orderingSource = fs.readFileSync(path.join(root,'public/customer-ordering.js'),'utf8');
     const customerSource = fs.readFileSync(path.join(root,'public/customer.js'),'utf8');
-    assert(orderingSource.indexOf('dealerCheckoutSubmitting=true') < orderingSource.indexOf('await saveCheckoutDeliveryProfile(false)'), 'Checkout UI must lock before its first asynchronous operation');
+    const serverSource = fs.readFileSync(path.join(root,'server.js'),'utf8');
+    assert(orderingSource.indexOf('dealerCheckoutSubmitting=true') < orderingSource.indexOf("await api('/api/customer/checkout-session'"), 'Checkout UI must lock before its first asynchronous operation');
+    assert(!orderingSource.includes("field.addEventListener('change',()=>{clearTimeout(checkoutAddressSaveTimer)"), 'Address fields must not trigger repeated full-database writes while the customer is typing');
+    assert(orderingSource.includes('timeoutMs:60000'), 'Stripe checkout creation needs a mobile-safe timeout without changing ordinary request limits');
+    assert(serverSource.includes("customer.deliveryProfile = {"), 'Delivery profile must be saved with the checkout order write');
     assert(orderingSource.includes('Saving delivery information') && orderingSource.includes('Verifying price and inventory') && orderingSource.includes('Creating secure Stripe payment') && orderingSource.includes('Redirecting to Stripe'), 'Checkout UI must expose all four progress steps');
     assert(customerSource.includes("'/api/customer/checkout-session/confirm'"), 'Stripe return page must actively reconcile the Session ID');
     assert(customerSource.includes('for(let attempt=0;attempt<10;attempt+=1)'), 'Stripe return page must poll briefly for delayed confirmation');

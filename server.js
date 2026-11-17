@@ -9683,6 +9683,20 @@ async function api(req, res) {
         Object.assign(order,{ branchId,fulfillmentBranchIds,warehouse:branchId,items,item:items[0].item,qty:items[0].qty,unitPrice:items[0].unitPrice,subtotal,checkoutTotal:subtotal,fulfillment,status:'待付款',paymentStatus:'pending',paymentMethod:'Stripe',paymentError:'',checkoutExpiresAt:expiresAt,updatedAt:now.toISOString() });
         releaseOrderInventoryReservations(db,order.id,'released');
       }
+      if (fulfillment === 'delivery') {
+        customer.deliveryProfile = {
+          company:String(shippingAddress.company || customer.businessName || '').trim().slice(0,160),
+          recipient:recipientName,
+          phone:customerPhone,
+          street:String(shippingAddress.street || '').trim().slice(0,200),
+          city:String(shippingAddress.city || '').trim().slice(0,100),
+          state:String(shippingAddress.state || '').trim().toUpperCase().slice(0,2),
+          postalCode:String(shippingAddress.postalCode || '').trim().slice(0,20),
+          country:'US',
+          updatedAt:now.toISOString()
+        };
+        customer.updatedAt = now.toISOString();
+      }
       const checkoutAllocations = fulfillment === 'delivery' ? deliveryAllocations : items.map(line=>({ sku:line.item,qty:line.qty,branchId }));
       checkoutAllocations.forEach(line=>db.inventoryReservations.push({ id:id(), orderId, portalCustomerId:customer.id, sku:line.sku, qty:line.qty, branchId:line.branchId, status:'pending_payment', createdAt:now.toISOString(), expiresAt }));
       writeDb(db);

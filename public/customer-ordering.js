@@ -754,7 +754,6 @@ function dealerPriceForSku(sku){
   return suffixMatches.length===1?suffixMatches[0]:null;
 }
 function checkoutDeliveryProfile(){return {company:document.getElementById('checkoutCompany')?.value.trim()||'',recipient:document.getElementById('checkoutRecipient')?.value.trim()||'',phone:document.getElementById('checkoutPhone')?.value.trim()||'',street:document.getElementById('checkoutStreet')?.value.trim()||'',city:document.getElementById('checkoutCity')?.value.trim()||'',state:document.getElementById('checkoutState')?.value.split(' · ')[0].trim()||'',postalCode:document.getElementById('checkoutPostalCode')?.value.trim()||'',country:'US'}}
-let checkoutAddressSaveTimer=null;
 async function saveCheckoutDeliveryProfile(showStatus=true){
   if(!token||!state)return;
   const status=document.getElementById('checkoutAddressSaveStatus');
@@ -765,7 +764,8 @@ async function saveCheckoutDeliveryProfile(showStatus=true){
     if(status)status.textContent='✓ Delivery information saved for your next checkout.';
   }catch(error){if(status)status.textContent=`Delivery information could not be saved: ${error.message}`;throw error}
 }
-checkoutAddressFields.forEach(field=>field.addEventListener('change',()=>{clearTimeout(checkoutAddressSaveTimer);checkoutAddressSaveTimer=setTimeout(()=>saveCheckoutDeliveryProfile().catch(()=>{}),250)}));
+const checkoutAddressStatus=document.getElementById('checkoutAddressSaveStatus');
+if(checkoutAddressStatus)checkoutAddressStatus.textContent='Delivery information is saved securely when you continue to payment.';
 function dealerTierLabel(){const labels={standard:'Wholesale Price',bronze:'Bronze Dealer Price',silver:'Silver Dealer Price',gold:'Gold Dealer Price',strategic:'Strategic Partner Price'};return labels[state?.customer?.priceTier]||state?.customer?.priceTierName||'Dealer Price'}
 function updateStripeEnvironmentLabel(){
   const live=state?.paymentEnvironment==='live';
@@ -862,13 +862,12 @@ window.previewCheckoutSubmit=async function(){
     if(!['delivery','pickup-las-vegas','pickup-los-angeles'].includes(fulfillment))throw new Error('Select shipment or warehouse pickup.');
     const shippingAddress=fulfillment==='delivery'?checkoutDeliveryProfile():null;
     if(shippingAddress&&(!shippingAddress.recipient||!shippingAddress.phone||!shippingAddress.street||!shippingAddress.city||!shippingAddress.state||!shippingAddress.postalCode))throw new Error('For shipment, enter the recipient, phone, street, city, state, and ZIP code.');
-    await saveCheckoutDeliveryProfile(false);
     dealerCheckoutProgress(2,'2/4 · Verifying price and inventory…');
     const locale=window.QuadI18n?.locale||localStorage.getItem('quadCustomer.locale')||'en';
     const checkoutPayload={items:[...grouped].map(([sku,qty])=>({sku,qty})),fulfillment,shippingAddress,notes:document.querySelector('.checkout-notes textarea')?.value||'',locale};
     checkoutPayload.requestId=stableDealerCheckoutRequestId(checkoutPayload);
     dealerCheckoutProgress(3,'3/4 · Creating secure Stripe payment…');
-    const result=await api('/api/customer/checkout-session',{method:'POST',headers:{'Idempotency-Key':checkoutPayload.requestId},body:JSON.stringify(checkoutPayload)});
+    const result=await api('/api/customer/checkout-session',{method:'POST',headers:{'Idempotency-Key':checkoutPayload.requestId},body:JSON.stringify(checkoutPayload),timeoutMs:60000});
     if(!result.checkoutUrl)throw new Error('Stripe Checkout did not return a secure payment URL.');
     dealerCheckoutProgress(4,'4/4 · Redirecting to Stripe. Please do not click again…');
     button.textContent='OPENING STRIPE…';

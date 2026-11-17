@@ -14,9 +14,10 @@ const app = read('public/app.js');
 const customerJs = read('public/customer.js');
 const serviceWorker = read('public/sw.js');
 
-for (const [name, html] of [['management', index], ['staff', mobile], ['customer', customer]]) {
+for (const [name, html] of [['management', index], ['staff', mobile]]) {
   assert(html.includes('/connectivity.js?v=1'), `${name} entry must load the connectivity guard`);
 }
+assert(customer.includes('/connectivity.js?v=2-checkout-latency'), 'customer checkout must load the updated connectivity copy');
 assert(app.includes('服务器线路异常 · 点击顶部提示重试'), 'management sync must show an explicit route failure');
 const syncSource = app.slice(app.indexOf('async function sync(options = {})'), app.indexOf('function renderAuth()'));
 assert(!syncSource.includes("localStorage.removeItem('filmShopCloud.token')"), 'management sync must not erase a valid login on a network failure');

@@ -47,7 +47,7 @@ assert(html.includes('data-deferred-video autoplay muted loop playsinline preloa
 assert(html.includes('<source data-src="/assets/quad-tesla-roof-film-us-final.mp4"'), 'the large product video must load only when its modal opens');
 assert(customer.includes('function initializeDeferredVideos()'), 'customer media needs viewport-based deferred loading');
 assert(customer.includes('loadDeferredVideo(video,{play:true})'), 'the product modal must activate its deferred video');
-assert(html.includes('/customer-ordering.js?v=65-payment-return'));
+assert(html.includes('/customer-ordering.js?v=66-checkout-latency'));
 assert(ordering.includes("fetch('/retail/wrap-examples.json')"), 'Color-wrap cards must load the vehicle preview library');
 assert(ordering.includes('color.vehicleImage'), 'Color-wrap cards must render vehicle previews instead of plain swatch photos');
 assert(ordering.includes('function catalogProductName(product)'), 'Live catalog results need locale-aware product names');

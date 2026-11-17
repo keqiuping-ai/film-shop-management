@@ -44,6 +44,6 @@ racingExamples.forEach((item, index) => {
 assert(!source.includes('/assets/custom-wrap-concepts/'), 'The old AI custom-wrap concept gallery must not remain in customer ordering');
 assert(!source.includes('custom-wrap-13-crimson-gold-supercar.png'), 'Old artistic concept images must be removed from the payment gallery');
 assert(source.includes('/customer-custom-wrap.css?v=3'));
-assert(html.includes('/customer-ordering.js?v=65-payment-return'));
+assert(html.includes('/customer-ordering.js?v=66-checkout-latency'));
 
 console.log(`Customer wrap vehicle preview tests passed: ${catalog.length}/${catalog.length} colors resolve to existing vehicle images.`);

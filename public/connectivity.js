@@ -91,8 +91,8 @@
         : '无法连接服务器，可能是服务器线路或当前网络异常。请切换网络或手机热点后重试。';
     }
     return timedOut
-      ? 'The server connection timed out. Switch networks or use a mobile hotspot, then try again.'
-      : 'Cannot reach the server. The server route or your current network may be unavailable.';
+        ? 'The server took too long to respond. Your entries are still on this page; tap TRY AGAIN.'
+        : 'Cannot reach the server right now. Your entries are still on this page; tap TRY AGAIN.';
   }
 
   function serverMessage(language) {
