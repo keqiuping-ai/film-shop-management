@@ -1,6 +1,8 @@
-const CACHE_NAME = 'film-shop-chinese-service-shops-20261114';
+const CACHE_NAME = 'film-shop-connectivity-20261117';
 const ASSETS = [
     '/mobile.html',
+    '/offline.html',
+    '/connectivity.js',
     '/warranty.html',
     '/warranty.css',
     '/warranty.js',
@@ -36,7 +38,11 @@ self.addEventListener('activate', event => {
 self.addEventListener('fetch', event => {
   if (event.request.url.includes('/api/')) return;
   if (event.request.mode === 'navigate') {
-    event.respondWith(fetch(event.request).catch(() => caches.match('/')));
+    event.respondWith(fetch(event.request).catch(async () => (
+      await caches.match(event.request)
+      || await caches.match('/offline.html')
+      || await caches.match('/')
+    )));
     return;
   }
   event.respondWith(

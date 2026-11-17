@@ -920,9 +920,11 @@ if ('serviceWorker' in navigator) {
 }
 
 async function api(path, options = {}) {
-  const timeoutMs = Math.max(0, Number(options.timeoutMs || 0));
+  const defaultTimeoutMs = String(options.method || 'GET').toUpperCase() === 'GET' ? 30000 : 45000;
+  const timeoutMs = Math.max(0, Number(options.timeoutMs ?? defaultTimeoutMs));
   const fetchOptions = { ...options };
   delete fetchOptions.timeoutMs;
+  const connectivity = window.QuadConnectivity?.begin({ language: lang, slowMs: 12000 });
   const controller = timeoutMs ? new AbortController() : null;
   const upstreamSignal = fetchOptions.signal;
   let timeoutId = null;
@@ -949,9 +951,17 @@ async function api(path, options = {}) {
     });
   } catch (error) {
     if (controller?.signal.aborted && !upstreamSignal?.aborted) {
-      throw new Error(lang === 'zh' ? '网络响应超时，请重试；页面不会继续卡在同步状态。' : 'The request timed out. Please try again.');
+      const message = window.QuadConnectivity?.networkMessage({ language: lang, timedOut: true })
+        || (lang === 'zh' ? '服务器线路响应超时，请重试。' : 'The server connection timed out.');
+      connectivity?.failure(message);
+      throw new Error(message);
     }
-    throw error;
+    const message = window.QuadConnectivity?.networkMessage({ language: lang })
+      || (lang === 'zh' ? '无法连接服务器，请检查网络后重试。' : 'Cannot reach the server. Check the network and try again.');
+    connectivity?.failure(message);
+    const networkError = new Error(message);
+    networkError.cause = error;
+    throw networkError;
   } finally {
     if (timeoutId) clearTimeout(timeoutId);
     removeAbortListener?.();
@@ -968,8 +978,16 @@ async function api(path, options = {}) {
       user = null;
       renderAuth();
     }
+    if ([502, 503, 504].includes(res.status)) {
+      const message = window.QuadConnectivity?.serverMessage(lang)
+        || (lang === 'zh' ? '服务器线路暂时异常，请稍后重试。' : 'The server route is temporarily unavailable.');
+      connectivity?.failure(message);
+      throw new Error(message);
+    }
+    connectivity?.success();
     throw new Error(body.error || '请求失败');
   }
+  connectivity?.success();
   const requestMethod = String(fetchOptions.method || 'GET').toUpperCase();
   const responseRevision = String(res.headers.get('x-data-revision') || '');
   if (requestMethod !== 'GET' && responseRevision) lastDataRevision = responseRevision;
@@ -986,7 +1004,7 @@ async function login() {
     }
     const body = await api('/api/login', {
       method: 'POST',
-      timeoutMs: 120000,
+      timeoutMs: 45000,
       body: JSON.stringify({
         email: document.getElementById('email').value.trim(),
         password: document.getElementById('password').value,
@@ -1142,7 +1160,7 @@ async function sync(options = {}) {
   try {
     syncInFlight = true;
     updateSyncStatus(lang === 'zh' ? '同步中...' : 'Syncing...');
-    const body = await api('/api/bootstrap', { timeoutMs: 120000 });
+    const body = await api('/api/bootstrap', { timeoutMs: 60000 });
     const previousUnreadIds = knownUnreadMessageIds;
     user = body.user;
     const nextState = applyInternalMessageTombstones(body.data);
@@ -1221,21 +1239,19 @@ async function sync(options = {}) {
     startPersonalReminderChecks();
     updateSyncStatus();
   } catch (err) {
-    if (options.silent) {
-      updateSyncStatus(lang === 'zh' ? '同步失败' : 'Sync failed');
-      return;
-    }
-    token = '';
-    localStorage.removeItem('filmShopCloud.token');
-    stopAutoSync();
-    stopRealtimeSync();
-    state = null;
-    user = null;
-    renderAuth();
+    updateSyncStatus(lang === 'zh' ? '服务器线路异常 · 点击顶部提示重试' : 'Server route unavailable · use the banner to retry');
+    // Network failures must not destroy a valid login or replace an already
+    // rendered workspace. The API helper handles genuine 401 responses.
+    if (!state || !user) renderAuth();
   } finally {
     syncInFlight = false;
   }
 }
+
+window.addEventListener('quad-connectivity-retry', () => {
+  if (token) sync({ force: true });
+  else login();
+});
 
 function renderAuth() {
   const loggedIn = Boolean(state && user);

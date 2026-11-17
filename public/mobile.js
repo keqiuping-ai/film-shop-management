@@ -413,6 +413,7 @@ function fmtDateTime(value) {
 
 async function api(path, options = {}) {
   const { timeoutMs = 30000, ...fetchOptions } = options;
+  const connectivity = window.QuadConnectivity?.begin({ language: lang, slowMs: 12000 });
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   let res;
@@ -427,20 +428,28 @@ async function api(path, options = {}) {
     }
     });
   } catch (error) {
-    if (error?.name === 'AbortError') throw new Error(lang === 'zh' ? '请求超时，请检查网络后重试' : 'Request timed out. Please check the network and try again.');
-    throw error;
+    const message = window.QuadConnectivity?.networkMessage({ language: lang, timedOut: error?.name === 'AbortError' })
+      || (lang === 'zh' ? '无法连接服务器，请检查网络后重试。' : 'Cannot reach the server. Check the network and try again.');
+    connectivity?.failure(message);
+    throw new Error(message);
   } finally {
     clearTimeout(timer);
   }
   const body = await res.json().catch(() => ({}));
   if (!res.ok) {
     if (res.status === 401) logout(false);
-    const requestError = new Error(body.error || t('requestFailed'));
+    const routeFailure = [502, 503, 504].includes(res.status);
+    const requestError = new Error(routeFailure
+      ? (window.QuadConnectivity?.serverMessage(lang) || t('requestFailed'))
+      : (body.error || t('requestFailed')));
+    if (routeFailure) connectivity?.failure(requestError.message);
+    else connectivity?.success();
     requestError.code = String(body.code || '');
     requestError.status = res.status;
     requestError.details = body;
     throw requestError;
   }
+  connectivity?.success();
   const revision = String(res.headers.get('x-data-revision') || '');
   // sync-status must compare the server revision with the revision from the
   // last actual snapshot. Updating it here first would hide every change.
@@ -499,6 +508,11 @@ async function sync(options = {}) {
     syncInFlight = false;
   }
 }
+
+window.addEventListener('quad-connectivity-retry', () => {
+  if (token) sync({ force: true });
+  else login();
+});
 
 function ensureSyncTimer() {
   if (syncTimer) return;
