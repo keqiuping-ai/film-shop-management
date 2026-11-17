@@ -395,7 +395,7 @@ window.submitCustomPrintedFilmPayment=async function () {
       attachments:customWrapUploadedAttachment?[customWrapUploadedAttachment]:[]
     })});
     if(!result.checkoutUrl)throw new Error(customPrintedFilmText('stripe'));
-    location.href=result.checkoutUrl;
+    window.location.assign(result.checkoutUrl);
   } catch(error) {
     alert(error.message);
     if(button){button.disabled=false;button.textContent=window.QuadI18n?.t('进入 Stripe 安全付款')||'CONTINUE TO STRIPE SECURE PAYMENT'}
@@ -872,11 +872,20 @@ window.previewCheckoutSubmit=async function(){
     if(!result.checkoutUrl)throw new Error('Stripe Checkout did not return a secure payment URL.');
     dealerCheckoutProgress(4,'4/4 · Redirecting to Stripe. Please do not click again…');
     button.textContent='OPENING STRIPE…';
-    location.href=result.checkoutUrl;
+    window.location.assign(result.checkoutUrl);
   }catch(error){alert(error.message);dealerCheckoutSubmitting=false;document.getElementById('dealerCheckout')?.classList.remove('checkout-processing');dealerCheckoutProgress(0);if(button){button.disabled=false;updateCheckoutTotals()}}
 };
 window.previewWrapCheckout=window.showDealerCheckout;
 window.previewWindowFilmCheckout=window.showDealerCheckout;
+
+window.addEventListener('pageshow',event=>{
+  if(!event.persisted)return;
+  dealerCheckoutSubmitting=false;
+  document.getElementById('dealerCheckout')?.classList.remove('checkout-processing');
+  dealerCheckoutProgress(0);
+  const button=document.querySelector('#dealerCheckout .checkout-summary button');
+  if(button){button.disabled=false;updateCheckoutTotals()}
+});
 
 const customerLoginWithoutResume=login;
 login=async function(){

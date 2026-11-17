@@ -1,4 +1,4 @@
-const CACHE_NAME = 'film-shop-connectivity-20261117';
+const CACHE_NAME = 'film-shop-payment-return-20261117';
 const ASSETS = [
     '/mobile.html',
     '/offline.html',

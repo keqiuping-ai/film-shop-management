@@ -8,9 +8,9 @@ const ordering = fs.readFileSync(path.join(root, 'public/customer-ordering.js'),
 const html = fs.readFileSync(path.join(root, 'public/customer.html'), 'utf8');
 const i18n = fs.readFileSync(path.join(root, 'public/customer-i18n.js'), 'utf8');
 
-assert(customer.includes("const customerScreenIds=['landing','login','app','customerMailbox','orderCenter','ppfCatalog','colorWrapCatalog','windowFilmCatalog','dealerCheckout']"));
+assert(customer.includes("const customerScreenIds=['landing','login','checkoutReturn','app','customerMailbox','orderCenter','ppfCatalog','colorWrapCatalog','windowFilmCatalog','dealerCheckout']"));
 assert(customer.includes("function showOnlyCustomerScreen(screenId)"));
-assert(customer.includes("function showLogin(){if(token&&state)return openCustomerArea('orders');showOnlyCustomerScreen('login')"));
+assert(customer.includes("function showLogin(options={}){if(token&&state&&!options.checkoutReturn)return openCustomerArea('orders');showOnlyCustomerScreen('login')"));
 assert(customer.includes("function showHome(){showOnlyCustomerScreen('landing')}"));
 assert(customer.includes("function openProductCategory(category)"), 'homepage categories need a public browsing route');
 assert(customer.includes("if(category==='ppf')return window.showPpfCatalog?.()"), 'PPF exploration must open without dealer login');
@@ -18,7 +18,7 @@ assert(customer.includes("if(category==='color-wrap')return window.showColorWrap
 assert(customer.includes("if(category==='window-film')return window.showWindowFilmCatalog?.()"), 'window-film exploration must open without dealer login');
 assert(customer.includes("function openCollection(category){sessionStorage.setItem('quadCustomer.collection',category);showLogin()}"), 'shop/order actions must retain dealer login');
 assert(customer.includes("function openCustomerArea(next='orders'){if(!state)return showLogin();tab=next==='account'?'account':'orders';showOnlyCustomerScreen('app')"));
-assert(customer.includes("customerMessageSnapshot=customerMessagesSignature();showOnlyCustomerScreen('landing')"), 'bootstrap refresh must also clear stale catalog screens');
+assert(customer.includes("customerMessageSnapshot=customerMessagesSignature();if(!options.preserveScreen)showOnlyCustomerScreen('landing')"), 'normal bootstrap must clear stale catalog screens while payment return can preserve its route');
 
 for (const screen of ['orderCenter', 'ppfCatalog', 'colorWrapCatalog', 'windowFilmCatalog', 'dealerCheckout']) {
   assert(ordering.includes(`showOnlyCustomerScreen('${screen}')`), `${screen} must use exclusive screen navigation`);
@@ -42,12 +42,12 @@ assert(html.includes("onclick=\"openProductCategory('ppf')\""));
 assert(html.includes("onclick=\"openProductCategory('color-wrap')\""));
 assert(html.includes("onclick=\"openProductCategory('window-film')\""));
 assert(html.includes("onclick=\"openProductCategory('yacht-film')\""));
-assert(html.includes('/customer.js?v=26'));
+assert(html.includes('/customer.js?v=28-payment-return'));
 assert(html.includes('data-deferred-video autoplay muted loop playsinline preload="none"'), 'homepage videos must not download before they approach the viewport');
 assert(html.includes('<source data-src="/assets/quad-tesla-roof-film-us-final.mp4"'), 'the large product video must load only when its modal opens');
 assert(customer.includes('function initializeDeferredVideos()'), 'customer media needs viewport-based deferred loading');
 assert(customer.includes('loadDeferredVideo(video,{play:true})'), 'the product modal must activate its deferred video');
-assert(html.includes('/customer-ordering.js?v=64'));
+assert(html.includes('/customer-ordering.js?v=65-payment-return'));
 assert(ordering.includes("fetch('/retail/wrap-examples.json')"), 'Color-wrap cards must load the vehicle preview library');
 assert(ordering.includes('color.vehicleImage'), 'Color-wrap cards must render vehicle previews instead of plain swatch photos');
 assert(ordering.includes('function catalogProductName(product)'), 'Live catalog results need locale-aware product names');

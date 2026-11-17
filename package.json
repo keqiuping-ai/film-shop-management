@@ -15,6 +15,7 @@
     "audit:data": "node scripts/audit-data-integrity.js",
     "test:catalog-search": "node scripts/test-customer-cross-catalog-inventory-search.js",
     "test:customer-checkout": "node scripts/test-customer-checkout-idempotency.js",
+    "test:customer-mobile-return": "node scripts/test-customer-mobile-payment-return.js",
     "test:customer-ordering-navigation": "node scripts/test-customer-ordering-navigation.js",
     "test:customer-wrap-previews": "node scripts/test-customer-wrap-vehicle-previews.js",
     "test:customer-wrap-materials": "node scripts/test-customer-wrap-material-experience.js",
