@@ -431,7 +431,7 @@ function syncSalesOrderCustomer(db, order) {
   return customer;
 }
 
-function portalProductForCustomer(db, product, customer) {
+function portalProductForCustomer(db, product, customer, inventoryContext = null) {
   const agreedPrice = Number(customer?.prices?.[product.sku]);
   const hasAgreedPrice = Number.isFinite(agreedPrice) && agreedPrice > 0;
   const tier = (db.portalPriceTiers || []).find(item => item.id === (customer?.priceTier || 'standard'));
@@ -442,9 +442,16 @@ function portalProductForCustomer(db, product, customer) {
   const hasStandardTierPrice = Number.isFinite(standardTierPrice) && standardTierPrice > 0;
   const hasStandardWholesale = Number.isFinite(Number(product.wholesale)) && Number(product.wholesale) > 0;
   const agreed = Number(hasAgreedPrice ? agreedPrice : hasTierPrice ? tierPrice : hasStandardTierPrice ? standardTierPrice : hasStandardWholesale ? product.wholesale : NaN);
+  const availableAt = branchId => {
+    if (!inventoryContext) {
+      return Math.max(0, branchStockQty(db, product.sku, branchId) - activeInventoryReservationQty(db, product.sku, branchId));
+    }
+    const key = `${String(product.sku || '')}\u0000${branchId}`;
+    return Math.max(0, Number(inventoryContext.stockByKey.get(key) || 0) - Number(inventoryContext.reservedByKey.get(key) || 0));
+  };
   const stockByWarehouse = {
-    'las-vegas': Math.max(0, branchStockQty(db, product.sku, 'las-vegas') - activeInventoryReservationQty(db, product.sku, 'las-vegas')),
-    'los-angeles': Math.max(0, branchStockQty(db, product.sku, 'los-angeles') - activeInventoryReservationQty(db, product.sku, 'los-angeles'))
+    'las-vegas': availableAt('las-vegas'),
+    'los-angeles': availableAt('los-angeles')
   };
   const availableQty = stockByWarehouse['las-vegas'] + stockByWarehouse['los-angeles'];
   const purchasable = product.portalPurchasable !== false;
@@ -560,7 +567,28 @@ function portalCustomerSnapshot(db, customer) {
   const paymentEnvironment = customerStripePaymentEnvironment();
   const orders = (db.salesOrders || []).filter(order => order.portalCustomerId === customer.id).sort((a, b) => String(b.updatedAt || b.createdAt || '').localeCompare(String(a.updatedAt || a.createdAt || '')));
   const unreadMessageCount = orders.reduce((count, order) => count + (order.portalMessages || []).filter(message => message.sender === 'staff' && message.readState === 'unread').length, 0);
-  return { customer: { ...safePortalCustomer(customer), priceTierName: tier?.name || '批发价' }, tierProgress: portalCustomerTierProgress(db, customer), paymentEnvironment, unreadMessageCount, products: (db.products || []).filter(product => product.portalVisible !== false).map(product => portalProductForCustomer(db, product, customer)), orders: orders.map(order => ({ id: order.id, orderNo: order.orderNo || '', date: order.date, status: order.status, paymentStatus: order.paymentStatus || '', items: salesOrderItems(order), subtotal: Number(order.subtotal || 0), shippingFee: Number(order.shippingFee || 0), salesTax: Number(order.salesTax || 0), checkoutTotal: Number(order.checkoutTotal || 0), fulfillment: order.fulfillment || '', customerDemand: order.customerDemand || '', shipping: order.shipping || '', shippingCarrier: order.shippingCarrier || '', trackingNo: order.trackingNo || '', paid: Number(order.paid || 0), paymentMethod: order.paymentMethod || '', createdAt: order.createdAt, updatedAt: order.updatedAt || '', portalMessages: order.portalMessages || [], attachments: order.portalAttachments || [], customPrintedFilm:order.customPrintedFilm === true, customPrintedFilmDescription:order.customPrintedFilmDescription || '', customPrintedFilmMeters:Number(order.customPrintedFilmMeters || 0), customPrintedFilmPattern:order.customPrintedFilmPattern || '', customPrintedFilmVehicle:order.customPrintedFilmVehicle || null })), warranties };
+  // Build inventory and reservation indexes once per customer snapshot. The old
+  // path rebuilt the complete branch inventory twice for every visible SKU and
+  // then rescanned every reservation/order for every SKU. With a large catalog,
+  // one background refresh could monopolize the Node process long enough to
+  // starve health checks, static files, and Stripe checkout requests.
+  const stockByKey = new Map(branchInventorySnapshot(db, { role: 'owner' }).map(row => [`${row.sku}\u0000${row.branchId}`, Number(row.qty || 0)]));
+  const reservedByKey = new Map();
+  const orderById = new Map((db.salesOrders || []).map(order => [order.id, order]));
+  const finishedStatuses = new Set(['已出库','shipped','delivered','completed','已完成','已取消','canceled','cancelled','已退款','refunded']);
+  const now = Date.now();
+  for (const row of db.inventoryReservations || []) {
+    if (!['pending_payment', 'paid'].includes(row.status)) continue;
+    if (row.status === 'pending_payment' && new Date(row.expiresAt || 0).getTime() <= now) continue;
+    if (row.status === 'paid') {
+      const order = orderById.get(row.orderId);
+      if (!order || finishedStatuses.has(String(order.status || '').trim().toLowerCase())) continue;
+    }
+    const key = `${String(row.sku || '')}\u0000${String(row.branchId || '')}`;
+    reservedByKey.set(key, Number(reservedByKey.get(key) || 0) + Number(row.qty || 0));
+  }
+  const inventoryContext = { stockByKey, reservedByKey };
+  return { customer: { ...safePortalCustomer(customer), priceTierName: tier?.name || '批发价' }, tierProgress: portalCustomerTierProgress(db, customer), paymentEnvironment, unreadMessageCount, products: (db.products || []).filter(product => product.portalVisible !== false).map(product => portalProductForCustomer(db, product, customer, inventoryContext)), orders: orders.map(order => ({ id: order.id, orderNo: order.orderNo || '', date: order.date, status: order.status, paymentStatus: order.paymentStatus || '', items: salesOrderItems(order), subtotal: Number(order.subtotal || 0), shippingFee: Number(order.shippingFee || 0), salesTax: Number(order.salesTax || 0), checkoutTotal: Number(order.checkoutTotal || 0), fulfillment: order.fulfillment || '', customerDemand: order.customerDemand || '', shipping: order.shipping || '', shippingCarrier: order.shippingCarrier || '', trackingNo: order.trackingNo || '', paid: Number(order.paid || 0), paymentMethod: order.paymentMethod || '', createdAt: order.createdAt, updatedAt: order.updatedAt || '', portalMessages: order.portalMessages || [], attachments: order.portalAttachments || [], customPrintedFilm:order.customPrintedFilm === true, customPrintedFilmDescription:order.customPrintedFilmDescription || '', customPrintedFilmMeters:Number(order.customPrintedFilmMeters || 0), customPrintedFilmPattern:order.customPrintedFilmPattern || '', customPrintedFilmVehicle:order.customPrintedFilmVehicle || null })), warranties };
 }
 
 function seedDb() {
@@ -3449,15 +3477,16 @@ function branchInventorySnapshot(db, user) {
   };
   (db.movements || []).filter(row => !row.reversedAt).forEach(row => add(row.sku, row.branchId || '', row.type === 'in' ? row.qty : -Number(row.qty || 0)));
   (db.workshopMovements || []).filter(row => row.type === 'transfer').forEach(row => add(row.sku, row.branchId || '', -Number(row.qty || 0)));
+  const allocatedBySku = new Map();
+  for (const [key, qty] of balances.entries()) {
+    const separator = key.indexOf('\u0000');
+    const sku = separator >= 0 ? key.slice(0, separator) : key;
+    allocatedBySku.set(sku, Number(allocatedBySku.get(sku) || 0) + Number(qty || 0));
+  }
   // First freeze the historical, unassigned control-balance difference. A later
   // transfer discrepancy must never be silently absorbed into "pending branch".
   (db.products || []).forEach(product => {
-    let allocated = 0;
-    for (const [key, qty] of balances.entries()) {
-      const [sku, branchId] = key.split('\u0000');
-      if (sku !== String(product.sku || '')) continue;
-      allocated += qty;
-    }
+    const allocated = Number(allocatedBySku.get(String(product.sku || '')) || 0);
     const pending = Number(product.qty || 0) - allocated;
     const legacyInventoryBranchId = String(db.settings?.legacyInventoryBranchId || '').trim();
     if (Math.abs(pending) > 0.0001) add(product.sku, legacyInventoryBranchId, pending);
