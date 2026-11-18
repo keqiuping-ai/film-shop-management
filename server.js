@@ -8996,6 +8996,10 @@ async function stripeFormRequest(pathname, fields, { idempotencyKey = '' } = {})
       const body = await response.json().catch(()=>({}));
       if (!response.ok) {
         const error = new Error(body?.error?.message || `Stripe request failed (${response.status}).`);
+        error.stripeCode = String(body?.error?.code || '');
+        error.stripeParam = String(body?.error?.param || '');
+        error.stripeType = String(body?.error?.type || '');
+        error.status = response.status;
         if (response.status >= 500 && attempt === 0) { lastError = error; continue; }
         throw error;
       }
@@ -9010,6 +9014,39 @@ async function stripeFormRequest(pathname, fields, { idempotencyKey = '' } = {})
   }
   if (lastError?.name === 'AbortError') throw new Error('Stripe is taking too long to respond. Please try again; the same order will be reused safely.');
   throw lastError || new Error('Stripe is temporarily unavailable. Please try again.');
+}
+
+async function createCustomerCheckoutSession(fields, customer, { idempotencyKey = '' } = {}) {
+  try {
+    return await stripeFormRequest('checkout/sessions', fields, { idempotencyKey });
+  } catch (error) {
+    const staleCustomer = Boolean(fields.customer)
+      && error?.stripeCode === 'resource_missing'
+      && error?.stripeParam === 'customer';
+    if (!staleCustomer) throw error;
+    const retryFields = { ...fields };
+    delete retryFields.customer;
+    retryFields.customer_email = customer.email || undefined;
+    retryFields.customer_creation = 'always';
+    const session = await stripeFormRequest('checkout/sessions', retryFields, {
+      idempotencyKey:customerCheckoutIdempotencyKey(idempotencyKey, 'stale-customer-recovery')
+    });
+    customer.stripeCustomerId = String(session.customer || '');
+    customer.updatedAt = new Date().toISOString();
+    return session;
+  }
+}
+
+function reportCustomerCheckoutFailure(error, context = {}) {
+  console.error('[customer-checkout-session-failed]', {
+    orderId:String(context.orderId || ''),
+    customerId:String(context.customerId || ''),
+    stripeCode:String(error?.stripeCode || ''),
+    stripeParam:String(error?.stripeParam || ''),
+    stripeType:String(error?.stripeType || ''),
+    status:Number(error?.status || 0),
+    message:String(error?.message || error || '').slice(0,500)
+  });
 }
 
 async function stripeGetRequest(pathname) {
@@ -9057,7 +9094,7 @@ async function createCustomPrintedFilmStripeSession(req, db, customer, order, lo
     'line_items[0][quantity]':1
   };
   applyCustomerStripeFields(fields, customer, locale);
-  const session = await stripeFormRequest('checkout/sessions', fields, {
+  const session = await createCustomerCheckoutSession(fields, customer, {
     idempotencyKey:customerCheckoutIdempotencyKey(customer.id, order.portalRequestId || order.id, 'custom-printed-film')
   });
   order.stripeCheckoutSessionId=String(session.id || '');
@@ -9603,8 +9640,9 @@ async function api(req, res) {
           writeDb(db); notifyDataChanged('customer-custom-checkout-renewed',existing.id);
           return send(res,200,result);
         } catch(error) {
+          reportCustomerCheckoutFailure(error,{ orderId:existing.id,customerId:customer.id });
           existing.paymentStatus='checkout_failed'; existing.paymentError=String(error.message || error).slice(0,500); existing.updatedAt=new Date().toISOString(); writeDb(db);
-          return send(res,502,{ error:existing.paymentError });
+          return send(res,502,{ error:existing.paymentError,code:'STRIPE_CHECKOUT_FAILED' });
         }
       }
       const now = new Date();
@@ -9632,8 +9670,9 @@ async function api(req, res) {
         writeDb(db); notifyDataChanged('customer-custom-checkout-created',order.id);
         return send(res,201,result);
       } catch(error) {
+        reportCustomerCheckoutFailure(error,{ orderId:order.id,customerId:customer.id });
         order.status='付款建立失败';order.paymentStatus='checkout_failed';order.paymentError=String(error.message || error).slice(0,500);order.updatedAt=new Date().toISOString();writeDb(db);
-        return send(res,502,{ error:order.paymentError });
+        return send(res,502,{ error:order.paymentError,code:'STRIPE_CHECKOUT_FAILED' });
       }
     }
     if (req.method === 'POST' && url.pathname === '/api/customer/checkout-session') {
@@ -9726,7 +9765,7 @@ async function api(req, res) {
         const fields = { mode:'payment', client_reference_id:orderId, 'metadata[orderId]':orderId, 'metadata[portalCustomerId]':customer.id, 'metadata[paymentEnvironment]':paymentEnvironment, success_url:`${baseUrl}/customer.html?checkout=success&session_id={CHECKOUT_SESSION_ID}`, cancel_url:`${baseUrl}/customer.html?checkout=canceled`, expires_at:Math.floor(new Date(expiresAt).getTime()/1000), 'payment_method_types[0]':'card' };
         applyCustomerStripeFields(fields,customer,body.locale);
         items.forEach((line,index)=>{ fields[`line_items[${index}][price_data][currency]`]='usd'; fields[`line_items[${index}][price_data][unit_amount]`]=Math.round(line.unitPrice*100); fields[`line_items[${index}][price_data][product_data][name]`]=line.name; fields[`line_items[${index}][price_data][product_data][metadata][sku]`]=line.item; fields[`line_items[${index}][quantity]`]=line.qty; });
-        const session = await stripeFormRequest('checkout/sessions',fields,{ idempotencyKey:customerCheckoutIdempotencyKey(customer.id,requestId,'catalog-order') });
+        const session = await createCustomerCheckoutSession(fields,customer,{ idempotencyKey:customerCheckoutIdempotencyKey(customer.id,requestId,'catalog-order') });
         order.stripeCheckoutSessionId=String(session.id || ''); order.checkoutUrl=String(session.url || ''); order.stripeLivemode=session.livemode === true; order.paymentEnvironment=session.livemode === true ? 'live' : session.livemode === false ? 'test' : paymentEnvironment; order.updatedAt=new Date().toISOString();
         audit(db,{ id:`customer-${customer.id}`,name:customer.businessName || customer.contactName },'create-customer-checkout',{ collection:'salesOrders',recordId:order.id,recordLabel:order.customer,detail:`Stripe checkout ${order.customer} $${subtotal.toFixed(2)}` });
         writeDb(db); notifyDataChanged('customer-checkout-created',order.id);
@@ -9735,8 +9774,9 @@ async function api(req, res) {
         customerCheckoutRequestsInFlight.delete(requestKey);
         return send(res,201,responseBody);
       } catch (error) {
+        reportCustomerCheckoutFailure(error,{ orderId:order.id,customerId:customer.id });
         order.status='付款建立失败'; order.paymentStatus='checkout_failed'; order.paymentError=String(error.message || error).slice(0,500); order.updatedAt=new Date().toISOString(); releaseOrderInventoryReservations(db,order.id,'released'); writeDb(db);
-        const responseBody = { error:order.paymentError };
+        const responseBody = { error:order.paymentError,code:'STRIPE_CHECKOUT_FAILED' };
         finishCheckoutRequest({ status:502,body:responseBody });
         customerCheckoutRequestsInFlight.delete(requestKey);
         return send(res,502,responseBody);
@@ -9755,8 +9795,9 @@ async function api(req, res) {
           writeDb(db);notifyDataChanged('customer-custom-checkout-renewed',order.id);
           return send(res,201,result);
         } catch(error) {
+          reportCustomerCheckoutFailure(error,{ orderId:order.id,customerId:customer.id });
           order.paymentStatus='checkout_failed';order.paymentError=String(error.message||error).slice(0,500);order.updatedAt=new Date().toISOString();writeDb(db);
-          return send(res,502,{ error:order.paymentError });
+          return send(res,502,{ error:order.paymentError,code:'STRIPE_CHECKOUT_FAILED' });
         }
       }
       const fulfillment = normalizedCustomerOrderFulfillment(order);
@@ -9788,13 +9829,14 @@ async function api(req, res) {
         const fields={ mode:'payment',client_reference_id:order.id,'metadata[orderId]':order.id,'metadata[portalCustomerId]':customer.id,'metadata[paymentEnvironment]':paymentEnvironment,success_url:`${baseUrl}/customer.html?checkout=success&session_id={CHECKOUT_SESSION_ID}`,cancel_url:`${baseUrl}/customer.html?checkout=canceled`,expires_at:Math.floor(new Date(expiresAt).getTime()/1000),'payment_method_types[0]':'card' };
         applyCustomerStripeFields(fields,customer,body.locale);
         items.forEach((line,index)=>{ fields[`line_items[${index}][price_data][currency]`]='usd';fields[`line_items[${index}][price_data][unit_amount]`]=Math.round(line.unitPrice*100);fields[`line_items[${index}][price_data][product_data][name]`]=line.name;fields[`line_items[${index}][price_data][product_data][metadata][sku]`]=line.item;fields[`line_items[${index}][quantity]`]=line.qty; });
-        const session=await stripeFormRequest('checkout/sessions',fields,{ idempotencyKey:customerCheckoutIdempotencyKey(customer.id,order.id,expiresAt,'resume-order') });
+        const session=await createCustomerCheckoutSession(fields,customer,{ idempotencyKey:customerCheckoutIdempotencyKey(customer.id,order.id,expiresAt,'resume-order') });
         order.fulfillment=fulfillment;order.checkoutTotal=total;order.stripeCheckoutSessionId=String(session.id||'');order.checkoutUrl=String(session.url||'');order.checkoutExpiresAt=expiresAt;order.paymentStatus='pending';order.status='待付款';order.paymentMethod='Stripe';order.stripeLivemode=session.livemode === true;order.paymentEnvironment=session.livemode === true?'live':session.livemode === false?'test':paymentEnvironment;order.updatedAt=new Date().toISOString();
         writeDb(db);notifyDataChanged('customer-checkout-renewed',order.id);
         return send(res,201,{ orderId:order.id,checkoutUrl:order.checkoutUrl,expiresAt,total,currency:'usd' });
       } catch(error) {
+        reportCustomerCheckoutFailure(error,{ orderId:order.id,customerId:customer.id });
         releaseOrderInventoryReservations(db,order.id,'released');order.paymentStatus='checkout_failed';order.paymentError=String(error.message||error).slice(0,500);order.updatedAt=new Date().toISOString();writeDb(db);
-        return send(res,502,{ error:order.paymentError });
+        return send(res,502,{ error:order.paymentError,code:'STRIPE_CHECKOUT_FAILED' });
       }
     }
     if (req.method === 'POST' && url.pathname === '/api/customer/media') {

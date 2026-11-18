@@ -18,6 +18,8 @@ let stripeIdempotencyKeys = [];
 let stripeSession = null;
 let testStripeTimeoutRetry = false;
 let timeoutRetryRequests = 0;
+let testStaleCustomerRecovery = false;
+let staleCustomerFailures = 0;
 
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const currentLosAngelesDate = () => {
@@ -63,8 +65,14 @@ async function run() {
       stripeIdempotencyKey = String(req.headers['idempotency-key'] || '');
       stripeIdempotencyKeys.push(stripeIdempotencyKey);
       const fields = Object.fromEntries(new URLSearchParams(raw));
+      if (testStaleCustomerRecovery && fields.customer) {
+        staleCustomerFailures += 1;
+        res.writeHead(400, { 'Content-Type':'application/json' });
+        return res.end(JSON.stringify({ error:{ type:'invalid_request_error',code:'resource_missing',param:'customer',message:`No such customer: '${fields.customer}'` } }));
+      }
       stripeSession = {
         id:'cs_test_stable_checkout', url:'https://checkout.stripe.test/stable-checkout', livemode:false,
+        customer:testStaleCustomerRecovery ? 'cus_recovered_checkout' : undefined,
         client_reference_id:fields.client_reference_id,
         metadata:{ orderId:fields['metadata[orderId]'], portalCustomerId:fields['metadata[portalCustomerId]'] }
       };
@@ -173,6 +181,22 @@ async function run() {
     assert.equal(timeoutRetryRequests,2,'A timed-out Stripe request must retry once');
     assert.equal(stripeIdempotencyKeys.at(-1),stripeIdempotencyKeys.at(-2),'The Stripe retry must reuse the exact Idempotency-Key');
 
+    testStripeTimeoutRetry = false;
+    testStaleCustomerRecovery = true;
+    db = JSON.parse(fs.readFileSync(path.join(dataDir,'db.json'),'utf8'));
+    const checkoutCustomer = db.portalCustomers.find(row=>row.account==='checkout-idempotency');
+    checkoutCustomer.stripeCustomerId = 'cus_stale_checkout';
+    fs.writeFileSync(path.join(dataDir,'db.json'),JSON.stringify(db,null,2));
+    const staleCustomerCheckout = await request('/api/customer/checkout-session',{
+      method:'POST',headers:customerHeaders,
+      body:JSON.stringify({ requestId:'stable-cart-request-stale-customer',items:[{ sku,qty:1 }],fulfillment:'pickup-las-vegas',notes:'stale Stripe customer recovery',locale:'en' })
+    });
+    assert.equal(staleCustomerCheckout.response.status,201,JSON.stringify(staleCustomerCheckout.body));
+    assert.equal(staleCustomerFailures,1,'A stale Stripe customer must be detected exactly once');
+    assert.notEqual(stripeIdempotencyKeys.at(-1),stripeIdempotencyKeys.at(-2),'Fallback parameters must use a distinct stable Stripe Idempotency-Key');
+    db = JSON.parse(fs.readFileSync(path.join(dataDir,'db.json'),'utf8'));
+    assert.equal(db.portalCustomers.find(row=>row.account==='checkout-idempotency').stripeCustomerId,'cus_recovered_checkout','The recovered Stripe customer must replace the stale customer ID');
+
     const orderingSource = fs.readFileSync(path.join(root,'public/customer-ordering.js'),'utf8');
     const customerSource = fs.readFileSync(path.join(root,'public/customer.js'),'utf8');
     const serverSource = fs.readFileSync(path.join(root,'server.js'),'utf8');
@@ -181,6 +205,9 @@ async function run() {
     assert(orderingSource.includes('timeoutMs:60000'), 'Stripe checkout creation needs a mobile-safe timeout without changing ordinary request limits');
     assert(serverSource.includes("customer.deliveryProfile = {"), 'Delivery profile must be saved with the checkout order write');
     assert(serverSource.includes("process.env.STRIPE_API_TIMEOUT_MS || 12000"), 'Stripe Session creation must have a bounded server-side timeout');
+    assert(serverSource.includes("error?.stripeCode === 'resource_missing'") && serverSource.includes("error?.stripeParam === 'customer'"), 'A stale Stripe customer must retry without the invalid customer ID');
+    assert(customerSource.includes("[502,503,504].includes(res.status)&&!body.code"), 'Handled Stripe errors must not masquerade as a global server outage');
+    assert(customerSource.includes("if(!pending){await sync({preserveScreen:true});if(state)openCustomerArea('orders');return}"), 'A logged-in mobile reload must restore My Orders instead of the public homepage');
     assert(orderingSource.includes('Saving delivery information') && orderingSource.includes('Verifying price and inventory') && orderingSource.includes('Creating secure Stripe payment') && orderingSource.includes('Redirecting to Stripe'), 'Checkout UI must expose all four progress steps');
     assert(customerSource.includes("'/api/customer/checkout-session/confirm'"), 'Stripe return page must actively reconcile the Session ID');
     assert(customerSource.includes('for(let attempt=0;attempt<10;attempt+=1)'), 'Stripe return page must poll briefly for delayed confirmation');

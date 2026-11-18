@@ -24,7 +24,7 @@ assert(!syncSource.includes("localStorage.removeItem('filmShopCloud.token')"), '
 assert(customerJs.includes('timeoutMs=Number(requestedTimeout??30000)'), 'customer requests must have a bounded timeout');
 assert(customerJs.includes("api('/api/customer/bootstrap',{reportConnectivity:false})"), 'background customer refresh must not display a global connectivity failure');
 assert(customerJs.includes("body:'{}',reportConnectivity:false"), 'background read receipts must not display a global connectivity failure');
-assert(customer.includes('/customer.js?v=29-connectivity-scope'), 'customer entry must bypass the previous cached request wrapper');
+assert(customer.includes('/customer.js?v=30-checkout-recovery'), 'customer entry must bypass the previous cached request wrapper');
 assert(serviceWorker.includes("'/offline.html'"), 'service worker must cache the offline route page');
 assert(serviceWorker.includes("caches.match('/offline.html')"), 'navigation failures must render the offline route page');
 

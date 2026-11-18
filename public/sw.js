@@ -1,4 +1,4 @@
-const CACHE_NAME = 'film-shop-stripe-timeout-20261117';
+const CACHE_NAME = 'film-shop-checkout-recovery-20261118';
 const ASSETS = [
     '/mobile.html',
     '/offline.html',
