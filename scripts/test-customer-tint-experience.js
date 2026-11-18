@@ -31,6 +31,6 @@ assert(!css.includes('.window-film-quick-order{position:sticky;'), 'Window-film 
 assert(i18n.includes("Where Does the Sun's Heat Go?"), 'Interactive tint copy must be translated');
 assert(html.includes('/customer.css?v=46-payment-return'));
 assert(html.includes('/customer-ordering.js?v=66-checkout-latency'));
-assert(html.includes('/customer-i18n.js?v=43'));
+assert(html.includes('/customer-i18n.js?v=44-checkout-progress'));
 
 console.log('Customer tint experience tests passed: heat videos, VLT preview, model-to-order synchronization, localization, and cache versions.');

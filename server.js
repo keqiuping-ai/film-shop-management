@@ -8985,10 +8985,31 @@ async function stripeFormRequest(pathname, fields, { idempotencyKey = '' } = {})
     : 'https://api.stripe.com';
   const headers = { Authorization:`Bearer ${secretKey}`, 'Content-Type':'application/x-www-form-urlencoded' };
   if (idempotencyKey) headers['Idempotency-Key'] = String(idempotencyKey).slice(0,255);
-  const response = await fetch(`${stripeApiBase}/v1/${pathname}`, { method:'POST', headers, body:form });
-  const body = await response.json().catch(()=>({}));
-  if (!response.ok) throw new Error(body?.error?.message || `Stripe request failed (${response.status}).`);
-  return body;
+  const configuredTimeout = Number(process.env.STRIPE_API_TIMEOUT_MS || 12000);
+  const timeoutMs = Math.max(100,Math.min(30000,Number.isFinite(configuredTimeout) ? configuredTimeout : 12000));
+  let lastError = null;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const controller = new AbortController();
+    const timer = setTimeout(()=>controller.abort(),timeoutMs);
+    try {
+      const response = await fetch(`${stripeApiBase}/v1/${pathname}`, { method:'POST', headers, body:form, signal:controller.signal });
+      const body = await response.json().catch(()=>({}));
+      if (!response.ok) {
+        const error = new Error(body?.error?.message || `Stripe request failed (${response.status}).`);
+        if (response.status >= 500 && attempt === 0) { lastError = error; continue; }
+        throw error;
+      }
+      return body;
+    } catch (error) {
+      lastError = error;
+      const retryable = error?.name === 'AbortError' || error instanceof TypeError;
+      if (!retryable || attempt > 0) break;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+  if (lastError?.name === 'AbortError') throw new Error('Stripe is taking too long to respond. Please try again; the same order will be reused safely.');
+  throw lastError || new Error('Stripe is temporarily unavailable. Please try again.');
 }
 
 async function stripeGetRequest(pathname) {

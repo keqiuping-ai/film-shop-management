@@ -563,7 +563,7 @@
     ,'＋ 加入选色清单':'＋ ADD TO COLOR ORDER','本次已选':'CURRENT SELECTION','选色清单':'COLOR ORDER','＋ 继续添加其他颜色':'＋ ADD ANOTHER COLOR'
     ,'定制服务':'CUSTOM SERVICE','1. 选择现有图案':'1. CHOOSE A QUAD DESIGN','2. 或上传自己的图片':'2. OR UPLOAD YOUR IMAGE','3. 填写车辆资料':'3. VEHICLE DETAILS','年份':'YEAR','品牌':'MAKE','车型':'MODEL','设计要求':'DESIGN REQUEST'
     ,'灰红渐变':'GRAY–RED GRADIENT','赛车拉花':'RACING GRAPHICS','几何切面':'GEOMETRIC FACETS','自定义图案':'CUSTOM DESIGN'
-    ,'订单商品':'ORDER ITEMS','核对订单并付款':'REVIEW & PAY','统一结账':'CHECKOUT','标准商业配送':'COMMERCIAL SHIPPING','提交发货订单（运费待确认）':'SUBMIT SHIPPING ORDER (FREIGHT PENDING)'
+    ,'订单商品':'ORDER ITEMS','核对订单并付款':'REVIEW & PAY','统一结账':'CHECKOUT','标准商业配送':'COMMERCIAL SHIPPING','提交发货订单（运费待确认）':'SUBMIT SHIPPING ORDER (FREIGHT PENDING)','请稍后，不要重复点击或关闭页面':'PLEASE WAIT — DO NOT TAP AGAIN OR CLOSE THIS PAGE','正在准备付款…':'Preparing secure payment…'
   }));
   const indexes = { en:0, ja:1, ko:2, 'es-MX':3, 'zh-CN':4 };
   const additionalTranslations = {

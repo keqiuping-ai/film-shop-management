@@ -14,7 +14,10 @@ const webhookSecret = 'whsec_checkout_idempotency_test';
 let appOutput = '';
 let stripePostCount = 0;
 let stripeIdempotencyKey = '';
+let stripeIdempotencyKeys = [];
 let stripeSession = null;
+let testStripeTimeoutRetry = false;
+let timeoutRetryRequests = 0;
 
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const currentLosAngelesDate = () => {
@@ -58,13 +61,17 @@ async function run() {
     req.on('end', async () => {
       stripePostCount += 1;
       stripeIdempotencyKey = String(req.headers['idempotency-key'] || '');
+      stripeIdempotencyKeys.push(stripeIdempotencyKey);
       const fields = Object.fromEntries(new URLSearchParams(raw));
       stripeSession = {
         id:'cs_test_stable_checkout', url:'https://checkout.stripe.test/stable-checkout', livemode:false,
         client_reference_id:fields.client_reference_id,
         metadata:{ orderId:fields['metadata[orderId]'], portalCustomerId:fields['metadata[portalCustomerId]'] }
       };
-      await sleep(250);
+      if (testStripeTimeoutRetry) {
+        timeoutRetryRequests += 1;
+        if (timeoutRetryRequests === 1) await sleep(700);
+      } else await sleep(250);
       res.writeHead(200, { 'Content-Type':'application/json' });
       res.end(JSON.stringify(stripeSession));
     });
@@ -77,6 +84,7 @@ async function run() {
       ...process.env, NODE_ENV:'test', DATA_DIR:dataDir, PORT:String(appPort), HOST:'127.0.0.1',
       ENABLE_CLOUD_DAILY_BACKUPS:'false', STRIPE_SECRET_KEY:'sk_test_checkout_idempotency',
       STRIPE_CUSTOMER_ORDER_LIVE_ENABLED:'false', STRIPE_API_BASE_URL:`http://127.0.0.1:${stripePort}`,
+      STRIPE_API_TIMEOUT_MS:'500',
       STRIPE_CUSTOMER_ORDER_WEBHOOK_SECRET:webhookSecret
     },
     stdio:['ignore','pipe','pipe']
@@ -158,6 +166,13 @@ async function run() {
     assert.equal(paidOrder.paymentTransactions.length,1,'Delayed webhook after return reconciliation must not double-record payment');
     assert.equal(db.inventoryReservations.filter(row=>row.orderId===paidOrder.id&&row.status==='paid').length,1,'Paid order must retain one auditable paid reservation');
 
+    testStripeTimeoutRetry = true;
+    const retryCheckoutBody = JSON.stringify({ requestId:'stable-cart-request-timeout-retry',items:[{ sku,qty:1 }],fulfillment:'pickup-las-vegas',notes:'Stripe timeout retry test',locale:'en' });
+    const stripeRetry = await request('/api/customer/checkout-session',{ method:'POST',headers:customerHeaders,body:retryCheckoutBody });
+    assert.equal(stripeRetry.response.status,201,JSON.stringify(stripeRetry.body));
+    assert.equal(timeoutRetryRequests,2,'A timed-out Stripe request must retry once');
+    assert.equal(stripeIdempotencyKeys.at(-1),stripeIdempotencyKeys.at(-2),'The Stripe retry must reuse the exact Idempotency-Key');
+
     const orderingSource = fs.readFileSync(path.join(root,'public/customer-ordering.js'),'utf8');
     const customerSource = fs.readFileSync(path.join(root,'public/customer.js'),'utf8');
     const serverSource = fs.readFileSync(path.join(root,'server.js'),'utf8');
@@ -165,6 +180,7 @@ async function run() {
     assert(!orderingSource.includes("field.addEventListener('change',()=>{clearTimeout(checkoutAddressSaveTimer)"), 'Address fields must not trigger repeated full-database writes while the customer is typing');
     assert(orderingSource.includes('timeoutMs:60000'), 'Stripe checkout creation needs a mobile-safe timeout without changing ordinary request limits');
     assert(serverSource.includes("customer.deliveryProfile = {"), 'Delivery profile must be saved with the checkout order write');
+    assert(serverSource.includes("process.env.STRIPE_API_TIMEOUT_MS || 12000"), 'Stripe Session creation must have a bounded server-side timeout');
     assert(orderingSource.includes('Saving delivery information') && orderingSource.includes('Verifying price and inventory') && orderingSource.includes('Creating secure Stripe payment') && orderingSource.includes('Redirecting to Stripe'), 'Checkout UI must expose all four progress steps');
     assert(customerSource.includes("'/api/customer/checkout-session/confirm'"), 'Stripe return page must actively reconcile the Session ID');
     assert(customerSource.includes('for(let attempt=0;attempt<10;attempt+=1)'), 'Stripe return page must poll briefly for delayed confirmation');
