@@ -23,6 +23,6 @@ assert.equal((ordering.match(/window\.location\.assign\(result\.checkoutUrl\)/g)
 assert.equal((customer.match(/window\.location\.assign\(result\.checkoutUrl\)/g)||[]).length, 2, 'both legacy checkout redirects must use explicit navigation');
 assert(css.includes('@keyframes checkout-return-spin'), 'mobile customers need visible progress during payment verification');
 assert(serviceWorker.includes("film-shop-checkout-recovery-20261118"), 'the mobile service worker cache must invalidate the old checkout scripts');
-assert(html.includes('/customer.js?v=30-checkout-recovery'), 'the customer portal must load the repaired checkout script without a stale browser cache');
+assert(html.includes('/customer.js?v=31-architectural-catalog'), 'the customer portal must load the repaired checkout script without a stale browser cache');
 
 console.log('Customer mobile payment return tests passed: no homepage reset, resumable login, serialized reconciliation, Safari bfcache recovery, and cache invalidation.');

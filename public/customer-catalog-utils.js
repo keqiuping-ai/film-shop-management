@@ -20,6 +20,7 @@
     const text = productText(product).toLowerCase();
     const compact = normalize(text);
     const isEighteenMeter = /(?:1\.52\*)?18m\b/i.test(compact) || /1\.52米\*?18米/i.test(compact);
+    if (kind === 'architectural-film') return /architectural|building\s*film|glass\s*film|建筑膜|建筑玻璃膜/i.test(text);
     if (kind === 'window-film') return /window|tint|\u7a97\u819c|\u9694\u70ed\u819c|\u6c7d\u8f66\u819c|\u592a\u9633\u819c/i.test(text);
     if (kind === 'color-wrap') {
       if (/color\s*chang|\u6539\u8272\u819c|color\s*wrap|vinyl\s*wrap/i.test(text)) return true;

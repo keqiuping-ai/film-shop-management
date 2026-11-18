@@ -24,7 +24,7 @@ assert(!syncSource.includes("localStorage.removeItem('filmShopCloud.token')"), '
 assert(customerJs.includes('timeoutMs=Number(requestedTimeout??30000)'), 'customer requests must have a bounded timeout');
 assert(customerJs.includes("api('/api/customer/bootstrap',{reportConnectivity:false})"), 'background customer refresh must not display a global connectivity failure');
 assert(customerJs.includes("body:'{}',reportConnectivity:false"), 'background read receipts must not display a global connectivity failure');
-assert(customer.includes('/customer.js?v=30-checkout-recovery'), 'customer entry must bypass the previous cached request wrapper');
+assert(customer.includes('/customer.js?v=31-architectural-catalog'), 'customer entry must bypass the previous cached request wrapper');
 const server = read('server.js');
 assert(!server.includes('zlib.gzipSync('), 'large management snapshots and static assets must not block customer checkout while compressing');
 assert(server.includes('const allocatedBySku = new Map();'), 'branch inventory must aggregate each SKU once instead of rescanning all balances per product');

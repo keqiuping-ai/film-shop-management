@@ -3676,6 +3676,89 @@ function applyGmProCanonicalSkuMigration() {
   console.log(`${sourceSku} merged into ${targetSku}. Backup saved as ${backupName}. Counts: ${JSON.stringify(counts)}`);
 }
 
+function applyArchitecturalFilmCatalogMigration() {
+  const version = 'architectural-film-catalog-2026-11-18-v1';
+  const db = readDb();
+  if (db.architecturalFilmCatalogMigrationVersion === version) return;
+  const now = new Date().toISOString();
+  const size = '1.52 × 30m';
+  const descriptions = {
+    SP70: 'Silver sputter architectural film · VLT 70% · UV 99.9% · IR 98% · TSER 60%',
+    SP50: 'Silver sputter architectural film · VLT 50% · UV 99.9% · IR 97% · TSER 70%',
+    SP20: 'Silver sputter architectural film · VLT 18% · UV 99.9% · IR 96% · TSER 87%',
+    SP10: 'Silver sputter architectural film · VLT 10% · UV 99.9% · IR 98% · TSER 93%',
+    CU30: 'Copper sputter architectural film · VLT 31.2% · UV 99.1% · IR 80.6%',
+    CU20: 'Copper sputter architectural film · VLT 21% · UV 99.4% · IR 88.5%',
+    CU10: 'Copper sputter architectural film · VLT 8.9% · UV 99.8% · IR 95.9%',
+    CU05: 'Copper sputter architectural film · VLT 4.6% · UV 99.9% · IR 98.3%'
+  };
+
+  fs.mkdirSync(BACKUP_DIR, { recursive: true });
+  const backupName = `db-before-architectural-film-catalog-${now.replace(/[:.]/g, '-')}.json`;
+  const backupPath = path.join(BACKUP_DIR, backupName);
+  try {
+    fs.writeFileSync(backupPath, JSON.stringify(db, null, 2));
+    const backup = JSON.parse(fs.readFileSync(backupPath, 'utf8'));
+    for (const requiredCollection of ['products', 'portalPriceTiers']) {
+      if (!Array.isArray(backup[requiredCollection])) throw new Error(`backup is missing ${requiredCollection}`);
+    }
+  } catch (error) {
+    console.warn(`Skipped architectural film catalog migration because its backup could not be verified: ${error.message}`);
+    return;
+  }
+
+  const normalize = value => String(value || '').toLowerCase().replace(/[\s\u00a0×x]+/g, '').replace(/\|/g, '');
+  const productForModel = model => (db.products || []).find(product => {
+    const modelMatches = normalize(product.model) === normalize(model) || normalize(product.sku).startsWith(normalize(model));
+    const sizeMatches = ['1.52*30m', '1.52x30m', '1.52×30m'].some(value => normalize(product.specification || product.spec || product.sku).includes(normalize(value)));
+    return modelMatches && sizeMatches;
+  });
+  const counts = { added: 0, updated: 0, priced: 0 };
+  ['SP70', 'SP50', 'SP20', 'SP10'].forEach(model => {
+    const product = productForModel(model);
+    if (!product) return;
+    product.model = model;
+    product.specification = size;
+    product.spec = size;
+    product.category = 'Architectural glass film';
+    product.unit = 'roll';
+    product.portalDescription = descriptions[model];
+    product.active = true;
+    product.portalVisible = true;
+    product.portalPurchasable = true;
+    product.updatedAt = now;
+    counts.updated += 1;
+  });
+  ['CU30', 'CU20', 'CU10', 'CU05'].forEach(model => {
+    const sku = `${model} | 1.52*30m`;
+    let product = productForModel(model) || (db.products || []).find(item => String(item.sku || '').trim() === sku);
+    if (!product) {
+      product = { id: id(), sku, qty: 0, reorder: 1, cost: 0, location: 'Las Vegas warehouse', createdAt: now };
+      db.products.push(product);
+      counts.added += 1;
+    } else counts.updated += 1;
+    Object.assign(product, {
+      sku, model, name: `${model} Copper Sputter Architectural Film`, specification: size, spec: size,
+      category: 'Architectural glass film', unit: 'roll', price: 400, wholesale: 400, minPrice: 400,
+      portalDescription: descriptions[model], active: true, portalVisible: true, portalPurchasable: true, updatedAt: now
+    });
+    const standardTier = (db.portalPriceTiers || []).find(tier => tier.id === 'standard');
+    if (standardTier) {
+      if (!standardTier.prices || typeof standardTier.prices !== 'object' || Array.isArray(standardTier.prices)) standardTier.prices = {};
+      standardTier.prices[sku] = 400;
+      counts.priced += 1;
+    }
+  });
+  db.architecturalFilmCatalogMigrationVersion = version;
+  db.architecturalFilmCatalogMigrationAt = now;
+  db.architecturalFilmCatalogMigrationBackup = backupName;
+  audit(db, { id: 'system', name: 'System' }, 'add-architectural-film-catalog', {
+    collection: 'products', detail: '新增 CU30/CU20/CU10/CU05 建筑镀铜膜，统一 1.52 × 30m、批发价 $400；SP 系列保留原价格并归入建筑膜目录', counts, backupName
+  });
+  writeDb(db);
+  console.log(`Architectural film catalog migration completed. Backup saved as ${backupName}. Counts: ${JSON.stringify(counts)}`);
+}
+
 function branchStockQty(db, sku, branchId) {
   return Number(branchInventorySnapshot(db, { role: 'owner' }).find(row => row.sku === sku && row.branchId === branchId)?.qty || 0);
 }
@@ -15411,6 +15494,7 @@ applyYelpLeadFormMessageMigration();
 applyCustomerNumberRemoval();
 applyLasVegasLegacyBranchMigration();
 applyGmProCanonicalSkuMigration();
+applyArchitecturalFilmCatalogMigration();
 applySantaMonicaFieldSalesProspectImport();
 applyLosAngelesChineseServiceShopImport();
 applyLasVegasFieldSalesProspectImport();

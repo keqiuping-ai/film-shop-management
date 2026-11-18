@@ -10,6 +10,7 @@ const products = [
   { sku:'GREENSeries-TPUQD42', model:'TPUQD42', name:'Alpine White Metallic', specification:'1.52*18m', category:'Color changing film', price:950, purchasable:true, stockByWarehouse:{ 'las-vegas':5, 'los-angeles':0 } },
   { sku:'QD112', model:'QD112', name:'Satin Black', specification:'1.52*18m', category:'Car wrap film', price:900, purchasable:true, stockByWarehouse:{ 'las-vegas':1, 'los-angeles':0 } },
   { sku:'NA70 | 40*100', model:'NA70', name:'Nano ceramic tint', specification:'40*100', category:'Window film', price:280, purchasable:true, stockByWarehouse:{ 'las-vegas':4, 'los-angeles':1 } },
+  { sku:'CU30 | 1.52*30m', model:'CU30', name:'CU30 Copper Sputter Architectural Film', specification:'1.52 × 30m', category:'Architectural glass film', price:400, purchasable:true, stockByWarehouse:{ 'las-vegas':2, 'los-angeles':0 } },
   { sku:'TPUQD77', model:'TPUQD77', name:'Hidden wrap', specification:'1.52*18m', category:'Color changing film', price:null, purchasable:true, stockByWarehouse:{ 'las-vegas':3 } },
   { sku:'TPUQD88', model:'TPUQD88', name:'Blocked wrap', specification:'1.52*18m', category:'Color changing film', price:900, purchasable:false, stockByWarehouse:{ 'las-vegas':3 } }
 ];
@@ -22,6 +23,8 @@ assert.equal(catalog.search(products, 'gm18', 'ppf').length, 0, 'zero-stock PPF 
 assert.equal(catalog.search(products, 'tpuqd77', 'color-wrap').length, 0, 'unpriced wrap must be hidden');
 assert.equal(catalog.search(products, 'tpuqd88', 'color-wrap').length, 0, 'blocked wrap must be hidden');
 assert.equal(catalog.search(products, 'na70', 'ppf').length, 0, 'window film must not leak into PPF search');
+assert.deepEqual(catalog.search(products, 'cu30', 'architectural-film').map(item => item.sku), ['CU30 | 1.52*30m']);
+assert.equal(catalog.search(products, 'cu30', 'window-film').length, 0, 'architectural film must not leak into automotive window film search');
 assert.equal(catalog.search(products, 'g18', 'color-wrap').length, 0, '15 m PPF stored under the legacy Car wrap category must not leak into color wrap');
 assert.equal(catalog.availableQty(products[0]), 3);
 
@@ -34,7 +37,7 @@ assert(ordering.includes('searchColorWrapInventory'));
 assert(ordering.includes("dataset.directSku=product.sku"));
 assert(ordering.includes("findBySku(state?.products||[],order.dataset.productSku,'ppf')"));
 assert(ordering.includes("findBySku(state?.products||[],quickOrder.dataset.productSku,'color-wrap')"));
-assert(html.indexOf('customer-catalog-utils.js?v=1') < html.indexOf('customer-ordering.js?v=66-checkout-latency'), 'catalog utility must load before ordering code');
+assert(html.indexOf('customer-catalog-utils.js?v=2-architectural-catalog') < html.indexOf('customer-ordering.js?v=68-architectural-i18n'), 'catalog utility must load before ordering code');
 assert(i18n.includes('SEARCH OTHER IN-STOCK PPF MODELS'));
 assert(i18n.includes('SEARCH OTHER IN-STOCK COLOR-WRAP MODELS'));
 
