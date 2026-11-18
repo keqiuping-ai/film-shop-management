@@ -25,6 +25,7 @@ assert(customerJs.includes('timeoutMs=Number(requestedTimeout??30000)'), 'custom
 assert(customerJs.includes("api('/api/customer/bootstrap',{reportConnectivity:false})"), 'background customer refresh must not display a global connectivity failure');
 assert(customerJs.includes("body:'{}',reportConnectivity:false"), 'background read receipts must not display a global connectivity failure');
 assert(customer.includes('/customer.js?v=30-checkout-recovery'), 'customer entry must bypass the previous cached request wrapper');
+assert(!read('server.js').includes('zlib.gzipSync('), 'large management snapshots and static assets must not block customer checkout while compressing');
 assert(serviceWorker.includes("'/offline.html'"), 'service worker must cache the offline route page');
 assert(serviceWorker.includes("caches.match('/offline.html')"), 'navigation failures must render the offline route page');
 

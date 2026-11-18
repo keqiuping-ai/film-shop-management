@@ -5871,10 +5871,19 @@ function send(res, status, body, type = 'application/json; charset=utf-8', req =
   if (req && acceptsGzip(req) && buffer.length > 1024 && /json|text|javascript|css|svg/.test(type)) {
     headers['Content-Encoding'] = 'gzip';
     headers.Vary = 'Accept-Encoding';
-    const gzipped = zlib.gzipSync(buffer, { level: zlib.constants.Z_BEST_SPEED });
-    headers['Content-Length'] = gzipped.length;
-    res.writeHead(status, headers);
-    return res.end(gzipped);
+    return zlib.gzip(buffer, { level: zlib.constants.Z_BEST_SPEED }, (error, gzipped) => {
+      if (res.destroyed || res.writableEnded) return;
+      if (error) {
+        delete headers['Content-Encoding'];
+        delete headers.Vary;
+        headers['Content-Length'] = buffer.length;
+        res.writeHead(status, headers);
+        return res.end(buffer);
+      }
+      headers['Content-Length'] = gzipped.length;
+      res.writeHead(status, headers);
+      res.end(gzipped);
+    });
   }
   headers['Content-Length'] = buffer.length;
   res.writeHead(status, headers);
@@ -15243,12 +15252,21 @@ function staticFile(req, res) {
       headers['X-Robots-Tag'] = 'noindex, nofollow';
     }
     if (textAsset && acceptsGzip(req) && data.length > 1024) {
-      const gzipped = zlib.gzipSync(data);
       headers['Content-Encoding'] = 'gzip';
       headers.Vary = 'Accept-Encoding';
-      headers['Content-Length'] = gzipped.length;
-      res.writeHead(200, headers);
-      return res.end(gzipped);
+      return zlib.gzip(data, { level:zlib.constants.Z_BEST_SPEED }, (error, gzipped) => {
+        if (res.destroyed || res.writableEnded) return;
+        if (error) {
+          delete headers['Content-Encoding'];
+          delete headers.Vary;
+          headers['Content-Length'] = data.length;
+          res.writeHead(200, headers);
+          return res.end(data);
+        }
+        headers['Content-Length'] = gzipped.length;
+        res.writeHead(200, headers);
+        res.end(gzipped);
+      });
     }
     headers['Content-Length'] = data.length;
     res.writeHead(200, headers);
