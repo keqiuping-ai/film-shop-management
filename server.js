@@ -16,6 +16,7 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const nodemailer = require('nodemailer');
 const zlib = require('zlib');
 const { execFile } = require('child_process');
 const { promisify } = require('util');
@@ -8511,7 +8512,41 @@ async function sendReminderEmail(to, subject, text) {
   return { ok: true, configured: true, id: body.id || '' };
 }
 
+let websiteGmailTransport = null;
+let websiteGmailTransportKey = '';
+
 async function sendWebsiteCustomerEmail(to, subject, text) {
+  const gmailUser = String(process.env.GMAIL_SMTP_USER || '').trim().toLowerCase();
+  const gmailAppPassword = String(process.env.GMAIL_SMTP_APP_PASSWORD || '').replace(/\s+/g, '');
+  if (gmailUser && gmailAppPassword) {
+    const transportKey = `${gmailUser}:${gmailAppPassword}`;
+    if (!websiteGmailTransport || websiteGmailTransportKey !== transportKey) {
+      websiteGmailTransport = nodemailer.createTransport({
+        service: 'gmail',
+        auth: { user: gmailUser, pass: gmailAppPassword },
+        connectionTimeout: 15000,
+        greetingTimeout: 15000,
+        socketTimeout: 20000
+      });
+      websiteGmailTransportKey = transportKey;
+    }
+    try {
+      const info = await websiteGmailTransport.sendMail({
+        from: `QUAD FILM <${gmailUser}>`,
+        replyTo: gmailUser,
+        to,
+        subject,
+        text
+      });
+      return { ok: true, configured: true, id: info.messageId || '', provider: 'gmail' };
+    } catch (error) {
+      return {
+        ok: false,
+        configured: true,
+        error: `Gmail 发送失败：${error.message || '请检查应用专用密码'}`
+      };
+    }
+  }
   const apiKey = process.env.RESEND_API_KEY;
   const from = process.env.CUSTOMER_SERVICE_FROM_EMAIL || process.env.RESEND_FROM_EMAIL || process.env.REMINDER_FROM_EMAIL;
   const replyTo = process.env.CUSTOMER_SERVICE_REPLY_TO_EMAIL || process.env.RESEND_REPLY_TO_EMAIL || '';
@@ -8519,7 +8554,7 @@ async function sendWebsiteCustomerEmail(to, subject, text) {
     return {
       ok: false,
       configured: false,
-      error: '邮件服务未配置。请配置 RESEND_API_KEY 和 RESEND_FROM_EMAIL。'
+      error: '邮件服务未配置。Gmail 请配置 GMAIL_SMTP_USER 和 GMAIL_SMTP_APP_PASSWORD。'
     };
   }
   try {
