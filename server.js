@@ -7,7 +7,8 @@ const websiteMessages = require('./lib/website-messages')({
   translateIncoming: async text => readableCustomerFormTranslation(
     await translateInternalMessageWithAi(readDb(), text, { customer: true })
   ),
-  translateReply: text => translateCustomerReplyChineseToEnglish(readDb(), text)
+  translateReply: text => translateCustomerReplyChineseToEnglish(readDb(), text),
+  sendEmail: sendWebsiteCustomerEmail
 });
 const { createPhoneAssistant } = require('./lib/phone-assistant');
 const customerIdentity = require('./lib/customer-identity');
@@ -8508,6 +8509,43 @@ async function sendReminderEmail(to, subject, text) {
   const body = await response.json().catch(() => ({}));
   if (!response.ok) return { ok: false, configured: true, error: body.message || `邮件发送失败 ${response.status}` };
   return { ok: true, configured: true, id: body.id || '' };
+}
+
+async function sendWebsiteCustomerEmail(to, subject, text) {
+  const apiKey = process.env.RESEND_API_KEY;
+  const from = process.env.CUSTOMER_SERVICE_FROM_EMAIL || process.env.RESEND_FROM_EMAIL || process.env.REMINDER_FROM_EMAIL;
+  const replyTo = process.env.CUSTOMER_SERVICE_REPLY_TO_EMAIL || process.env.RESEND_REPLY_TO_EMAIL || '';
+  if (!apiKey || !from) {
+    return {
+      ok: false,
+      configured: false,
+      error: '邮件服务未配置。请配置 RESEND_API_KEY 和 RESEND_FROM_EMAIL。'
+    };
+  }
+  try {
+    const response = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        from,
+        to,
+        subject,
+        text,
+        ...(replyTo ? { reply_to: replyTo } : {})
+      }),
+      signal: AbortSignal.timeout(20000)
+    });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      return { ok: false, configured: true, error: body.message || `邮件发送失败 ${response.status}` };
+    }
+    return { ok: true, configured: true, id: body.id || '' };
+  } catch (error) {
+    return { ok: false, configured: true, error: error.message || '邮件发送网络异常' };
+  }
 }
 
 async function sendScheduleReminders(db, targetDate, actor = { id: 'system', name: 'System' }) {

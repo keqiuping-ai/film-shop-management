@@ -5,7 +5,8 @@ test("guest isolation, staff access, persistence, validation and retry deduplica
   let db = { users: [{ id: "staff", active: true }] },
     writes = 0,
     events = 0,
-    incomingTranslationCalls = 0;
+    incomingTranslationCalls = 0,
+    emailCalls = 0;
   const route = create({
     readDb: () => db,
     writeDb: (value) => {
@@ -20,6 +21,10 @@ test("guest isolation, staff access, persistence, validation and retry deduplica
       return { text: `中文译文：${text}` };
     },
     translateReply: async () => ({ englishText: "Hello, how can we help?" }),
+    sendEmail: async (to, subject, text) => {
+      emailCalls++;
+      return { ok: true, configured: true, id: `${to}:${subject}:${text.length}` };
+    },
   });
   async function call(
     path,
@@ -159,6 +164,45 @@ test("guest isolation, staff access, persistence, validation and retry deduplica
       .length,
     1,
   );
+  const sentEmail = await call(
+    "/api/website-messages/send-email",
+    "POST",
+    {
+      id: a.body.id,
+      subject: "QUAD FILM information",
+      text: "Here are the details you requested.",
+      requestId: "email-1",
+    },
+    "",
+    staff,
+  );
+  assert.equal(sentEmail.status, 200);
+  assert.equal(sentEmail.body.email.to, "a@example.test");
+  assert.equal(
+    sentEmail.body.messages.at(-1).channel,
+    "email",
+  );
+  const duplicateEmail = await call(
+    "/api/website-messages/send-email",
+    "POST",
+    {
+      id: a.body.id,
+      subject: "QUAD FILM information",
+      text: "Here are the details you requested.",
+      requestId: "email-1",
+    },
+    "",
+    staff,
+  );
+  assert.equal(duplicateEmail.body.email.duplicate, true);
+  assert.equal(emailCalls, 1);
+  const guestAfterEmail = await call(
+    "/api/website-chat",
+    "GET",
+    {},
+    a.body.token,
+  );
+  assert.equal(guestAfterEmail.body.messages.some((message) => message.channel === "email"), false);
   assert.equal(
     (
       await call(
@@ -182,6 +226,6 @@ test("guest isolation, staff access, persistence, validation and retry deduplica
     ).status,
     400,
   );
-  assert.equal(writes, 4);
-  assert.equal(events, 4);
+  assert.equal(writes, 5);
+  assert.equal(events, 5);
 });
