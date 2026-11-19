@@ -46,6 +46,8 @@ async function run() {
   assert(!appSource.includes('<h3>${lang === \'zh\' ? \'出入库流水\''), 'Inventory page must not keep the mixed movement title');
   assert(appSource.includes('inventory-workbench-panel'), 'Inventory documents must use full-width stacked workbench panels');
   assert(appSource.includes('inventory-document-table-scroll'), 'Inventory document tables must use a bounded vertical scroll area');
+  assert(appSource.includes('table-wrap shipment-table-wrap'), 'Inbound shipment table must use its compact no-horizontal-scroll layout');
+  assert(appSource.includes('class="shipment-model"'), 'Inbound shipment model must remain prominent in the compact table');
   assert(appSource.includes("productTable(searchedProducts(), true, 'inventory-stock-table-scroll')"), 'Inventory list must use its own five-row scroll viewport');
   assert(appSource.includes('openPendingStockOutDocument'), 'Pending stock-out rows must open a full document review');
   assert(appSource.includes('stockOutLineReconciliation'), 'Pending stock-out must compare order, shipped, and branch inventory quantities');
@@ -59,6 +61,8 @@ async function run() {
   const cssSource = fs.readFileSync(path.join(root, 'public/styles.css'), 'utf8');
   assert(cssSource.includes('.inventory-stock-table-scroll{max-height:570px;overflow:auto'), 'Inventory list must stay compact and scroll internally');
   assert(cssSource.includes('.pending-stockout-table{width:100%;min-width:900px!important;table-layout:fixed'), 'Pending stock-out columns must stay compact enough to expose the action button');
+  assert(cssSource.includes('.shipment-table { width: 100%; min-width: 0; table-layout: fixed'), 'Inbound shipments must fit model and receiving actions into one viewport');
+  assert(cssSource.includes('.shipment-table .shipment-actions-col { width: 11%; }'), 'Inbound shipment actions need a reserved visible column');
   assert(cssSource.includes('.inventory-branch-picker{display:grid;grid-template-columns:repeat(3'), 'Inventory branch choices must render as three clear tabs');
 
   const child = spawn(process.execPath, ['server.js'], {
