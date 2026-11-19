@@ -207,7 +207,7 @@ const vehicleClassOptions = () => [
 
 const dict = {
   zh: {
-    appTitle: '美国贴膜店管理系统',
+    appTitle: 'QUAD 全球管理系统',
     loginSub: '联网版 · 多电脑 · iPad · 实时共用',
     email: '邮箱',
     password: '密码',
@@ -472,7 +472,7 @@ const dict = {
     workshopCurrentStock: '贴膜间当前库存'
   },
   en: {
-    appTitle: 'Film Shop Management System',
+    appTitle: 'QUAD Global Management System',
     loginSub: 'Cloud version · Mac · iPad · Shared data',
     email: 'Email',
     password: 'Password',
@@ -910,6 +910,7 @@ function toggleLanguage() {
 }
 
 function applyStaticTranslations() {
+  document.title = t('appTitle');
   document.querySelectorAll('[data-i18n]').forEach(el => {
     el.textContent = t(el.dataset.i18n);
   });
@@ -1885,7 +1886,7 @@ function render(options = {}) {
   const page = current === 'modules' ? ['modules', 'modules', 'modulesSub'] : currentPage;
   const pageTitle = document.getElementById('pageTitle');
   if (current === 'modules') {
-    pageTitle.innerHTML = `<span class="home-title"><img class="home-title-mark" src="/quad-film-icon.png" alt="Quad Film" /><span>${lang === 'zh' ? 'QUAD 贴膜店管理系统' : 'QUAD Film Shop Management'}</span></span>`;
+    pageTitle.innerHTML = `<span class="home-title"><img class="home-title-mark" src="/quad-film-icon.png" alt="Quad Film" /><span>${lang === 'zh' ? 'QUAD 全球管理系统' : 'QUAD Global Management System'}</span></span>`;
   } else {
     pageTitle.textContent = t(page[1]);
   }
@@ -13165,7 +13166,7 @@ function installPrompt() {
   const blob = new Blob([content], { type: 'application/xml' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
-  a.download = lang === 'zh' ? '美国贴膜店管理系统.webloc' : 'Film Shop Management.webloc';
+  a.download = lang === 'zh' ? 'QUAD全球管理系统.webloc' : 'QUAD Global Management System.webloc';
   a.click();
   URL.revokeObjectURL(a.href);
   alert(lang === 'zh'

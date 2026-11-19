@@ -129,7 +129,7 @@ function readConfig() {
 
 function readVersion() {
   const defaults = {
-    appName: '美国贴膜店管理系统',
+    appName: 'QUAD 全球管理系统',
     version: '1.0.0',
     build: '2026.06.23.1',
     channel: 'stable',
@@ -2771,7 +2771,7 @@ async function createCompletedJobsWorkbook(db, user, query) {
   const branchLabel = requestedBranch === 'all' ? '公司合并' : (branches.find(row => row.id === requestedBranch)?.name || (requestedBranch ? requestedBranch : '待确认分店'));
   const paymentMethods = { cash:'现金', visa:'Visa', card:'刷卡', zelle:'Zelle', check:'支票', other:'其他' };
   const workbook = new ExcelJS.Workbook();
-  workbook.creator = 'QUAD Film Shop Management';
+  workbook.creator = 'QUAD Global Management System';
   workbook.created = new Date();
   const sheet = workbook.addWorksheet('已成交订单', { views:[{ state:'frozen', ySplit:4 }] });
   const headers = ['施工日期','建单日期','分店','客户','电话','来源','车辆','项目','套餐','施工师傅','状态','报价','已收款','未收款','付款情况','付款方式','材料成本','师傅工费','毛利','销售/负责人','填表人','备注'];

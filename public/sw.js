@@ -1,4 +1,4 @@
-const CACHE_NAME = 'film-shop-checkout-recovery-20261118';
+const CACHE_NAME = 'quad-global-management-20261119';
 const ASSETS = [
     '/mobile.html',
     '/offline.html',
