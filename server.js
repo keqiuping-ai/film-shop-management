@@ -1,4 +1,14 @@
-const websiteMessages = require('./lib/website-messages')({ readDb, writeDb, readBody, send, notifyDataChanged });
+const websiteMessages = require('./lib/website-messages')({
+  readDb,
+  writeDb,
+  readBody,
+  send,
+  notifyDataChanged,
+  translateIncoming: async text => readableCustomerFormTranslation(
+    await translateInternalMessageWithAi(readDb(), text, { customer: true })
+  ),
+  translateReply: text => translateCustomerReplyChineseToEnglish(readDb(), text)
+});
 const { createPhoneAssistant } = require('./lib/phone-assistant');
 const customerIdentity = require('./lib/customer-identity');
 const http = require('http');
@@ -10334,7 +10344,7 @@ async function api(req, res) {
   }
   if (!user) return send(res, 401, { error: '请先登录' });
 
-  if (url.pathname === '/api/website-messages' && await websiteMessages(req, res, url, user)) return;
+  if (url.pathname.startsWith('/api/website-messages') && await websiteMessages(req, res, url, user)) return;
 
   if (await phoneAssistant.adminRoute(req, res, url, user)) return;
   if (url.pathname === '/api/inventory/rfid-devices' && ['GET', 'POST'].includes(req.method)) {
