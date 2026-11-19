@@ -31,6 +31,8 @@ let state = null;
 let user = null;
 let current = 'modules';
 let portalCustomerTab = 'customers';
+let portalCustomerSearch = '';
+let portalPriceMatrixSearch = '';
 let imagePreviewHistoryPushed = false;
 // Monotonically tracks user-visible navigation. A bootstrap response may arrive
 // after the operator has moved to another module, conversation, or workspace;
@@ -7380,7 +7382,33 @@ function retailWholesaleSalesTable(orders = []) {
 function portalCustomerTable() {
   const rows = state.portalCustomers || [];
   const tierName = id => (state.portalPriceTiers || []).find(tier => tier.id === (id || 'standard'))?.name || '批发价';
-  return `<div class="table-wrap"><table><thead><tr><th>${lang === 'zh' ? '客户/公司' : 'Customer'}</th><th>${lang === 'zh' ? '联系人' : 'Contact'}</th><th>${lang === 'zh' ? '登录账号' : 'Login'}</th><th>${lang === 'zh' ? '当前等级' : 'Current tier'}</th><th>${lang === 'zh' ? '本月实付销售额' : 'Paid sales this month'}</th><th>${lang === 'zh' ? '升级进度' : 'Progress'}</th><th>${t('status')}</th><th></th></tr></thead><tbody>${rows.map(c => { const p=c.tierProgress||{},unread=portalCustomerUnreadCount(c.id); return `<tr><td><strong>${escapeHtml(c.businessName || '')}</strong><br><span class="note">${escapeHtml(c.address || '')}</span></td><td>${escapeHtml(c.contactName || '')}<br><span class="note">${escapeHtml(c.phone || '')}<br>${escapeHtml(c.email || '')}</span></td><td>${escapeHtml(c.account || '')}</td><td><span class="pill info">${escapeHtml(tierName(c.priceTier))}</span>${p.recommendedTier&&p.recommendedTier!==p.tier?`<br><span class="note">建议：${escapeHtml(p.recommendedTierName)}</span>`:''}</td><td>${currency.format(Number(p.currentSales||0))}</td><td><div class="portal-tier-progress"><i style="width:${Number(p.progressPercent||0)}%"></i></div><span class="note">${Number(p.progressPercent||0)}%</span></td><td>${statusPill(c.referenceOnly ? '资料客户' : (c.active === false ? '停用' : (c.status || '正常')))}</td><td><div class="portal-customer-row-actions">${hasPerm('ordersView') ? `<button class="portal-customer-mailbox-button" type="button" onclick="openPortalCustomerMailbox('${c.id}')" title="${lang === 'zh' ? '读取该客户全部信息' : 'Open this customer mailbox'}" aria-label="${lang === 'zh' ? '读取该客户全部信息' : 'Open this customer mailbox'}"><span aria-hidden="true">✉</span>${unread?`<b>${unread}</b>`:''}</button>` : ''}${hasPerm('portalCustomersEdit') ? `<button class="btn" onclick="openPortalCustomer('${c.id}')">${t('edit')}</button>` : ''}</div></td></tr>` }).join('')}${rows.length ? '' : `<tr><td colspan="8" class="note">${lang === 'zh' ? '还没有客户账号。' : 'No customer accounts.'}</td></tr>`}</tbody></table></div>`;
+  const query = normalizeSearchText(portalCustomerSearch);
+  const matches = customer => !query || portalCustomerSearchText(customer).includes(query);
+  const visibleCount = rows.filter(matches).length;
+  const search = `<div class="portal-main-search"><input id="portalCustomerSearch" type="search" autocomplete="off" value="${escapeHtml(portalCustomerSearch)}" placeholder="${lang === 'zh' ? '搜索客户、公司、联系人、电话、邮箱、账号、地址或业务员…' : 'Search customer, company, contact, phone, email, account, address, or sales rep…'}" oninput="filterPortalCustomerRows(this.value)"><span id="portalCustomerSearchCount">${lang === 'zh' ? `显示 ${visibleCount} / ${rows.length} 个客户` : `Showing ${visibleCount} of ${rows.length} customers`}</span></div>`;
+  const table = `<div class="table-wrap portal-customer-search-table"><table><thead><tr><th>${lang === 'zh' ? '客户/公司' : 'Customer'}</th><th>${lang === 'zh' ? '联系人' : 'Contact'}</th><th>${lang === 'zh' ? '登录账号' : 'Login'}</th><th>${lang === 'zh' ? '当前等级' : 'Current tier'}</th><th>${lang === 'zh' ? '本月实付销售额' : 'Paid sales this month'}</th><th>${lang === 'zh' ? '升级进度' : 'Progress'}</th><th>${t('status')}</th><th></th></tr></thead><tbody>${rows.map(c => { const p=c.tierProgress||{},unread=portalCustomerUnreadCount(c.id),searchText=portalCustomerSearchText(c); return `<tr data-portal-customer-search="${escapeHtml(searchText)}" ${matches(c)?'':'hidden'}><td><strong>${escapeHtml(c.businessName || '')}</strong><br><span class="note">${escapeHtml(c.address || '')}</span></td><td>${escapeHtml(c.contactName || '')}<br><span class="note">${escapeHtml(c.phone || '')}<br>${escapeHtml(c.email || '')}</span></td><td>${escapeHtml(c.account || '')}</td><td><span class="pill info">${escapeHtml(tierName(c.priceTier))}</span>${p.recommendedTier&&p.recommendedTier!==p.tier?`<br><span class="note">建议：${escapeHtml(p.recommendedTierName)}</span>`:''}</td><td>${currency.format(Number(p.currentSales||0))}</td><td><div class="portal-tier-progress"><i style="width:${Number(p.progressPercent||0)}%"></i></div><span class="note">${Number(p.progressPercent||0)}%</span></td><td>${statusPill(c.referenceOnly ? '资料客户' : (c.active === false ? '停用' : (c.status || '正常')))}</td><td><div class="portal-customer-row-actions">${hasPerm('ordersView') ? `<button class="portal-customer-mailbox-button" type="button" onclick="openPortalCustomerMailbox('${c.id}')" title="${lang === 'zh' ? '读取该客户全部信息' : 'Open this customer mailbox'}" aria-label="${lang === 'zh' ? '读取该客户全部信息' : 'Open this customer mailbox'}"><span aria-hidden="true">✉</span>${unread?`<b>${unread}</b>`:''}</button>` : ''}${hasPerm('portalCustomersEdit') ? `<button class="btn" onclick="openPortalCustomer('${c.id}')">${t('edit')}</button>` : ''}</div></td></tr>` }).join('')}${rows.length ? '' : `<tr><td colspan="8" class="note">${lang === 'zh' ? '还没有客户账号。' : 'No customer accounts.'}</td></tr>`}</tbody></table></div>`;
+  const empty = `<p id="portalCustomerSearchEmpty" class="portal-main-search-empty" ${visibleCount || !rows.length ? 'hidden' : ''}>${lang === 'zh' ? '没有找到匹配的客户，请检查公司名、联系人、电话或账号。' : 'No matching customers. Check the company, contact, phone, or account.'}</p>`;
+  return search + empty + table;
+}
+
+function portalCustomerSearchText(customer = {}) {
+  return normalizeSearchText([customer.businessName, customer.contactName, customer.phone, customer.email, customer.account, customer.address, customer.salesRep, customer.status].filter(Boolean).join(' '));
+}
+
+function filterPortalCustomerRows(value) {
+  portalCustomerSearch = String(value || '');
+  const query = normalizeSearchText(portalCustomerSearch);
+  const rows = [...document.querySelectorAll('[data-portal-customer-search]')];
+  let visible = 0;
+  rows.forEach(row => {
+    const matches = !query || String(row.dataset.portalCustomerSearch || '').includes(query);
+    row.hidden = !matches;
+    if (matches) visible += 1;
+  });
+  const count = document.getElementById('portalCustomerSearchCount');
+  if (count) count.textContent = lang === 'zh' ? `显示 ${visible} / ${rows.length} 个客户` : `Showing ${visible} of ${rows.length} customers`;
+  const empty = document.getElementById('portalCustomerSearchEmpty');
+  if (empty) empty.hidden = visible > 0 || rows.length === 0;
 }
 
 function portalCustomerOrders(customerId) { return (state.salesOrders || []).filter(order => order.portalCustomerId === customerId); }
@@ -7421,8 +7449,29 @@ function portalPriceTierView() {
     ['strategic', lang==='zh'?'超级战略合作伙伴价':'Strategic partner']
   ];
   const tierById = id => tiers.find(item => item.id === id) || { prices: {} };
-  const rows=(state.products||[]).map(product=>`<tr><td><strong>${escapeHtml(product.sku)}</strong><br><span class="note">${escapeHtml(product.name||'')}</span></td>${columns.map(([id])=>`<td><input class="portal-table-price" data-tier="${id}" data-sku="${escapeHtml(product.sku)}" type="number" min="0" step="0.01" value="${tierById(id).prices?.[product.sku]??''}" placeholder="${id==='standard'?(lang==='zh'?'请输入批发价':'Enter wholesale'):(lang==='zh'?'继承批发价':'Use wholesale')}"></td>`).join('')}</tr>`).join('');
-  return `<div class="portal-tier-rules"><strong>${lang==='zh'?'客户等级规则':'Customer tier rules'}</strong><span>${lang==='zh'?'本月实付满 $10,000 升银牌；满 $20,000 升金牌。连续两个完整月份未达到当前等级门槛时仅降一级，金牌不会直接降为普通客户。':'Silver at $10,000 paid monthly sales; Gold at $20,000. Two completed months below the current threshold cause only a one-level downgrade.'}</span>${hasPerm('portalPricingEdit')?`<button class="btn" onclick="recalculatePortalTiers()">${lang==='zh'?'重新计算客户等级':'Recalculate tiers'}</button>`:''}</div><div class="table-wrap portal-price-matrix"><table><thead><tr><th>SKU</th>${columns.map(([,label])=>`<th>${label}</th>`).join('')}</tr></thead><tbody>${rows}</tbody></table></div>${hasPerm('portalPricingEdit')?`<button class="btn primary portal-price-save" onclick="savePortalPriceMatrix()">${lang==='zh'?'保存全部价格':'Save all prices'}</button>`:''}<p class="note">${lang==='zh'?'批发价是默认售价；其他等级留空时自动继承批发价。客户特殊协议价优先，订单生成时锁定成交价。':'Wholesale is the default; blank tier prices inherit it. Customer overrides take priority, and order prices are locked when created.'}</p>`;
+  const products = state.products || [];
+  const query = normalizeSearchText(portalPriceMatrixSearch);
+  const matches = product => !query || portalPriceProductSearchText(product).includes(query);
+  const visibleCount = products.filter(matches).length;
+  const rows=products.map(product=>`<tr data-portal-matrix-search="${escapeHtml(portalPriceProductSearchText(product))}" ${matches(product)?'':'hidden'}><td><strong>${escapeHtml(product.sku)}</strong><br><span class="note">${escapeHtml(product.name||'')}</span>${product.model&&product.model!==product.sku?`<br><span class="note">${escapeHtml(product.model)}</span>`:''}${product.specification?`<br><span class="note">${escapeHtml(product.specification)}</span>`:''}</td>${columns.map(([id])=>`<td><input class="portal-table-price" data-tier="${id}" data-sku="${escapeHtml(product.sku)}" type="number" min="0" step="0.01" value="${tierById(id).prices?.[product.sku]??''}" placeholder="${id==='standard'?(lang==='zh'?'请输入批发价':'Enter wholesale'):(lang==='zh'?'继承批发价':'Use wholesale')}"></td>`).join('')}</tr>`).join('');
+  const search = `<div class="portal-main-search"><input id="portalPriceMatrixSearch" type="search" autocomplete="off" value="${escapeHtml(portalPriceMatrixSearch)}" placeholder="${lang === 'zh' ? '搜索 SKU、型号、产品名称或规格…' : 'Search SKU, model, product name, or specification…'}" oninput="filterPortalPriceMatrixRows(this.value)"><span id="portalPriceMatrixSearchCount">${lang === 'zh' ? `显示 ${visibleCount} / ${products.length} 个产品` : `Showing ${visibleCount} of ${products.length} products`}</span></div><p id="portalPriceMatrixSearchEmpty" class="portal-main-search-empty" ${visibleCount || !products.length ? 'hidden' : ''}>${lang === 'zh' ? '没有找到匹配的产品，请检查 SKU、型号或名称。' : 'No matching products. Check the SKU, model, or name.'}</p>`;
+  return `<div class="portal-tier-rules"><strong>${lang==='zh'?'客户等级规则':'Customer tier rules'}</strong><span>${lang==='zh'?'本月实付满 $10,000 升银牌；满 $20,000 升金牌。连续两个完整月份未达到当前等级门槛时仅降一级，金牌不会直接降为普通客户。':'Silver at $10,000 paid monthly sales; Gold at $20,000. Two completed months below the current threshold cause only a one-level downgrade.'}</span>${hasPerm('portalPricingEdit')?`<button class="btn" onclick="recalculatePortalTiers()">${lang==='zh'?'重新计算客户等级':'Recalculate tiers'}</button>`:''}</div>${search}<div class="table-wrap portal-price-matrix"><table><thead><tr><th>SKU</th>${columns.map(([,label])=>`<th>${label}</th>`).join('')}</tr></thead><tbody>${rows}</tbody></table></div>${hasPerm('portalPricingEdit')?`<button class="btn primary portal-price-save" onclick="savePortalPriceMatrix()">${lang==='zh'?'保存全部价格':'Save all prices'}</button>`:''}<p class="note">${lang==='zh'?'批发价是默认售价；其他等级留空时自动继承批发价。客户特殊协议价优先，订单生成时锁定成交价。':'Wholesale is the default; blank tier prices inherit it. Customer overrides take priority, and order prices are locked when created.'}</p>`;
+}
+
+function filterPortalPriceMatrixRows(value) {
+  portalPriceMatrixSearch = String(value || '');
+  const query = normalizeSearchText(portalPriceMatrixSearch);
+  const rows = [...document.querySelectorAll('[data-portal-matrix-search]')];
+  let visible = 0;
+  rows.forEach(row => {
+    const matches = !query || String(row.dataset.portalMatrixSearch || '').includes(query);
+    row.hidden = !matches;
+    if (matches) visible += 1;
+  });
+  const count = document.getElementById('portalPriceMatrixSearchCount');
+  if (count) count.textContent = lang === 'zh' ? `显示 ${visible} / ${rows.length} 个产品` : `Showing ${visible} of ${rows.length} products`;
+  const empty = document.getElementById('portalPriceMatrixSearchEmpty');
+  if (empty) empty.hidden = visible > 0 || rows.length === 0;
 }
 
 async function savePortalPriceMatrix(){const payload={'standard':{},'first-order':{},bronze:{},silver:{},gold:{},strategic:{}};document.querySelectorAll('.portal-table-price').forEach(input=>{if(input.value!=='')payload[input.dataset.tier][input.dataset.sku]=Number(input.value)});try{const result=await api('/api/portal-price-tiers',{method:'PUT',body:JSON.stringify(payload)});state=result.data;render();broadcastDataChange();alert(lang==='zh'?'全部价格已保存。':'All prices saved.')}catch(err){alert(err.message)}}
