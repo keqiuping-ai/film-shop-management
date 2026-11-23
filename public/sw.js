@@ -1,4 +1,4 @@
-const CACHE_NAME = 'quad-global-management-20261123-operations-handover';
+const CACHE_NAME = 'quad-global-management-20261123-operations-contacts';
 const ASSETS = [
     '/mobile.html',
     '/offline.html',

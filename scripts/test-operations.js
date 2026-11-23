@@ -125,3 +125,27 @@ test('handover supports manual customer and asset items with private access and 
  assert.equal((await f.call(path,'POST',body,'b')).status,404);assert.equal((await f.call(path,'POST',body,'a')).status,200);assert.equal((await f.call(path,'POST',body,'a')).status,200);
  const task=f.db().operations.tasks.find(r=>r.id===t.id);assert.equal(task.handoverItems.length,1);assert.equal(task.handoverItems[0].nextAction,body.nextAction);
 });
+test('shared service directory exposes service contacts but not private notes or company records',async()=>{
+ const f=await setup();const body={entityId:f.entity.id,name:'Installer demo',role:'Window film technician',organization:'Service provider',phone:'+17025550101',email:'service@example.test',serviceCategory:'installer',serviceArea:'Las Vegas',availability:'Appointment required',serviceNotes:'Window film and PPF services',details:'Private contract notes',directoryVisible:true};
+ const created=await f.call('/contacts','POST',body);assert.equal(created.status,201);
+ const staff=(await f.call('','GET',{},'b')).body;const c=staff.contacts.find(c=>c.id===created.body.item.id);
+ assert(c);assert.equal(c.serviceCategory,'installer');assert.equal(c.phone,body.phone);assert.equal(c.serviceArea,'Las Vegas');assert.equal(c.serviceNotes,body.serviceNotes);assert.equal(c.details,undefined);assert.equal(staff.entities.length,0);assert(!JSON.stringify(staff).includes(body.details));
+ assert.equal((await f.call('/contacts','POST',body,'b')).status,403);
+ assert.equal((await f.call('/contacts','POST',{...body,serviceCategory:'unknown'})).status,400);
+ const updated=await f.call('/contacts/'+created.body.item.id,'PUT',{...body,directoryVisible:false,version:created.body.item.version});assert.equal(updated.status,200);
+ assert(!(await f.call('','GET',{},'b')).body.contacts.some(c=>c.id===created.body.item.id));
+});
+test('all requested service categories are accepted without publishing private contacts by default',async()=>{
+ const f=await setup();for(const serviceCategory of ['courier','courier_company','mover','electrician','plumber','installer','truck']){
+  const c=await f.call('/contacts','POST',{entityId:f.entity.id,name:serviceCategory,serviceCategory,phone:'test-only',details:'Private'});assert.equal(c.status,201);assert.equal(c.body.item.directoryVisible,false);
+ }
+ assert.equal((await f.call('','GET',{},'b')).body.contacts.length,0);
+});
+test('vehicle overview groups by company and opens independent items without merging records',async()=>{
+ const fs=require('node:fs'),vm=require('node:vm'),path=require('node:path');let modal='';
+ const rows=['registration','insurance','inspection'].map((key,i)=>({id:key,entityId:'entity',title:'Vehicle '+key,category:'车辆',templateKey:'vehicle-'+key,status:'pending',applicability:'unverified',assignedUserIds:[],contactIds:[],reviewDate:'2026-11-23',dueDate:'',attachments:[],comments:[],bills:[],history:[]}));
+ const source={today:'2026-11-23',canManage:true,entities:[{id:'entity',name:'Company',city:'LA'}],staff:[],contacts:[],tasks:rows};
+ const context={window:{},escapeHtml:s=>s,api:async()=>source,render(){},current:'operations',token:'test',user:{id:'owner'},setTimeout(){},openModal:(title,html)=>{modal=html;},closeModal(){},document:{getElementById:()=>({textContent:''})}};
+ vm.runInNewContext(fs.readFileSync(path.join(__dirname,'../public/operations.js'),'utf8'),context);
+ const ui=context.window.Operations;ui.view();await ui.refresh();const html=ui.view();assert.equal((html.match(/进入车辆管理/g)||[]).length,1);assert(!html.includes('Vehicle registration'));ui.vehicleGroup('entity');for(const row of rows)assert(modal.includes(row.title));assert(!modal.includes('进入车辆管理'));assert.equal(source.tasks.length,3);
+});
