@@ -36,7 +36,7 @@ test('invalid input and cross-company contacts do not persist',async()=>{
 });
 test('starter checklist is unverified, owner-only and idempotent',async()=>{
  const f=await setup();const path=`/entities/${f.entity.id}/starter`;
- assert.equal((await f.call(path,'POST',{},'a')).status,403);assert.equal((await f.call(path,'POST')).body.added,15);assert.equal((await f.call(path,'POST')).body.added,0);
+ assert.equal((await f.call(path,'POST',{},'a')).status,403);assert.equal((await f.call(path,'POST')).body.added,19);assert.equal((await f.call(path,'POST')).body.added,0);
  assert(f.db().operations.tasks.filter(t=>t.templateKey).every(t=>t.status==='unverified'&&t.applicability==='unverified'&&!t.assignedUserIds.length&&!t.dueDate));
 });
 test('recurrence handles month ends, leap years, future and one-time dates',()=>{
@@ -97,4 +97,31 @@ test('legacy Starlink merges into internet without losing files, payments, comme
  const doc={id:'file',contentBase64:'kept'},bill={id:'bill',nextDueDate:'2027-01-01'};
  const db={operations:{tasks:[{id:'net',entityId:'company',templateKey:'internet',title:'门店互联网／宽带缴费',version:1,status:'unverified',assignedUserIds:['a'],contactIds:[],details:'Internet'}, {id:'star',entityId:'company',templateKey:'starlink',title:'Starlink',version:1,status:'waiting',assignedUserIds:['b'],contactIds:['contact'],attachments:[doc],bills:[bill],comments:[{id:'comment',text:'retained'}],history:[{id:'review'}],dueDate:'2026-12-01',details:'Starlink details'}]}};
  assert.equal(create.mergeInternetTasks(db),true);const t=db.operations.tasks[0];assert.equal(db.operations.tasks.length,1);assert.equal(t.title,'互联网／宽带缴费');assert.deepEqual(t.attachments,[doc]);assert.deepEqual(t.bills,[bill]);assert.deepEqual(t.assignedUserIds,['a','b']);assert.equal(t.comments.length,1);assert.equal(t.history.length,1);assert.equal(t.status,'waiting');assert.equal(t.dueDate,'2026-12-01');assert(t.mergedFromTaskIds.includes('star'));assert.equal(create.mergeInternetTasks(db),false);
+});
+test('account application directory shares request contacts without exposing registration or files',async()=>{
+ const f=await setup();const body={...f.taskBody,title:'Company email',recordType:'account',assignedUserIds:['a'],account:{platform:'Email provider',identifier:'employee@example.test',registeredEmail:'private-admin@example.test',loginUrl:'https://mail.example.test/',department:'Sales',requestContact:'Office admin',requestEmail:'request@example.test',directoryVisible:true,applicationNotes:'Contact office admin for a mailbox'}};
+ const created=await f.call('/tasks','POST',body);assert.equal(created.status,201);
+ const other=(await f.call('','GET',{},'b')).body;assert.equal(other.accountDirectory.length,1);assert.equal(other.accountDirectory[0].requestEmail,'request@example.test');assert.equal(other.accountDirectory[0].registeredEmail,undefined);assert(!JSON.stringify(other).includes('private-admin@example.test'));assert(!other.tasks.some(t=>t.id===created.body.item.id));
+ assert.equal((await f.call('/tasks','POST',{...body,account:{...body.account,loginUrl:'javascript:alert(1)'}})).status,400);
+ assert.equal((await f.call('/tasks','POST',{...body,account:{...body.account,loginUrl:'https://mail.example.test/?token=secret'}})).status,400);
+ assert.equal((await f.call('/tasks','POST',{...body,account:{...body.account,requestContact:''}})).status,400);
+});
+test('sales handover imports only outgoing staff customers without reassigning or duplicating; receiver confirms',async()=>{
+ const f=await setup();f.db().salesAccounts=[{id:'customer-a',businessName:'Customer A',assignedUserId:'a',phone:'test-only',stage:'Following up',discussionSummary:'Interested',nextAction:'Prepare quote'},{id:'customer-b',businessName:'Customer B',assignedUserId:'b'}];
+ const created=await f.call('/tasks','POST',{...f.taskBody,recordType:'sales_handover',assignedUserIds:['owner'],handover:{department:'Sales',outgoingUserId:'a',outgoingName:'Assigned',receiverUserId:'b',receiverName:'Other',lastDay:'2026-11-30',scope:'Customers and company accounts'}});
+ assert.equal(created.status,201);const t=created.body.item;assert(t.assignedUserIds.includes('b'));assert(!t.assignedUserIds.includes('a'));
+ const path=`/tasks/${t.id}`;assert.equal((await f.call(path+'/import-sales-customers','POST',{},'b')).status,403);
+ assert.equal((await f.call(path+'/import-sales-customers','POST')).body.added,1);assert.equal((await f.call(path+'/import-sales-customers','POST')).body.added,0);
+ let item=f.db().operations.tasks.find(r=>r.id===t.id).handoverItems[0];assert.equal(item.sourceId,'customer-a');assert.equal(item.nextAction,'Prepare quote');assert.equal(f.db().salesAccounts[0].assignedUserId,'a');
+ const body={...item,status:'received',requestId:'confirm',version:1};assert.equal((await f.call(path+'/handover-items/'+item.id,'PUT',body)).status,400);
+ const confirmed=await f.call(path+'/handover-items/'+item.id,'PUT',body,'b');assert.equal(confirmed.status,200);item=confirmed.body.item.handoverItems[0];assert.equal(item.confirmedBy,'b');assert.equal(item.history.length,1);
+ assert.equal((await f.call(path+'/handover-items/'+item.id,'PUT',{...item,status:'pending',requestId:'owner-edit'})).status,400);
+ assert.equal((await f.call(path+'/handover-items/'+item.id,'PUT',{...body,requestId:'stale'},'b')).status,409);
+ assert(!(await f.call('','GET',{},'a')).body.tasks.some(r=>r.id===t.id));
+});
+test('handover supports manual customer and asset items with private access and durable text',async()=>{
+ const f=await setup();const t=(await f.call('/tasks','POST',{...f.taskBody,recordType:'handover',handover:{receiverUserId:'a',department:'Marketing'}})).body.item,path=`/tasks/${t.id}/handover-items`;
+ const body={kind:'account',name:'Advertising account',contact:'Agency contact',situation:'Materials prepared',pending:'Update administrators',nextAction:'Receiver verifies access',status:'handed_over',requestId:'manual-1'};
+ assert.equal((await f.call(path,'POST',body,'b')).status,404);assert.equal((await f.call(path,'POST',body,'a')).status,200);assert.equal((await f.call(path,'POST',body,'a')).status,200);
+ const task=f.db().operations.tasks.find(r=>r.id===t.id);assert.equal(task.handoverItems.length,1);assert.equal(task.handoverItems[0].nextAction,body.nextAction);
 });
