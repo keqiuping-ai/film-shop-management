@@ -36,7 +36,7 @@ test('invalid input and cross-company contacts do not persist',async()=>{
 });
 test('starter checklist is unverified, owner-only and idempotent',async()=>{
  const f=await setup();const path=`/entities/${f.entity.id}/starter`;
- assert.equal((await f.call(path,'POST',{},'a')).status,403);assert.equal((await f.call(path,'POST')).body.added,16);assert.equal((await f.call(path,'POST')).body.added,0);
+ assert.equal((await f.call(path,'POST',{},'a')).status,403);assert.equal((await f.call(path,'POST')).body.added,15);assert.equal((await f.call(path,'POST')).body.added,0);
  assert(f.db().operations.tasks.filter(t=>t.templateKey).every(t=>t.status==='unverified'&&t.applicability==='unverified'&&!t.assignedUserIds.length&&!t.dueDate));
 });
 test('recurrence handles month ends, leap years, future and one-time dates',()=>{
@@ -91,4 +91,10 @@ test('billing rejects incomplete paid claims, invalid money, dates and foreign r
  const f=await setup(),path=`/tasks/${f.task.id}/bills`,body={label:'Internet',provider:'Starlink',amount:'120',currency:'USD',status:'unpaid',requestId:'test',attachmentIds:[]};
  for(const change of [{status:'paid'},{amount:'-1'},{amount:'NaN'},{amount:'10.123'},{periodStart:'2027-02-01',periodEnd:'2027-01-01'},{nextDueDate:'2027-02-30'},{attachmentIds:['another-task-file']},{currency:'US'}])assert.equal((await f.call(path,'POST',{...body,...change},'a')).status,400);
  assert.equal(f.db().operations.tasks[0].bills,undefined);
+});
+
+test('legacy Starlink merges into internet without losing files, payments, comments or assignments',()=>{
+ const doc={id:'file',contentBase64:'kept'},bill={id:'bill',nextDueDate:'2027-01-01'};
+ const db={operations:{tasks:[{id:'net',entityId:'company',templateKey:'internet',title:'门店互联网／宽带缴费',version:1,status:'unverified',assignedUserIds:['a'],contactIds:[],details:'Internet'}, {id:'star',entityId:'company',templateKey:'starlink',title:'Starlink',version:1,status:'waiting',assignedUserIds:['b'],contactIds:['contact'],attachments:[doc],bills:[bill],comments:[{id:'comment',text:'retained'}],history:[{id:'review'}],dueDate:'2026-12-01',details:'Starlink details'}]}};
+ assert.equal(create.mergeInternetTasks(db),true);const t=db.operations.tasks[0];assert.equal(db.operations.tasks.length,1);assert.equal(t.title,'互联网／宽带缴费');assert.deepEqual(t.attachments,[doc]);assert.deepEqual(t.bills,[bill]);assert.deepEqual(t.assignedUserIds,['a','b']);assert.equal(t.comments.length,1);assert.equal(t.history.length,1);assert.equal(t.status,'waiting');assert.equal(t.dueDate,'2026-12-01');assert(t.mergedFromTaskIds.includes('star'));assert.equal(create.mergeInternetTasks(db),false);
 });
