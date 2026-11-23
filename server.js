@@ -9385,6 +9385,8 @@ const voiceAgentReady = (async () => {
 })();
 voiceAgentReady.catch(()=>console.warn('QUAD Voice Agent unavailable; check dedicated storage configuration.'));
 
+const operationsRoute = require('./lib/operations')({ readDb, writeDb, readBody, send, audit, notifyDataChanged });
+
 async function api(req, res) {
   if (req.url.startsWith('/api/retail/')) { await retailService.handle(req,res,new URL(req.url,`http://${req.headers.host}`)); return; }
   const db = readDb();
@@ -10416,6 +10418,8 @@ async function api(req, res) {
     return openEventStream(req, res, eventUser);
   }
   if (!user) return send(res, 401, { error: '请先登录' });
+
+  if (await operationsRoute(req, res, url, user)) return;
 
   if (url.pathname.startsWith('/api/website-messages') && await websiteMessages(req, res, url, user)) return;
 

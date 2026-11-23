@@ -282,6 +282,8 @@ const dict = {
     usersSub: '老板、店长、前台、销售、文员、仓库、师傅、财务',
     settings: '设置',
     settingsSub: '店名、密码、联网安装说明',
+    operations: '运营事务台账',
+    operationsSub: '公司档案、联系人、责任分工与定期复查',
     personalNotes: '我的记事本',
     personalNotesSub: '私人备忘、待办事项和定时提醒',
     tint: '窗膜',
@@ -547,6 +549,8 @@ const dict = {
     usersSub: 'Owner, manager, front desk, sales, clerk, warehouse, installer, finance',
     settings: 'Settings',
     settingsSub: 'Shop name, password, and installation notes',
+    operations: 'Operations Register',
+    operationsSub: 'Company records, contacts, assignments and recurring reviews',
     personalNotes: 'My Notebook',
     personalNotesSub: 'Private memos, tasks, and scheduled reminders',
     tint: 'Window Tint',
@@ -776,6 +780,7 @@ const pages = [
   ['reports', 'reports', 'reportsSub'],
   ['audit', 'audit', 'auditSub'],
   ['users', 'users', 'usersSub'],
+  ['operations', 'operations', 'operationsSub'],
   ['personalNotes', 'personalNotes', 'personalNotesSub'],
   ['settings', 'settings', 'settingsSub']
 ];
@@ -811,6 +816,7 @@ const pagePermissions = {
   reports: 'reportsView',
   audit: ['reportsView', 'usersManage'],
   users: 'usersManage',
+  operations: null,
   personalNotes: null,
   settings: null
 };
@@ -1417,7 +1423,7 @@ function setPage(page) {
 const COMPANY_SCOPE_PAGES = new Set([
   'modules', 'clock', 'leave', 'warranties', 'pricing', 'customerTasks', 'aiRules', 'aiBoss',
   'fieldSales', 'customerCenter', 'prospects', 'recruiting', 'customerNurture', 'replyLibrary', 'shipments', 'portalCustomers',
-  'personalNotes', 'audit', 'settings'
+  'operations', 'personalNotes', 'audit', 'settings'
 ]);
 
 function isCompanyScopePage(page = current) {
@@ -2984,7 +2990,7 @@ function updateVoiceButton(recording, label = '') {
 
 function navIcon(id) {
   if (id === 'recruiting') return '♧';
-  return { modules:'▦', clock:'📍', leave:'🗓️', dashboard:'⌂', jobs:'▣', warranties:'◆', installers:'◉', pricing:'$', inventory:'▤', workshopInventory:'▥', inventoryAlerts:'!', customerTasks:'🎧', aiRules:'🤖', aiBoss:'🧠', fieldSales:'🧭', customerCenter:'💬', customerNurture:'📣', replyLibrary:'☁', prospects:'★', leads:'☎', orders:'⇄', portalCustomers:'👤', shipments:'✈', schedules:'◫', workTime:'◴', expenses:'◇', reimbursements:'🧾', reports:'◌', audit:'◷', users:'◎', personalNotes:'📝', settings:'⚙' }[id] || '□';
+  return { modules:'▦', clock:'📍', leave:'🗓️', dashboard:'⌂', jobs:'▣', warranties:'◆', installers:'◉', pricing:'$', inventory:'▤', workshopInventory:'▥', inventoryAlerts:'!', customerTasks:'🎧', aiRules:'🤖', aiBoss:'🧠', fieldSales:'🧭', customerCenter:'💬', customerNurture:'📣', replyLibrary:'☁', prospects:'★', leads:'☎', orders:'⇄', portalCustomers:'👤', shipments:'✈', schedules:'◫', workTime:'◴', expenses:'◇', reimbursements:'🧾', reports:'◌', audit:'◷', users:'◎', operations:'☑', personalNotes:'📝', settings:'⚙' }[id] || '□';
 }
 
 function moduleGrid(availablePages) {
@@ -5884,6 +5890,7 @@ const views = {
   aiBoss() { return aiBossView(); },
   aiRules() { return customerAiRulesView(); },
   fieldSales() { return fieldSalesManagementView(); },
+  operations() { return window.Operations?.view() || ''; },
   personalNotes() { return personalNotesView(); },
   dashboard() {
     const dashboardJobs = filteredJobs(false);
