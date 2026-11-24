@@ -149,3 +149,38 @@ test('vehicle overview groups by company and opens independent items without mer
  vm.runInNewContext(fs.readFileSync(path.join(__dirname,'../public/operations.js'),'utf8'),context);
  const ui=context.window.Operations;ui.view();await ui.refresh();const html=ui.view();assert.equal((html.match(/进入车辆管理/g)||[]).length,1);assert(!html.includes('Vehicle registration'));ui.vehicleGroup('entity');for(const row of rows)assert(modal.includes(row.title));assert(!modal.includes('进入车辆管理'));assert.equal(source.tasks.length,3);
 });
+test('exhibition projects retain scoped contacts, repeatable checklists and versioned progress',async()=>{
+ const f=await setup();const t=(await f.call('/tasks','POST',{...f.taskBody,title:'SEMA demo',recordType:'exhibition',exhibition:{edition:'2026',city:'Las Vegas',stage:'planning',financeUserIds:['a']}})).body.item;
+ const path=`/tasks/${t.id}`;
+ assert.equal((await f.call(path+'/expo-starter','POST',{},'a')).status,403);
+ assert.equal((await f.call(path+'/expo-starter','POST')).body.added,18);assert.equal((await f.call(path+'/expo-starter','POST')).body.added,0);
+ const contact=await f.call(path+'/expo-contacts','POST',{role:'builder',name:'Builder contact',phone:'test-only',organization:'Demo builder',requestId:'builder'},'a');assert.equal(contact.status,200);assert.equal(contact.body.item.expoContacts.length,1);
+ assert.equal((await f.call(path+'/expo-contacts','POST',{role:'builder',name:'Builder contact',requestId:'builder'},'a')).body.item.expoContacts.length,1);
+ assert.equal((await f.call(path+'/expo-contacts','POST',{role:'truck_driver',name:'Driver',requestId:'driver'},'b')).status,404);
+ let current=f.db().operations.tasks.find(r=>r.id===t.id);
+ const progress=await f.call(path+'/expo-progress','POST',{version:current.version,stage:'design',nextAction:'Confirm height approval',risks:'Approval outstanding'},'a');assert.equal(progress.status,200);assert.equal(progress.body.item.expoProgressHistory.length,1);
+ assert.equal((await f.call(path+'/expo-progress','POST',{version:current.version,stage:'shipping'},'a')).status,409);
+ current=f.db().operations.tasks.find(r=>r.id===t.id);assert.equal((await f.call(path+'/review','POST',{version:current.version,status:'completed',note:'Attempt close'},'a')).status,400);assert.equal((await f.call(path+'/expo-progress','POST',{version:current.version,stage:'closed'},'a')).status,400);
+});
+test('physical exhibition shirts cannot be accepted while missing shipment or arrival quantities',async()=>{
+ const f=await setup();const t=(await f.call('/tasks','POST',{...f.taskBody,recordType:'exhibition',exhibition:{stage:'planning'}})).body.item,path=`/tasks/${t.id}/expo-items`;
+ const body={name:'Promotional shirts',group:'advertising',physicalDelivery:true,status:'ready',responsibleUserId:'a',quantityExpected:'100',requestId:'shirts'};
+ const created=await f.call(path,'POST',body,'a');assert.equal(created.status,200);let i=created.body.item.expoItems[0];
+ const patch={...body,version:i.version,status:'shipped',quantityShipped:'100',requestId:'shipped'};
+ assert.equal((await f.call(path+'/'+i.id,'PUT',patch,'a')).status,400);
+ const shipped=await f.call(path+'/'+i.id,'PUT',{...patch,shippedDate:'2026-11-24'},'a');assert.equal(shipped.status,200);i=shipped.body.item.expoItems[0];
+ const accepted={...body,version:i.version,status:'accepted',shippedDate:'2026-11-24',arrivedDate:'2026-11-25',receivedBy:'Receiver',quantityArrived:'99',acceptanceNote:'Counted',requestId:'accepted'};
+ assert.equal((await f.call(path+'/'+i.id,'PUT',accepted,'a')).status,400);
+ const result=await f.call(path+'/'+i.id,'PUT',{...accepted,quantityArrived:'100'},'a');assert.equal(result.status,200);i=result.body.item.expoItems[0];assert.equal(i.acceptedBy,'a');assert.equal(i.history.length,2);
+ assert.equal((await f.call(path,'POST',{...body,responsibleUserId:'b',requestId:'bad-staff'},'a')).status,400);
+});
+test('exhibition remittance accounts are restricted and redacted from bill histories',async()=>{
+ const f=await setup();const t=(await f.call('/tasks','POST',{...f.taskBody,recordType:'exhibition',assignedUserIds:['a','b'],exhibition:{stage:'planning',financeUserIds:['a']}})).body.item,path=`/tasks/${t.id}/bills`;
+ const bill={label:'Builder deposit',provider:'Builder',amount:'100',currency:'USD',status:'unpaid',requestId:'wire',attachmentIds:[],beneficiaryName:'Demo beneficiary',payeeAccount:'TEST-ACCOUNT-ONLY',bankName:'Demo bank',swiftRouting:'TEST',payerContact:'Demo payer contact',payeeContact:'Demo beneficiary contact'};
+ assert.equal((await f.call(path,'POST',bill,'b')).status,400);
+ const created=await f.call(path,'POST',bill,'a');assert.equal(created.status,201);assert.equal(created.body.item.bills[0].payeeAccount,bill.payeeAccount);
+ let b=created.body.item.bills[0];const regular={label:bill.label,provider:bill.provider,amount:'110',currency:'USD',status:'unpaid',version:b.version,requestId:'edit-normal',attachmentIds:[]};
+ assert.equal((await f.call(path+'/'+b.id,'PUT',regular,'b')).status,200);
+ const safe=(await f.call('','GET',{},'b')).body.tasks.find(r=>r.id===t.id);assert.equal(safe.canFinance,false);assert((await f.call('','GET',{},'b')).body.staff.some(u=>u.id==='a'));assert.equal(safe.bills[0].payeeAccount,undefined);assert.equal(safe.bills[0].history[0].before.payeeAccount,undefined);assert(!JSON.stringify(safe).includes(bill.payeeAccount));
+ const finance=(await f.call('','GET',{},'a')).body.tasks.find(r=>r.id===t.id);assert.equal(finance.canFinance,true);assert.equal(finance.bills[0].payeeAccount,bill.payeeAccount);assert.equal(finance.bills[0].history[0].before.payeeAccount,bill.payeeAccount);
+});
