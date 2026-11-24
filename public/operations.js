@@ -1,0 +1,223 @@
+/* Operations records are fetched separately, scoped on the server to owners and assignees. */
+(() => {
+  'use strict';
+  let data = null, identity = '', loading = false, error = '', tab = 'tasks';
+  let contactCategory='';
+  let company = '', status = '', search = '', onlyMine = false, dueOnly = false;
+  const statusNames = { unverified:'待核实', pending:'待办理', in_progress:'办理中', waiting:'等待外部回复', completed:'已完成', not_applicable:'不适用', archived:'已归档' };
+  const contactCategories={courier:'快递员',courier_company:'快递公司',mover:'搬运工／搬家公司',electrician:'电工',plumber:'水管工／水电维修',installer:'贴膜技师',truck:'货车／运输',accounting:'会计／财务',insurance:'保险经纪',property:'物业／房产',advertising:'广告推广',email_admin:'公司邮箱管理',other:'其他服务'};
+  const recordTypes={general:'普通运营事项',account:'账号／公司邮箱',handover:'人员离职交接',sales_handover:'业务员离职与客户交接',exhibition:'展会管理'};
+  const documentKinds = {document:'一般文件',license:'营业执照／证照',bill:'账单',receipt:'付款凭证',insurance:'保险文件',photo:'照片／扫描件',other:'其他'};
+  const applicabilityNames = { unverified:'是否需要：待核实', required:'必须办理', conditional:'符合条件时需要', recommended:'建议配置', not_applicable:'不适用' };
+  const e = value => escapeHtml(String(value ?? ''));
+  const byId = (kind, id) => data[kind].find(row => row.id === id);
+  const button = (label, action, primary = false) => `<button class="btn ${primary ? 'primary' : ''}" onclick="${action}">${e(label)}</button>`;
+  const options = (map, value) => Object.entries(map).map(([key, name]) => `<option value="${e(key)}" ${String(value) === key ? 'selected' : ''}>${e(name)}</option>`).join('');
+  const input = (key, label, value = '', type = 'text') => `<label>${e(label)}<input id="op-${key}" type="${type}" value="${e(value)}"></label>`;
+  const textarea = (key, label, value = '') => `<label class="span-2">${e(label)}<textarea id="op-${key}" rows="4">${e(value)}</textarea></label>`;
+  const select = (key, label, map, value) => `<label>${e(label)}<select id="op-${key}">${options(map, value)}</select></label>`;
+  const value = key => document.getElementById(`op-${key}`)?.value || '';
+  const checks = name => [...document.querySelectorAll(`input[name="op-${name}"]:checked`)].map(el => el.value);
+  const companyOptions = () => Object.fromEntries(data.entities.map(row => [row.id, `${row.city || '地点待核实'} · ${row.name}`]));
+  function paymentDates(t) {
+    const bills=t.bills || [];
+    const next=bills.map(b=>b.nextDueDate).filter(Boolean).sort().at(-1) || '';
+    const unpaid=bills.filter(b=>b.status!=='paid' && b.dueDate).map(b=>b.dueDate).sort()[0] || '';
+    return {next,unpaid};
+  }
+  function flags(t) {
+    const active = !['archived','not_applicable'].includes(t.status);
+    const payment=paymentDates(t);const expoLate=(t.expoItems || []).some(i=>!['accepted','not_applicable'].includes(i.status) && i.dueDate && i.dueDate<data.today);
+    return { late: active && Boolean(expoLate || (t.status !== 'completed' && t.dueDate && t.dueDate < data.today) || (payment.unpaid && payment.unpaid<data.today) || (payment.next && payment.next<data.today)),
+      review: active && t.reviewDate && t.reviewDate <= data.today };
+  }
+  function repaint() { if (current === 'operations') render(); }
+  async function load() {
+    if (loading) return;
+    const requestIdentity = token;
+    loading = true; error = '';
+    try { const result = await api('/api/operations'); if (requestIdentity === token) data = result; }
+    catch (err) { if (requestIdentity === token) error = err.message; }
+    finally { loading = false; repaint(); }
+  }
+  function view() {
+    if (identity !== token) { identity = token; data = null; error = ''; company = ''; status = ''; search = ''; }
+    if (!data) {
+      if (!loading && !error) setTimeout(load, 0);
+      return `<section class="op-card"><h2>运营事务台账</h2><p>${e(error || '正在加载公司档案与待办事项…')}</p>${error ? button('重试', 'Operations.refresh()') : ''}</section>`;
+    }
+    const tasks = data.tasks.filter(t => !company || t.entityId === company);
+    const late = tasks.filter(t => flags(t).late).length, review = tasks.filter(t => flags(t).review).length;
+    const open = tasks.filter(t => !['completed','not_applicable','archived'].includes(t.status)).length;
+    const controls = `<div class="op-actions">${button('刷新', 'Operations.refresh()')}${data.canManage ? button('＋ 公司／地点档案', "Operations.edit('entities')") + button('＋ 联系人', "Operations.edit('contacts')") + button('＋ 事项', "Operations.edit('tasks')", true) : ''}</div>`;
+    const toolbar = `<div class="op-filters"><label>公司／地点<select onchange="Operations.filter('company',this.value)"><option value="">全部公司／地点</option>${options(companyOptions(), company)}</select></label><label>搜索<input type="search" value="${e(search)}" placeholder="事项、公司、联系人、处理细节" onchange="Operations.filter('search',this.value)"></label><label>状态<select onchange="Operations.filter('status',this.value)"><option value="">全部状态</option>${options(statusNames,status)}</select></label><label class="op-check"><input type="checkbox" ${onlyMine ? 'checked' : ''} onchange="Operations.filter('mine',this.checked)">只看我负责</label><label class="op-check"><input type="checkbox" ${dueOnly ? 'checked' : ''} onchange="Operations.filter('due',this.checked)">仅逾期／待复查</label></div>`;
+    let body;
+    if(tab==='exhibitions')body=(data.canManage?button('＋ 新建展会',"Operations.edit('tasks','','exhibition')",true):'')+taskTable(tasks.filter(t=>t.recordType==='exhibition'));
+    else if(tab==='accounts')body=accountDirectoryHtml()+taskTable(tasks.filter(t=>t.recordType==='account'));
+    else if(tab==='handovers')body=(data.canManage?`<div class="op-actions">${button('＋ 人员离职交接',"Operations.edit('tasks','','handover')")}${button('＋ 业务员离职／客户交接',"Operations.edit('tasks','','sales_handover')",true)}</div>`:'')+taskTable(tasks.filter(t=>['handover','sales_handover'].includes(t.recordType)));
+    else if (tab === 'tasks') body = taskTable(tasks);
+    else if (tab === 'entities') body = entityCards();
+    else body = contactCards();
+    return `<div class="op-root"><div class="op-heading"><div><h2>运营事务台账</h2><p>按公司梳理要办的事，明确负责人，保留每次复查结果。</p></div>${controls}</div>
+      <div class="op-stats"><div><strong>${open}</strong>未完成事项</div><div class="${late ? 'op-alert' : ''}"><strong>${late}</strong>办理已逾期</div><div class="${review ? 'op-alert' : ''}"><strong>${review}</strong>到期需复查</div><div><strong>${tasks.filter(t => !t.assignedUserIds.length && !['archived','not_applicable'].includes(t.status)).length}</strong>尚未分配负责人</div></div>
+      <p class="op-hint">复查提醒在本台账显示；请定期登录查看。办理截止日与复查日期分别跟踪。未核实的要求不会自动标成“必须办理”。</p>
+      <div class="op-actions">${[['tasks','事项总表'],['exhibitions','展会管理'],['accounts','账号与邮箱'],['handovers','离职／客户交接'],['entities','公司／地点档案'],['contacts','联系人通讯录']].map(([key,label]) => button(label,`Operations.tab('${key}')`,tab === key)).join('')}</div>${toolbar}${error ? `<p role="alert">${e(error)}</p>` : ''}${body}</div>`;
+  }
+  function taskTable(tasks, groupVehicles=true) {
+    const rows = tasks.filter(t => {
+      if (status ? t.status !== status : t.status === 'archived') return false;
+      if (onlyMine && !t.assignedUserIds.includes(user.id)) return false;
+      if (dueOnly && !flags(t).late && !flags(t).review) return false;
+      const entity = byId('entities',t.entityId), contacts = t.contactIds.map(id => byId('contacts', id));
+      return JSON.stringify([t,entity,contacts]).toLowerCase().includes(search.toLowerCase());
+    }).sort((a,b) => Number(Boolean(flags(b).late || flags(b).review))-Number(Boolean(flags(a).late || flags(a).review)) || (a.reviewDate || '9999').localeCompare(b.reviewDate || '9999'));
+    if (!rows.length) return `<div class="op-empty">${data.tasks.length ? '没有符合筛选条件的事项。' : '还没有运营事项。先新建公司／地点档案，再添加联系人和事项。公司法定名称暂不清楚时可以留空，并写明待核实。'}</div>`;
+    const displayRows=[],groups=new Map();
+    for(const t of rows){
+      if(groupVehicles && tab==='tasks' && (t.category==='车辆' || String(t.templateKey || '').startsWith('vehicle-'))){
+        let group=groups.get(t.entityId);if(!group){group={_vehicleItems:[],entityId:t.entityId};groups.set(t.entityId,group);displayRows.push(group);}group._vehicleItems.push(t);
+      }else displayRows.push(t);
+    }
+    return `<div class="op-table"><table><thead><tr>${['公司／地点','事项与要求','负责人','状态','办理截止','下次复查','联系人','操作'].map(s=>`<th>${s}</th>`).join('')}</tr></thead><tbody>${displayRows.map(t => {
+      if(t._vehicleItems)return vehicleSummaryRow(t);
+      const entity = byId('entities',t.entityId), f = flags(t);
+      return `<tr><td>${e(entity?.city || '地点待核实')}<small>${e(entity?.legalName || entity?.name || '公司待核实')}</small></td><td><strong>${e(t.title)}</strong>${t.recordType==='exhibition'?`<small>${e(window.Exhibitions?.stages[t.exhibition?.stage] || '筹备中')} · ${(t.expoItems || []).filter(i=>!['accepted','not_applicable'].includes(i.status)).length} 项待完成<br>下一步：${e(t.exhibition?.nextAction || '待填写')}</small>`:''}${t.recordType==='account'?`<small>${e(t.account?.platform)} · ${e(t.account?.identifier)}<br>注册邮箱：${e(t.account?.registeredEmail || '待填写')}</small>`:''}${['handover','sales_handover'].includes(t.recordType)?`<small>${e(t.handover?.department)} · ${e(t.handover?.outgoingName || '交出人待填写')} → ${e(t.handover?.receiverName || '接收人待填写')}<br>${(t.handoverItems || []).filter(i=>!['received','not_applicable'].includes(i.status)).length} 项待接收确认</small>`:''}<small>${(t.attachments || []).length} 份文件 · ${(t.comments || []).length} 条留言 · ${(t.bills || []).length} 期缴费</small><small>${e(t.category)} · ${e(applicabilityNames[t.applicability])}</small></td><td>${e(t.assignedUserIds.map(id => byId('staff',id)?.name || '员工已停用／已分配').join('、') || '未分配')}</td><td>${e(statusNames[t.status])}</td><td class="${f.late ? 'op-danger' : ''}">${e(t.dueDate || '未填写')}${paymentDates(t).next ? `<small>下期缴费：${e(paymentDates(t).next)}</small>` : ''}${paymentDates(t).unpaid ? `<small>待付到期：${e(paymentDates(t).unpaid)}</small>` : ''}${f.late ? '<small>已逾期</small>' : ''}</td><td class="${f.review ? 'op-danger' : ''}">${e(t.reviewDate || '未设置')}${f.review ? '<small>需要复查</small>' : ''}</td><td>${e(t.contactIds.map(id => byId('contacts',id)?.name).filter(Boolean).join('、') || '未关联')}</td><td>${button('详情／复查',`Operations.detail('${t.id}')`)}</td></tr>`;
+    }).join('')}</tbody></table></div>`;
+  }
+  function vehicleSummaryRow(group){
+    const items=group._vehicleItems,entity=byId('entities',group.entityId);
+    const late=items.filter(t=>flags(t).late).length,review=items.filter(t=>flags(t).review).length;
+    const names=[...new Set(items.flatMap(t=>t.assignedUserIds))].map(id=>byId('staff',id)?.name || '已分配').join('、') || '未分配';
+    const contacts=[...new Set(items.flatMap(t=>t.contactIds))].map(id=>byId('contacts',id)?.name).filter(Boolean).join('、') || '未关联';
+    const dates=items.flatMap(t=>[!['completed','not_applicable','archived'].includes(t.status)?t.dueDate:'',paymentDates(t).next,paymentDates(t).unpaid]).filter(Boolean).sort();
+    const reviews=items.filter(t=>!['not_applicable','archived'].includes(t.status)).map(t=>t.reviewDate).filter(Boolean).sort();
+    const pending=items.filter(t=>!['completed','not_applicable','archived'].includes(t.status)).length;
+    return `<tr><td>${e(entity?.city || '地点待核实')}<small>${e(entity?.legalName || entity?.name)}</small></td><td><strong>车辆管理</strong><small>上牌／续牌、保险、年检／排放检测</small><small>${items.length} 项 · ${items.reduce((n,t)=>n+(t.attachments || []).length,0)} 份文件</small></td><td>${e(names)}</td><td>${pending} 项待办理${late?`<small class="op-danger">${late} 项已逾期</small>`:''}</td><td>${e(dates[0] || '未填写')}</td><td class="${review?'op-danger':''}">${e(reviews[0] || '未设置')}${review?`<small>${review} 项需复查</small>`:''}</td><td>${e(contacts)}</td><td>${button('进入车辆管理',`Operations.vehicleGroup('${group.entityId}')`)}</td></tr>`;
+  }
+  function vehicleGroup(entityId){const entity=byId('entities',entityId);openModal(`${entity?.city || entity?.name || ''} · 车辆管理`,`<p>分别管理上牌／续牌、保险和年检，各项保留自己的负责人、联系人、日期、文件与缴费记录。</p>${taskTable(data.tasks.filter(t=>t.entityId===entityId && (t.category==='车辆' || String(t.templateKey || '').startsWith('vehicle-'))),false)}`,closeModal);document.getElementById('modalSave').textContent='关闭';}
+  function entityCards() {
+    const rows = data.entities.filter(r => (!company || r.id === company) && JSON.stringify(r).toLowerCase().includes(search.toLowerCase()));
+    return `<div class="op-grid">${rows.map(r => `<section class="op-card"><h3>${e(r.name)}</h3><p>${e(r.city)} · ${e(r.state)}</p><p>法定名称：${e(r.legalName || '待核实')}</p><p>当前情况：${e(r.status || '待核实')}</p><p class="op-pre">${e(r.details)}</p><p>未完成事项：${data.tasks.filter(t=>t.entityId === r.id && !['completed','not_applicable','archived'].includes(t.status)).length}</p>${data.canManage ? button('编辑档案',`Operations.edit('entities','${r.id}')`) + button('添加待核实检查清单',`Operations.starter('${r.id}')`) : ''}</section>`).join('') || '<div class="op-empty">暂无档案</div>'}</div>`;
+  }
+  function contactCard(r) {
+    const phone=String(r.phone || '').replace(/[^+0-9]/g,'');
+    return `<section class="op-card"><h3>${e(r.name)} · ${e(r.role)}</h3><p><strong>${e(contactCategories[r.serviceCategory] || '其他服务')}</strong> · ${e(r.organization)}</p><p>所属档案：${e(r.companyName || byId('entities',r.entityId)?.name || '未填写')}</p><p>服务地区：${e(r.serviceArea || '待填写')}</p><p>联系时间／预约方式：${e(r.availability || '待填写')}</p><p>电话：${e(r.phone || '未填写')}</p><p>邮箱：${e(r.email || '未填写')}</p><p class="op-pre">${e(r.serviceNotes || '')}</p>${r.details?`<p class="op-pre">内部备注：${e(r.details)}</p>`:''}<div class="op-actions">${phone.length>=7?`<a class="btn" href="tel:${e(phone)}">拨打电话</a>`:''}${r.email?`<a class="btn" href="mailto:${encodeURIComponent(r.email)}">写邮件</a>`:''}${data.canManage?button('编辑联系人',`Operations.edit('contacts','${r.id}')`):''}</div>${data.canManage?`<small>${r.directoryVisible?'员工可查询服务信息':'仅老板及相关事项负责人可见'}</small>`:''}</section>`;
+  }
+  function contactCards() {
+    const rows=data.contacts.filter(r=>(!company || r.entityId===company) && (!contactCategory || (r.serviceCategory || 'other')===contactCategory) && JSON.stringify(r).toLowerCase().includes(search.toLowerCase()));
+    return `<div class="op-filters"><label>服务分类<select onchange="Operations.filter('contactCategory',this.value)"><option value="">全部服务</option>${options(contactCategories,contactCategory)}</select></label></div><p class="op-hint">共 ${rows.length} 位联系人。可搜索姓名、服务地区、公司或电话，按分类找技师、叫车或找维修人员。</p><div class="op-grid">${rows.map(contactCard).join('') || '<div class="op-empty">暂无符合条件的联系人。可以添加快递、搬运、水电工、贴膜技师、货车及其他服务联系人。</div>'}</div>`;
+  }
+  function edit(kind, id = '', initialType='general') {
+    if (!data.canManage) return;
+    if (kind !== 'entities' && !data.entities.length) return alert('请先新建公司／地点档案');
+    const r = id ? byId(kind,id) : {recordType:initialType};
+    const entityId = r.entityId || company || data.entities[0]?.id;
+    let fields;
+    if (kind === 'entities') fields = input('name','档案名称（例如：拉斯维加斯公司）',r.name) + input('legalName','公司法定名称（不清楚可留空）',r.legalName) + input('city','城市',r.city) + input('state','州',r.state) + input('status','当前情况／待解决问题',r.status) + textarea('details','公司背景、当前问题和后续计划',r.details);
+    else if (kind === 'contacts') fields = select('serviceCategory','服务分类',contactCategories,r.serviceCategory || 'other') + select('entityId','所属公司／档案',companyOptions(),entityId) + input('name','联系人姓名',r.name) + input('role','职责／服务项目',r.role) + input('organization','机构名称',r.organization) + input('phone','电话',r.phone,'tel') + input('email','邮箱',r.email,'email') + input('serviceArea','服务地区（如：洛杉矶／拉斯维加斯）',r.serviceArea) + input('availability','可联系时间／预约方式',r.availability) + textarea('serviceNotes','服务说明（员工可查询时显示）',r.serviceNotes) + textarea('details','内部备注（老板和相关事项负责人可见）',r.details) + `<label class="op-check span-2"><input id="op-contactDirectoryVisible" type="checkbox" ${r.directoryVisible?'checked':''}>员工可查询此服务联系人（姓名、机构、电话、邮箱、地区和服务说明）</label>`;
+    else fields = `<label>所属公司／档案<select id="op-entityId" onchange="Operations.contactChoices(this.value)">${options(companyOptions(),entityId)}</select></label>` + input('title','事项名称',r.title) + input('category','分类（税务／员工／保险／房产等）',r.category) + select('applicability','是否必须办理',applicabilityNames,r.applicability || 'unverified') + select('status','办理状态',statusNames,r.status || 'unverified') + input('dueDate','办理截止日期',r.dueDate,'date') + input('reviewDate','下次复查日期',r.reviewDate || data.today,'date') + select('reviewMonths','复查周期（月）',{'0':'一次性／不自动重复','1':'每月','3':'每季度','6':'每半年','12':'每年'},r.reviewMonths ?? 1) + `<fieldset class="span-2"><legend>勾选跟踪负责人（可多选）</legend>${data.staff.map(u=>`<label class="op-check"><input type="checkbox" name="op-staff" value="${e(u.id)}" ${(r.assignedUserIds || []).includes(u.id) ? 'checked' : ''}>${e(u.name)}</label>`).join('')}</fieldset><fieldset class="span-2"><legend>关联外部联系人</legend><div id="op-contactChoices">${contactChoiceHtml(entityId,r.contactIds || [])}</div></fieldset>` + textarea('details','需办理内容、适用条件、当前问题和下一步',r.details) + textarea('billDetails','账单说明（账期、金额、到期日及缴费情况）',r.billDetails) + textarea('evidence','凭证／文件位置说明（请勿填写密码或访问密钥）',r.evidence);
+    if(kind==='tasks')fields=select('recordType','档案类型',recordTypes,r.recordType || 'general')+fields+specialFields(r,entityId)+(window.Exhibitions?.fields(r) || '');
+    openModal(id ? '编辑运营记录' : '新建运营记录',`<div class="form-grid">${fields}</div>`,async () => {
+      const keys = kind === 'entities' ? ['name','legalName','city','state','status','details'] : kind === 'contacts' ? ['entityId','name','role','organization','phone','email','serviceCategory','serviceArea','availability','serviceNotes','details'] : ['entityId','title','category','applicability','status','dueDate','reviewDate','reviewMonths','details','billDetails','evidence'];
+      const body = Object.fromEntries(keys.map(key=>[key,value(key)]));
+      if(kind==='contacts')body.directoryVisible=document.getElementById('op-contactDirectoryVisible').checked;
+      if (kind === 'tasks') {
+        body.assignedUserIds=checks('staff');body.contactIds=checks('contacts');body.recordType=value('recordType');body.exhibition=window.Exhibitions?.values() || {};
+        body.account=Object.fromEntries(['platform','identifier','registeredEmail','loginUrl','department','requestContact','requestEmail','requestPhone','applicationNotes'].map(k=>[k,value('account-'+k)]));body.account.directoryVisible=document.getElementById('op-directoryVisible').checked;
+        body.handover=Object.fromEntries(['department','outgoingName','outgoingUserId','receiverName','receiverUserId','lastDay','scope'].map(k=>[k,value('handover-'+k)]));body.handover.accountTaskIds=checks('handoverAccounts');
+      }
+      if (id) body.version = r.version;
+      await api(`/api/operations/${kind}${id ? '/'+id : ''}`,{ method:id?'PUT':'POST',body:JSON.stringify(body) });
+      closeModal(); await load();
+    });
+    if(kind==='tasks'){const update=()=>{const type=value('recordType');document.getElementById('op-accountFields').style.display=type==='account'?'':'none';document.getElementById('op-handoverFields').style.display=['handover','sales_handover'].includes(type)?'':'none';};document.getElementById('op-recordType').onchange=()=>{update();const ex=document.getElementById('op-exhibitionFields');if(ex)ex.style.display=value('recordType')==='exhibition'?'':'none';};document.getElementById('op-recordType').onchange();}
+  }
+  function contactChoiceHtml(entityId, selected) { return data.contacts.filter(c=>c.entityId === entityId).map(c=>`<label class="op-check"><input type="checkbox" name="op-contacts" value="${e(c.id)}" ${selected.includes(c.id)?'checked':''}>${e(c.name)} · ${e(c.role)}</label>`).join('') || '<p>该档案暂无联系人，请先在通讯录中添加。</p>'; }
+  function detail(id) {
+    const t = byId('tasks',id), entity = byId('entities',t.entityId);
+    const html = `<div class="op-detail">${specialDetail(t)}<p>${e(entity?.city)} · ${e(entity?.legalName || entity?.name)} ｜ ${e(statusNames[t.status])}</p><p>${e(applicabilityNames[t.applicability])} · ${e(t.category)}</p><p>办理截止：${e(t.dueDate || '未填写')} ｜ 下次复查：${e(t.reviewDate || '未设置')} ｜ 周期：${t.reviewMonths ? t.reviewMonths+'个月' : '一次性'}</p><h4>需做的事情与当前问题</h4><p class="op-pre">${e(t.details || '未填写')}</p><h4>账单说明</h4><p class="op-pre">${e(t.billDetails || '未填写')}</p><h4>凭证／文件位置</h4><p class="op-pre">${e(t.evidence || '未填写')}</p><div class="op-actions">${data.canManage ? button('编辑事项',`Operations.edit('tasks','${id}')`) : ''}${t.status !== 'archived' ? button('记录本次复查',`Operations.review('${id}')`,true) : ''}</div>${billsHtml(t)}${documentsHtml(t)}${commentsHtml(t)}<h4>关联联系人</h4>${t.contactIds.map(id=>byId('contacts',id)).filter(Boolean).map(contactCard).join('') || '<p>未关联联系人</p>'}<h4>复查历史</h4>${[...t.history].reverse().map(h=>`<section class="op-card"><strong>${e(h.at.slice(0,10))} · ${e(h.userName)}</strong><p>${e(statusNames[h.previousStatus])} → ${e(statusNames[h.status])}</p><p class="op-pre">${e(h.note)}</p><p class="op-pre">${e(h.evidence)}</p></section>`).join('') || '<p>还没有复查记录</p>'}</div>`;
+    openModal(t.title,html,closeModal); if(t.recordType==='exhibition'){const dialog=document.querySelector('#modal .dialog');if(dialog)dialog.scrollTop=0;} document.getElementById('modalSave').textContent = '关闭';
+  }
+  function specialFields(r,entityId){
+    const a=r.account || {},h=r.handover || {};
+    return `<fieldset id="op-accountFields" class="span-2"><legend>账号／邮箱信息（账号类档案填写）</legend><div class="form-grid">${input('account-platform','平台／邮箱服务商',a.platform)}${input('account-identifier','账号名称／账号ID／公司邮箱地址',a.identifier)}${input('account-registeredEmail','注册邮箱',a.registeredEmail)}${input('account-loginUrl','登录入口（HTTPS主页）',a.loginUrl)}${input('account-department','所属部门',a.department)}${input('account-requestContact','申请邮箱／账号该找谁',a.requestContact)}${input('account-requestEmail','申请联系邮箱',a.requestEmail)}${input('account-requestPhone','申请联系电话',a.requestPhone)}${textarea('account-applicationNotes','申请方法和办理说明',a.applicationNotes)}</div><label class="op-check"><input id="op-directoryVisible" type="checkbox" ${a.directoryVisible?'checked':''}>向员工显示申请入口（只公开平台、部门、申请联系人和流程）</label></fieldset>
+    <fieldset id="op-handoverFields" class="span-2"><legend>离职／客户交接信息（交接类档案填写）</legend><div class="form-grid">${input('handover-department','所属部门',h.department)}${input('handover-outgoingName','离职／交出人姓名',h.outgoingName)}${select('handover-outgoingUserId','原员工／业务员系统账号',{'':'未选择',...Object.fromEntries((data.formerStaff || []).map(u=>[u.id,u.name+(u.active?'':'（已停用）')]))},h.outgoingUserId)}${select('handover-receiverUserId','指定接收员工（将加入跟踪负责人）',{'':'待指定',...Object.fromEntries(data.staff.map(u=>[u.id,u.name]))},h.receiverUserId)}${input('handover-receiverName','接收人姓名／补充说明',h.receiverName)}${input('handover-lastDay','最后工作日／交接日',h.lastDay,'date')}${textarea('handover-scope','岗位职责、待交接范围及注意事项',h.scope)}</div><legend>关联账号档案</legend>${data.tasks.filter(t=>t.entityId===entityId && t.recordType==='account').map(t=>`<label class="op-check"><input type="checkbox" name="op-handoverAccounts" value="${e(t.id)}" ${(h.accountTaskIds || []).includes(t.id)?'checked':''}>${e(t.title)}</label>`).join('') || '<p>可先建立账号档案，再关联到交接单。</p>'}</fieldset>`;
+  }
+  function accountDirectoryHtml(){return `<div class="op-actions">${data.canManage?button('＋ 账号／邮箱档案',"Operations.edit('tasks','','account')",true):''}</div><h3>员工申请入口</h3><div class="op-grid">${(data.accountDirectory || []).filter(a=>(!company || a.entityId===company) && JSON.stringify(a).toLowerCase().includes(search.toLowerCase())).map(a=>`<section class="op-card"><h3>${e(a.title)}</h3><p>${e(a.company)} · ${e(a.platform)} · ${e(a.department)}</p><p>申请联系人：${e(a.requestContact)}</p><p>${e(a.requestEmail)} ${e(a.requestPhone)}</p><p class="op-pre">${e(a.applicationNotes)}</p></section>`).join('') || '<p>还没有公开的申请入口，老板可在账号档案内指定申请联系人。</p>'}</div><h3>有权查看的账号档案</h3>`;}
+  const handoverStatuses={pending:'待交接',handed_over:'已交出，待接收',received:'接收人已确认',not_applicable:'不适用'};
+  const handoverKinds={customer:'客户',account:'账号／邮箱',document:'文件资料',equipment:'设备物品',access:'权限／访问处理',other:'其他'};
+  function specialDetail(t){
+    if(t.recordType==='exhibition')return window.Exhibitions?.detail(t,data) || '';
+    if(t.recordType==='account'){const a=t.account || {};return `<h4>账号／公司邮箱档案</h4><p>平台：${e(a.platform || '未填写')} ｜ 所属部门：${e(a.department || '未填写')}</p><p>账号／公司邮箱：${e(a.identifier || '未填写')}</p><p>注册邮箱：${e(a.registeredEmail || '未填写')}</p><p>登录入口：${e(a.loginUrl || '未填写')}</p><p>申请联系人：${e(a.requestContact || '未填写')} ｜ ${e(a.requestEmail)} ${e(a.requestPhone)}</p><p class="op-pre">${e(a.applicationNotes)}</p>`;}
+    if(!['handover','sales_handover'].includes(t.recordType))return '';
+    const h=t.handover || {},items=t.handoverItems || [];
+    return `<h4>${e(recordTypes[t.recordType])}</h4><p>部门：${e(h.department || '未填写')} ｜ 交出人：${e(h.outgoingName || '未填写')} ｜ 接收人：${e(h.receiverName || byId('staff',h.receiverUserId)?.name || '待指定')}</p><p>最后工作日／交接日：${e(h.lastDay || '未填写')}</p><p class="op-pre">${e(h.scope)}</p><p>关联账号：${(h.accountTaskIds || []).map(id=>byId('tasks',id)).filter(Boolean).map(a=>button(a.title,`Operations.detail('${a.id}')`)).join('') || '暂无可查看的关联账号'}</p><h4>交接清单：${items.filter(i=>i.status==='received').length} 项接收确认／共 ${items.length} 项</h4><div class="op-actions">${button('＋ 交接项目',`Operations.handoverItem('${t.id}')`)}${data.canManage && t.recordType==='sales_handover'?button('导入原业务员的外勤客户',`Operations.importCustomers('${t.id}')`):''}</div><p>接收确认由指定接收员工本人提交。交接记录和账号权限处理进度分别核实。</p>${items.map(i=>`<section class="op-card"><strong>${e(i.name)} · ${e(handoverStatuses[i.status])}</strong><p>${e(handoverKinds[i.kind])} ｜ 联系方式：${e(i.contact || '未填写')}</p><p class="op-pre">当前情况：${e(i.situation || '未填写')}</p><p class="op-pre">未完成事项：${e(i.pending || '未填写')}</p><p class="op-pre">下一步：${e(i.nextAction || '未填写')}</p>${i.sourceId?'<small>来源：外勤客户档案快照；客户归属仍按原系统管理。</small>':''}<p>${i.confirmedAt?'接收确认：'+e(i.confirmedAt.slice(0,10)):''}</p>${i.status!=='received' || user.id===t.handover?.receiverUserId ? button('更新交接情况',`Operations.handoverItem('${t.id}','${i.id}')`) : '<span>接收人已确认</span>'}<small> · ${i.history?.length || 0} 次修改</small></section>`).join('')}`;
+  }
+  function handoverItem(taskId,id=''){
+    const t=byId('tasks',taskId),i=(t.handoverItems || []).find(i=>i.id===id) || {},states={...handoverStatuses},requestId=crypto.randomUUID();
+    if(user.id!==t.handover?.receiverUserId)delete states.received;
+    const fields=select('itemKind','交接类别',handoverKinds,i.kind || 'customer')+input('itemName','客户／项目名称',i.name)+input('itemContact','联系人及联系方式',i.contact)+select('itemStatus','交接状态',states,i.status || 'pending')+textarea('itemSituation','当前情况与跟进进展',i.situation)+textarea('itemPending','尚未完成的事项（报价、订单、回款、售后等）',i.pending)+textarea('itemNextAction','下一步和接收说明',i.nextAction);
+    openModal(id?'更新交接项目':'新增交接项目',`<div class="form-grid">${fields}</div>`,async()=>{await api(`/api/operations/tasks/${taskId}/handover-items${id?'/'+id:''}`,{method:id?'PUT':'POST',body:JSON.stringify({kind:value('itemKind'),name:value('itemName'),contact:value('itemContact'),status:value('itemStatus'),situation:value('itemSituation'),pending:value('itemPending'),nextAction:value('itemNextAction'),version:i.version,requestId})});await load();detail(taskId);});
+  }
+  async function importCustomers(taskId){try{const result=await api(`/api/operations/tasks/${taskId}/import-sales-customers`,{method:'POST',body:'{}'});await load();detail(taskId);showActionFeedback(`已导入 ${result.added} 位外勤客户。请补充其他渠道客户和未完成事项。`);}catch(err){alert(err.message);}}
+  const billStatuses={unverified:'待核实',unpaid:'未付款',paid:'已付款'};
+  function billsHtml(t) {
+    return `<h4>逐期账单与缴费（${(t.bills || []).length}期）</h4>${button('＋ 添加账单／缴费',`Operations.bill('${t.id}')`)}${[...(t.bills || [])].reverse().map(b=>`<section class="op-card"><strong>${e(b.label)} · ${e(billStatuses[b.status])}</strong><p>服务商：${e(b.provider || '待填写')} ｜ 金额：${e(b.amount || '待核实')} ${e(b.currency)}</p>${t.recordType==='exhibition' && t.canFinance?`<p>汇款人联系方式：${e(b.payerContact || '未填写')} ｜ 收款方：${e(b.beneficiaryName || '未填写')} ${e(b.payeeContact)}</p><p>收款银行：${e(b.bankName || '未填写')} ｜ 账号：${e(b.payeeAccount || '未填写')} ｜ SWIFT／Routing：${e(b.swiftRouting || '未填写')}</p>`:''}<p>账期：${e(b.periodStart || '未填写')} 至 ${e(b.periodEnd || '未填写')} ｜ 本期应付日期：${e(b.dueDate || '未填写')}</p><p>实际付款人：${e(b.paidBy || '未填写')} ｜ 付款日期：${e(b.paidDate || '未填写')}</p><p>付款方式：${e(b.paymentMethod || '未填写')} ｜ 交易参考号：${e(b.reference || '未填写')}</p><p><strong>已缴费覆盖至：${e(b.paidThroughDate || '待核实')} ｜ 下一期缴费日期：${e(b.nextDueDate || '待核实')}</strong></p><p class="op-pre">${e(b.note)}</p><p>关联凭证：${(b.attachmentIds || []).map(id=>(t.attachments || []).find(f=>f.id===id)).filter(Boolean).map(f=>button(f.name,`Operations.file('${t.id}','${f.id}',true)`)).join('') || '未关联'}</p><small>记录人：${e(b.userName)} · 更新：${e(b.updatedBy || b.userName)} · ${e((b.updatedAt || b.at).slice(0,10))}</small><div class="op-actions">${button('更新付款信息',`Operations.bill('${t.id}','${b.id}')`)}</div>${b.history?.length ? `<details><summary>修改历史（${b.history.length}次）</summary>${[...b.history].reverse().map(h=>`<p>${e(h.at.slice(0,10))} · ${e(h.userName)}：原状态 ${e(billStatuses[h.before.status])}，原金额 ${e(h.before.amount)} ${e(h.before.currency)}，原付款人 ${e(h.before.paidBy || '未填写')}，原下期日期 ${e(h.before.nextDueDate || '未填写')}</p>`).join('')}</details>` : ''}</section>`).join('') || '<p>按每一期分别保存，历史账单和付款记录会一直留在本事项。</p>'}`;
+  }
+  function bill(taskId,id='') {
+    const t=byId('tasks',taskId),b=(t.bills || []).find(b=>b.id===id) || {},requestId=crypto.randomUUID();
+    const fields=input('label','缴费项目（如：Starlink 2026年11月服务费）',b.label || t.title)+input('provider','服务商／收款机构',b.provider)+input('amount','金额',b.amount)+input('currency','币种',b.currency || 'USD')+select('billStatus','付款状态',billStatuses,b.status || 'unverified')+input('dueDate','本期应付款日期',b.dueDate,'date')+input('periodStart','账期开始',b.periodStart,'date')+input('periodEnd','账期结束',b.periodEnd,'date')+input('paidBy','实际付款人（与跟踪负责人分开）',b.paidBy)+input('paidDate','实际付款日期',b.paidDate,'date')+input('paymentMethod','付款方式（银行卡／支票等）',b.paymentMethod)+input('reference','交易参考号／支票号',b.reference)+input('paidThroughDate','已缴费覆盖至（含年份）',b.paidThroughDate,'date')+input('nextDueDate','下一期缴费日期（含年份）',b.nextDueDate,'date')+(t.recordType==='exhibition' && t.canFinance ? input('payerContact','汇款人联系方式',b.payerContact)+input('beneficiaryName','收款户名／公司',b.beneficiaryName)+input('payeeContact','收款方联系方式',b.payeeContact)+input('bankName','收款银行',b.bankName)+input('payeeAccount','收款账号／IBAN',b.payeeAccount)+input('swiftRouting','SWIFT／Routing',b.swiftRouting) : '')+textarea('billNote','账单／付款说明',b.note)+`<fieldset class="span-2"><legend>关联本事项已上传的账单／付款凭证</legend>${(t.attachments || []).map(f=>`<label class="op-check"><input type="checkbox" name="op-billFiles" value="${e(f.id)}" ${(b.attachmentIds || []).includes(f.id)?'checked':''}>${e(f.name)}</label>`).join('') || '<p>可先上传文件，再关联到本期记录。</p>'}</fieldset>`;
+    openModal(id?'更新缴费记录':'新增一期账单／缴费',`<div class="form-grid">${fields}</div>`,async()=>{
+      const body=Object.fromEntries(['label','provider','amount','currency','dueDate','periodStart','periodEnd','paidBy','paidDate','paymentMethod','reference','paidThroughDate','nextDueDate'].map(k=>[k,value(k)]));
+      if(t.recordType==='exhibition' && t.canFinance)for(const key of ['payerContact','beneficiaryName','payeeContact','bankName','payeeAccount','swiftRouting'])body[key]=value(key);
+      Object.assign(body,{status:value('billStatus'),note:value('billNote'),attachmentIds:checks('billFiles'),requestId,version:b.version});
+      await api(`/api/operations/tasks/${taskId}/bills${id?'/'+id:''}`,{method:id?'PUT':'POST',body:JSON.stringify(body)});
+      await load();detail(taskId);
+    });
+  }
+  function documentsHtml(t) {
+    return `<h4>文件资料（${(t.attachments || []).length}份）</h4><p>支持PDF、JPG、PNG、WebP，单份不超过8MB。再次上传会保留旧文件。</p>${button('＋ 上传文件',`Operations.uploadDialog('${t.id}')`)}<div class="op-documents">${(t.attachments || []).map(f=>`<section class="op-card"><strong>${e(f.name)}</strong><p>${e(documentKinds[f.kind] || '文件')} · ${e(f.documentDate || '日期未填写')} · ${(f.size/1024).toFixed(0)} KB</p><p class="op-pre">${e(f.description)}</p><small>上传：${e(f.userName)} · ${e(f.at.slice(0,10))}</small><div class="op-actions">${button('预览',`Operations.file('${t.id}','${f.id}',true)`)}${button('下载',`Operations.file('${t.id}','${f.id}',false)`)}</div></section>`).join('') || '<p>还没有文件。可以上传营业执照、历史账单、保单和扫描件。</p>'}</div>`;
+  }
+  function commentsHtml(t) {
+    return `<h4>留言（${(t.comments || []).length}条）</h4>${button('＋ 添加留言',`Operations.comment('${t.id}')`)}${[...(t.comments || [])].reverse().map(c=>`<section class="op-card"><strong>${e(c.userName)} · ${e(new Date(c.at).toLocaleString('zh-CN',{timeZone:'America/Los_Angeles'}))}（洛杉矶时间）</strong><p class="op-pre">${e(c.text)}</p></section>`).join('') || '<p>还没有留言。可记录沟通进展、问题及交接说明。</p>'}`;
+  }
+  function comment(id) {
+    const requestId=crypto.randomUUID();
+    openModal('添加事项留言',textarea('comment','留言内容'),async()=>{
+      await api(`/api/operations/tasks/${id}/comments`,{method:'POST',body:JSON.stringify({text:value('comment'),requestId})});
+      await load();detail(id);
+    });
+  }
+  function uploadDialog(id) {
+    const requestId=crypto.randomUUID();
+    openModal('上传事项文件',`<div class="form-grid"><label class="span-2">选择文件<input id="op-file" type="file" accept=".pdf,.png,.jpg,.jpeg,.webp"></label>${select('kind','文件分类',documentKinds,'document')}${input('documentDate','文件／账单日期','','date')}${textarea('fileDescription','文件说明（如：2026年11月账单、营业执照复印件）')}</div>`,async()=>{
+      const file=document.getElementById('op-file').files[0];
+      if(!file)throw new Error('请选择文件');
+      if(file.size>8*1024*1024)throw new Error('单份文件不能超过8MB');
+      const contentBase64=await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(String(reader.result).split(',')[1]);reader.onerror=()=>reject(new Error('文件读取失败'));reader.readAsDataURL(file);});
+      const extension=file.name.split('.').pop().toLowerCase();
+      const type=({pdf:'application/pdf',png:'image/png',jpg:'image/jpeg',jpeg:'image/jpeg',webp:'image/webp'})[extension] || '';
+      await api(`/api/operations/tasks/${id}/attachments`,{method:'POST',body:JSON.stringify({name:file.name,type,kind:value('kind'),documentDate:value('documentDate'),description:value('fileDescription'),contentBase64,requestId})});
+      await load();detail(id);
+    });
+  }
+  async function file(taskId,fileId,preview) {
+    try {
+      const meta=(byId('tasks',taskId).attachments || []).find(f=>f.id===fileId);
+      const response=await fetch(`/api/operations/tasks/${taskId}/attachments/${fileId}`,{headers:{Authorization:`Bearer ${token}`},cache:'no-store'});
+      if(!response.ok)throw new Error((await response.json()).error || '读取文件失败');
+      const url=URL.createObjectURL(await response.blob());
+      if(preview){openModal(meta.name,meta.type==='application/pdf'?`<iframe class="op-file-preview" src="${e(url)}" title="${e(meta.name)}"></iframe>`:`<img class="op-image-preview" src="${e(url)}" alt="${e(meta.name)}">`,()=>detail(taskId));document.getElementById('modalSave').textContent='返回事项';}
+      else {const a=document.createElement('a');a.href=url;a.download=meta.name;a.click();}
+      setTimeout(()=>URL.revokeObjectURL(url),10*60*1000);
+    }catch(err){alert(err.message);}
+  }
+  function review(id) {
+    const t = byId('tasks',id), allowed = {...statusNames}; delete allowed.archived;
+    openModal(`复查：${t.title}`,`<div class="form-grid">${select('status','本次核实后的状态',allowed,t.status)}${textarea('note','本次复查结果（必填）')}${textarea('evidence','本次凭证／文件位置说明')}</div><p>保存后保留历史，并按当前周期安排下次复查。办理截止日期不变，需要调整时请由老板编辑。</p>`,async()=>{
+      await api(`/api/operations/tasks/${id}/review`,{method:'POST',body:JSON.stringify({version:t.version,status:value('status'),note:value('note'),evidence:value('evidence')})});
+      closeModal(); await load();
+    });
+  }
+  window.Operations = { getData:()=>data, view, edit, detail, review, bill, vehicleGroup, handoverItem, importCustomers, comment, uploadDialog, file, async starter(id){ try { const result=await api(`/api/operations/entities/${id}/starter`,{method:'POST',body:'{}'}); await load(); showActionFeedback(`已添加 ${result.added} 项待核实事项，请分配负责人并核对日期`); } catch(err){alert(err.message);} }, refresh:load, tab(key){tab=key;repaint();}, contactChoices(id){document.getElementById('op-contactChoices').innerHTML=contactChoiceHtml(id,[]);}, filter(key,v){if(key==='contactCategory')contactCategory=v;if(key==='company')company=v;if(key==='status')status=v;if(key==='search')search=v;if(key==='mine')onlyMine=v;if(key==='due')dueOnly=v;repaint();} };
+})();

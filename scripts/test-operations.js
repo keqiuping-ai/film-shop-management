@@ -1,0 +1,186 @@
+'use strict';
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const create = require('../lib/operations');
+function fixture() {
+ let db={users:[{id:'owner',role:'owner',active:true,name:'Owner'},{id:'a',role:'sales',active:true,name:'Assigned'},{id:'b',role:'sales',active:true,name:'Other'}]};
+ const route=create({readDb:()=>db,writeDb:v=>{db=structuredClone(v);},readBody:async req=>req.body,send:(res,status,body)=>Object.assign(res,{status,body}),audit:()=>{},notifyDataChanged:()=>{}});
+ async function call(path,method='GET',body={},who='owner'){const res={writeHead(status,headers){this.status=status;this.headers=headers;},end(bytes){this.bytes=bytes;}};await route({method,body},res,new URL('http://local/api/operations'+path),db.users.find(u=>u.id===who));return res;}
+ return {call,db:()=>db};
+}
+async function setup(){
+ const f=fixture();const entity=(await f.call('/entities','POST',{name:'Las Vegas',city:'Las Vegas',status:'待核实'})).body.item;
+ const contact=(await f.call('/contacts','POST',{entityId:entity.id,name:'Accountant',phone:'test-only'})).body.item;
+ const taskBody={entityId:entity.id,title:'Property tax',category:'Tax',applicability:'unverified',status:'pending',assignedUserIds:['a'],contactIds:[contact.id],dueDate:'2026-01-01',reviewDate:'2026-01-31',reviewMonths:1,details:'Verify',evidence:''};
+ const task=(await f.call('/tasks','POST',taskBody)).body.item;return {...f,entity,contact,task,taskBody};
+}
+test('owners create records; assigned staff see only their linked records',async()=>{
+ const f=await setup();assert.equal(f.entity.legalName,'');
+ const a=(await f.call('','GET',{},'a')).body;assert.equal(a.tasks.length,1);assert.equal(a.entities.length,1);assert.equal(a.contacts.length,1);
+ const b=(await f.call('','GET',{},'b')).body;assert.deepEqual(b.tasks,[]);assert.deepEqual(b.entities,[]);assert.deepEqual(b.contacts,[]);
+ assert.equal((await f.call('/tasks','POST',f.taskBody,'a')).status,403);
+ assert.equal((await f.call(`/tasks/${f.task.id}/review`,'POST',{version:1,status:'completed',note:'attempt'},'b')).status,403);
+});
+test('review preserves history and deadline, advances schedule, rejects stale edits',async()=>{
+ const f=await setup();const res=await f.call(`/tasks/${f.task.id}/review`,'POST',{version:1,status:'completed',note:'Receipt confirmed',evidence:'Local test reference'},'a');
+ assert.equal(res.status,200);assert.equal(res.body.item.history.length,1);assert.equal(res.body.item.history[0].previousStatus,'pending');assert.equal(res.body.item.history[0].userId,'a');assert.equal(res.body.item.dueDate,'2026-01-01');assert(res.body.item.reviewDate>create.today());
+ assert.equal((await f.call(`/tasks/${f.task.id}`,'PUT',{...f.taskBody,version:1})).status,409);
+ assert.equal((await f.call(`/tasks/${f.task.id}/review`,'POST',{version:2,status:'completed',note:''},'a')).status,400);
+});
+test('invalid input and cross-company contacts do not persist',async()=>{
+ const f=await setup();const count=f.db().operations.tasks.length;
+ for(const change of [{dueDate:'2026-02-30'},{assignedUserIds:['unknown']},{contactIds:['unknown']},{reviewDate:''},{reviewMonths:-1}])assert.equal((await f.call('/tasks','POST',{...f.taskBody,...change})).status,400);
+ const other=(await f.call('/entities','POST',{name:'Los Angeles'})).body.item;
+ assert.equal((await f.call('/tasks','POST',{...f.taskBody,entityId:other.id})).status,400);assert.equal(f.db().operations.tasks.length,count);
+ assert.equal((await f.call(`/contacts/${f.contact.id}`,'PUT',{...f.contact,entityId:other.id,version:1})).status,400);
+});
+test('starter checklist is unverified, owner-only and idempotent',async()=>{
+ const f=await setup();const path=`/entities/${f.entity.id}/starter`;
+ assert.equal((await f.call(path,'POST',{},'a')).status,403);assert.equal((await f.call(path,'POST')).body.added,19);assert.equal((await f.call(path,'POST')).body.added,0);
+ assert(f.db().operations.tasks.filter(t=>t.templateKey).every(t=>t.status==='unverified'&&t.applicability==='unverified'&&!t.assignedUserIds.length&&!t.dueDate));
+});
+test('recurrence handles month ends, leap years, future and one-time dates',()=>{
+ assert.equal(create.nextReview('2026-01-31',1,'2026-01-31'),'2026-02-28');assert.equal(create.nextReview('2028-01-31',1,'2028-01-31'),'2028-02-29');assert.equal(create.nextReview('2026-01-31',1,'2026-02-28'),'2026-03-31');assert.equal(create.nextReview('2026-01-01',3,'2026-11-23'),'2027-01-01');assert.equal(create.nextReview('2026-12-01',1,'2026-11-23'),'2026-12-01');assert.equal(create.nextReview('2026-01-31',0),'');
+});
+
+test('private attachments persist without binary data in snapshots; downloads require current assignment',async()=>{
+ const f=await setup(); const bytes=Buffer.from('%PDF-1.4\nlocal-test-document\n%%EOF');
+ const body={name:'营业执照.pdf',type:'application/pdf',kind:'license',description:'测试执照复印件',documentDate:'2026-11-23',contentBase64:bytes.toString('base64'),requestId:'upload-1'};
+ const path=`/tasks/${f.task.id}/attachments`;
+ const uploaded=await f.call(path,'POST',body,'a');assert.equal(uploaded.status,201);
+ const file=uploaded.body.item.attachments[0];assert.equal(file.description,body.description);assert.equal(file.contentBase64,undefined);
+ assert.equal(f.db().operations.tasks[0].attachments[0].contentBase64,body.contentBase64);
+ const snapshot=(await f.call('','GET',{},'a')).body;assert.equal(snapshot.tasks[0].attachments[0].contentBase64,undefined);
+ const downloaded=await f.call(path+'/'+file.id,'GET',{},'a');assert.equal(downloaded.status,200);assert.deepEqual(downloaded.bytes,bytes);assert.equal(downloaded.headers['Cache-Control'],'private, no-store');
+ assert.equal((await f.call(path+'/'+file.id,'GET',{},'b')).status,404);
+ assert.equal((await f.call(path,'POST',body,'b')).status,404);
+ assert.equal((await f.call(path,'POST',body,'a')).status,200);assert.equal(f.db().operations.tasks[0].attachments.length,1);
+ await f.call(path,'POST',{...body,requestId:'upload-2'},'a');assert.equal(f.db().operations.tasks[0].attachments.length,2);
+ const current=f.db().operations.tasks[0];
+ assert.equal((await f.call(`/tasks/${f.task.id}`,'PUT',{...f.taskBody,assignedUserIds:[],version:current.version})).status,200);
+ assert.equal((await f.call(path+'/'+file.id,'GET',{},'a')).status,404);
+});
+test('documents reject spoofed or invalid input without saving',async()=>{
+ const f=await setup(); const body={name:'bill.pdf',type:'application/pdf',kind:'bill',contentBase64:Buffer.from('%PDF-1.4 test').toString('base64'),requestId:'upload'};
+ for(const change of [{type:'text/html'},{name:'bad.html'},{contentBase64:Buffer.from('<html>test</html>').toString('base64')},{contentBase64:'invalid!=='},{documentDate:'2026-02-30'},{kind:'unknown'},{requestId:''},{contentBase64:'A'.repeat(Math.ceil(8*1024*1024/3)*4+4)}]) assert.equal((await f.call(`/tasks/${f.task.id}/attachments`,'POST',{...body,...change},'a')).status,400);
+ assert.equal(f.db().operations.tasks[0].attachments,undefined);
+});
+test('bill text and append-only comments survive edits and reviews; retries do not duplicate',async()=>{
+ const f=await setup();let updated=await f.call(`/tasks/${f.task.id}`,'PUT',{...f.taskBody,billDetails:'2026年11月账单：待核实',version:1});assert.equal(updated.status,200);
+ const path=`/tasks/${f.task.id}/comments`,body={text:'已联系代办人，等待文件。',requestId:'comment-1'};
+ assert.equal((await f.call(path,'POST',body,'a')).status,201);assert.equal((await f.call(path,'POST',body,'a')).status,200);
+ assert.equal((await f.call(path,'POST',body,'b')).status,404);assert.equal((await f.call(path,'POST',{text:'',requestId:'comment-2'},'a')).status,400);
+ let current=f.db().operations.tasks[0];assert.equal(current.comments.length,1);assert.equal(current.comments[0].userId,'a');assert.equal(current.billDetails,'2026年11月账单：待核实');
+ updated=await f.call(`/tasks/${f.task.id}/review`,'POST',{version:current.version,status:'waiting',note:'等待代办'},'a');assert.equal(updated.status,200);assert.equal(updated.body.item.comments.length,1);assert.equal(updated.body.item.billDetails,current.billDetails);
+ current=f.db().operations.tasks[0];
+ updated=await f.call(`/tasks/${f.task.id}`,'PUT',{...f.taskBody,version:current.version,comments:[],attachments:[]});assert.equal(updated.status,200);assert.equal(updated.body.item.comments.length,1);assert.equal(updated.body.item.billDetails,current.billDetails);
+});
+test('periodic bills separate payer from responsible user and preserve updates and next-year dates',async()=>{
+ const f=await setup(),path=`/tasks/${f.task.id}/bills`;
+ const body={label:'Starlink monthly service',provider:'Starlink',amount:'120.00',currency:'USD',status:'unpaid',dueDate:'2026-12-01',periodStart:'2026-12-01',periodEnd:'2026-12-31',paidThroughDate:'',nextDueDate:'2027-01-01',paidBy:'',paidDate:'',paymentMethod:'',reference:'',note:'Awaiting invoice verification',attachmentIds:[],requestId:'bill-1'};
+ const created=await f.call(path,'POST',body,'a');assert.equal(created.status,201);let b=created.body.item.bills[0];assert.equal(b.nextDueDate,'2027-01-01');assert.equal(b.userId,'a');
+ assert.equal((await f.call(path,'POST',body,'a')).status,200);assert.equal(f.db().operations.tasks[0].bills.length,1);
+ assert.equal((await f.call(path,'POST',body,'b')).status,404);
+ const update={...body,status:'paid',paidBy:'Owner paid personally',paidDate:'2026-11-23',paidThroughDate:'2026-12-31',paymentMethod:'Bank transfer',reference:'demo-reference',requestId:'bill-paid',version:b.version};
+ const paid=await f.call(path+'/'+b.id,'PUT',update,'owner');assert.equal(paid.status,200);b=paid.body.item.bills[0];assert.equal(b.paidBy,'Owner paid personally');assert.equal(b.userId,'a');assert.equal(b.history.length,1);assert.equal(b.history[0].before.status,'unpaid');assert.equal(b.history[0].before.history,undefined);
+ assert.equal((await f.call(path+'/'+b.id,'PUT',update,'owner')).status,200);
+ assert.equal((await f.call(path+'/'+b.id,'PUT',{...update,requestId:'stale'},'owner')).status,409);
+ const next=await f.call(path,'POST',{...body,label:'Starlink January 2027',periodStart:'2027-01-01',periodEnd:'2027-01-31',nextDueDate:'2027-02-01',requestId:'bill-next'},'a');assert.equal(next.status,201);assert.equal(next.body.item.bills.length,2);assert.equal(next.body.item.bills[0].paidThroughDate,'2026-12-31');
+});
+test('billing rejects incomplete paid claims, invalid money, dates and foreign receipts',async()=>{
+ const f=await setup(),path=`/tasks/${f.task.id}/bills`,body={label:'Internet',provider:'Starlink',amount:'120',currency:'USD',status:'unpaid',requestId:'test',attachmentIds:[]};
+ for(const change of [{status:'paid'},{amount:'-1'},{amount:'NaN'},{amount:'10.123'},{periodStart:'2027-02-01',periodEnd:'2027-01-01'},{nextDueDate:'2027-02-30'},{attachmentIds:['another-task-file']},{currency:'US'}])assert.equal((await f.call(path,'POST',{...body,...change},'a')).status,400);
+ assert.equal(f.db().operations.tasks[0].bills,undefined);
+});
+
+test('legacy Starlink merges into internet without losing files, payments, comments or assignments',()=>{
+ const doc={id:'file',contentBase64:'kept'},bill={id:'bill',nextDueDate:'2027-01-01'};
+ const db={operations:{tasks:[{id:'net',entityId:'company',templateKey:'internet',title:'门店互联网／宽带缴费',version:1,status:'unverified',assignedUserIds:['a'],contactIds:[],details:'Internet'}, {id:'star',entityId:'company',templateKey:'starlink',title:'Starlink',version:1,status:'waiting',assignedUserIds:['b'],contactIds:['contact'],attachments:[doc],bills:[bill],comments:[{id:'comment',text:'retained'}],history:[{id:'review'}],dueDate:'2026-12-01',details:'Starlink details'}]}};
+ assert.equal(create.mergeInternetTasks(db),true);const t=db.operations.tasks[0];assert.equal(db.operations.tasks.length,1);assert.equal(t.title,'互联网／宽带缴费');assert.deepEqual(t.attachments,[doc]);assert.deepEqual(t.bills,[bill]);assert.deepEqual(t.assignedUserIds,['a','b']);assert.equal(t.comments.length,1);assert.equal(t.history.length,1);assert.equal(t.status,'waiting');assert.equal(t.dueDate,'2026-12-01');assert(t.mergedFromTaskIds.includes('star'));assert.equal(create.mergeInternetTasks(db),false);
+});
+test('account application directory shares request contacts without exposing registration or files',async()=>{
+ const f=await setup();const body={...f.taskBody,title:'Company email',recordType:'account',assignedUserIds:['a'],account:{platform:'Email provider',identifier:'employee@example.test',registeredEmail:'private-admin@example.test',loginUrl:'https://mail.example.test/',department:'Sales',requestContact:'Office admin',requestEmail:'request@example.test',directoryVisible:true,applicationNotes:'Contact office admin for a mailbox'}};
+ const created=await f.call('/tasks','POST',body);assert.equal(created.status,201);
+ const other=(await f.call('','GET',{},'b')).body;assert.equal(other.accountDirectory.length,1);assert.equal(other.accountDirectory[0].requestEmail,'request@example.test');assert.equal(other.accountDirectory[0].registeredEmail,undefined);assert(!JSON.stringify(other).includes('private-admin@example.test'));assert(!other.tasks.some(t=>t.id===created.body.item.id));
+ assert.equal((await f.call('/tasks','POST',{...body,account:{...body.account,loginUrl:'javascript:alert(1)'}})).status,400);
+ assert.equal((await f.call('/tasks','POST',{...body,account:{...body.account,loginUrl:'https://mail.example.test/?token=secret'}})).status,400);
+ assert.equal((await f.call('/tasks','POST',{...body,account:{...body.account,requestContact:''}})).status,400);
+});
+test('sales handover imports only outgoing staff customers without reassigning or duplicating; receiver confirms',async()=>{
+ const f=await setup();f.db().salesAccounts=[{id:'customer-a',businessName:'Customer A',assignedUserId:'a',phone:'test-only',stage:'Following up',discussionSummary:'Interested',nextAction:'Prepare quote'},{id:'customer-b',businessName:'Customer B',assignedUserId:'b'}];
+ const created=await f.call('/tasks','POST',{...f.taskBody,recordType:'sales_handover',assignedUserIds:['owner'],handover:{department:'Sales',outgoingUserId:'a',outgoingName:'Assigned',receiverUserId:'b',receiverName:'Other',lastDay:'2026-11-30',scope:'Customers and company accounts'}});
+ assert.equal(created.status,201);const t=created.body.item;assert(t.assignedUserIds.includes('b'));assert(!t.assignedUserIds.includes('a'));
+ const path=`/tasks/${t.id}`;assert.equal((await f.call(path+'/import-sales-customers','POST',{},'b')).status,403);
+ assert.equal((await f.call(path+'/import-sales-customers','POST')).body.added,1);assert.equal((await f.call(path+'/import-sales-customers','POST')).body.added,0);
+ let item=f.db().operations.tasks.find(r=>r.id===t.id).handoverItems[0];assert.equal(item.sourceId,'customer-a');assert.equal(item.nextAction,'Prepare quote');assert.equal(f.db().salesAccounts[0].assignedUserId,'a');
+ const body={...item,status:'received',requestId:'confirm',version:1};assert.equal((await f.call(path+'/handover-items/'+item.id,'PUT',body)).status,400);
+ const confirmed=await f.call(path+'/handover-items/'+item.id,'PUT',body,'b');assert.equal(confirmed.status,200);item=confirmed.body.item.handoverItems[0];assert.equal(item.confirmedBy,'b');assert.equal(item.history.length,1);
+ assert.equal((await f.call(path+'/handover-items/'+item.id,'PUT',{...item,status:'pending',requestId:'owner-edit'})).status,400);
+ assert.equal((await f.call(path+'/handover-items/'+item.id,'PUT',{...body,requestId:'stale'},'b')).status,409);
+ assert(!(await f.call('','GET',{},'a')).body.tasks.some(r=>r.id===t.id));
+});
+test('handover supports manual customer and asset items with private access and durable text',async()=>{
+ const f=await setup();const t=(await f.call('/tasks','POST',{...f.taskBody,recordType:'handover',handover:{receiverUserId:'a',department:'Marketing'}})).body.item,path=`/tasks/${t.id}/handover-items`;
+ const body={kind:'account',name:'Advertising account',contact:'Agency contact',situation:'Materials prepared',pending:'Update administrators',nextAction:'Receiver verifies access',status:'handed_over',requestId:'manual-1'};
+ assert.equal((await f.call(path,'POST',body,'b')).status,404);assert.equal((await f.call(path,'POST',body,'a')).status,200);assert.equal((await f.call(path,'POST',body,'a')).status,200);
+ const task=f.db().operations.tasks.find(r=>r.id===t.id);assert.equal(task.handoverItems.length,1);assert.equal(task.handoverItems[0].nextAction,body.nextAction);
+});
+test('shared service directory exposes service contacts but not private notes or company records',async()=>{
+ const f=await setup();const body={entityId:f.entity.id,name:'Installer demo',role:'Window film technician',organization:'Service provider',phone:'+17025550101',email:'service@example.test',serviceCategory:'installer',serviceArea:'Las Vegas',availability:'Appointment required',serviceNotes:'Window film and PPF services',details:'Private contract notes',directoryVisible:true};
+ const created=await f.call('/contacts','POST',body);assert.equal(created.status,201);
+ const staff=(await f.call('','GET',{},'b')).body;const c=staff.contacts.find(c=>c.id===created.body.item.id);
+ assert(c);assert.equal(c.serviceCategory,'installer');assert.equal(c.phone,body.phone);assert.equal(c.serviceArea,'Las Vegas');assert.equal(c.serviceNotes,body.serviceNotes);assert.equal(c.details,undefined);assert.equal(staff.entities.length,0);assert(!JSON.stringify(staff).includes(body.details));
+ assert.equal((await f.call('/contacts','POST',body,'b')).status,403);
+ assert.equal((await f.call('/contacts','POST',{...body,serviceCategory:'unknown'})).status,400);
+ const updated=await f.call('/contacts/'+created.body.item.id,'PUT',{...body,directoryVisible:false,version:created.body.item.version});assert.equal(updated.status,200);
+ assert(!(await f.call('','GET',{},'b')).body.contacts.some(c=>c.id===created.body.item.id));
+});
+test('all requested service categories are accepted without publishing private contacts by default',async()=>{
+ const f=await setup();for(const serviceCategory of ['courier','courier_company','mover','electrician','plumber','installer','truck']){
+  const c=await f.call('/contacts','POST',{entityId:f.entity.id,name:serviceCategory,serviceCategory,phone:'test-only',details:'Private'});assert.equal(c.status,201);assert.equal(c.body.item.directoryVisible,false);
+ }
+ assert.equal((await f.call('','GET',{},'b')).body.contacts.length,0);
+});
+test('vehicle overview groups by company and opens independent items without merging records',async()=>{
+ const fs=require('node:fs'),vm=require('node:vm'),path=require('node:path');let modal='';
+ const rows=['registration','insurance','inspection'].map((key,i)=>({id:key,entityId:'entity',title:'Vehicle '+key,category:'车辆',templateKey:'vehicle-'+key,status:'pending',applicability:'unverified',assignedUserIds:[],contactIds:[],reviewDate:'2026-11-23',dueDate:'',attachments:[],comments:[],bills:[],history:[]}));
+ const source={today:'2026-11-23',canManage:true,entities:[{id:'entity',name:'Company',city:'LA'}],staff:[],contacts:[],tasks:rows};
+ const context={window:{},escapeHtml:s=>s,api:async()=>source,render(){},current:'operations',token:'test',user:{id:'owner'},setTimeout(){},openModal:(title,html)=>{modal=html;},closeModal(){},document:{getElementById:()=>({textContent:''})}};
+ vm.runInNewContext(fs.readFileSync(path.join(__dirname,'../public/operations.js'),'utf8'),context);
+ const ui=context.window.Operations;ui.view();await ui.refresh();const html=ui.view();assert.equal((html.match(/进入车辆管理/g)||[]).length,1);assert(!html.includes('Vehicle registration'));ui.vehicleGroup('entity');for(const row of rows)assert(modal.includes(row.title));assert(!modal.includes('进入车辆管理'));assert.equal(source.tasks.length,3);
+});
+test('exhibition projects retain scoped contacts, repeatable checklists and versioned progress',async()=>{
+ const f=await setup();const t=(await f.call('/tasks','POST',{...f.taskBody,title:'SEMA demo',recordType:'exhibition',exhibition:{edition:'2026',city:'Las Vegas',stage:'planning',financeUserIds:['a']}})).body.item;
+ const path=`/tasks/${t.id}`;
+ assert.equal((await f.call(path+'/expo-starter','POST',{},'a')).status,403);
+ assert.equal((await f.call(path+'/expo-starter','POST')).body.added,18);assert.equal((await f.call(path+'/expo-starter','POST')).body.added,0);
+ const contact=await f.call(path+'/expo-contacts','POST',{role:'builder',name:'Builder contact',phone:'test-only',organization:'Demo builder',requestId:'builder'},'a');assert.equal(contact.status,200);assert.equal(contact.body.item.expoContacts.length,1);
+ assert.equal((await f.call(path+'/expo-contacts','POST',{role:'builder',name:'Builder contact',requestId:'builder'},'a')).body.item.expoContacts.length,1);
+ assert.equal((await f.call(path+'/expo-contacts','POST',{role:'truck_driver',name:'Driver',requestId:'driver'},'b')).status,404);
+ let current=f.db().operations.tasks.find(r=>r.id===t.id);
+ const progress=await f.call(path+'/expo-progress','POST',{version:current.version,stage:'design',nextAction:'Confirm height approval',risks:'Approval outstanding'},'a');assert.equal(progress.status,200);assert.equal(progress.body.item.expoProgressHistory.length,1);
+ assert.equal((await f.call(path+'/expo-progress','POST',{version:current.version,stage:'shipping'},'a')).status,409);
+ current=f.db().operations.tasks.find(r=>r.id===t.id);assert.equal((await f.call(path+'/review','POST',{version:current.version,status:'completed',note:'Attempt close'},'a')).status,400);assert.equal((await f.call(path+'/expo-progress','POST',{version:current.version,stage:'closed'},'a')).status,400);
+});
+test('physical exhibition shirts cannot be accepted while missing shipment or arrival quantities',async()=>{
+ const f=await setup();const t=(await f.call('/tasks','POST',{...f.taskBody,recordType:'exhibition',exhibition:{stage:'planning'}})).body.item,path=`/tasks/${t.id}/expo-items`;
+ const body={name:'Promotional shirts',group:'advertising',physicalDelivery:true,status:'ready',responsibleUserId:'a',quantityExpected:'100',requestId:'shirts'};
+ const created=await f.call(path,'POST',body,'a');assert.equal(created.status,200);let i=created.body.item.expoItems[0];
+ const patch={...body,version:i.version,status:'shipped',quantityShipped:'100',requestId:'shipped'};
+ assert.equal((await f.call(path+'/'+i.id,'PUT',patch,'a')).status,400);
+ const shipped=await f.call(path+'/'+i.id,'PUT',{...patch,shippedDate:'2026-11-24'},'a');assert.equal(shipped.status,200);i=shipped.body.item.expoItems[0];
+ const accepted={...body,version:i.version,status:'accepted',shippedDate:'2026-11-24',arrivedDate:'2026-11-25',receivedBy:'Receiver',quantityArrived:'99',acceptanceNote:'Counted',requestId:'accepted'};
+ assert.equal((await f.call(path+'/'+i.id,'PUT',accepted,'a')).status,400);
+ const result=await f.call(path+'/'+i.id,'PUT',{...accepted,quantityArrived:'100'},'a');assert.equal(result.status,200);i=result.body.item.expoItems[0];assert.equal(i.acceptedBy,'a');assert.equal(i.history.length,2);
+ assert.equal((await f.call(path,'POST',{...body,responsibleUserId:'b',requestId:'bad-staff'},'a')).status,400);
+});
+test('exhibition remittance accounts are restricted and redacted from bill histories',async()=>{
+ const f=await setup();const t=(await f.call('/tasks','POST',{...f.taskBody,recordType:'exhibition',assignedUserIds:['a','b'],exhibition:{stage:'planning',financeUserIds:['a']}})).body.item,path=`/tasks/${t.id}/bills`;
+ const bill={label:'Builder deposit',provider:'Builder',amount:'100',currency:'USD',status:'unpaid',requestId:'wire',attachmentIds:[],beneficiaryName:'Demo beneficiary',payeeAccount:'TEST-ACCOUNT-ONLY',bankName:'Demo bank',swiftRouting:'TEST',payerContact:'Demo payer contact',payeeContact:'Demo beneficiary contact'};
+ assert.equal((await f.call(path,'POST',bill,'b')).status,400);
+ const created=await f.call(path,'POST',bill,'a');assert.equal(created.status,201);assert.equal(created.body.item.bills[0].payeeAccount,bill.payeeAccount);
+ let b=created.body.item.bills[0];const regular={label:bill.label,provider:bill.provider,amount:'110',currency:'USD',status:'unpaid',version:b.version,requestId:'edit-normal',attachmentIds:[]};
+ assert.equal((await f.call(path+'/'+b.id,'PUT',regular,'b')).status,200);
+ const safe=(await f.call('','GET',{},'b')).body.tasks.find(r=>r.id===t.id);assert.equal(safe.canFinance,false);assert((await f.call('','GET',{},'b')).body.staff.some(u=>u.id==='a'));assert.equal(safe.bills[0].payeeAccount,undefined);assert.equal(safe.bills[0].history[0].before.payeeAccount,undefined);assert(!JSON.stringify(safe).includes(bill.payeeAccount));
+ const finance=(await f.call('','GET',{},'a')).body.tasks.find(r=>r.id===t.id);assert.equal(finance.canFinance,true);assert.equal(finance.bills[0].payeeAccount,bill.payeeAccount);assert.equal(finance.bills[0].history[0].before.payeeAccount,bill.payeeAccount);
+});

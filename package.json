@@ -13,6 +13,7 @@
   },
   "scripts": {
     "start": "node server.js",
+    "test:operations": "node --test scripts/test-operations.js",
     "audit:data": "node scripts/audit-data-integrity.js",
     "test:catalog-search": "node scripts/test-customer-cross-catalog-inventory-search.js",
     "test:architectural-catalog": "node scripts/test-architectural-film-catalog.js",

@@ -1,4 +1,4 @@
-const CACHE_NAME = 'quad-global-management-20261119';
+const CACHE_NAME = 'quad-global-management-20261124-operations-exhibitions-2';
 const ASSETS = [
     '/mobile.html',
     '/offline.html',
@@ -8,6 +8,9 @@ const ASSETS = [
     '/warranty.js',
     '/styles.css',
     '/app.js',
+    '/operations.js',
+    '/operations-exhibitions.js',
+    '/operations.css',
     '/mobile.css',
     '/mobile.js',
     '/livekit-client.umd.js',
